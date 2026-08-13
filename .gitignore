@@ -1,0 +1,14 @@
+/target/
+/.build/
+/apps/macos/.build/
+/apps/macos/Generated/
+/apps/macos/Frameworks/
+/apps/macos/Libraries/
+/dist/
+/.planning/
+/.secrets/
+/.swiftpm/
+*.p12
+*.cer
+*.xcuserstate
+.DS_Store

@@ -1,0 +1,162 @@
+name: Release macOS
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: macos-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, sign, and publish Polyglance
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require the tag commit to be on main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
+      - name: Validate and export the version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          if [[ ! "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?)$ ]]; then
+            echo "Expected a semantic version tag such as v1.2.3" >&2
+            exit 1
+          fi
+          echo "number=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Install the Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Import the optional Developer ID certificate
+        if: ${{ secrets.MACOS_CERTIFICATE_P12 != '' }}
+        shell: bash
+        env:
+          CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          certificate_path="$RUNNER_TEMP/polyglance-certificate.p12"
+          keychain_path="$RUNNER_TEMP/polyglance-signing.keychain-db"
+          printf '%s' "$CERTIFICATE_P12" | base64 -D > "$certificate_path"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$certificate_path" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security list-keychain -d user -s "$keychain_path"
+
+      - name: Validate the Sparkle signing secret
+        shell: bash
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SPARKLE_PRIVATE_KEY" ]]; then
+            echo "Configure the SPARKLE_PRIVATE_KEY repository secret before publishing." >&2
+            exit 1
+          fi
+          printf '%s\n' "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle-private-key"
+          chmod 600 "$RUNNER_TEMP/sparkle-private-key"
+
+      - name: Build the generated Rust bridge
+        run: ./scripts/build-macos-core.sh
+
+      - name: Run Rust tests
+        run: cargo test --workspace
+
+      - name: Run Swift tests
+        run: swift test --package-path apps/macos
+
+      - name: Build the macOS application
+        shell: bash
+        env:
+          APP_VERSION: ${{ steps.version.outputs.number }}
+          APP_BUILD_NUMBER: ${{ github.run_number }}
+          POLYGLANCE_APPCAST_URL: https://github.com/${{ github.repository }}/releases/latest/download/appcast.xml
+          CODESIGN_IDENTITY: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$CODESIGN_IDENTITY" ]]; then
+            export CODESIGN_IDENTITY="-"
+          fi
+          ./scripts/build-macos-app.sh --preserve-permissions
+
+      - name: Notarize the optional Developer ID build
+        if: ${{ secrets.DEVELOPER_ID_APPLICATION != '' && secrets.APPLE_ID != '' && secrets.APPLE_TEAM_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' }}
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          notarization_archive="$RUNNER_TEMP/Polyglance-notarization.zip"
+          ditto -c -k --sequesterRsrc --keepParent "dist/Polyglance.app" "$notarization_archive"
+          xcrun notarytool submit "$notarization_archive" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --wait
+          xcrun stapler staple "dist/Polyglance.app"
+
+      - name: Package and sign the update feed
+        id: package
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.number }}
+        run: |
+          set -euo pipefail
+          release_directory="$RUNNER_TEMP/polyglance-release"
+          archive_name="Polyglance-${VERSION}-macOS.zip"
+          mkdir -p "$release_directory"
+          ditto -c -k --sequesterRsrc --keepParent "dist/Polyglance.app" "$release_directory/$archive_name"
+          apps/macos/.build/artifacts/sparkle/Sparkle/bin/generate_appcast \
+            --ed-key-file "$RUNNER_TEMP/sparkle-private-key" \
+            --download-url-prefix "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/" \
+            --link "https://github.com/${GITHUB_REPOSITORY}" \
+            --maximum-versions 1 \
+            "$release_directory"
+          echo "directory=$release_directory" >> "$GITHUB_OUTPUT"
+          echo "archive=$archive_name" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_DIRECTORY: ${{ steps.package.outputs.directory }}
+          ARCHIVE_NAME: ${{ steps.package.outputs.archive }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" \
+              "$RELEASE_DIRECTORY/$ARCHIVE_NAME" \
+              "$RELEASE_DIRECTORY/appcast.xml" \
+              --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              "$RELEASE_DIRECTORY/$ARCHIVE_NAME" \
+              "$RELEASE_DIRECTORY/appcast.xml" \
+              --verify-tag \
+              --generate-notes \
+              --title "Polyglance ${{ steps.version.outputs.number }}"
+          fi
