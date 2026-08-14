@@ -29,8 +29,8 @@ GitHub Actions 在推送 `vX.Y.Z` 格式的 tag 时启动，并先验证该 tag 
 
 ## 用户安装说明（未公证版本）
 
-1. 从 GitHub Release 下载并解压 `Polyglance-<版本>-macOS.zip`。
-2. 将 `Polyglance.app` 拖入“应用程序”文件夹。
+1. 优先从 GitHub Release 下载并打开 `Polyglance-<版本>-macOS.dmg`，将 `Polyglance.app` 拖入“应用程序”文件夹。
+2. `Polyglance-<版本>-macOS.zip` 是 Sparkle 自动更新使用的完整应用包，也可手动解压安装。
 3. 首次启动时，若系统提示该应用来自互联网，选择“打开”。若提示无法验证开发者，在 Finder 中按住 Control 点击应用并选择“打开”，再确认一次。
 
 无需执行 `xattr`、关闭 Gatekeeper 或关闭 SIP。后续启动和 Sparkle 应用内更新不需要重复操作。

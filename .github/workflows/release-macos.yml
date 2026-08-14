@@ -151,6 +151,7 @@ jobs:
           set -euo pipefail
           release_directory="$RUNNER_TEMP/polyglance-release"
           archive_name="Polyglance-${VERSION}-macOS.zip"
+          dmg_name="Polyglance-${VERSION}-macOS.dmg"
           mkdir -p "$release_directory"
           ditto -c -k --sequesterRsrc --keepParent "dist/Polyglance.app" "$release_directory/$archive_name"
           apps/macos/.build/artifacts/sparkle/Sparkle/bin/generate_appcast \
@@ -159,8 +160,10 @@ jobs:
             --link "https://github.com/${GITHUB_REPOSITORY}" \
             --maximum-versions 1 \
             "$release_directory"
+          ./scripts/create-macos-dmg.sh "dist/Polyglance.app" "$release_directory/$dmg_name"
           echo "directory=$release_directory" >> "$GITHUB_OUTPUT"
           echo "archive=$archive_name" >> "$GITHUB_OUTPUT"
+          echo "dmg=$dmg_name" >> "$GITHUB_OUTPUT"
 
       - name: Publish the GitHub Release
         shell: bash
@@ -168,16 +171,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_DIRECTORY: ${{ steps.package.outputs.directory }}
           ARCHIVE_NAME: ${{ steps.package.outputs.archive }}
+          DMG_NAME: ${{ steps.package.outputs.dmg }}
         run: |
           set -euo pipefail
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" \
               "$RELEASE_DIRECTORY/$ARCHIVE_NAME" \
+              "$RELEASE_DIRECTORY/$DMG_NAME" \
               "$RELEASE_DIRECTORY/appcast.xml" \
               --clobber
           else
             gh release create "$GITHUB_REF_NAME" \
               "$RELEASE_DIRECTORY/$ARCHIVE_NAME" \
+              "$RELEASE_DIRECTORY/$DMG_NAME" \
               "$RELEASE_DIRECTORY/appcast.xml" \
               --verify-tag \
               --generate-notes \
