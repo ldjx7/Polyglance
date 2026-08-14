@@ -123,6 +123,7 @@ final class ScreenSelectionWindowTests: XCTestCase {
         let buttons = allButtons(in: try toolbar(in: window))
         XCTAssertGreaterThanOrEqual(buttons.count, 16)
         for button in buttons {
+            XCTAssertFalse(button.isBordered, "\(button.title) should be a frameless icon button")
             XCTAssertEqual(button.imagePosition, .imageOnly, "\(button.title) should not repeat text beside its icon")
             XCTAssertNotNil(button.image, "\(button.title) needs a meaningful SF Symbol")
             XCTAssertEqual(button.toolTip, button.title)
@@ -186,6 +187,34 @@ final class ScreenSelectionWindowTests: XCTestCase {
 
         redoButton.performClick(nil)
         XCTAssertEqual(window.selectionView.annotationElements.count, 1)
+    }
+
+    func testAnnotationButtonsUseUniformTintWithoutToggleDrawingOverride() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let window = ScreenSelectionWindow(image: try makeImage(width: 400, height: 300), screen: screen)
+        window.orderFront(nil)
+        dragSelection(in: window, from: CGPoint(x: 20, y: 20), to: CGPoint(x: 220, y: 120))
+        let toolbar = try toolbar(in: window)
+        let mosaicButton = try button(titled: "马赛克", in: toolbar)
+
+        for candidate in allButtons(in: toolbar) where candidate.isEnabled {
+            XCTAssertTrue(
+                candidate.contentTintColor?.isEqual(NSColor.white) == true,
+                "\(candidate.title) should use the common enabled icon tint"
+            )
+        }
+
+        mosaicButton.performClick(nil)
+
+        XCTAssertEqual(mosaicButton.state, .off, "selection must not invoke AppKit toggle artwork")
+        XCTAssertTrue(mosaicButton.contentTintColor?.isEqual(NSColor.controlAccentColor) == true)
+        for candidate in allButtons(in: toolbar) where candidate !== mosaicButton && candidate.isEnabled {
+            XCTAssertTrue(
+                candidate.contentTintColor?.isEqual(NSColor.white) == true,
+                "\(candidate.title) should remain visually consistent"
+            )
+        }
     }
 
     func testTextInputCommitsToHistoryWhileBlankAndEscapeCancelOnlyTheInput() throws {

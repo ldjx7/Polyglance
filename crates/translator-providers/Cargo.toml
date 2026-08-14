@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+html-escape.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true

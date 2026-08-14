@@ -4,6 +4,32 @@ import XCTest
 
 @MainActor
 final class ScreenshotFileSaverTests: XCTestCase {
+    func testSuggestedFilenameContainsLocalTimestampAndPNGExtension() {
+        let date = Date(timeIntervalSince1970: 1_723_622_415.678)
+        let timezone = try! XCTUnwrap(TimeZone(secondsFromGMT: 8 * 60 * 60))
+
+        let name = ScreenshotFileSaver.suggestedFilename(at: date, timeZone: timezone)
+
+        XCTAssertEqual(name, "Polyglance Screenshot 2024-08-14 16.00.15.678.png")
+    }
+
+    func testSaveOffersTimestampedFilenameToDestinationChooser() throws {
+        let date = Date(timeIntervalSince1970: 1_723_622_415.678)
+        let timezone = try! XCTUnwrap(TimeZone(secondsFromGMT: 8 * 60 * 60))
+        var offeredName: String?
+        let saver = ScreenshotFileSaver(
+            now: { date },
+            timeZone: timezone,
+            chooseDestination: { name in
+                offeredName = name
+                return nil
+            }
+        )
+
+        XCTAssertFalse(try saver.save(makeImage(size: CGSize(width: 4, height: 4), color: .red)))
+        XCTAssertEqual(offeredName, "Polyglance Screenshot 2024-08-14 16.00.15.678.png")
+    }
+
     func testSaveWritesAReadablePNGToChosenDestination() throws {
         let destination = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)

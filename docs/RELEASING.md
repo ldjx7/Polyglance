@@ -11,6 +11,7 @@ GitHub Actions 在推送 `vX.Y.Z` 格式的 tag 时启动，并先验证该 tag 
 必须配置：
 
 - `SPARKLE_PRIVATE_KEY`：本地 `.secrets/sparkle-private-key` 的完整内容。
+- `FREE_AI_OPENROUTER_API_KEY`：仅供发布构建“免费 AI 翻译”使用的受限 OpenRouter Key。必须设置单独额度与模型限制，不能使用管理或高额度 Key。
 
 公开分发建议同时配置：
 
@@ -53,3 +54,5 @@ APP_BUILD_NUMBER="2" \
 ```
 
 私钥只用于生成 appcast 和签名发布压缩包，永远不应嵌入应用或写入构建日志。
+
+OpenRouter Key 与 Sparkle 私钥不同：前者为了客户端直接调用会进入发布产物，因此不能视为真正秘密。面向大量用户发布前，建议把免费 AI 请求迁移到自有服务端代理；代理负责持有上游 Key、限流和防滥用。

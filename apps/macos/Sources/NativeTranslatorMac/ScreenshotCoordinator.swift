@@ -3,6 +3,13 @@ import CoreGraphics
 import NativeTranslatorMacKit
 import ScreenCaptureKit
 
+enum ScreenshotCapturePolicy {
+    // The selection overlay is created only after this base image is captured,
+    // so including our existing windows is safe and lets users capture the
+    // translator/result panels themselves.
+    static let includesCurrentApplicationWindows = true
+}
+
 @MainActor
 final class ScreenshotCoordinator {
     private let pinWindowManager: PinWindowManager
@@ -158,12 +165,14 @@ final class ScreenshotCoordinator {
             throw ScreenshotError.screenUnavailable
         }
 
-        let ownApplications = content.applications.filter {
-            $0.bundleIdentifier == Bundle.main.bundleIdentifier
-        }
+        let excludedApplications = ScreenshotCapturePolicy.includesCurrentApplicationWindows
+            ? []
+            : content.applications.filter {
+                $0.bundleIdentifier == Bundle.main.bundleIdentifier
+            }
         let filter = SCContentFilter(
             display: display,
-            excludingApplications: ownApplications,
+            excludingApplications: excludedApplications,
             exceptingWindows: []
         )
         let configuration = SCStreamConfiguration()

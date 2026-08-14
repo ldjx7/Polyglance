@@ -23,6 +23,44 @@ public struct AppTranslationResult: Equatable, Sendable {
     }
 }
 
+public struct AppTranslationUpdate: Equatable, Sendable {
+    public let text: String
+    public let provider: String
+    public let isFinal: Bool
+
+    public init(text: String, provider: String, isFinal: Bool) {
+        self.text = text
+        self.provider = provider
+        self.isFinal = isFinal
+    }
+}
+
 public protocol TranslationClient: Sendable {
     func translate(_ request: AppTranslationRequest) async throws -> AppTranslationResult
+    func translateStream(
+        _ request: AppTranslationRequest
+    ) -> AsyncThrowingStream<AppTranslationUpdate, Error>
+}
+
+public extension TranslationClient {
+    func translateStream(
+        _ request: AppTranslationRequest
+    ) -> AsyncThrowingStream<AppTranslationUpdate, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    let result = try await translate(request)
+                    continuation.yield(AppTranslationUpdate(
+                        text: result.text,
+                        provider: result.provider,
+                        isFinal: true
+                    ))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
 }

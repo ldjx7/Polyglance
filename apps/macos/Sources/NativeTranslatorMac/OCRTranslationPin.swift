@@ -4,9 +4,69 @@ import NativeTranslatorMacKit
 @MainActor
 private final class OCRTranslationContextTextView: NSTextView {
     var contextMenuProvider: (() -> NSMenu?)?
+    var hoverCharacterHandler: ((Int?) -> Void)?
+    private var hoverTrackingArea: NSTrackingArea?
 
     override func menu(for event: NSEvent) -> NSMenu? {
         contextMenuProvider?() ?? super.menu(for: event)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea { removeTrackingArea(hoverTrackingArea) }
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        hoverCharacterHandler?(characterIndex(at: convert(event.locationInWindow, from: nil)))
+        super.mouseMoved(with: event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hoverCharacterHandler?(nil)
+        super.mouseExited(with: event)
+    }
+
+    func setHighlightedRange(_ range: NSRange?) {
+        guard let layoutManager else { return }
+        let fullRange = NSRange(location: 0, length: (string as NSString).length)
+        layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: fullRange)
+        layoutManager.removeTemporaryAttribute(.underlineStyle, forCharacterRange: fullRange)
+        layoutManager.removeTemporaryAttribute(.underlineColor, forCharacterRange: fullRange)
+        guard let range, range.length > 0, NSMaxRange(range) <= fullRange.length else { return }
+        layoutManager.addTemporaryAttributes([
+            .backgroundColor: NSColor.systemBlue.withAlphaComponent(0.16),
+            .underlineStyle: NSUnderlineStyle.single.rawValue,
+            .underlineColor: NSColor.systemBlue,
+        ], forCharacterRange: range)
+    }
+
+    private func characterIndex(at point: CGPoint) -> Int? {
+        guard let layoutManager, let textContainer else { return nil }
+        let containerPoint = CGPoint(
+            x: point.x - textContainerInset.width,
+            y: point.y - textContainerInset.height
+        )
+        var fraction: CGFloat = 0
+        let glyphIndex = layoutManager.glyphIndex(
+            for: containerPoint,
+            in: textContainer,
+            fractionOfDistanceThroughGlyph: &fraction
+        )
+        guard glyphIndex < layoutManager.numberOfGlyphs else { return nil }
+        let glyphRect = layoutManager.boundingRect(
+            forGlyphRange: NSRange(location: glyphIndex, length: 1),
+            in: textContainer
+        ).insetBy(dx: -3, dy: -3)
+        guard glyphRect.contains(containerPoint) else { return nil }
+        return layoutManager.characterIndexForGlyph(at: glyphIndex)
     }
 }
 
@@ -96,8 +156,10 @@ final class OCRTranslationPinContentView: NSView {
     private var dragStartMouseLocation: CGPoint?
     private var dragStartWindowOrigin: CGPoint?
     private var restoreResizableWhenUnlocked = true
+    private let alignmentPairs: [TranslationSegmentPair]
 
     private(set) var mode: OCRTranslationDisplayMode = .translation
+    private(set) var highlightedPairID: Int?
     private(set) var isLocked: Bool
     private(set) var isAlwaysOnTop: Bool
 
@@ -116,6 +178,12 @@ final class OCRTranslationPinContentView: NSView {
     var translationActionTitles: [String] { actionButtons.map(\.title) }
     var minimumResultCardSize: CGSize { Self.minimumResultCardSize }
     var visibleTextContextMenu: NSMenu? { makeContextMenu() }
+    var highlightedSourceText: String? {
+        alignmentPairs.first(where: { $0.id == highlightedPairID })?.sourceText
+    }
+    var highlightedTranslationText: String? {
+        alignmentPairs.first(where: { $0.id == highlightedPairID })?.targetText
+    }
 
     init(
         image: NSImage,
@@ -142,6 +210,10 @@ final class OCRTranslationPinContentView: NSView {
         self.isLocked = isLocked
         self.isAlwaysOnTop = isAlwaysOnTop
         self.actions = actions ?? PinWindowActions()
+        alignmentPairs = TranslationAlignment.pairs(
+            source: sourceText,
+            target: translatedText
+        )
 
         imageView = NSImageView(frame: .zero)
         imageView.image = image
@@ -225,6 +297,12 @@ final class OCRTranslationPinContentView: NSView {
         addSubview(annotationEditor)
         sourceTextView.contextMenuProvider = { [weak self] in self?.makeContextMenu() }
         translationTextView.contextMenuProvider = { [weak self] in self?.makeContextMenu() }
+        sourceTextView.hoverCharacterHandler = { [weak self] characterIndex in
+            self?.updatePairHighlight(characterIndex: characterIndex, inSource: true)
+        }
+        translationTextView.hoverCharacterHandler = { [weak self] characterIndex in
+            self?.updatePairHighlight(characterIndex: characterIndex, inSource: false)
+        }
         applyMode()
     }
 
@@ -325,6 +403,14 @@ final class OCRTranslationPinContentView: NSView {
         selectVisibleTextRange(range)
     }
 
+    func highlightPairFromSourceCharacterIndex(_ characterIndex: Int) {
+        updatePairHighlight(characterIndex: characterIndex, inSource: true)
+    }
+
+    func clearPairHighlight() {
+        applyPairHighlight(nil)
+    }
+
     func selectVisibleTextRange(_ range: NSRange) {
         let textView = activeTextView
         let validLength = (textView.string as NSString).length
@@ -423,6 +509,25 @@ final class OCRTranslationPinContentView: NSView {
             window?.makeFirstResponder(self)
         }
         needsLayout = true
+    }
+
+    private func updatePairHighlight(characterIndex: Int?, inSource: Bool) {
+        guard let characterIndex else {
+            applyPairHighlight(nil)
+            return
+        }
+        applyPairHighlight(TranslationAlignment.pairID(
+            at: characterIndex,
+            inSource: inSource,
+            pairs: alignmentPairs
+        ))
+    }
+
+    private func applyPairHighlight(_ pairID: Int?) {
+        highlightedPairID = pairID
+        let pair = alignmentPairs.first(where: { $0.id == pairID })
+        sourceTextView.setHighlightedRange(pair?.sourceRange)
+        translationTextView.setHighlightedRange(pair?.targetRange)
     }
 
     private var activeTextView: NSTextView {

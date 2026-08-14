@@ -1,35 +1,132 @@
 import Foundation
 import Security
 
-struct AppConfiguration: Sendable {
+enum TranslationProvider: String, CaseIterable, Codable, Sendable {
+    case google
+    case microsoft
+    case freeAI = "free-ai"
+    case openAICompatible = "openai-compatible"
+
+    var displayName: String {
+        switch self {
+        case .google:
+            return "Google 免费翻译"
+        case .microsoft:
+            return "Microsoft 免费翻译"
+        case .freeAI:
+            return "免费 AI 翻译"
+        case .openAICompatible:
+            return "自定义 AI"
+        }
+    }
+
+    var requiresUserAPIKey: Bool {
+        self == .openAICompatible
+    }
+}
+
+struct AppConfiguration: Equatable, Sendable {
+    var provider: TranslationProvider
     var endpoint: String
     var apiKey: String
     var model: String
     var targetLanguage: String
+
+    init(
+        provider: TranslationProvider,
+        endpoint: String,
+        apiKey: String,
+        model: String,
+        targetLanguage: String
+    ) {
+        self.provider = provider
+        self.endpoint = endpoint
+        self.apiKey = apiKey
+        self.model = model
+        self.targetLanguage = targetLanguage
+    }
+}
+
+enum CredentialSlot: String, Hashable, Sendable {
+    case customAI = "openai-compatible-api-key"
+}
+
+protocol CredentialStoring: Sendable {
+    func load(_ slot: CredentialSlot) throws -> String?
+    func save(_ value: String, for slot: CredentialSlot) throws
+}
+
+struct BundledFreeAIConfiguration: Equatable, Sendable {
+    static let defaultEndpoint = "https://openrouter.ai/api/v1"
+    static let defaultModel = "openrouter/free"
+
+    let endpoint: String
+    let apiKey: String
+    let model: String
+
+    init?(infoDictionary: [String: Any] = Bundle.main.infoDictionary ?? [:]) {
+        let apiKey = (infoDictionary["PolyglanceFreeAIAPIKey"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !apiKey.isEmpty else {
+            return nil
+        }
+        let endpoint = ((infoDictionary["PolyglanceFreeAIEndpoint"] as? String)
+            ?? Self.defaultEndpoint)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: endpoint), url.scheme?.lowercased() == "https" else {
+            return nil
+        }
+        let model = ((infoDictionary["PolyglanceFreeAIModel"] as? String)
+            ?? Self.defaultModel)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !model.isEmpty else {
+            return nil
+        }
+        self.endpoint = endpoint
+        self.apiKey = apiKey
+        self.model = model
+    }
 }
 
 final class AppConfigurationStore: @unchecked Sendable {
     private enum Key {
+        static let provider = "translation.provider"
         static let endpoint = "provider.endpoint"
         static let model = "provider.model"
         static let targetLanguage = "translation.target-language"
     }
 
     private let defaults: UserDefaults
-    private let credentials: KeychainCredentialStore
+    private let credentials: any CredentialStoring
 
     init(
         defaults: UserDefaults = .standard,
-        credentials: KeychainCredentialStore = KeychainCredentialStore()
+        credentials: any CredentialStoring = KeychainCredentialStore()
     ) {
         self.defaults = defaults
         self.credentials = credentials
     }
 
     func load() throws -> AppConfiguration {
-        AppConfiguration(
+        let storedProviderName = defaults.string(forKey: Key.provider)
+        let storedProvider = storedProviderName.flatMap(TranslationProvider.init(rawValue:))
+        let isLegacyCustomAIConfiguration = storedProviderName == nil
+            && defaults.object(forKey: Key.endpoint) != nil
+        let shouldLoadCustomAICredential = storedProvider == .openAICompatible
+            || isLegacyCustomAIConfiguration
+        let apiKey = shouldLoadCustomAICredential
+            ? try credentials.load(.customAI) ?? ""
+            : ""
+        let migratedProvider: TranslationProvider
+        if storedProviderName == "my-memory" || storedProviderName == "system" {
+            migratedProvider = .google
+        } else {
+            migratedProvider = storedProvider ?? (apiKey.isEmpty ? .google : .openAICompatible)
+        }
+        return AppConfiguration(
+            provider: migratedProvider,
             endpoint: defaults.string(forKey: Key.endpoint) ?? "https://api.openai.com/v1",
-            apiKey: try credentials.load() ?? "",
+            apiKey: apiKey,
             model: defaults.string(forKey: Key.model) ?? "gpt-4.1-mini",
             targetLanguage: defaults.string(forKey: Key.targetLanguage) ?? "zh-CN"
         )
@@ -40,25 +137,30 @@ final class AppConfigurationStore: @unchecked Sendable {
         let model = configuration.model.trimmingCharacters(in: .whitespacesAndNewlines)
         let apiKey = configuration.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // The Keychain is the only fallible destination here. Commit it first
-        // so a credential error cannot leave the non-secret settings updated
-        // while the API key remains stale.
-        try credentials.save(apiKey)
+        // Built-in providers never depend on the user's custom-AI credential.
+        // Avoid touching Keychain for those providers so an inaccessible stale
+        // item cannot block settings, Apple translation, or bundled services.
+        if configuration.provider.requiresUserAPIKey {
+            // The Keychain is the only fallible destination here. Commit it
+            // first so a credential error cannot leave non-secret settings
+            // updated while the API key remains stale.
+            try credentials.save(apiKey, for: .customAI)
+        }
+        defaults.set(configuration.provider.rawValue, forKey: Key.provider)
         defaults.set(endpoint, forKey: Key.endpoint)
         defaults.set(model, forKey: Key.model)
         defaults.set(configuration.targetLanguage, forKey: Key.targetLanguage)
     }
 }
 
-struct KeychainCredentialStore: Sendable {
+struct KeychainCredentialStore: CredentialStoring, Sendable {
     private let service = "com.native-translator.credentials"
-    private let account = "openai-compatible-api-key"
 
-    func load() throws -> String? {
+    func load(_ slot: CredentialSlot) throws -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+            kSecAttrAccount as String: slot.rawValue,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
@@ -73,11 +175,11 @@ struct KeychainCredentialStore: Sendable {
         return String(data: data, encoding: .utf8)
     }
 
-    func save(_ value: String) throws {
+    func save(_ value: String, for slot: CredentialSlot) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+            kSecAttrAccount as String: slot.rawValue,
         ]
         guard !value.isEmpty else {
             let status = SecItemDelete(query as CFDictionary)

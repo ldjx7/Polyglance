@@ -6,13 +6,26 @@ use std::thread;
 
 fn valid_input() -> TranslationInput {
     TranslationInput {
+        provider: "openai-compatible".to_owned(),
         endpoint: "https://api.openai.com/v1".to_owned(),
         api_key: "test-key".to_owned(),
         model: "gpt-4.1-mini".to_owned(),
+        region: None,
         text: "Hello".to_owned(),
         source_language: Some("en".to_owned()),
         target_language: "zh-CN".to_owned(),
     }
+}
+
+#[test]
+fn rejects_an_unknown_provider() {
+    let mut input = valid_input();
+    input.provider = "surprise".to_owned();
+    let engine = TranslationEngine::new().expect("engine");
+
+    let error = engine.translate(input).unwrap_err();
+
+    assert_eq!(error, TranslationFailure::InvalidConfiguration);
 }
 
 #[test]
@@ -48,6 +61,43 @@ fn translates_successfully_across_the_ffi_contract() {
 
     assert_eq!(output.text, "你好");
     assert_eq!(output.provider, "openai-compatible");
+    server.join().unwrap();
+}
+
+#[test]
+fn google_translation_requires_no_api_key_across_the_ffi_contract() {
+    let (endpoint, server) = serve_once(r#"[[["你好","Hello",null,null,10]],null,"en"]"#);
+    let mut input = valid_input();
+    input.provider = "google".to_owned();
+    input.endpoint = endpoint;
+    input.api_key.clear();
+    input.model.clear();
+    let engine = TranslationEngine::new().expect("engine");
+
+    let output = engine.translate(input).expect("translation result");
+
+    assert_eq!(output.text, "你好");
+    assert_eq!(output.provider, "google");
+    server.join().unwrap();
+}
+
+#[test]
+fn microsoft_translation_requires_no_api_key_across_the_ffi_contract() {
+    let (endpoint, server) = serve_once(
+        r#"[{"detectedLanguage":{"language":"en","score":1.0},"translations":[{"text":"你好","to":"zh-Hans"}]}]"#,
+    );
+    let mut input = valid_input();
+    input.provider = "microsoft".to_owned();
+    input.endpoint = endpoint;
+    input.api_key.clear();
+    input.model.clear();
+    input.region = None;
+    let engine = TranslationEngine::new().expect("engine");
+
+    let output = engine.translate(input).expect("translation result");
+
+    assert_eq!(output.text, "你好");
+    assert_eq!(output.provider, "microsoft");
     server.join().unwrap();
 }
 

@@ -74,6 +74,24 @@ final class OCRTranslationPinTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(view.minimumResultCardSize.height, 240)
     }
 
+    func testHoveringSourceHighlightsTheCorrespondingTranslationSegment() {
+        _ = NSApplication.shared
+        let view = OCRTranslationPinContentView(
+            image: NSImage(size: CGSize(width: 420, height: 300)),
+            sourceText: "Hello. World!",
+            translatedText: "你好。世界！"
+        )
+
+        view.highlightPairFromSourceCharacterIndex(1)
+
+        XCTAssertEqual(view.highlightedPairID, 0)
+        XCTAssertEqual(view.highlightedSourceText, "Hello.")
+        XCTAssertEqual(view.highlightedTranslationText, "你好。")
+
+        view.clearPairHighlight()
+        XCTAssertNil(view.highlightedPairID)
+    }
+
     func testRightClickInsideTranslationTextUsesThePinMenuAndCanEnterAnnotation() throws {
         _ = NSApplication.shared
         let view = OCRTranslationPinContentView(

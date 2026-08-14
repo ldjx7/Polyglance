@@ -2,19 +2,51 @@ import AppKit
 import ApplicationServices
 import NativeTranslatorMacKit
 
+enum SelectedTextReadResult: Equatable {
+    case text(String)
+    case noSelection
+    case permissionRequested
+}
+
 @MainActor
 struct SelectedTextReader {
-    func read() async -> String? {
+    private let accessibilityTrustCheck: () -> Bool
+    private let accessibilityPermissionRequest: () -> Void
+    private let directReaderOverride: (() -> String?)?
+    private let copyReaderOverride: (() async -> String?)?
+
+    init(
+        accessibilityTrustCheck: @escaping () -> Bool = { AXIsProcessTrusted() },
+        accessibilityPermissionRequest: @escaping () -> Void = {
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+            _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
+        },
+        directReader: (() -> String?)? = nil,
+        copyReader: (() async -> String?)? = nil
+    ) {
+        self.accessibilityTrustCheck = accessibilityTrustCheck
+        self.accessibilityPermissionRequest = accessibilityPermissionRequest
+        directReaderOverride = directReader
+        copyReaderOverride = copyReader
+    }
+
+    func read() async -> SelectedTextReadResult {
+        guard accessibilityTrustCheck() else {
+            accessibilityPermissionRequest()
+            return .permissionRequested
+        }
         let pipeline = SelectionCapturePipeline(
-            directReader: readAccessibilitySelection,
-            copyReader: readSelectionByCopying
+            directReader: directReaderOverride ?? readAccessibilitySelection,
+            copyReader: copyReaderOverride ?? readSelectionByCopying
         )
-        return await pipeline.read()
+        guard let text = await pipeline.read() else {
+            return .noSelection
+        }
+        return .text(text)
     }
 
     func requestAccessibilityPermission() {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-        AXIsProcessTrustedWithOptions(options as CFDictionary)
+        accessibilityPermissionRequest()
     }
 
     private func readAccessibilitySelection() -> String? {

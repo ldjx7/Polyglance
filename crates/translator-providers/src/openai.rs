@@ -12,6 +12,7 @@ pub struct OpenAiCompatibleConfig {
     endpoint: Url,
     api_key: String,
     model: String,
+    deny_data_collection: bool,
 }
 
 impl OpenAiCompatibleConfig {
@@ -51,7 +52,13 @@ impl OpenAiCompatibleConfig {
             endpoint,
             api_key,
             model,
+            deny_data_collection: false,
         })
+    }
+
+    pub fn denying_data_collection(mut self) -> Self {
+        self.deny_data_collection = true;
+        self
     }
 
     fn chat_completions_url(&self) -> Result<Url, ProviderError> {
@@ -69,7 +76,7 @@ impl OpenAiCompatibleConfig {
     }
 }
 
-fn is_loopback_host(url: &Url) -> bool {
+pub(crate) fn is_loopback_host(url: &Url) -> bool {
     let Some(host) = url.host_str() else {
         return false;
     };
@@ -138,14 +145,18 @@ pub fn build_request_body(config: &OpenAiCompatibleConfig, request: &Translation
         request.target_language()
     );
 
-    json!({
+    let mut body = json!({
         "model": config.model,
         "temperature": 0,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": request.text()}
         ]
-    })
+    });
+    if config.deny_data_collection {
+        body["provider"] = json!({"data_collection": "deny"});
+    }
+    body
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -169,7 +180,7 @@ pub fn parse_response_body(body: &str) -> Result<ParsedTranslation, ProviderErro
     Ok(ParsedTranslation { text })
 }
 
-fn map_status_error(status: StatusCode, body: &str) -> ProviderError {
+pub(crate) fn map_status_error(status: StatusCode, body: &str) -> ProviderError {
     let message = extract_api_error(body).unwrap_or_else(|| status.to_string());
     match status {
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => ProviderError::Authentication(message),
@@ -203,6 +214,8 @@ struct Message {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
+    #[error("invalid translation request: {0}")]
+    InvalidRequest(String),
     #[error("invalid provider configuration: {0}")]
     InvalidConfig(String),
     #[error("network request failed: {0}")]

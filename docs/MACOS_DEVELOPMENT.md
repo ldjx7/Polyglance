@@ -2,7 +2,7 @@
 
 ## 环境
 
-- macOS 14 或更高版本
+- macOS 15 或更高版本（当前应用部署目标）
 - Rust 1.97 或更高版本
 - Swift 6.2 / Xcode Command Line Tools
 
@@ -55,11 +55,40 @@ dist/Polyglance.app
 
 ## 首次使用
 
-1. 从菜单栏打开设置。
-2. 填写 OpenAI-compatible endpoint、API Key 和模型名。
-3. 点击“请求权限”，在系统设置中允许辅助功能权限。
-4. 点击“请求屏幕权限”，在系统设置中允许屏幕录制权限，然后重启应用。
-5. 在任意应用中选中文字，按默认快捷键 `Option+D`。
+1. 新安装默认使用 Google 免费翻译，不需要 API Key。
+2. 如需 Google 翻译，在“设置 → 翻译服务”中选择“Google 免费翻译”，无需 API Key。它使用 Google 的旧版免费接口，可能受网络、限流和接口变更影响。
+3. Microsoft 免费翻译同样无需 API Key，使用 Microsoft Edge 的免费翻译接口，可能受网络、限流和接口变更影响。
+4. 正式发布构建可提供“免费 AI 翻译”，用户无需填写 Key；服务凭据同样只在构建阶段注入。该选项不会在配置缺失时静默改用其他服务。
+5. 如需 DeepSeek、OpenAI 或其他兼容服务，主动选择“自定义 AI”，再填写 endpoint、API Key 和模型。
+6. 点击“请求权限”，在系统设置中允许辅助功能权限。
+7. 点击“请求屏幕权限”，在系统设置中允许屏幕录制权限，然后重启应用。
+8. 在任意应用中选中文字，按默认快捷键 `Option+D`。
+
+Google、Microsoft、自定义 AI 和免费 AI 都是第三方联网服务，不应传输敏感内容。只有自定义 AI 的用户 Key 存放在 macOS Keychain；内置服务不会要求用户填写凭据。应用不会在翻译失败后静默切换提供商。
+
+## 构建内置免费 AI 翻译
+
+本地或 CI 构建可通过环境变量注入 OpenRouter 免费模型配置，不在源码中硬编码：
+
+```bash
+POLYGLANCE_FREE_AI_API_KEY="..." \
+POLYGLANCE_FREE_AI_ENDPOINT="https://openrouter.ai/api/v1" \
+POLYGLANCE_FREE_AI_MODEL="openrouter/free" \
+./scripts/build-macos-app.sh
+```
+
+也可以复制仓库根目录的 `.env.example` 为被 Git 忽略的 `.env.local`，填写后执行：
+
+```bash
+set -a
+source .env.local
+set +a
+./scripts/build-macos-app.sh
+```
+
+`POLYGLANCE_FREE_AI_ENDPOINT` 和 `POLYGLANCE_FREE_AI_MODEL` 可省略并使用上面的默认值。构建脚本不会输出 Key；GitHub Release 工作流从 `FREE_AI_OPENROUTER_API_KEY` Secret 注入。
+
+重要：任何直接放进桌面应用的 Key 都可以从最终 `.app` 中提取。公开发布时必须给该 Key 配置独立额度、模型限制、速率限制和隐私策略，不得与管理账号或付费高额度 Key 共用。更可靠的生产方案是让应用调用自己的限流代理，由代理在服务端持有 OpenRouter Key。
 
 如果应用无法通过 Accessibility API 直接获取选区，会自动模拟一次 `Command+C`，读取本次复制的文本，并在剪贴板没有被其他操作再次修改时恢复原内容。不会把原有的旧剪贴板文本误当成选区。
 
@@ -156,7 +185,7 @@ OCR 使用 macOS Vision 在本机识别。点击“OCR”会在原选区位置�
 
 ## 当前限制
 
-- 只生成当前机器架构的本地开发产物。
+- 只生成当前机器架构的本地开发产物，最低支持 macOS 15。
 - 长截图当前只开放纵向手动滚动，不包含自动滚动、端部裁剪和中间区块删除；横向入口暂时隐藏。
 - 录屏当前输出 MP4 和 GIF；回放只提供整段预览与结果动作，不包含时间轴剪辑、速度调整、MOV/WebM/APNG/WebP、摄像头、键鼠展示或录制中标注。
 - OCR 当前支持字符级选择与拖出文字，但不包含表格/公式识别和复杂多栏/竖排版面重建。

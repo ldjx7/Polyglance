@@ -7,6 +7,9 @@
 /dist/
 /.planning/
 /.secrets/
+.env
+.env.*
+!.env.example
 /.swiftpm/
 *.p12
 *.cer

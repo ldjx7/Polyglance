@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var endpoint = ""
     @State private var apiKey = ""
     @State private var model = ""
+    @State private var provider = TranslationProvider.google
     @State private var targetLanguage = "zh-CN"
     @State private var shortcuts = GlobalShortcutConfiguration.default
     @State private var recordingSettings = RecordingSettings.default
@@ -23,18 +24,50 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("OpenAI-compatible 服务") {
-                TextField("Endpoint", text: $endpoint)
-                    .textFieldStyle(.roundedBorder)
-                SecureField("API Key", text: $apiKey)
-                    .textFieldStyle(.roundedBorder)
-                TextField("模型", text: $model)
-                    .textFieldStyle(.roundedBorder)
+            Section("翻译服务") {
+                Picker("默认服务", selection: $provider) {
+                    ForEach(TranslationProvider.allCases, id: \.self) { provider in
+                        Text(providerLabel(provider))
+                            .tag(provider)
+                            .disabled(!isProviderAvailable(provider))
+                    }
+                }
+
                 Picker("默认目标语言", selection: $targetLanguage) {
                     Text("简体中文").tag("zh-CN")
                     Text("英语").tag("en")
                     Text("日语").tag("ja")
                     Text("韩语").tag("ko")
+                }
+
+                switch provider {
+                case .google:
+                    Text("无需配置 API Key。使用 Google 的免费旧版翻译接口，原文会发送给 Google；该接口可能受网络、限流和服务变更影响。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                case .microsoft:
+                    Text("无需配置 API Key。使用 Microsoft Edge 的免费翻译接口，原文会发送给 Microsoft；该接口可能受网络、限流和服务变更影响。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                case .freeAI:
+                    if BundledFreeAIConfiguration() == nil {
+                        Text("当前构建没有注入免费 AI 服务配置，因此暂不可用。")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                    Text("无需用户填写 API Key。发布者在构建阶段提供免费 AI 服务配置；原文会发送给第三方 AI 服务，免费模型可能有较低的速率和可用性限制。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                case .openAICompatible:
+                    TextField("Endpoint", text: $endpoint)
+                        .textFieldStyle(.roundedBorder)
+                    SecureField("API Key", text: $apiKey)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("模型", text: $model)
+                        .textFieldStyle(.roundedBorder)
+                    Text("可接入 DeepSeek、OpenAI 或其他 OpenAI-compatible 服务。AI 是可选项，不会被自动启用。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -182,6 +215,7 @@ struct SettingsView: View {
     private func load() {
         do {
             let configuration = try store.load()
+            provider = configuration.provider
             endpoint = configuration.endpoint
             apiKey = configuration.apiKey
             model = configuration.model
@@ -200,6 +234,7 @@ struct SettingsView: View {
     private func save() {
         do {
             let configuration = AppConfiguration(
+                provider: provider,
                 endpoint: endpoint,
                 apiKey: apiKey,
                 model: model,
@@ -209,6 +244,21 @@ struct SettingsView: View {
         } catch {
             statusMessage = error.localizedDescription
         }
+    }
+
+    private func isProviderAvailable(_ provider: TranslationProvider) -> Bool {
+        switch provider {
+        case .freeAI:
+            return BundledFreeAIConfiguration() != nil
+        case .google, .microsoft, .openAICompatible:
+            return true
+        }
+    }
+
+    private func providerLabel(_ provider: TranslationProvider) -> String {
+        isProviderAvailable(provider)
+            ? provider.displayName
+            : "\(provider.displayName)（当前构建未配置）"
     }
 
     private var recordingFormatBinding: Binding<ScreenRecordingFormat> {

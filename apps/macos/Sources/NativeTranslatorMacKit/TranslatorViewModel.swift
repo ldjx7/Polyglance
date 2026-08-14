@@ -10,6 +10,10 @@ public final class TranslatorViewModel: ObservableObject {
     @Published public var sourceLanguage: String?
     @Published public var targetLanguage = "zh-CN"
 
+    public var alignedSegments: [TranslationSegmentPair] {
+        TranslationAlignment.pairs(source: sourceText, target: translatedText)
+    }
+
     private let client: any TranslationClient
 
     public init(client: any TranslationClient) {
@@ -48,12 +52,14 @@ public final class TranslatorViewModel: ObservableObject {
         defer { isTranslating = false }
 
         do {
-            let result = try await client.translate(AppTranslationRequest(
+            let request = AppTranslationRequest(
                 text: trimmedText,
                 sourceLanguage: sourceLanguage,
                 targetLanguage: targetLanguage
-            ))
-            translatedText = result.text
+            )
+            for try await update in client.translateStream(request) {
+                translatedText = update.text
+            }
         } catch {
             errorMessage = error.localizedDescription
         }

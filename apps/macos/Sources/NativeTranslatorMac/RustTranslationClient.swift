@@ -5,22 +5,58 @@ import TranslatorCore
 final class RustTranslationClient: TranslationClient, @unchecked Sendable {
     private let engine: TranslationEngine
     private let configurationStore: AppConfigurationStore
+    private let bundledFreeAIConfiguration: BundledFreeAIConfiguration?
 
-    init(configurationStore: AppConfigurationStore) throws {
+    init(
+        configurationStore: AppConfigurationStore,
+        bundledFreeAIConfiguration: BundledFreeAIConfiguration? = BundledFreeAIConfiguration()
+    ) throws {
         self.configurationStore = configurationStore
+        self.bundledFreeAIConfiguration = bundledFreeAIConfiguration
         engine = try TranslationEngine()
     }
 
     func translate(_ request: AppTranslationRequest) async throws -> AppTranslationResult {
         let configuration = try configurationStore.load()
-        guard !configuration.apiKey.isEmpty else {
-            throw ClientError.missingAPIKey
+        let endpoint: String
+        let apiKey: String
+        let model: String
+        let region: String?
+        switch configuration.provider {
+        case .google:
+            endpoint = ""
+            apiKey = ""
+            model = ""
+            region = nil
+        case .microsoft:
+            endpoint = ""
+            apiKey = ""
+            model = ""
+            region = nil
+        case .freeAI:
+            guard let bundledFreeAIConfiguration else {
+                throw ClientError.freeAIUnavailable
+            }
+            endpoint = bundledFreeAIConfiguration.endpoint
+            apiKey = bundledFreeAIConfiguration.apiKey
+            model = bundledFreeAIConfiguration.model
+            region = nil
+        case .openAICompatible:
+            guard !configuration.apiKey.isEmpty else {
+                throw ClientError.missingAPIKey
+            }
+            endpoint = configuration.endpoint
+            apiKey = configuration.apiKey
+            model = configuration.model
+            region = nil
         }
 
         let input = TranslationInput(
-            endpoint: configuration.endpoint,
-            apiKey: configuration.apiKey,
-            model: configuration.model,
+            provider: configuration.provider.rawValue,
+            endpoint: endpoint,
+            apiKey: apiKey,
+            model: model,
+            region: region,
             text: request.text,
             sourceLanguage: request.sourceLanguage,
             targetLanguage: request.targetLanguage
@@ -39,9 +75,85 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
             throw ClientError(failure)
         }
     }
+
+    func translateStream(
+        _ request: AppTranslationRequest
+    ) -> AsyncThrowingStream<AppTranslationUpdate, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    let configuration = try configurationStore.load()
+                    guard configuration.provider == .freeAI
+                            || configuration.provider == .openAICompatible else {
+                        let result = try await translate(request)
+                        continuation.yield(AppTranslationUpdate(
+                            text: result.text,
+                            provider: result.provider,
+                            isFinal: true
+                        ))
+                        continuation.finish()
+                        return
+                    }
+
+                    let streamingConfiguration: OpenAIStreamingConfiguration
+                    if configuration.provider == .freeAI {
+                        guard let bundledFreeAIConfiguration else {
+                            throw ClientError.freeAIUnavailable
+                        }
+                        streamingConfiguration = try OpenAIStreamingConfiguration(
+                            endpoint: bundledFreeAIConfiguration.endpoint,
+                            apiKey: bundledFreeAIConfiguration.apiKey,
+                            model: bundledFreeAIConfiguration.model,
+                            denyDataCollection: true
+                        )
+                    } else {
+                        guard !configuration.apiKey.isEmpty else {
+                            throw ClientError.missingAPIKey
+                        }
+                        streamingConfiguration = try OpenAIStreamingConfiguration(
+                            endpoint: configuration.endpoint,
+                            apiKey: configuration.apiKey,
+                            model: configuration.model,
+                            denyDataCollection: false
+                        )
+                    }
+
+                    let service = OpenAIStreamingTranslationService(
+                        configuration: streamingConfiguration
+                    )
+                    var accumulated = ""
+                    for try await delta in service.deltas(for: request) {
+                        accumulated += delta
+                        continuation.yield(AppTranslationUpdate(
+                            text: accumulated,
+                            provider: configuration.provider.rawValue,
+                            isFinal: false
+                        ))
+                    }
+                    let finalText = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !finalText.isEmpty else {
+                        throw ClientError.invalidResponse
+                    }
+                    continuation.yield(AppTranslationUpdate(
+                        text: finalText,
+                        provider: configuration.provider.rawValue,
+                        isFinal: true
+                    ))
+                    continuation.finish()
+                } catch is CancellationError {
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
 }
 private enum ClientError: LocalizedError {
     case missingAPIKey
+    case freeAIUnavailable
     case invalidInput
     case invalidConfiguration
     case authentication
@@ -76,6 +188,8 @@ private enum ClientError: LocalizedError {
         switch self {
         case .missingAPIKey:
             return "请先在设置中填写 API Key"
+        case .freeAIUnavailable:
+            return "当前构建没有配置免费 AI 翻译服务"
         case .invalidInput:
             return "输入内容或语言设置无效"
         case .invalidConfiguration:

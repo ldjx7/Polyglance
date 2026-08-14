@@ -183,9 +183,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func captureSelectionAndShow(translateImmediately: Bool) async {
-        guard let selectedText = await selectedTextReader.read(), !Task.isCancelled else {
+        let result = await selectedTextReader.read()
+        guard !Task.isCancelled else { return }
+        let selectedText: String
+        switch result {
+        case let .text(text):
+            selectedText = text
+        case .permissionRequested:
+            // macOS presents its Accessibility authorization alert, including
+            // the shortcut to the correct Privacy & Security pane.
+            return
+        case .noSelection:
             if !Task.isCancelled {
-                viewModel.presentError("无法读取选中文字。请在系统设置中授予辅助功能权限，或先复制文本后粘贴。")
+                viewModel.presentError("没有检测到选中文字。请先选中文字，或复制后粘贴到输入框。")
                 presentTranslatorPanel()
             }
             return
@@ -202,6 +212,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ screenshot: SelectedScreenshot,
         sourceText: String
     ) async throws {
+        let screen = NSScreen.screens.first(where: {
+            $0.frame.intersects(screenshot.screenFrame)
+        }) ?? NSScreen.main
+        let progressPanel = OCRTranslationProgressPanel(
+            message: "正在翻译截图…",
+            sourceFrame: screenshot.screenFrame,
+            visibleFrame: screen?.visibleFrame ?? screenshot.screenFrame
+        )
+        progressPanel.orderFrontRegardless()
+        NSApp.activate(ignoringOtherApps: true)
+        defer { progressPanel.close() }
+
         let configuration = try configurationStore.load()
         let translatedText = try await OCRScreenshotTranslator(client: translationClient).translate(
             sourceText: sourceText,
@@ -312,7 +334,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func makeTranslationClient() -> any TranslationClient {
         do {
-            return try RustTranslationClient(configurationStore: configurationStore)
+            return try RustTranslationClient(
+                configurationStore: configurationStore
+            )
         } catch {
             return UnavailableTranslationClient(error: error)
         }

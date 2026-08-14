@@ -29,6 +29,22 @@ fn builds_a_translation_only_chat_request() {
 }
 
 #[test]
+fn free_ai_requests_deny_data_collecting_model_providers() {
+    let request = TranslationRequest::new("Hello", Some("en"), "zh-CN").unwrap();
+    let config = OpenAiCompatibleConfig::new(
+        "https://openrouter.ai/api/v1",
+        "test-key",
+        "openrouter/free",
+    )
+    .unwrap()
+    .denying_data_collection();
+
+    let body = build_request_body(&config, &request);
+
+    assert_eq!(body["provider"]["data_collection"], "deny");
+}
+
+#[test]
 fn parses_the_first_message_content() {
     let body = r#"{
         "choices": [{"message": {"content": "你好"}}],

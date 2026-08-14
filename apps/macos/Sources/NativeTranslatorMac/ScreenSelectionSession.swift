@@ -886,7 +886,6 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
                 symbol: tool.symbolName,
                 action: #selector(selectAnnotationTool(_:))
             )
-            button.setButtonType(.toggle)
             button.tag = tool.rawValue
             annotationToolButtons[tool] = button
             return button
@@ -953,6 +952,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     private func makeToolbarButton(title: String, symbol: String, action: Selector) -> NSButton {
         let button = ScreenshotToolbarButton(title: title, target: self, action: action)
         button.bezelStyle = .toolbar
+        button.isBordered = false
         button.controlSize = .large
         let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
         button.image = NSImage(
@@ -1342,8 +1342,8 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     private func updateAnnotationControls() {
         for (tool, button) in annotationToolButtons {
             let isSelected = isAnnotating && tool == selectedAnnotationTool
-            button.state = isSelected ? .on : .off
-            button.contentTintColor = isSelected ? annotationStyle.color : .white
+            button.state = .off
+            button.contentTintColor = isSelected ? .controlAccentColor : .white
         }
         undoButton?.isEnabled = annotationHistory.canUndo
         redoButton?.isEnabled = annotationHistory.canRedo

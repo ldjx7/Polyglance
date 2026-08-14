@@ -10,7 +10,7 @@ let packageDirectory = URL(fileURLWithPath: #filePath)
 let package = Package(
     name: "NativeTranslatorMac",
     platforms: [
-        .macOS(.v14),
+        .macOS(.v15),
     ],
     products: [
         .executable(name: "NativeTranslatorMac", targets: ["NativeTranslatorMac"]),

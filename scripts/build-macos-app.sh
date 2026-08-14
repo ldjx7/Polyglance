@@ -111,6 +111,34 @@ if [[ -n "${APP_BUILD_NUMBER:-}" ]]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $APP_BUILD_NUMBER" "$info_plist"
 fi
 
+if [[ -n "${POLYGLANCE_FREE_AI_API_KEY:-}" ]]; then
+    free_ai_endpoint="${POLYGLANCE_FREE_AI_ENDPOINT:-https://openrouter.ai/api/v1}"
+    free_ai_model="${POLYGLANCE_FREE_AI_MODEL:-openrouter/free}"
+    if [[ "$free_ai_endpoint" != https://* ]] \
+        || [[ ! "$free_ai_endpoint" =~ '^[A-Za-z0-9._~:/?&=#%-]+$' ]]; then
+        print -u2 "POLYGLANCE_FREE_AI_ENDPOINT must be a valid HTTPS URL."
+        exit 1
+    fi
+    if [[ ! "$POLYGLANCE_FREE_AI_API_KEY" =~ '^[A-Za-z0-9._:-]+$' ]]; then
+        print -u2 "POLYGLANCE_FREE_AI_API_KEY contains unsupported characters."
+        exit 1
+    fi
+    if [[ ! "$free_ai_model" =~ '^[A-Za-z0-9._:/-]+$' ]]; then
+        print -u2 "POLYGLANCE_FREE_AI_MODEL contains unsupported characters."
+        exit 1
+    fi
+    /usr/libexec/PlistBuddy \
+        -c "Add :PolyglanceFreeAIAPIKey string $POLYGLANCE_FREE_AI_API_KEY" \
+        "$info_plist"
+    /usr/libexec/PlistBuddy \
+        -c "Add :PolyglanceFreeAIEndpoint string $free_ai_endpoint" \
+        "$info_plist"
+    /usr/libexec/PlistBuddy \
+        -c "Add :PolyglanceFreeAIModel string $free_ai_model" \
+        "$info_plist"
+    print "Configured the bundled free AI translation service."
+fi
+
 if [[ -n "${POLYGLANCE_APPCAST_URL:-}" ]]; then
     if [[ "$POLYGLANCE_APPCAST_URL" != https://* ]]; then
         print -u2 "POLYGLANCE_APPCAST_URL must use HTTPS."

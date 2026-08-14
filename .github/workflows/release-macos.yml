@@ -78,6 +78,17 @@ jobs:
           printf '%s\n' "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle-private-key"
           chmod 600 "$RUNNER_TEMP/sparkle-private-key"
 
+      - name: Validate the bundled free AI service secret
+        shell: bash
+        env:
+          FREE_AI_OPENROUTER_API_KEY: ${{ secrets.FREE_AI_OPENROUTER_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$FREE_AI_OPENROUTER_API_KEY" ]]; then
+            echo "Configure the FREE_AI_OPENROUTER_API_KEY repository secret before publishing." >&2
+            exit 1
+          fi
+
       - name: Build the generated Rust bridge
         run: ./scripts/build-macos-core.sh
 
@@ -93,6 +104,9 @@ jobs:
           APP_VERSION: ${{ steps.version.outputs.number }}
           APP_BUILD_NUMBER: ${{ github.run_number }}
           POLYGLANCE_APPCAST_URL: https://github.com/${{ github.repository }}/releases/latest/download/appcast.xml
+          POLYGLANCE_FREE_AI_API_KEY: ${{ secrets.FREE_AI_OPENROUTER_API_KEY }}
+          POLYGLANCE_FREE_AI_ENDPOINT: https://openrouter.ai/api/v1
+          POLYGLANCE_FREE_AI_MODEL: openrouter/free
           CODESIGN_IDENTITY: ${{ secrets.DEVELOPER_ID_APPLICATION }}
         run: |
           set -euo pipefail

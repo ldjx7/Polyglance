@@ -6,7 +6,7 @@ struct NativeTranslatorMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        MenuBarExtra("Polyglance", systemImage: "character.book.closed") {
+        MenuBarExtra {
             Button("截图工具") {
                 appDelegate.captureScreenshotAndPin()
             }
@@ -69,6 +69,9 @@ struct NativeTranslatorMacApp: App {
             Button("退出 Polyglance") {
                 NSApp.terminate(nil)
             }
+        } label: {
+            Image(nsImage: PolyglanceMenuBarIcon.image)
+                .accessibilityLabel("Polyglance")
         }
 
     }
