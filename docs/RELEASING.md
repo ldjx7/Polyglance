@@ -6,7 +6,7 @@ Polyglance 使用 Sparkle 2 检查和安装更新。应用只接受 HTTPS feed�
 
 GitHub Actions 在推送 `vX.Y.Z` 格式的 tag 时启动，并先验证该 tag 指向的提交属于 `main`。工作流依次执行 Rust/Swift 测试、构建 `.app`、生成 Sparkle appcast，最后创建 GitHub Release。
 
-默认发布方式是**免费、未公证的开源分发**：构建采用临时（ad-hoc）签名，不需要 Apple Developer Program。Sparkle 的 Ed25519 签名仍会校验更新包的完整性与来源，但它不替代 Apple 的 Developer ID 签名。
+默认发布方式是**免费、未公证的开源分发**：构建使用项目长期保存的自签名代码身份，不需要 Apple Developer Program。固定证书、Bundle ID 和显式 Designated Requirement 让后续 Sparkle 替换继续被 macOS 识别为同一应用。Sparkle 的 Ed25519 签名仍会独立校验更新包的完整性与来源。
 
 ## 首次配置 GitHub Secrets
 
@@ -14,16 +14,19 @@ GitHub Actions 在推送 `vX.Y.Z` 格式的 tag 时启动，并先验证该 tag 
 
 - `SPARKLE_PRIVATE_KEY`：本地 `.secrets/sparkle-private-key` 的完整内容。
 - `FREE_AI_OPENROUTER_API_KEY`：仅供发布构建“免费 AI 翻译”使用的受限 OpenRouter Key。必须设置单独额度与模型限制，不能使用管理或高额度 Key。
+- `MACOS_SIGNING_P12`：`.secrets/Polyglance-Code-Signing.p12` 的 Base64 内容。
+- `MACOS_SIGNING_P12_PASSWORD`：导出 P12 时设置的密码。
+- `MACOS_SIGNING_IDENTITY`：固定为 `Polyglance Open Source Signing`。
+- `MACOS_KEYCHAIN_PASSWORD`：CI 临时钥匙串使用的随机密码。
+
+自签名私钥不得提交到 Git、打印到日志或放入 Release。证书的公开 SHA-1 固定在 `config/macos-signing-certificate-sha1.txt`；CI 会拒绝任何不匹配的 P12，避免误用新证书导致更新后 TCC 权限失效。
 
 以下 Apple 凭据完全可选，当前项目默认不配置。只有维护者日后决定加入 Apple Developer Program 并提供 Developer ID 签名/公证时才需要：
 
-- `MACOS_CERTIFICATE_P12`：Developer ID Application 证书 P12 的 Base64。
-- `MACOS_CERTIFICATE_PASSWORD`：P12 密码。
-- `MACOS_KEYCHAIN_PASSWORD`：CI 临时钥匙串密码。
 - `DEVELOPER_ID_APPLICATION`：例如 `Developer ID Application: Example (TEAMID)`。
 - `APPLE_ID`、`APPLE_TEAM_ID`、`APPLE_APP_SPECIFIC_PASSWORD`：Apple 公证凭据。
 
-未配置 Developer ID 时，工作流会生成可公开下载的临时签名构建。用户从浏览器首次下载后，macOS 会提示应用来自互联网，或要求在 Finder 右键选择“打开”（也可在“系统设置 → 隐私与安全性”中允许）。确认一次后可以正常使用；这是免费分发相对于 Apple 公证版本的安装摩擦。
+自签名版本仍未获得 Apple 公共信任，因此不改变首次下载时的 Gatekeeper 行为。它的作用是稳定更新前后的代码身份，使首次迁移并重新授权后的后续版本能够满足同一个 TCC Designated Requirement。
 
 更新签名私钥缺失时工作流会直接失败，不会发布无法验证的更新。
 

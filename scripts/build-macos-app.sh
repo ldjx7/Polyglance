@@ -158,11 +158,57 @@ if [[ -n "${POLYGLANCE_APPCAST_URL:-}" ]]; then
 fi
 
 codesign_identity="${CODESIGN_IDENTITY:--}"
-codesign_arguments=(--force --deep --sign "$codesign_identity")
-if [[ "$codesign_identity" != "-" ]]; then
-    codesign_arguments+=(--options runtime --timestamp)
+if [[ "$codesign_identity" == "-" ]]; then
+    codesign --force --deep --sign - "$app_bundle"
+else
+    codesign_certificate_sha1="${CODESIGN_CERTIFICATE_SHA1:-}"
+    if [[ ! "$codesign_certificate_sha1" =~ '^[A-Fa-f0-9]{40}$' ]]; then
+        print -u2 "CODESIGN_CERTIFICATE_SHA1 must be the persistent signing certificate SHA-1."
+        exit 1
+    fi
+    codesign_certificate_sha1="${codesign_certificate_sha1:u}"
+
+    installed_certificate_sha1="$(security find-certificate \
+        -c "$codesign_identity" \
+        -Z 2>/dev/null \
+        | awk '/SHA-1 hash:/ { print $3; exit }')"
+    if [[ "$installed_certificate_sha1" != "$codesign_certificate_sha1" ]]; then
+        print -u2 "The selected code-signing identity does not match the pinned certificate."
+        exit 1
+    fi
+
+    codesign_timestamp_mode="${CODESIGN_TIMESTAMP_MODE:-secure}"
+    codesign_arguments=(--force --sign "$codesign_identity" --options runtime)
+    case "$codesign_timestamp_mode" in
+        none)
+            ;;
+        secure)
+            codesign_arguments+=(--timestamp)
+            ;;
+        *)
+            print -u2 "CODESIGN_TIMESTAMP_MODE must be either 'none' or 'secure'."
+            exit 1
+            ;;
+    esac
+
+    bundle_identifier="$(/usr/libexec/PlistBuddy \
+        -c 'Print :CFBundleIdentifier' \
+        "$info_plist")"
+    if [[ "$bundle_identifier" != "io.polyglance.macos" ]]; then
+        print -u2 "The persistent code-signing requirement expects io.polyglance.macos."
+        exit 1
+    fi
+    codesign_requirement="designated => identifier \"$bundle_identifier\" and certificate leaf = H\"$codesign_certificate_sha1\""
+
+    # Sign nested code first with its own synthesized requirements, then
+    # re-sign only the outer app with the stable TCC identity requirement.
+    codesign --deep "${codesign_arguments[@]}" "$app_bundle"
+    codesign "${codesign_arguments[@]}" \
+        --requirements "=$codesign_requirement" \
+        "$app_bundle"
+    codesign --verify --deep --strict --verbose=2 "$app_bundle"
+    codesign --verify --strict -R "=$codesign_requirement" "$app_bundle"
 fi
-codesign "${codesign_arguments[@]}" "$app_bundle"
 
 if $should_reset_permissions; then
     reset_development_permissions

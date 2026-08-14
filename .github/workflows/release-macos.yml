@@ -18,7 +18,6 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
-      HAS_DEVELOPER_ID_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12 != '' }}
       HAS_DEVELOPER_ID_IDENTITY: ${{ secrets.DEVELOPER_ID_APPLICATION != '' }}
       HAS_NOTARIZATION_APPLE_ID: ${{ secrets.APPLE_ID != '' }}
       HAS_NOTARIZATION_TEAM_ID: ${{ secrets.APPLE_TEAM_ID != '' }}
@@ -52,27 +51,50 @@ jobs:
       - name: Install the Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      # Polyglance is distributed as a free open-source app by default.  Apple
-      # Developer ID signing and notarization stay opt-in for maintainers who
-      # later decide to pay for that distribution path.
-      - name: Import the optional Developer ID certificate
-        if: env.HAS_DEVELOPER_ID_CERTIFICATE == 'true'
+      # A single long-lived self-signed identity keeps the app's designated
+      # requirement stable across Sparkle replacements.  The private key is
+      # supplied only through repository secrets and is never published.
+      - name: Import and verify the persistent signing identity
         shell: bash
         env:
-          CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          CERTIFICATE_P12: ${{ secrets.MACOS_SIGNING_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
           KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
         run: |
           set -euo pipefail
+          if [[ -z "$CERTIFICATE_P12" || -z "$CERTIFICATE_PASSWORD" || -z "$SIGNING_IDENTITY" || -z "$KEYCHAIN_PASSWORD" ]]; then
+            echo "Configure all persistent macOS signing secrets before publishing." >&2
+            exit 1
+          fi
           certificate_path="$RUNNER_TEMP/polyglance-certificate.p12"
+          certificate_pem="$RUNNER_TEMP/polyglance-certificate.pem"
           keychain_path="$RUNNER_TEMP/polyglance-signing.keychain-db"
           printf '%s' "$CERTIFICATE_P12" | base64 -D > "$certificate_path"
+          chmod 600 "$certificate_path"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
           security set-keychain-settings -lut 21600 "$keychain_path"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
-          security import "$certificate_path" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security import "$certificate_path" \
+            -P "$CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security \
+            -t cert \
+            -f pkcs12 \
+            -k "$keychain_path"
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$keychain_path"
           security list-keychain -d user -s "$keychain_path"
+          security find-certificate -c "$SIGNING_IDENTITY" -p "$keychain_path" > "$certificate_pem"
+          security add-trusted-cert -d -r trustRoot -p codeSign -k "$keychain_path" "$certificate_pem"
+
+          expected_sha1="$(tr -d '[:space:]' < config/macos-signing-certificate-sha1.txt)"
+          actual_sha1="$(security find-certificate -c "$SIGNING_IDENTITY" -Z "$keychain_path" | awk '/SHA-1 hash:/ { print $3; exit }')"
+          if [[ "$actual_sha1" != "$expected_sha1" ]]; then
+            echo "The imported signing certificate does not match the pinned public fingerprint." >&2
+            exit 1
+          fi
+          security find-identity -v -p codesigning "$keychain_path" | grep -F "$SIGNING_IDENTITY"
+          echo "CODESIGN_CERTIFICATE_SHA1=$expected_sha1" >> "$GITHUB_ENV"
 
       - name: Validate the Sparkle signing secret
         shell: bash
@@ -116,12 +138,10 @@ jobs:
           POLYGLANCE_FREE_AI_API_KEY: ${{ secrets.FREE_AI_OPENROUTER_API_KEY }}
           POLYGLANCE_FREE_AI_ENDPOINT: https://openrouter.ai/api/v1
           POLYGLANCE_FREE_AI_MODEL: openrouter/free
-          CODESIGN_IDENTITY: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+          CODESIGN_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          CODESIGN_TIMESTAMP_MODE: none
         run: |
           set -euo pipefail
-          if [[ -z "$CODESIGN_IDENTITY" ]]; then
-            export CODESIGN_IDENTITY="-"
-          fi
           ./scripts/build-macos-app.sh --preserve-permissions
 
       - name: Notarize the optional Developer ID build

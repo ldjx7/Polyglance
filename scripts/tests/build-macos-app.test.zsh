@@ -25,6 +25,12 @@ require_pattern "Polyglance.icns"
 require_pattern "Sparkle.framework"
 require_pattern "POLYGLANCE_APPCAST_URL"
 require_pattern "SUPublicEDKey"
+require_pattern "CODESIGN_CERTIFICATE_SHA1"
+require_pattern "CODESIGN_TIMESTAMP_MODE"
+require_pattern 'designated => identifier'
+require_pattern 'certificate leaf = H'
+require_pattern "--requirements"
+require_pattern "codesign --verify --deep --strict"
 
 if rg --quiet '(^|[[:space:]])open[[:space:]]' "$build_script"; then
     print -u2 "The build script must not launch the app automatically"
