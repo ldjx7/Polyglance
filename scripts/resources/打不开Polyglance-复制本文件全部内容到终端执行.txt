@@ -1,0 +1,6 @@
+# Polyglance 首次安装后无法打开时使用。
+# 请先将 Polyglance.app 拖入“应用程序”文件夹。
+# 在本文件中按 Command+A、Command+C；打开“终端”并粘贴后按回车。
+# 以下两行只移除 Polyglance 的下载隔离标记，然后启动它；不会关闭 Gatekeeper 或影响其他应用。
+/usr/bin/xattr -dr com.apple.quarantine "/Applications/Polyglance.app"
+/usr/bin/open "/Applications/Polyglance.app"

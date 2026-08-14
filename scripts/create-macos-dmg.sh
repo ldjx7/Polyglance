@@ -3,7 +3,7 @@ set -euo pipefail
 
 script_name="${0:t}"
 script_directory="${0:A:h}"
-repair_command="$script_directory/resources/修复无法打开.command"
+repair_instructions="$script_directory/resources/打不开Polyglance-复制本文件全部内容到终端执行.txt"
 
 function usage() {
     print "Usage: $script_name <Polyglance.app> <output.dmg>"
@@ -29,8 +29,8 @@ if [[ ! -d "$app_bundle" || ! -f "$app_bundle/Contents/Info.plist" ]]; then
     exit 1
 fi
 
-if [[ ! -x "$repair_command" ]]; then
-    print -u2 "The DMG repair command is missing or not executable: $repair_command"
+if [[ ! -f "$repair_instructions" ]]; then
+    print -u2 "The DMG repair instructions are missing: $repair_instructions"
     exit 1
 fi
 
@@ -48,7 +48,7 @@ function cleanup() {
 trap cleanup EXIT
 
 ditto "$app_bundle" "$staging_directory/Polyglance.app"
-ditto "$repair_command" "$staging_directory/修复无法打开.command"
+ditto "$repair_instructions" "$staging_directory/打不开Polyglance-复制本文件全部内容到终端执行.txt"
 ln -s /Applications "$staging_directory/Applications"
 
 hdiutil create \

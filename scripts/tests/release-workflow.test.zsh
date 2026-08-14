@@ -6,7 +6,7 @@ repository_root="${test_directory:h:h}"
 workflow="$repository_root/.github/workflows/release-macos.yml"
 package_manifest="$repository_root/apps/macos/Package.swift"
 dmg_script="$repository_root/scripts/create-macos-dmg.sh"
-repair_script="$repository_root/scripts/resources/修复无法打开.command"
+repair_instructions="$repository_root/scripts/resources/打不开Polyglance-复制本文件全部内容到终端执行.txt"
 
 function require_pattern() {
     local pattern="$1"
@@ -19,7 +19,7 @@ function require_pattern() {
 [[ -f "$workflow" ]]
 [[ -f "$package_manifest" ]]
 [[ -x "$dmg_script" ]]
-[[ -x "$repair_script" ]]
+[[ -f "$repair_instructions" ]]
 require_pattern "tags:"
 require_pattern "actions/checkout@v5"
 require_pattern "git merge-base --is-ancestor"
@@ -40,14 +40,15 @@ if [[ ! -x "$dmg_script" ]]; then
     exit 1
 fi
 
-if ! rg --quiet --fixed-strings '修复无法打开.command' "$dmg_script"; then
-    print -u2 "The DMG must include the per-app quarantine repair command."
+if ! rg --quiet --fixed-strings '打不开Polyglance-复制本文件全部内容到终端执行.txt' "$dmg_script"; then
+    print -u2 "The DMG must include the copyable per-app quarantine instructions."
     exit 1
 fi
 
-if ! rg --quiet --fixed-strings 'com.apple.quarantine' "$repair_script" \
-    || ! rg --quiet --fixed-strings '/Applications/Polyglance.app' "$repair_script"; then
-    print -u2 "The repair command must only target Polyglance in Applications."
+if ! rg --quiet --fixed-strings '# ' "$repair_instructions" \
+    || ! rg --quiet --fixed-strings '/usr/bin/xattr -dr com.apple.quarantine "/Applications/Polyglance.app"' "$repair_instructions" \
+    || ! rg --quiet --fixed-strings '/usr/bin/open "/Applications/Polyglance.app"' "$repair_instructions"; then
+    print -u2 "The copyable instructions must safely target Polyglance in Applications."
     exit 1
 fi
 

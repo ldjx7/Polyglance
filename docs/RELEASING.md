@@ -30,11 +30,11 @@ GitHub Actions 在推送 `vX.Y.Z` 格式的 tag 时启动，并先验证该 tag 
 ## 用户安装说明（未公证版本）
 
 1. 优先从 GitHub Release 下载并打开 `Polyglance-<版本>-macOS.dmg`，将 `Polyglance.app` 拖入“应用程序”文件夹。
-2. 若 macOS 阻止首次启动，双击 DMG 中与应用并列的 `修复无法打开.command`。它只移除 `/Applications/Polyglance.app` 的下载隔离标记并启动该应用，不会关闭 Gatekeeper 或影响其他软件。
+2. 若 macOS 阻止首次启动，打开 DMG 中与应用并列的 `打不开Polyglance-复制本文件全部内容到终端执行.txt`，按 Command+A、Command+C 全选复制，再打开“终端”粘贴并按回车。说明行均以 `#` 开头，整份内容可直接执行；它只移除 `/Applications/Polyglance.app` 的下载隔离标记并启动该应用，不会关闭 Gatekeeper 或影响其他软件。
 3. `Polyglance-<版本>-macOS.zip` 是 Sparkle 自动更新使用的完整应用包，也可手动解压安装。
-4. 若系统连该修复命令也阻止，前往“系统设置 → 隐私与安全性”并选择“仍要打开”。未公证应用无法完全避免这一系统级确认。
+4. 若仍被系统阻止，前往“系统设置 → 隐私与安全性”并选择“仍要打开”。未公证应用无法完全避免这一系统级确认。
 
-无需执行 `xattr`、关闭 Gatekeeper 或关闭 SIP。后续启动和 Sparkle 应用内更新不需要重复操作。
+无需关闭 Gatekeeper 或关闭 SIP。上述命令只在首次安装遇到 Gatekeeper 拦截时需要执行一次；后续启动和 Sparkle 应用内更新不需要重复操作。
 
 ## 创建版本
 
