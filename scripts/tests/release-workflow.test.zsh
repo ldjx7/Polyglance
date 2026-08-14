@@ -17,6 +17,7 @@ function require_pattern() {
 [[ -f "$workflow" ]]
 [[ -f "$package_manifest" ]]
 require_pattern "tags:"
+require_pattern "actions/checkout@v5"
 require_pattern "git merge-base --is-ancestor"
 require_pattern "SPARKLE_PRIVATE_KEY"
 require_pattern "generate_appcast"
