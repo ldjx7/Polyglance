@@ -39,6 +39,11 @@ require_pattern "macos-signing-certificate-sha1.txt"
 require_pattern "CODESIGN_CERTIFICATE_SHA1"
 require_pattern "CODESIGN_TIMESTAMP_MODE: none"
 
+if rg --quiet --fixed-strings "security add-trusted-cert -d" "$workflow"; then
+    print -u2 "The release workflow must not require interactive admin trust authorization."
+    exit 1
+fi
+
 fingerprint="$(tr -d '[:space:]' < "$signing_fingerprint")"
 if [[ ! "$fingerprint" =~ '^[A-F0-9]{40}$' ]]; then
     print -u2 "The persistent macOS signing certificate fingerprint must be a SHA-1 hex digest."
