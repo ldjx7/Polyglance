@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   release:
-    name: Build, sign, and publish Polyglance
+    name: Build, package, and publish Polyglance
     runs-on: macos-15
     timeout-minutes: 45
     env:
@@ -52,6 +52,9 @@ jobs:
       - name: Install the Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      # Polyglance is distributed as a free open-source app by default.  Apple
+      # Developer ID signing and notarization stay opt-in for maintainers who
+      # later decide to pay for that distribution path.
       - name: Import the optional Developer ID certificate
         if: env.HAS_DEVELOPER_ID_CERTIFICATE == 'true'
         shell: bash

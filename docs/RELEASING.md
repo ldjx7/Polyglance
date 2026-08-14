@@ -4,7 +4,9 @@
 
 Polyglance 使用 Sparkle 2 检查和安装更新。应用只接受 HTTPS feed，并使用项目专属 Ed25519 公钥验证更新包；私钥不得提交到 Git。
 
-GitHub Actions 在推送 `vX.Y.Z` 格式的 tag 时启动，并先验证该 tag 指向的提交属于 `main`。工作流依次执行 Rust/Swift 测试、构建 `.app`、可选 Developer ID 签名与公证、生成 Sparkle appcast，最后创建 GitHub Release。
+GitHub Actions 在推送 `vX.Y.Z` 格式的 tag 时启动，并先验证该 tag 指向的提交属于 `main`。工作流依次执行 Rust/Swift 测试、构建 `.app`、生成 Sparkle appcast，最后创建 GitHub Release。
+
+默认发布方式是**免费、未公证的开源分发**：构建采用临时（ad-hoc）签名，不需要 Apple Developer Program。Sparkle 的 Ed25519 签名仍会校验更新包的完整性与来源，但它不替代 Apple 的 Developer ID 签名。
 
 ## 首次配置 GitHub Secrets
 
@@ -13,7 +15,7 @@ GitHub Actions 在推送 `vX.Y.Z` 格式的 tag 时启动，并先验证该 tag 
 - `SPARKLE_PRIVATE_KEY`：本地 `.secrets/sparkle-private-key` 的完整内容。
 - `FREE_AI_OPENROUTER_API_KEY`：仅供发布构建“免费 AI 翻译”使用的受限 OpenRouter Key。必须设置单独额度与模型限制，不能使用管理或高额度 Key。
 
-公开分发建议同时配置：
+以下 Apple 凭据完全可选，当前项目默认不配置。只有维护者日后决定加入 Apple Developer Program 并提供 Developer ID 签名/公证时才需要：
 
 - `MACOS_CERTIFICATE_P12`：Developer ID Application 证书 P12 的 Base64。
 - `MACOS_CERTIFICATE_PASSWORD`：P12 密码。
@@ -21,7 +23,17 @@ GitHub Actions 在推送 `vX.Y.Z` 格式的 tag 时启动，并先验证该 tag 
 - `DEVELOPER_ID_APPLICATION`：例如 `Developer ID Application: Example (TEAMID)`。
 - `APPLE_ID`、`APPLE_TEAM_ID`、`APPLE_APP_SPECIFIC_PASSWORD`：Apple 公证凭据。
 
-如果未配置 Developer ID，工作流仍能生成临时签名构建，但不适合给其他用户公开安装。更新签名私钥缺失时工作流会直接失败，不会发布无法验证的更新。
+未配置 Developer ID 时，工作流会生成可公开下载的临时签名构建。用户从浏览器首次下载后，macOS 会提示应用来自互联网，或要求在 Finder 右键选择“打开”（也可在“系统设置 → 隐私与安全性”中允许）。确认一次后可以正常使用；这是免费分发相对于 Apple 公证版本的安装摩擦。
+
+更新签名私钥缺失时工作流会直接失败，不会发布无法验证的更新。
+
+## 用户安装说明（未公证版本）
+
+1. 从 GitHub Release 下载并解压 `Polyglance-<版本>-macOS.zip`。
+2. 将 `Polyglance.app` 拖入“应用程序”文件夹。
+3. 首次启动时，若系统提示该应用来自互联网，选择“打开”。若提示无法验证开发者，在 Finder 中按住 Control 点击应用并选择“打开”，再确认一次。
+
+无需执行 `xattr`、关闭 Gatekeeper 或关闭 SIP。后续启动和 Sparkle 应用内更新不需要重复操作。
 
 ## 创建版本
 

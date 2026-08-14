@@ -27,6 +27,10 @@ macOS 第一条可运行纵向切片已经实现：
 - macOS 本地 `.app` 打包脚本
 - Sparkle 2 安全自动更新，以及 tag 驱动的 GitHub Actions 构建/发布链路
 
+### 发布与安装
+
+项目默认采用免费、未公证的 GitHub Release 分发，不要求维护者加入 Apple Developer Program。首次从浏览器下载时，macOS 可能会提示应用来自互联网，或要求在 Finder 中右键“打开”一次；确认后可正常使用和接收 Sparkle 更新。完整发布与安装说明见[发布文档](docs/RELEASING.md)。
+
 ## 技术方向
 
 - 共享内核：Rust
