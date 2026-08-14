@@ -34,13 +34,12 @@ require_pattern 'Polyglance-${VERSION}-macOS.dmg'
 require_pattern "MACOS_SIGNING_P12"
 require_pattern "MACOS_SIGNING_P12_PASSWORD"
 require_pattern "MACOS_SIGNING_IDENTITY"
-require_pattern "security add-trusted-cert"
 require_pattern "macos-signing-certificate-sha1.txt"
 require_pattern "CODESIGN_CERTIFICATE_SHA1"
 require_pattern "CODESIGN_TIMESTAMP_MODE: none"
 
-if rg --quiet --fixed-strings "security add-trusted-cert -d" "$workflow"; then
-    print -u2 "The release workflow must not require interactive admin trust authorization."
+if rg --quiet --fixed-strings "security add-trusted-cert" "$workflow"; then
+    print -u2 "The release workflow must not require interactive trust authorization."
     exit 1
 fi
 

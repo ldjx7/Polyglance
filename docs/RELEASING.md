@@ -28,6 +28,8 @@ GitHub Actions 在推送 `vX.Y.Z` 格式的 tag 时启动，并先验证该 tag 
 
 自签名版本仍未获得 Apple 公共信任，因此不改变首次下载时的 Gatekeeper 行为。它的作用是稳定更新前后的代码身份，使首次迁移并重新授权后的后续版本能够满足同一个 TCC Designated Requirement。
 
+CI 不会把该证书加入 macOS 信任域，因为 `security add-trusted-cert` 会要求图形化管理员确认，无法在 GitHub runner 中安全自动化。代码签名私钥通过临时钥匙串 ACL 只授权给系统 `codesign`/`security` 工具；证书指纹和产物签名要求仍会在构建中验证。
+
 更新签名私钥缺失时工作流会直接失败，不会发布无法验证的更新。
 
 ## 用户安装说明（未公证版本）

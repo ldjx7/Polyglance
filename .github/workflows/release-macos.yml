@@ -68,7 +68,6 @@ jobs:
             exit 1
           fi
           certificate_path="$RUNNER_TEMP/polyglance-certificate.p12"
-          certificate_pem="$RUNNER_TEMP/polyglance-certificate.pem"
           keychain_path="$RUNNER_TEMP/polyglance-signing.keychain-db"
           printf '%s' "$CERTIFICATE_P12" | base64 -D > "$certificate_path"
           chmod 600 "$certificate_path"
@@ -84,10 +83,6 @@ jobs:
             -k "$keychain_path"
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$keychain_path"
           security list-keychain -d user -s "$keychain_path"
-          security find-certificate -c "$SIGNING_IDENTITY" -p "$keychain_path" > "$certificate_pem"
-          # Use the current runner user's trust domain. The admin domain (`-d`)
-          # opens an authorization prompt and hangs an unattended CI runner.
-          security add-trusted-cert -r trustRoot -p codeSign -k "$keychain_path" "$certificate_pem"
 
           expected_sha1="$(tr -d '[:space:]' < config/macos-signing-certificate-sha1.txt)"
           actual_sha1="$(security find-certificate -c "$SIGNING_IDENTITY" -Z "$keychain_path" | awk '/SHA-1 hash:/ { print $3; exit }')"
@@ -95,7 +90,10 @@ jobs:
             echo "The imported signing certificate does not match the pinned public fingerprint." >&2
             exit 1
           fi
-          security find-identity -v -p codesigning "$keychain_path" | grep -F "$SIGNING_IDENTITY"
+          # Do not call add-trusted-cert here: every trust domain requires a
+          # GUI authorization prompt. codesign can use the imported identity
+          # non-interactively via the key partition ACL; Gatekeeper trust is
+          # deliberately outside this free, self-signed distribution model.
           echo "CODESIGN_CERTIFICATE_SHA1=$expected_sha1" >> "$GITHUB_ENV"
 
       - name: Validate the Sparkle signing secret
