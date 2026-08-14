@@ -236,22 +236,39 @@ final class LongScreenshotSessionTests: XCTestCase {
     func testTaskSchedulerFiresPausesResumesAndInvalidates() async throws {
         let scheduler = LongScreenshotTaskScheduler()
         var invocationCount = 0
+        var nextFireExpectation: XCTestExpectation?
         scheduler.schedule(every: 0.01) {
             invocationCount += 1
+            let expectation = nextFireExpectation
+            nextFireExpectation = nil
+            expectation?.fulfill()
         }
 
-        try await Task.sleep(nanoseconds: 40_000_000)
+        let initialFire = expectation(description: "scheduler fires")
+        nextFireExpectation = initialFire
+        await fulfillment(of: [initialFire], timeout: 1)
+
         scheduler.pause()
         let countAtPause = invocationCount
-        try await Task.sleep(nanoseconds: 30_000_000)
+        let pausedFire = expectation(description: "paused scheduler stays idle")
+        pausedFire.isInverted = true
+        nextFireExpectation = pausedFire
+        await fulfillment(of: [pausedFire], timeout: 0.05)
+        nextFireExpectation = nil
         XCTAssertEqual(invocationCount, countAtPause)
 
+        let resumedFire = expectation(description: "scheduler resumes")
+        nextFireExpectation = resumedFire
         scheduler.resume()
-        try await Task.sleep(nanoseconds: 30_000_000)
+        await fulfillment(of: [resumedFire], timeout: 1)
         XCTAssertGreaterThan(invocationCount, countAtPause)
+
         scheduler.invalidate()
         let countAtInvalidation = invocationCount
-        try await Task.sleep(nanoseconds: 30_000_000)
+        let invalidatedFire = expectation(description: "invalidated scheduler stays idle")
+        invalidatedFire.isInverted = true
+        nextFireExpectation = invalidatedFire
+        await fulfillment(of: [invalidatedFire], timeout: 0.05)
         XCTAssertEqual(invocationCount, countAtInvalidation)
     }
 
