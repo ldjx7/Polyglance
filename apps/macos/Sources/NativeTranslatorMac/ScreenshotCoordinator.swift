@@ -208,7 +208,7 @@ enum ScreenshotPreferredAction {
     case screenRecording
 }
 
-private enum ScreenshotError: LocalizedError {
+enum ScreenshotError: LocalizedError {
     case permissionRequired(restartRequired: Bool)
     case screenUnavailable
     case captureFailed(String)
