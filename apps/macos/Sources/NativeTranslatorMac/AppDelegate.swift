@@ -189,9 +189,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch result {
         case let .text(text):
             selectedText = text
-        case .permissionRequested:
-            // macOS presents its Accessibility authorization alert, including
-            // the shortcut to the correct Privacy & Security pane.
+        case .permissionRequired:
+            operationErrorPresenter.present(.accessibilityPermissionRequired())
             return
         case .noSelection:
             if !Task.isCancelled {

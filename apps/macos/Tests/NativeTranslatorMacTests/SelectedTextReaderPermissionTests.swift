@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class SelectedTextReaderPermissionTests: XCTestCase {
-    func testMissingAccessibilityPermissionRequestsTheSystemPromptImmediately() async {
+    func testMissingAccessibilityPermissionDoesNotOpenSystemSettingsAutomatically() async {
         var requestCount = 0
         let reader = SelectedTextReader(
             accessibilityTrustCheck: { false },
@@ -12,7 +12,19 @@ final class SelectedTextReaderPermissionTests: XCTestCase {
 
         let result = await reader.read()
 
-        XCTAssertEqual(result, .permissionRequested)
+        XCTAssertEqual(result, .permissionRequired)
+        XCTAssertEqual(requestCount, 0)
+    }
+
+    func testExplicitAccessibilityPermissionRequestStillUsesTheSystemPrompt() {
+        var requestCount = 0
+        let reader = SelectedTextReader(
+            accessibilityTrustCheck: { false },
+            accessibilityPermissionRequest: { requestCount += 1 }
+        )
+
+        reader.requestAccessibilityPermission()
+
         XCTAssertEqual(requestCount, 1)
     }
 

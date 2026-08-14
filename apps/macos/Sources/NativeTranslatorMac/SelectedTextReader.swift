@@ -5,7 +5,7 @@ import NativeTranslatorMacKit
 enum SelectedTextReadResult: Equatable {
     case text(String)
     case noSelection
-    case permissionRequested
+    case permissionRequired
 }
 
 @MainActor
@@ -32,8 +32,7 @@ struct SelectedTextReader {
 
     func read() async -> SelectedTextReadResult {
         guard accessibilityTrustCheck() else {
-            accessibilityPermissionRequest()
-            return .permissionRequested
+            return .permissionRequired
         }
         let pipeline = SelectionCapturePipeline(
             directReader: directReaderOverride ?? readAccessibilitySelection,
