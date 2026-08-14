@@ -490,13 +490,11 @@ final class OCRSelectionResultView: NSView {
         contextualActions.layer?.cornerRadius = 8
         contextualActions.layer?.masksToBounds = true
         contextualActions.isHidden = true
-        let contextualStack = NSStackView(views: [copySelectionButton, translateButton])
-        contextualStack.orientation = .horizontal
-        contextualStack.alignment = .centerY
-        contextualStack.spacing = 6
-        contextualStack.frame = CGRect(x: 6, y: 4, width: 156, height: 28)
-        contextualStack.autoresizingMask = [.width, .height]
-        contextualActions.addSubview(contextualStack)
+        // Keep the contextual action buttons under our own layout control.
+        // NSStackView's deferred intrinsic-size layout can leave the two button
+        // frames overlapping briefly on headless GitHub macOS runners.
+        contextualActions.addSubview(copySelectionButton)
+        contextualActions.addSubview(translateButton)
         addSubview(contextualActions)
         addSubview(annotationEditor)
 
@@ -543,6 +541,27 @@ final class OCRSelectionResultView: NSView {
             y: 10,
             width: 168,
             height: 36
+        )
+        let horizontalPadding: CGFloat = 6
+        let verticalPadding: CGFloat = 4
+        let buttonSpacing: CGFloat = 6
+        let availableWidth = max(
+            0,
+            contextualActions.bounds.width - horizontalPadding * 2 - buttonSpacing
+        )
+        let buttonWidth = availableWidth / 2
+        let buttonHeight = max(0, contextualActions.bounds.height - verticalPadding * 2)
+        copySelectionButton.frame = CGRect(
+            x: horizontalPadding,
+            y: verticalPadding,
+            width: buttonWidth,
+            height: buttonHeight
+        )
+        translateButton.frame = CGRect(
+            x: horizontalPadding + buttonWidth + buttonSpacing,
+            y: verticalPadding,
+            width: buttonWidth,
+            height: buttonHeight
         )
     }
 
