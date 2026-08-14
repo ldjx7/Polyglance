@@ -17,6 +17,12 @@ jobs:
     name: Build, sign, and publish Polyglance
     runs-on: macos-15
     timeout-minutes: 45
+    env:
+      HAS_DEVELOPER_ID_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12 != '' }}
+      HAS_DEVELOPER_ID_IDENTITY: ${{ secrets.DEVELOPER_ID_APPLICATION != '' }}
+      HAS_NOTARIZATION_APPLE_ID: ${{ secrets.APPLE_ID != '' }}
+      HAS_NOTARIZATION_TEAM_ID: ${{ secrets.APPLE_TEAM_ID != '' }}
+      HAS_NOTARIZATION_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD != '' }}
 
     steps:
       - name: Check out the tagged commit
@@ -47,7 +53,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Import the optional Developer ID certificate
-        if: ${{ secrets.MACOS_CERTIFICATE_P12 != '' }}
+        if: env.HAS_DEVELOPER_ID_CERTIFICATE == 'true'
         shell: bash
         env:
           CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
@@ -116,7 +122,7 @@ jobs:
           ./scripts/build-macos-app.sh --preserve-permissions
 
       - name: Notarize the optional Developer ID build
-        if: ${{ secrets.DEVELOPER_ID_APPLICATION != '' && secrets.APPLE_ID != '' && secrets.APPLE_TEAM_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' }}
+        if: env.HAS_DEVELOPER_ID_IDENTITY == 'true' && env.HAS_NOTARIZATION_APPLE_ID == 'true' && env.HAS_NOTARIZATION_TEAM_ID == 'true' && env.HAS_NOTARIZATION_PASSWORD == 'true'
         shell: bash
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
