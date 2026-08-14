@@ -198,7 +198,8 @@ else
         print -u2 "The persistent code-signing requirement expects io.polyglance.macos."
         exit 1
     fi
-    codesign_requirement="designated => identifier \"$bundle_identifier\" and certificate leaf = H\"$codesign_certificate_sha1\""
+    codesign_requirement_expression="identifier \"$bundle_identifier\" and certificate leaf = H\"$codesign_certificate_sha1\""
+    codesign_requirement="designated => $codesign_requirement_expression"
 
     # Sign nested code first with its own synthesized requirements, then
     # re-sign only the outer app with the stable TCC identity requirement.
@@ -207,7 +208,7 @@ else
         --requirements "=$codesign_requirement" \
         "$app_bundle"
     codesign --verify --deep --strict --verbose=2 "$app_bundle"
-    codesign --verify --strict -R "=$codesign_requirement" "$app_bundle"
+    codesign --verify --strict -R "=$codesign_requirement_expression" "$app_bundle"
 fi
 
 if $should_reset_permissions; then
