@@ -36,7 +36,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onScreenRecording: { [weak self] screenFrame in
             guard let self else { return }
             try await screenRecordingCoordinator.start(region: screenFrame)
+        },
+        onScreenTranslate: { [weak self] screenshot in
+            guard let self else { return }
+            screenTranslationCoordinator.begin(with: screenshot)
         }
+    )
+    private lazy var screenTranslationCoordinator = ScreenTranslationCoordinator(
+        translationClient: translationClient,
+        configurationStore: configurationStore,
+        errorPresenter: operationErrorPresenter
     )
     private lazy var longScreenshotCoordinator = LongScreenshotCoordinator(
         pinWindowManager: pinWindowManager
@@ -80,6 +89,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKeyManager.onRestoreMostRecentPin = { [weak self] in
             self?.restoreMostRecentPin()
         }
+        hotKeyManager.onScreenTranslation = { [weak self] in
+            self?.captureScreenTranslation()
+        }
         do {
             shortcutConfiguration = shortcutStore.load()
             try hotKeyManager.register(shortcutConfiguration)
@@ -117,6 +129,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func captureLongScreenshot() {
         captureScreenshot(preferredAction: .longScreenshot)
+    }
+
+    func captureScreenTranslation() {
+        captureScreenshot(preferredAction: .screenTranslation)
     }
 
     func captureScreenRecordingRegion() {

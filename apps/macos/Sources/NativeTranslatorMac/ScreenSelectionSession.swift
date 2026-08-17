@@ -15,6 +15,7 @@ enum ScreenshotSelectionAction {
     case ocrTranslate(SelectedScreenshot)
     case longScreenshot(SelectedScreenshot)
     case screenRecording(SelectedScreenshot)
+    case screenTranslation(SelectedScreenshot)
 }
 
 enum ScreenshotCursorMode: Equatable {
@@ -1301,6 +1302,8 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
                 onAction?(.longScreenshot(result))
             case .screenRecording:
                 onAction?(.screenRecording(result))
+            case .screenTranslation:
+                onAction?(.screenTranslation(result))
             }
             return
         }

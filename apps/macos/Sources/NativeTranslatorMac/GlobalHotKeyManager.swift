@@ -11,6 +11,7 @@ final class GlobalHotKeyManager {
     var onLongScreenshot: (() -> Void)?
     var onScreenRecording: (() -> Void)?
     var onRestoreMostRecentPin: (() -> Void)?
+    var onScreenTranslation: (() -> Void)?
 
     private var eventHandler: EventHandlerRef?
     private var hotKeys: [EventHotKeyRef] = []
@@ -140,6 +141,8 @@ final class GlobalHotKeyManager {
             onScreenRecording?()
         case .restoreMostRecentPin:
             onRestoreMostRecentPin?()
+        case .screenTranslation:
+            onScreenTranslation?()
         }
     }
 

@@ -18,6 +18,7 @@ final class ScreenshotCoordinator {
     private let onOCRTranslate: @MainActor (SelectedScreenshot, String) async throws -> Void
     private let onLongScreenshot: @MainActor (CGRect) async throws -> Void
     private let onScreenRecording: @MainActor (CGRect) async throws -> Void
+    private let onScreenTranslate: @MainActor (SelectedScreenshot) async throws -> Void
     private var selectionSession: ScreenSelectionSession?
     private var isCapturing = false
 
@@ -26,7 +27,8 @@ final class ScreenshotCoordinator {
         ocrService: OCRService = OCRService(),
         onOCRTranslate: @escaping @MainActor (SelectedScreenshot, String) async throws -> Void = { _, _ in },
         onLongScreenshot: @escaping @MainActor (CGRect) async throws -> Void = { _ in },
-        onScreenRecording: @escaping @MainActor (CGRect) async throws -> Void = { _ in }
+        onScreenRecording: @escaping @MainActor (CGRect) async throws -> Void = { _ in },
+        onScreenTranslate: @escaping @MainActor (SelectedScreenshot) async throws -> Void = { _ in }
     ) {
         self.pinWindowManager = pinWindowManager
         fileSaver = ScreenshotFileSaver()
@@ -34,6 +36,7 @@ final class ScreenshotCoordinator {
         self.onOCRTranslate = onOCRTranslate
         self.onLongScreenshot = onLongScreenshot
         self.onScreenRecording = onScreenRecording
+        self.onScreenTranslate = onScreenTranslate
     }
 
     init(pinWindowManager: PinWindowManager, fileSaver: ScreenshotFileSaver) {
@@ -43,6 +46,7 @@ final class ScreenshotCoordinator {
         onOCRTranslate = { _, _ in }
         onLongScreenshot = { _ in }
         onScreenRecording = { _ in }
+        onScreenTranslate = { _ in }
     }
 
     func captureAndPin(preferredAction: ScreenshotPreferredAction? = nil) async throws {
@@ -91,6 +95,8 @@ final class ScreenshotCoordinator {
             try await onLongScreenshot(result.screenFrame)
         case let .screenRecording(result):
             try await onScreenRecording(result.screenFrame)
+        case let .screenTranslation(result):
+            try await onScreenTranslate(result)
         }
     }
 
@@ -206,6 +212,7 @@ final class ScreenshotCoordinator {
 enum ScreenshotPreferredAction {
     case longScreenshot
     case screenRecording
+    case screenTranslation
 }
 
 enum ScreenshotError: LocalizedError {

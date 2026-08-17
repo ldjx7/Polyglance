@@ -68,6 +68,13 @@ struct OperationErrorPresentation: Equatable {
             message: error.localizedDescription
         )
     }
+
+    static func screenTranslation(_ error: Error) -> Self {
+        Self(
+            title: "无法完成截屏翻译",
+            message: error.localizedDescription
+        )
+    }
 }
 
 @MainActor

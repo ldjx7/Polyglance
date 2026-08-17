@@ -34,6 +34,7 @@ public enum GlobalShortcutAction: String, Codable, CaseIterable, Sendable {
     case longScreenshot
     case screenRecording
     case restoreMostRecentPin
+    case screenTranslation
 
     public var title: String {
         switch self {
@@ -51,6 +52,8 @@ public enum GlobalShortcutAction: String, Codable, CaseIterable, Sendable {
             return "区域录屏"
         case .restoreMostRecentPin:
             return "恢复最近关闭的贴图"
+        case .screenTranslation:
+            return "截屏翻译"
         }
     }
 
@@ -63,6 +66,7 @@ public enum GlobalShortcutAction: String, Codable, CaseIterable, Sendable {
         case .longScreenshot: return 5
         case .screenRecording: return 6
         case .restoreMostRecentPin: return 7
+        case .screenTranslation: return 8
         }
     }
 }
@@ -75,6 +79,7 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
     public var longScreenshot: RecordedShortcut
     public var screenRecording: RecordedShortcut
     public var restoreMostRecentPin: RecordedShortcut
+    public var screenTranslation: RecordedShortcut
 
     public init(
         translateSelection: RecordedShortcut,
@@ -83,7 +88,8 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
         pinClipboardImage: RecordedShortcut,
         longScreenshot: RecordedShortcut,
         screenRecording: RecordedShortcut,
-        restoreMostRecentPin: RecordedShortcut
+        restoreMostRecentPin: RecordedShortcut,
+        screenTranslation: RecordedShortcut
     ) {
         self.translateSelection = translateSelection
         self.captureSelection = captureSelection
@@ -92,6 +98,7 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
         self.longScreenshot = longScreenshot
         self.screenRecording = screenRecording
         self.restoreMostRecentPin = restoreMostRecentPin
+        self.screenTranslation = screenTranslation
     }
 
     public static let `default` = GlobalShortcutConfiguration(
@@ -101,7 +108,8 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
         pinClipboardImage: RecordedShortcut(keyCode: 19, modifiers: [.option]),
         longScreenshot: RecordedShortcut(keyCode: 20, modifiers: [.option]),
         screenRecording: RecordedShortcut(keyCode: 21, modifiers: [.option]),
-        restoreMostRecentPin: RecordedShortcut(keyCode: 23, modifiers: [.option])
+        restoreMostRecentPin: RecordedShortcut(keyCode: 23, modifiers: [.option]),
+        screenTranslation: RecordedShortcut(keyCode: 22, modifiers: [.option])
     )
 
     public subscript(action: GlobalShortcutAction) -> RecordedShortcut {
@@ -114,6 +122,7 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
             case .longScreenshot: return longScreenshot
             case .screenRecording: return screenRecording
             case .restoreMostRecentPin: return restoreMostRecentPin
+            case .screenTranslation: return screenTranslation
             }
         }
         set {
@@ -125,6 +134,7 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
             case .longScreenshot: longScreenshot = newValue
             case .screenRecording: screenRecording = newValue
             case .restoreMostRecentPin: restoreMostRecentPin = newValue
+            case .screenTranslation: screenTranslation = newValue
             }
         }
     }
@@ -141,6 +151,7 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
         case longScreenshot
         case screenRecording
         case restoreMostRecentPin
+        case screenTranslation
     }
 
     public init(from decoder: Decoder) throws {
@@ -161,6 +172,10 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
             RecordedShortcut.self,
             forKey: .restoreMostRecentPin
         ) ?? Self.default.restoreMostRecentPin
+        screenTranslation = try container.decodeIfPresent(
+            RecordedShortcut.self,
+            forKey: .screenTranslation
+        ) ?? Self.default.screenTranslation
     }
 
     public func validate() throws {
