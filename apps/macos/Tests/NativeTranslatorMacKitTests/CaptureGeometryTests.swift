@@ -105,7 +105,7 @@ final class CaptureGeometryTests: XCTestCase {
             bounds: CGRect(x: 0, y: 0, width: 320, height: 200)
         )
 
-        XCTAssertEqual(origin, CGPoint(x: 20, y: 58))
+        XCTAssertEqual(origin, CGPoint(x: 8, y: 58))
     }
 
     func testToolbarSizeFitsNarrowScreenWithoutChangingPreferredHeight() {

@@ -19,6 +19,10 @@ struct NativeTranslatorMacApp: App {
                 appDelegate.captureScreenRecordingRegion()
             }
 
+            Button("截屏翻译") {
+                appDelegate.captureScreenTranslation()
+            }
+
             Button("贴出剪贴板图片") {
                 appDelegate.pinClipboardImage()
             }

@@ -162,7 +162,10 @@ public enum CaptureGeometry {
         edgeInset: CGFloat = 8
     ) -> CGPoint {
         let maximumX = max(bounds.minX + edgeInset, bounds.maxX - toolbarSize.width - edgeInset)
-        let x = min(max(selection.minX, bounds.minX + edgeInset), maximumX)
+        let x = min(
+            max(selection.maxX - toolbarSize.width, bounds.minX + edgeInset),
+            maximumX
+        )
         let belowY = selection.minY - toolbarSize.height - spacing
         let y: CGFloat
         if belowY >= bounds.minY + edgeInset {

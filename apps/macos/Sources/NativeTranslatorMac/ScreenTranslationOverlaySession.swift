@@ -304,6 +304,31 @@ final class ScreenTranslationOverlayView: NSView {
     }
 }
 
+final class ScreenTranslationCompareView: NSView {
+    var image: NSImage? {
+        didSet { needsDisplay = true }
+    }
+
+    var paragraphs: [ScreenTranslationRenderedParagraph] = [] {
+        didSet { needsDisplay = true }
+    }
+
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        ScreenTranslationRenderer.drawContent(
+            image: image,
+            paragraphs: paragraphs,
+            showsTranslation: true,
+            in: bounds
+        )
+        NSColor(srgbRed: 0.97, green: 0.35, blue: 0.35, alpha: 0.85).setStroke()
+        let border = NSBezierPath(rect: bounds.insetBy(dx: 0.5, dy: 0.5))
+        border.lineWidth = 1
+        border.stroke()
+    }
+}
+
 @MainActor
 final class ScreenTranslationOverlaySession {
     struct LanguageOption {
@@ -328,6 +353,8 @@ final class ScreenTranslationOverlaySession {
 
     let panel: ScreenTranslationOverlayPanel
     private let toolbarPanel: NSPanel
+    private let comparePanel: NSPanel
+    private let compareView = ScreenTranslationCompareView(frame: .zero)
     private let overlayView: ScreenTranslationOverlayView
     private let progressIndicator = NSProgressIndicator()
     private let sourcePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -402,6 +429,21 @@ final class ScreenTranslationOverlaySession {
         toolbarPanel.hasShadow = true
         toolbarPanel.appearance = NSAppearance(named: .darkAqua)
 
+        comparePanel = NSPanel(
+            contentRect: .zero,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        comparePanel.level = .floating
+        comparePanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        comparePanel.isReleasedWhenClosed = false
+        comparePanel.hidesOnDeactivate = false
+        comparePanel.backgroundColor = .clear
+        comparePanel.isOpaque = false
+        comparePanel.hasShadow = true
+        comparePanel.contentView = compareView
+
         configureProgressIndicator()
         configureToolbar()
         configureActions()
@@ -427,6 +469,7 @@ final class ScreenTranslationOverlaySession {
         hasTranslation = false
         overlayView.paragraphs = []
         overlayView.showsTranslation = false
+        comparePanel.orderOut(nil)
         progressIndicator.isHidden = false
         progressIndicator.startAnimation(nil)
         updateControlAvailability()
@@ -436,6 +479,7 @@ final class ScreenTranslationOverlaySession {
         overlayView.image = image
         overlayView.paragraphs = []
         overlayView.showsTranslation = false
+        comparePanel.orderOut(nil)
     }
 
     func showTranslation(
@@ -449,15 +493,18 @@ final class ScreenTranslationOverlaySession {
         hasTranslation = true
         overlayView.image = image
         overlayView.paragraphs = paragraphs
-        overlayView.showsTranslation = compareSwitch.state == .on
+        compareView.image = image
+        compareView.paragraphs = paragraphs
         progressIndicator.stopAnimation(nil)
         progressIndicator.isHidden = true
         updateControlAvailability()
+        updatePresentation()
     }
 
     func hideForRecapture() {
         panel.orderOut(nil)
         toolbarPanel.orderOut(nil)
+        comparePanel.orderOut(nil)
     }
 
     func showAfterRecapture() {
@@ -471,6 +518,7 @@ final class ScreenTranslationOverlaySession {
             self.keyMonitor = nil
         }
         progressIndicator.stopAnimation(nil)
+        comparePanel.orderOut(nil)
         toolbarPanel.orderOut(nil)
         panel.orderOut(nil)
     }
@@ -484,16 +532,25 @@ final class ScreenTranslationOverlaySession {
 
     private static func makeButton(symbol: String, tooltip: String) -> NSButton {
         let button = NSButton(title: "", target: nil, action: nil)
-        button.bezelStyle = .toolbar
-        button.setButtonType(.momentaryPushIn)
-        button.controlSize = .regular
+        button.isBordered = false
+        button.setButtonType(.momentaryChange)
+        let configuration = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
         button.image = NSImage(
             systemSymbolName: symbol,
             accessibilityDescription: tooltip
-        )
+        )?.withSymbolConfiguration(configuration)
+        button.contentTintColor = .white
         button.toolTip = tooltip
         button.setAccessibilityLabel(tooltip)
         return button
+    }
+
+    private static func makeSeparator() -> NSBox {
+        let box = NSBox()
+        box.boxType = .separator
+        box.translatesAutoresizingMaskIntoConstraints = false
+        box.heightAnchor.constraint(equalToConstant: 16).isActive = true
+        return box
     }
 
     private func configureProgressIndicator() {
@@ -524,35 +581,40 @@ final class ScreenTranslationOverlaySession {
         }
         for popUp in [sourcePopUp, targetPopUp] {
             popUp.controlSize = .small
-            popUp.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+            popUp.isBordered = false
+            popUp.font = NSFont.systemFont(ofSize: 12, weight: .medium)
         }
         swapButton.controlSize = .small
-        compareSwitch.controlSize = .small
-        compareSwitch.state = .on
+        compareSwitch.controlSize = .mini
+        compareSwitch.state = .off
 
         let compareLabel = NSTextField(labelWithString: "对照")
-        compareLabel.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
-        compareLabel.textColor = .labelColor
+        compareLabel.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        compareLabel.textColor = .white
 
         let stack = NSStackView(views: [
             sourcePopUp,
             swapButton,
             targetPopUp,
+            Self.makeSeparator(),
             compareLabel,
             compareSwitch,
+            Self.makeSeparator(),
             copyTranslationButton,
             extractTextButton,
             reselectButton,
             pinButton,
             refreshButton,
+            Self.makeSeparator(),
             closeButton,
         ])
         stack.orientation = .horizontal
-        stack.spacing = 4
-        stack.setCustomSpacing(8, after: targetPopUp)
-        stack.setCustomSpacing(2, after: compareLabel)
-        stack.setCustomSpacing(8, after: compareSwitch)
-        stack.edgeInsets = NSEdgeInsets(top: 5, left: 8, bottom: 5, right: 8)
+        stack.alignment = .centerY
+        stack.spacing = 10
+        stack.setCustomSpacing(2, after: sourcePopUp)
+        stack.setCustomSpacing(2, after: swapButton)
+        stack.setCustomSpacing(5, after: compareLabel)
+        stack.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         let background = NSVisualEffectView()
@@ -560,7 +622,7 @@ final class ScreenTranslationOverlaySession {
         background.state = .active
         background.blendingMode = .behindWindow
         background.wantsLayer = true
-        background.layer?.cornerRadius = 9
+        background.layer?.cornerRadius = 10
         background.layer?.masksToBounds = true
         background.addSubview(stack)
         NSLayoutConstraint.activate([
@@ -620,7 +682,7 @@ final class ScreenTranslationOverlaySession {
             let startRegion = dragStartRegion
             self.dragStartRegion = nil
             guard startRegion != region else {
-                overlayView.showsTranslation = hasTranslation && compareSwitch.state == .on
+                updatePresentation()
                 return
             }
             onRegionChanged?(region)
@@ -780,7 +842,43 @@ final class ScreenTranslationOverlaySession {
     }
 
     @objc private func compareSwitchChanged() {
-        overlayView.showsTranslation = hasTranslation && compareSwitch.state == .on
+        updatePresentation()
+    }
+
+    private func updatePresentation() {
+        guard hasTranslation else {
+            overlayView.showsTranslation = false
+            comparePanel.orderOut(nil)
+            return
+        }
+        let comparing = compareSwitch.state == .on
+        overlayView.showsTranslation = !comparing
+        if comparing {
+            positionComparePanel()
+            comparePanel.orderFrontRegardless()
+        } else {
+            comparePanel.orderOut(nil)
+        }
+    }
+
+    private func positionComparePanel() {
+        let gap: CGFloat = 8
+        let visibleFrame = targetScreen()?.visibleFrame ?? screenBounds
+        var origin = CGPoint(x: region.minX, y: region.maxY + gap)
+        if origin.y + region.height > visibleFrame.maxY {
+            let toolbarBottom = toolbarPanel.isVisible
+                ? min(region.minY, toolbarPanel.frame.minY)
+                : region.minY
+            origin.y = max(visibleFrame.minY, toolbarBottom - gap - region.height)
+        }
+        origin.x = min(
+            max(origin.x, visibleFrame.minX),
+            max(visibleFrame.minX, visibleFrame.maxX - region.width)
+        )
+        comparePanel.setFrame(
+            CGRect(origin: origin, size: region.size),
+            display: true
+        )
     }
 
     @objc private func copyTranslation() {
@@ -801,7 +899,7 @@ final class ScreenTranslationOverlaySession {
               let exported = ScreenTranslationRenderer.exportImage(
                   image: overlayView.image,
                   paragraphs: overlayView.paragraphs,
-                  showsTranslation: compareSwitch.state == .on,
+                  showsTranslation: true,
                   size: region.size,
                   scale: panel.backingScaleFactor
               ) else {
