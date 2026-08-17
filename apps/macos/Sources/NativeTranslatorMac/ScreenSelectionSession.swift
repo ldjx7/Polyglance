@@ -15,7 +15,7 @@ enum ScreenshotSelectionAction {
     case ocrTranslate(SelectedScreenshot)
     case longScreenshot(SelectedScreenshot)
     case screenRecording(SelectedScreenshot)
-    case screenTranslation(SelectedScreenshot)
+    case screenTranslation(ScreenTranslationSelection)
 }
 
 enum ScreenshotCursorMode: Equatable {
@@ -1296,16 +1296,33 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         hoveredCandidate = nil
         capturePhase = .selected(clippedSelection)
         hideMagnifier()
-        if let preferredAction, let result = makeSelectedScreenshot() {
+        if let preferredAction {
             switch preferredAction {
             case .longScreenshot:
-                onAction?(.longScreenshot(result))
+                if let result = makeSelectedScreenshot() {
+                    onAction?(.longScreenshot(result))
+                    return
+                }
             case .screenRecording:
-                onAction?(.screenRecording(result))
+                if let result = makeSelectedScreenshot() {
+                    onAction?(.screenRecording(result))
+                    return
+                }
             case .screenTranslation:
-                onAction?(.screenTranslation(result))
+                onAction?(.screenTranslation(ScreenTranslationSelection(
+                    capture: ScreenTranslationCapture(
+                        fullImage: capturedImage,
+                        screenFrame: targetScreen.frame
+                    ),
+                    selection: CGRect(
+                        x: targetScreen.frame.minX + clippedSelection.minX,
+                        y: targetScreen.frame.minY + clippedSelection.minY,
+                        width: clippedSelection.width,
+                        height: clippedSelection.height
+                    )
+                )))
+                return
             }
-            return
         }
         resetAnnotationControls()
         showToolbar(for: clippedSelection)

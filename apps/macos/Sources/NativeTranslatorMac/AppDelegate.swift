@@ -37,15 +37,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             try await screenRecordingCoordinator.start(region: screenFrame)
         },
-        onScreenTranslate: { [weak self] screenshot in
+        onScreenTranslate: { [weak self] selection in
             guard let self else { return }
-            screenTranslationCoordinator.begin(with: screenshot)
+            screenTranslationCoordinator.begin(
+                with: selection.capture,
+                selection: selection.selection
+            )
         }
     )
     private lazy var screenTranslationCoordinator = ScreenTranslationCoordinator(
         translationClient: translationClient,
         configurationStore: configurationStore,
-        errorPresenter: operationErrorPresenter
+        errorPresenter: operationErrorPresenter,
+        pinWindowManager: pinWindowManager,
+        onReselect: { [weak self] in
+            self?.captureScreenTranslation()
+        }
     )
     private lazy var longScreenshotCoordinator = LongScreenshotCoordinator(
         pinWindowManager: pinWindowManager

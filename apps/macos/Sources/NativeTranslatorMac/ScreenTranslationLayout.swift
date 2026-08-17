@@ -149,4 +149,80 @@ enum ScreenTranslationColorSampler {
     static func luminance(red: CGFloat, green: CGFloat, blue: CGFloat) -> CGFloat {
         0.299 * red + 0.587 * green + 0.114 * blue
     }
+
+    static func dominantTextColor(
+        of image: CGImage,
+        inNormalizedRect normalizedRect: CGRect,
+        background: (red: CGFloat, green: CGFloat, blue: CGFloat)
+    ) -> (red: CGFloat, green: CGFloat, blue: CGFloat)? {
+        let width = CGFloat(image.width)
+        let height = CGFloat(image.height)
+        guard width > 0, height > 0 else {
+            return nil
+        }
+        let box = normalizedRect.standardized
+        let pixelRect = CGRect(
+            x: box.minX * width,
+            y: (1 - box.maxY) * height,
+            width: box.width * width,
+            height: box.height * height
+        ).intersection(CGRect(x: 0, y: 0, width: width, height: height))
+        guard pixelRect.width >= 2, pixelRect.height >= 2,
+              let cropped = image.cropping(to: pixelRect),
+              let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
+            return nil
+        }
+
+        let sampleWidth = Int(min(48, pixelRect.width))
+        let sampleHeight = Int(min(48, pixelRect.height))
+        var pixels = [UInt8](repeating: 0, count: sampleWidth * sampleHeight * 4)
+        guard let context = CGContext(
+            data: &pixels,
+            width: sampleWidth,
+            height: sampleHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: sampleWidth * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
+        }
+        context.interpolationQuality = .medium
+        context.draw(cropped, in: CGRect(x: 0, y: 0, width: sampleWidth, height: sampleHeight))
+
+        var sumRed: CGFloat = 0
+        var sumGreen: CGFloat = 0
+        var sumBlue: CGFloat = 0
+        var count = 0
+        for pixelIndex in stride(from: 0, to: pixels.count, by: 4) {
+            let alpha = CGFloat(pixels[pixelIndex + 3])
+            guard alpha > 0 else {
+                continue
+            }
+            let red = CGFloat(pixels[pixelIndex]) / alpha
+            let green = CGFloat(pixels[pixelIndex + 1]) / alpha
+            let blue = CGFloat(pixels[pixelIndex + 2]) / alpha
+            let deltaRed = red - background.red
+            let deltaGreen = green - background.green
+            let deltaBlue = blue - background.blue
+            let distance = deltaRed * deltaRed
+                + deltaGreen * deltaGreen
+                + deltaBlue * deltaBlue
+            if distance > 0.06 {
+                sumRed += red
+                sumGreen += green
+                sumBlue += blue
+                count += 1
+            }
+        }
+        let totalSamples = sampleWidth * sampleHeight
+        guard count >= max(4, totalSamples / 60) else {
+            return nil
+        }
+        return (
+            red: sumRed / CGFloat(count),
+            green: sumGreen / CGFloat(count),
+            blue: sumBlue / CGFloat(count)
+        )
+    }
 }

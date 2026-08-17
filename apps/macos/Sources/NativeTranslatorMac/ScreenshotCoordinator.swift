@@ -18,7 +18,7 @@ final class ScreenshotCoordinator {
     private let onOCRTranslate: @MainActor (SelectedScreenshot, String) async throws -> Void
     private let onLongScreenshot: @MainActor (CGRect) async throws -> Void
     private let onScreenRecording: @MainActor (CGRect) async throws -> Void
-    private let onScreenTranslate: @MainActor (SelectedScreenshot) async throws -> Void
+    private let onScreenTranslate: @MainActor (ScreenTranslationSelection) async throws -> Void
     private var selectionSession: ScreenSelectionSession?
     private var isCapturing = false
 
@@ -28,7 +28,7 @@ final class ScreenshotCoordinator {
         onOCRTranslate: @escaping @MainActor (SelectedScreenshot, String) async throws -> Void = { _, _ in },
         onLongScreenshot: @escaping @MainActor (CGRect) async throws -> Void = { _ in },
         onScreenRecording: @escaping @MainActor (CGRect) async throws -> Void = { _ in },
-        onScreenTranslate: @escaping @MainActor (SelectedScreenshot) async throws -> Void = { _ in }
+        onScreenTranslate: @escaping @MainActor (ScreenTranslationSelection) async throws -> Void = { _ in }
     ) {
         self.pinWindowManager = pinWindowManager
         fileSaver = ScreenshotFileSaver()
