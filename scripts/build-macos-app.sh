@@ -178,7 +178,7 @@ else
     fi
 
     codesign_timestamp_mode="${CODESIGN_TIMESTAMP_MODE:-secure}"
-    codesign_arguments=(--force --sign "$codesign_identity" --options runtime)
+    codesign_arguments=(--force --sign "$codesign_identity")
     case "$codesign_timestamp_mode" in
         none)
             ;;
