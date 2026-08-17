@@ -35,20 +35,43 @@ enum ScreenTranslationRenderer {
         image: NSImage?,
         paragraphs: [ScreenTranslationRenderedParagraph],
         showsTranslation: Bool,
-        size: CGSize
+        size: CGSize,
+        scale: CGFloat
     ) -> NSImage? {
         guard size.width > 0, size.height > 0 else {
             return nil
         }
+        let flippedContent = NSImage(size: size, flipped: true) { rect in
+            drawContent(
+                image: image,
+                paragraphs: paragraphs,
+                showsTranslation: showsTranslation,
+                in: rect
+            )
+            return true
+        }
+        let pixelScale = max(1, scale)
+        guard let representation = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(size.width * pixelScale),
+            pixelsHigh: Int(size.height * pixelScale),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .calibratedRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            return nil
+        }
+        representation.size = size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: representation)
+        flippedContent.draw(in: CGRect(origin: .zero, size: size))
+        NSGraphicsContext.restoreGraphicsState()
         let exported = NSImage(size: size)
-        exported.lockFocusFlipped(true)
-        drawContent(
-            image: image,
-            paragraphs: paragraphs,
-            showsTranslation: showsTranslation,
-            in: CGRect(origin: .zero, size: size)
-        )
-        exported.unlockFocus()
+        exported.addRepresentation(representation)
         return exported
     }
 
@@ -163,6 +186,8 @@ final class ScreenTranslationOverlayView: NSView {
     private var dragStartLocation: CGPoint = .zero
 
     override var isFlipped: Bool { true }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     private var contentRect: CGRect {
         bounds.insetBy(dx: Self.contentMargin, dy: Self.contentMargin)
@@ -777,7 +802,8 @@ final class ScreenTranslationOverlaySession {
                   image: overlayView.image,
                   paragraphs: overlayView.paragraphs,
                   showsTranslation: compareSwitch.state == .on,
-                  size: region.size
+                  size: region.size,
+                  scale: panel.backingScaleFactor
               ) else {
             return
         }
