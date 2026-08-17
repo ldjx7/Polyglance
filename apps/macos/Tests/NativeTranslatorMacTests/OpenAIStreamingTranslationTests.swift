@@ -3,6 +3,16 @@ import XCTest
 import NativeTranslatorMacKit
 
 final class OpenAIStreamingTranslationTests: XCTestCase {
+    func testEmissionPolicyPublishesFirstUpdateThrottlesIntermediateUpdatesAndAlwaysPublishesFinal() {
+        var policy = TranslationStreamEmissionPolicy(minimumInterval: .milliseconds(40))
+
+        XCTAssertTrue(policy.shouldEmit(at: .zero, isFinal: false))
+        XCTAssertFalse(policy.shouldEmit(at: .milliseconds(10), isFinal: false))
+        XCTAssertFalse(policy.shouldEmit(at: .milliseconds(39), isFinal: false))
+        XCTAssertTrue(policy.shouldEmit(at: .milliseconds(40), isFinal: false))
+        XCTAssertTrue(policy.shouldEmit(at: .milliseconds(41), isFinal: true))
+    }
+
     func testParserExtractsContentAndRecognizesCompletion() throws {
         XCTAssertEqual(
             try OpenAIStreamParser.event(from: #"data: {"choices":[{"delta":{"content":"你"}}]}"#),

@@ -1,10 +1,12 @@
-use reqwest::{Client, Url};
+use reqwest::Url;
 use serde::Serialize;
 use serde_json::Value;
 use std::time::{Duration, Instant};
 use translator_core::{LanguageCode, TranslationRequest, TranslationResult};
 
+use crate::SharedHttpClient;
 use crate::openai::{ProviderError, is_loopback_host, map_status_error};
+use crate::shared_http_client;
 
 const DEFAULT_ENDPOINT: &str =
     "https://translate.googleapis.com/translate_a/single?client=gtx&dt=t";
@@ -28,16 +30,13 @@ impl GoogleConfig {
 
 #[derive(Clone)]
 pub struct GoogleProvider {
-    client: Client,
+    client: SharedHttpClient,
     config: GoogleConfig,
 }
 
 impl GoogleProvider {
     pub fn new(config: GoogleConfig) -> Result<Self, ProviderError> {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECONDS))
-            .build()
-            .map_err(|error| ProviderError::Network(error.to_string()))?;
+        let client = shared_http_client()?;
         Ok(Self { client, config })
     }
 
@@ -57,6 +56,7 @@ impl GoogleProvider {
         let response = self
             .client
             .post(self.config.endpoint.clone())
+            .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECONDS))
             .form(&body)
             .send()
             .await

@@ -90,7 +90,8 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
         image: NSImage,
         sourceText: String,
         translatedText: String,
-        sourceFrame: CGRect?
+        sourceFrame: CGRect?,
+        isTranslating: Bool = false
     ) -> NSPanel? {
         guard image.size.width > 0,
               image.size.height > 0,
@@ -136,7 +137,8 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
             frame: CGRect(origin: origin, size: resultCardSize),
             opacity: 1,
             isLocked: false,
-            isAlwaysOnTop: true
+            isAlwaysOnTop: true,
+            isTranslating: isTranslating
         )
     }
 
@@ -252,7 +254,8 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
         frame: CGRect,
         opacity: CGFloat,
         isLocked: Bool,
-        isAlwaysOnTop: Bool
+        isAlwaysOnTop: Bool,
+        isTranslating: Bool = false
     ) -> NSPanel {
         let usableSize = CGSize(
             width: max(frame.width, OCRTranslationPinContentView.minimumResultCardSize.width),
@@ -288,6 +291,7 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
             initialSize: initialSize,
             isLocked: isLocked,
             isAlwaysOnTop: isAlwaysOnTop,
+            isTranslating: isTranslating,
             actions: makeActions(for: panel)
         )
         panel.alphaValue = min(1, max(0.1, opacity.isFinite ? opacity : 1))

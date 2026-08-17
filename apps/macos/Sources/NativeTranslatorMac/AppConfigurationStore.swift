@@ -119,9 +119,9 @@ final class AppConfigurationStore: @unchecked Sendable {
             : ""
         let migratedProvider: TranslationProvider
         if storedProviderName == "my-memory" || storedProviderName == "system" {
-            migratedProvider = .google
+            migratedProvider = .microsoft
         } else {
-            migratedProvider = storedProvider ?? (apiKey.isEmpty ? .google : .openAICompatible)
+            migratedProvider = storedProvider ?? (apiKey.isEmpty ? .microsoft : .openAICompatible)
         }
         return AppConfiguration(
             provider: migratedProvider,

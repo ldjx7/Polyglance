@@ -1,6 +1,6 @@
 import Foundation
 
-public struct AppTranslationRequest: Equatable, Sendable {
+public struct AppTranslationRequest: Equatable, Hashable, Sendable {
     public let text: String
     public let sourceLanguage: String?
     public let targetLanguage: String

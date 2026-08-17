@@ -211,30 +211,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ screenshot: SelectedScreenshot,
         sourceText: String
     ) async throws {
-        let screen = NSScreen.screens.first(where: {
-            $0.frame.intersects(screenshot.screenFrame)
-        }) ?? NSScreen.main
-        let progressPanel = OCRTranslationProgressPanel(
-            message: "正在翻译截图…",
-            sourceFrame: screenshot.screenFrame,
-            visibleFrame: screen?.visibleFrame ?? screenshot.screenFrame
-        )
-        progressPanel.orderFrontRegardless()
-        NSApp.activate(ignoringOtherApps: true)
-        defer { progressPanel.close() }
-
         let configuration = try configurationStore.load()
-        let translatedText = try await OCRScreenshotTranslator(client: translationClient).translate(
-            sourceText: sourceText,
-            targetLanguage: configuration.targetLanguage
-        )
-        guard pinWindowManager.pinTranslation(
+        guard let panel = pinWindowManager.pinTranslation(
             image: screenshot.image,
             sourceText: sourceText,
-            translatedText: translatedText,
-            sourceFrame: screenshot.screenFrame
-        ) != nil else {
+            translatedText: "",
+            sourceFrame: screenshot.screenFrame,
+            isTranslating: true
+        ), let contentView = panel.contentView as? OCRTranslationPinContentView else {
             throw AppCaptureActionError.pinCreationFailed
+        }
+
+        NSApp.activate(ignoringOtherApps: true)
+        do {
+            for try await update in OCRScreenshotTranslator(client: translationClient)
+                .translationUpdates(
+                    sourceText: sourceText,
+                    targetLanguage: configuration.targetLanguage
+                ) {
+                try Task.checkCancellation()
+                contentView.updateTranslation(update.text, isFinal: update.isFinal)
+            }
+        } catch {
+            pinWindowManager.destroyPin(panel)
+            throw error
         }
     }
 

@@ -6,13 +6,16 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
     private let engine: TranslationEngine
     private let configurationStore: AppConfigurationStore
     private let bundledFreeAIConfiguration: BundledFreeAIConfiguration?
+    private let cache: TranslationMemoryCache
 
     init(
         configurationStore: AppConfigurationStore,
-        bundledFreeAIConfiguration: BundledFreeAIConfiguration? = BundledFreeAIConfiguration()
+        bundledFreeAIConfiguration: BundledFreeAIConfiguration? = BundledFreeAIConfiguration(),
+        cache: TranslationMemoryCache = TranslationMemoryCache()
     ) throws {
         self.configurationStore = configurationStore
         self.bundledFreeAIConfiguration = bundledFreeAIConfiguration
+        self.cache = cache
         engine = try TranslationEngine()
     }
 
@@ -51,6 +54,20 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
             region = nil
         }
 
+        let cacheKey = Self.cacheKey(
+            provider: configuration.provider,
+            endpoint: endpoint,
+            model: model,
+            request: request
+        )
+        if let cached = await cache.value(for: cacheKey) {
+            return AppTranslationResult(
+                text: cached.text,
+                provider: cached.provider,
+                elapsedMilliseconds: 0
+            )
+        }
+
         let input = TranslationInput(
             provider: configuration.provider.rawValue,
             endpoint: endpoint,
@@ -66,11 +83,13 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
             let output = try await Task.detached(priority: .userInitiated) { [engine] in
                 try engine.translate(input: input)
             }.value
-            return AppTranslationResult(
+            let result = AppTranslationResult(
                 text: output.text,
                 provider: output.provider,
                 elapsedMilliseconds: output.elapsedMs
             )
+            await cache.insert(result, for: cacheKey)
+            return result
         } catch let failure as TranslationFailure {
             throw ClientError(failure)
         }
@@ -118,17 +137,41 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
                         )
                     }
 
+                    let cacheKey = Self.cacheKey(
+                        provider: configuration.provider,
+                        endpoint: streamingConfiguration.endpoint.absoluteString,
+                        model: streamingConfiguration.model,
+                        request: request
+                    )
+                    if let cached = await cache.value(for: cacheKey) {
+                        continuation.yield(AppTranslationUpdate(
+                            text: cached.text,
+                            provider: cached.provider,
+                            isFinal: true
+                        ))
+                        continuation.finish()
+                        return
+                    }
+
                     let service = OpenAIStreamingTranslationService(
                         configuration: streamingConfiguration
                     )
                     var accumulated = ""
+                    let clock = ContinuousClock()
+                    let startedAt = clock.now
+                    var emissionPolicy = TranslationStreamEmissionPolicy(
+                        minimumInterval: .milliseconds(40)
+                    )
                     for try await delta in service.deltas(for: request) {
                         accumulated += delta
-                        continuation.yield(AppTranslationUpdate(
-                            text: accumulated,
-                            provider: configuration.provider.rawValue,
-                            isFinal: false
-                        ))
+                        let elapsed = startedAt.duration(to: clock.now)
+                        if emissionPolicy.shouldEmit(at: elapsed, isFinal: false) {
+                            continuation.yield(AppTranslationUpdate(
+                                text: accumulated,
+                                provider: configuration.provider.rawValue,
+                                isFinal: false
+                            ))
+                        }
                     }
                     let finalText = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !finalText.isEmpty else {
@@ -139,6 +182,14 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
                         provider: configuration.provider.rawValue,
                         isFinal: true
                     ))
+                    await cache.insert(
+                        AppTranslationResult(
+                            text: finalText,
+                            provider: configuration.provider.rawValue,
+                            elapsedMilliseconds: 0
+                        ),
+                        for: cacheKey
+                    )
                     continuation.finish()
                 } catch is CancellationError {
                     continuation.finish()
@@ -148,6 +199,20 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    private static func cacheKey(
+        provider: TranslationProvider,
+        endpoint: String,
+        model: String,
+        request: AppTranslationRequest
+    ) -> TranslationCacheKey {
+        TranslationCacheKey(
+            provider: provider.rawValue,
+            endpoint: endpoint,
+            model: model,
+            request: request
+        )
     }
 
 }

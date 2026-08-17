@@ -82,7 +82,7 @@ enum OCRTranslationPresentationStyle: Equatable {
 
 struct OCRTranslationPresentationModel: Equatable {
     let sourceText: String
-    let translatedText: String
+    private(set) var translatedText: String
     private(set) var mode: OCRTranslationDisplayMode
 
     init(
@@ -114,6 +114,10 @@ struct OCRTranslationPresentationModel: Equatable {
     mutating func showSourceText() {
         mode = .sourceText
     }
+
+    mutating func updateTranslation(_ text: String) {
+        translatedText = text
+    }
 }
 
 struct OCRScreenshotTranslator: Sendable {
@@ -123,13 +127,15 @@ struct OCRScreenshotTranslator: Sendable {
         self.client = client
     }
 
-    func translate(sourceText: String, targetLanguage: String) async throws -> String {
-        let result = try await client.translate(AppTranslationRequest(
+    func translationUpdates(
+        sourceText: String,
+        targetLanguage: String
+    ) -> AsyncThrowingStream<AppTranslationUpdate, Error> {
+        client.translateStream(AppTranslationRequest(
             text: sourceText,
             sourceLanguage: nil,
             targetLanguage: targetLanguage
         ))
-        return result.text
     }
 }
 
@@ -156,16 +162,18 @@ final class OCRTranslationPinContentView: NSView {
     private var dragStartMouseLocation: CGPoint?
     private var dragStartWindowOrigin: CGPoint?
     private var restoreResizableWhenUnlocked = true
-    private let alignmentPairs: [TranslationSegmentPair]
+    private var alignmentPairs: [TranslationSegmentPair]
 
     private(set) var mode: OCRTranslationDisplayMode = .translation
     private(set) var highlightedPairID: Int?
     private(set) var isLocked: Bool
     private(set) var isAlwaysOnTop: Bool
+    private(set) var isTranslating: Bool
 
     var sourceText: String { model.sourceText }
     var originalImage: NSImage { image }
     var translationText: String { model.translatedText }
+    var translationStatusText: String { headerLabel.stringValue }
     var visibleText: String? { model.visibleText }
     var isTranslationOverlayHidden: Bool { translationOverlay.isHidden }
     var isTranslationTextSelectable: Bool { translationTextView.isSelectable }
@@ -194,6 +202,7 @@ final class OCRTranslationPinContentView: NSView {
         pasteboard: NSPasteboard = .general,
         isLocked: Bool = false,
         isAlwaysOnTop: Bool = true,
+        isTranslating: Bool = false,
         actions: PinWindowActions? = nil
     ) {
         model = OCRTranslationPresentationModel(
@@ -209,6 +218,7 @@ final class OCRTranslationPinContentView: NSView {
         self.pasteboard = pasteboard
         self.isLocked = isLocked
         self.isAlwaysOnTop = isAlwaysOnTop
+        self.isTranslating = isTranslating
         self.actions = actions ?? PinWindowActions()
         alignmentPairs = TranslationAlignment.pairs(
             source: sourceText,
@@ -257,6 +267,7 @@ final class OCRTranslationPinContentView: NSView {
         translationScrollView = Self.makeScrollView(documentView: translationTextView)
         headerLabel.font = .systemFont(ofSize: 14, weight: .semibold)
         headerLabel.textColor = .labelColor
+        headerLabel.stringValue = isTranslating ? "正在翻译…" : "截图翻译"
         sourceLabel.font = .systemFont(ofSize: 11, weight: .medium)
         sourceLabel.textColor = .secondaryLabelColor
         translationLabel.font = .systemFont(ofSize: 11, weight: .medium)
@@ -396,6 +407,17 @@ final class OCRTranslationPinContentView: NSView {
         model.showSourceText()
         mode = model.mode
         applyMode()
+    }
+
+    func updateTranslation(_ text: String, isFinal: Bool) {
+        model.updateTranslation(text)
+        translationTextView.string = text
+        alignmentPairs = TranslationAlignment.pairs(source: sourceText, target: text)
+        applyPairHighlight(nil)
+        isTranslating = !isFinal
+        headerLabel.stringValue = isFinal ? "截图翻译" : "正在翻译…"
+        translationTextView.needsDisplay = true
+        needsLayout = true
     }
 
     func selectTranslationRange(_ range: NSRange) {

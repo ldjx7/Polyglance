@@ -1,9 +1,12 @@
-use reqwest::{Client, StatusCode, Url};
+use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
 use translator_core::{TranslationRequest, TranslationResult};
+
+use crate::SharedHttpClient;
+use crate::shared_http_client;
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 45;
 
@@ -88,16 +91,13 @@ pub(crate) fn is_loopback_host(url: &Url) -> bool {
 
 #[derive(Clone)]
 pub struct OpenAiCompatibleProvider {
-    client: Client,
+    client: SharedHttpClient,
     config: OpenAiCompatibleConfig,
 }
 
 impl OpenAiCompatibleProvider {
     pub fn new(config: OpenAiCompatibleConfig) -> Result<Self, ProviderError> {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECONDS))
-            .build()
-            .map_err(|error| ProviderError::Network(error.to_string()))?;
+        let client = shared_http_client()?;
         Ok(Self { client, config })
     }
 
@@ -109,6 +109,7 @@ impl OpenAiCompatibleProvider {
         let response = self
             .client
             .post(self.config.chat_completions_url()?)
+            .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECONDS))
             .bearer_auth(&self.config.api_key)
             .json(&build_request_body(&self.config, request))
             .send()

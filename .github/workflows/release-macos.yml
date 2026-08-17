@@ -48,6 +48,16 @@ jobs:
           fi
           echo "number=${tag#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Require release notes for this tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_notes="docs/releases/${GITHUB_REF_NAME}.md"
+          if [[ ! -s "$release_notes" ]]; then
+            echo "Missing release notes: $release_notes" >&2
+            exit 1
+          fi
+
       - name: Install the Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -192,9 +202,13 @@ jobs:
           RELEASE_DIRECTORY: ${{ steps.package.outputs.directory }}
           ARCHIVE_NAME: ${{ steps.package.outputs.archive }}
           DMG_NAME: ${{ steps.package.outputs.dmg }}
+          RELEASE_NOTES: docs/releases/${{ github.ref_name }}.md
         run: |
           set -euo pipefail
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" \
+              --title "Polyglance ${{ steps.version.outputs.number }}" \
+              --notes-file "$RELEASE_NOTES"
             gh release upload "$GITHUB_REF_NAME" \
               "$RELEASE_DIRECTORY/$ARCHIVE_NAME" \
               "$RELEASE_DIRECTORY/$DMG_NAME" \
@@ -206,6 +220,6 @@ jobs:
               "$RELEASE_DIRECTORY/$DMG_NAME" \
               "$RELEASE_DIRECTORY/appcast.xml" \
               --verify-tag \
-              --generate-notes \
+              --notes-file "$RELEASE_NOTES" \
               --title "Polyglance ${{ steps.version.outputs.number }}"
           fi

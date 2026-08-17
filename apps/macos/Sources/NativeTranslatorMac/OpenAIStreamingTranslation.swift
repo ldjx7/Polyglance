@@ -1,6 +1,26 @@
 import Foundation
 import NativeTranslatorMacKit
 
+struct TranslationStreamEmissionPolicy {
+    let minimumInterval: Duration
+    private var lastEmission: Duration?
+
+    init(minimumInterval: Duration) {
+        self.minimumInterval = max(.zero, minimumInterval)
+    }
+
+    mutating func shouldEmit(at elapsed: Duration, isFinal: Bool) -> Bool {
+        if isFinal { return true }
+        guard let lastEmission else {
+            self.lastEmission = elapsed
+            return true
+        }
+        guard elapsed - lastEmission >= minimumInterval else { return false }
+        self.lastEmission = elapsed
+        return true
+    }
+}
+
 enum OpenAIStreamEvent: Equatable {
     case delta(String)
     case done

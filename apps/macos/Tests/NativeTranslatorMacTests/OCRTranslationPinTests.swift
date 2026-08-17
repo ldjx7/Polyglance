@@ -275,26 +275,50 @@ final class OCRTranslationPinTests: XCTestCase {
         manager.destroyAllPins()
     }
 
-    func testScreenshotTranslatorUsesConfiguredTargetLanguage() async throws {
-        let client = RecordingTranslationClient(result: AppTranslationResult(
-            text: "你好，世界",
-            provider: "stub",
-            elapsedMilliseconds: 7
-        ))
+    func testScreenshotTranslatorStreamsConfiguredTargetLanguageUpdates() async throws {
+        let client = RecordingTranslationClient(updates: [
+            AppTranslationUpdate(text: "你好", provider: "stub", isFinal: false),
+            AppTranslationUpdate(text: "你好，世界", provider: "stub", isFinal: true),
+        ])
         let translator = OCRScreenshotTranslator(client: client)
 
-        let translatedText = try await translator.translate(
+        var received: [AppTranslationUpdate] = []
+        for try await update in translator.translationUpdates(
             sourceText: "Hello world",
             targetLanguage: "zh-CN"
-        )
+        ) {
+            received.append(update)
+        }
 
-        XCTAssertEqual(translatedText, "你好，世界")
+        XCTAssertEqual(received.map(\.text), ["你好", "你好，世界"])
         let request = await client.lastRequest
         XCTAssertEqual(request, AppTranslationRequest(
             text: "Hello world",
             sourceLanguage: nil,
             targetLanguage: "zh-CN"
         ))
+    }
+
+    func testTranslationPinCanRenderStreamingProgressBeforeFinalResult() {
+        _ = NSApplication.shared
+        let view = OCRTranslationPinContentView(
+            image: NSImage(size: CGSize(width: 320, height: 180)),
+            sourceText: "Hello world",
+            translatedText: "",
+            isTranslating: true
+        )
+
+        XCTAssertTrue(view.isTranslating)
+        XCTAssertEqual(view.translationStatusText, "正在翻译…")
+
+        view.updateTranslation("你好", isFinal: false)
+        XCTAssertEqual(view.translationText, "你好")
+        XCTAssertTrue(view.isTranslating)
+
+        view.updateTranslation("你好，世界", isFinal: true)
+        XCTAssertEqual(view.translationText, "你好，世界")
+        XCTAssertFalse(view.isTranslating)
+        XCTAssertEqual(view.translationStatusText, "截图翻译")
     }
 }
 
@@ -305,15 +329,36 @@ private func sendMenuAction(_ item: NSMenuItem) throws -> Bool {
 }
 
 private actor RecordingTranslationClient: TranslationClient {
-    private let result: AppTranslationResult
+    private let updates: [AppTranslationUpdate]
     private(set) var lastRequest: AppTranslationRequest?
 
-    init(result: AppTranslationResult) {
-        self.result = result
+    init(updates: [AppTranslationUpdate]) {
+        self.updates = updates
     }
 
     func translate(_ request: AppTranslationRequest) async throws -> AppTranslationResult {
-        lastRequest = request
-        return result
+        XCTFail("OCR screenshot translation must use the streaming client")
+        throw RecordingTranslationError.unexpectedNonStreamingCall
     }
+
+    nonisolated func translateStream(
+        _ request: AppTranslationRequest
+    ) -> AsyncThrowingStream<AppTranslationUpdate, Error> {
+        AsyncThrowingStream(AppTranslationUpdate.self, bufferingPolicy: .unbounded) { continuation in
+            Task {
+                await self.record(request)
+                let updates = self.updates
+                for update in updates {
+                    continuation.yield(update)
+                }
+                continuation.finish()
+            }
+        }
+    }
+
+    private func record(_ request: AppTranslationRequest) { lastRequest = request }
+}
+
+private enum RecordingTranslationError: Error {
+    case unexpectedNonStreamingCall
 }

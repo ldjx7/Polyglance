@@ -2,7 +2,7 @@ import XCTest
 @testable import NativeTranslatorMac
 
 final class AppConfigurationStoreTests: XCTestCase {
-    func testFreshInstallDefaultsToGoogleTranslationWithoutAIConfiguration() throws {
+    func testFreshInstallDefaultsToMicrosoftTranslationWithoutAIConfiguration() throws {
         let suite = "AppConfigurationStoreTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -11,7 +11,7 @@ final class AppConfigurationStoreTests: XCTestCase {
 
         let configuration = try store.load()
 
-        XCTAssertEqual(configuration.provider, .google)
+        XCTAssertEqual(configuration.provider, .microsoft)
         XCTAssertEqual(configuration.apiKey, "")
         XCTAssertEqual(
             TranslationProvider.allCases,
@@ -32,7 +32,7 @@ final class AppConfigurationStoreTests: XCTestCase {
 
         let configuration = try store.load()
 
-        XCTAssertEqual(configuration.provider, .google)
+        XCTAssertEqual(configuration.provider, .microsoft)
         XCTAssertEqual(configuration.apiKey, "")
         XCTAssertEqual(credentials.loadCount, 0)
     }
@@ -113,7 +113,7 @@ final class AppConfigurationStoreTests: XCTestCase {
         XCTAssertEqual(configuration.endpoint, "https://api.deepseek.com/v1")
     }
 
-    func testRemovedProvidersMigrateToGoogleInsteadOfUsingAnOldAIKey() throws {
+    func testRemovedProvidersMigrateToMicrosoftInsteadOfUsingAnOldAIKey() throws {
         let suite = "AppConfigurationStoreTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -123,7 +123,7 @@ final class AppConfigurationStoreTests: XCTestCase {
 
         for removedProvider in ["my-memory", "system"] {
             defaults.set(removedProvider, forKey: "translation.provider")
-            XCTAssertEqual(try store.load().provider, .google)
+            XCTAssertEqual(try store.load().provider, .microsoft)
         }
     }
 

@@ -1,9 +1,11 @@
-use reqwest::{Client, Url};
+use reqwest::Url;
 use serde::Deserialize;
 use std::time::{Duration, Instant};
 use translator_core::{LanguageCode, TranslationRequest, TranslationResult};
 
+use crate::SharedHttpClient;
 use crate::openai::{ProviderError, is_loopback_host, map_status_error};
+use crate::shared_http_client;
 
 const DEFAULT_ENDPOINT: &str = "https://edge.microsoft.com/translate/translatetext";
 const DEFAULT_TIMEOUT_SECONDS: u64 = 30;
@@ -26,16 +28,13 @@ impl MicrosoftConfig {
 
 #[derive(Clone)]
 pub struct MicrosoftProvider {
-    client: Client,
+    client: SharedHttpClient,
     config: MicrosoftConfig,
 }
 
 impl MicrosoftProvider {
     pub fn new(config: MicrosoftConfig) -> Result<Self, ProviderError> {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECONDS))
-            .build()
-            .map_err(|error| ProviderError::Network(error.to_string()))?;
+        let client = shared_http_client()?;
         Ok(Self { client, config })
     }
 
@@ -57,6 +56,7 @@ impl MicrosoftProvider {
         let request_builder = self
             .client
             .post(url)
+            .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECONDS))
             .header("Accept", "*/*")
             .json(&[request.text()]);
 

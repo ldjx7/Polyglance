@@ -16,7 +16,7 @@ struct SettingsView: View {
     @State private var endpoint = ""
     @State private var apiKey = ""
     @State private var model = ""
-    @State private var provider = TranslationProvider.google
+    @State private var provider = TranslationProvider.microsoft
     @State private var targetLanguage = "zh-CN"
     @State private var shortcuts = GlobalShortcutConfiguration.default
     @State private var recordingSettings = RecordingSettings.default
