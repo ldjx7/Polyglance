@@ -126,6 +126,7 @@ final class ScreenRecordingReviewSession {
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isReleasedWhenClosed = false
+        panel.hidesOnDeactivate = false
         panel.contentView = reviewView
 
         reviewView.onAction = { [weak self] action in
@@ -140,6 +141,8 @@ final class ScreenRecordingReviewSession {
 
     func present() {
         panel.center()
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
     }
 
