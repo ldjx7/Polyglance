@@ -31,19 +31,22 @@ struct AppConfiguration: Equatable, Sendable {
     var apiKey: String
     var model: String
     var targetLanguage: String
+    var aiStreamingEnabled: Bool
 
     init(
         provider: TranslationProvider,
         endpoint: String,
         apiKey: String,
         model: String,
-        targetLanguage: String
+        targetLanguage: String,
+        aiStreamingEnabled: Bool = true
     ) {
         self.provider = provider
         self.endpoint = endpoint
         self.apiKey = apiKey
         self.model = model
         self.targetLanguage = targetLanguage
+        self.aiStreamingEnabled = aiStreamingEnabled
     }
 }
 
@@ -94,6 +97,7 @@ final class AppConfigurationStore: @unchecked Sendable {
         static let endpoint = "provider.endpoint"
         static let model = "provider.model"
         static let targetLanguage = "translation.target-language"
+        static let aiStreamingEnabled = "translation.ai-streaming-enabled"
     }
 
     private let defaults: UserDefaults
@@ -128,7 +132,8 @@ final class AppConfigurationStore: @unchecked Sendable {
             endpoint: defaults.string(forKey: Key.endpoint) ?? "https://api.openai.com/v1",
             apiKey: apiKey,
             model: defaults.string(forKey: Key.model) ?? "gpt-4.1-mini",
-            targetLanguage: defaults.string(forKey: Key.targetLanguage) ?? "zh-CN"
+            targetLanguage: defaults.string(forKey: Key.targetLanguage) ?? "zh-CN",
+            aiStreamingEnabled: defaults.object(forKey: Key.aiStreamingEnabled) as? Bool ?? true
         )
     }
 
@@ -150,6 +155,7 @@ final class AppConfigurationStore: @unchecked Sendable {
         defaults.set(endpoint, forKey: Key.endpoint)
         defaults.set(model, forKey: Key.model)
         defaults.set(configuration.targetLanguage, forKey: Key.targetLanguage)
+        defaults.set(configuration.aiStreamingEnabled, forKey: Key.aiStreamingEnabled)
     }
 }
 

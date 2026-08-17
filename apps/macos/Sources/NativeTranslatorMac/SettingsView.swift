@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var apiKey = ""
     @State private var model = ""
     @State private var provider = TranslationProvider.microsoft
+    @State private var aiStreamingEnabled = true
     @State private var targetLanguage = "zh-CN"
     @State private var shortcuts = GlobalShortcutConfiguration.default
     @State private var recordingSettings = RecordingSettings.default
@@ -66,6 +67,13 @@ struct SettingsView: View {
                     TextField("模型", text: $model)
                         .textFieldStyle(.roundedBorder)
                     Text("可接入 DeepSeek、OpenAI 或其他 OpenAI-compatible 服务。AI 是可选项，不会被自动启用。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if provider == .freeAI || provider == .openAICompatible {
+                    Toggle("流式输出译文", isOn: $aiStreamingEnabled)
+                    Text("开启后 AI 译文逐字显示；关闭后等待完整译文一次性显示。Google 与 Microsoft 翻译始终一次性返回，不受此开关影响。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -220,6 +228,7 @@ struct SettingsView: View {
             apiKey = configuration.apiKey
             model = configuration.model
             targetLanguage = configuration.targetLanguage
+            aiStreamingEnabled = configuration.aiStreamingEnabled
             shortcuts = shortcutStore.load()
             recordingSettings = recordingSettingsStore.load()
             recordingSettings.frameRate = ScreenRecordingFrameRatePolicy.normalized(
@@ -238,7 +247,8 @@ struct SettingsView: View {
                 endpoint: endpoint,
                 apiKey: apiKey,
                 model: model,
-                targetLanguage: targetLanguage
+                targetLanguage: targetLanguage,
+                aiStreamingEnabled: aiStreamingEnabled
             )
             try onSave(configuration, shortcuts, recordingSettings)
         } catch {

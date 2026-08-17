@@ -102,7 +102,8 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
             let task = Task {
                 do {
                     let configuration = try configurationStore.load()
-                    guard configuration.provider == .freeAI
+                    guard configuration.aiStreamingEnabled,
+                          configuration.provider == .freeAI
                             || configuration.provider == .openAICompatible else {
                         let result = try await translate(request)
                         continuation.yield(AppTranslationUpdate(
