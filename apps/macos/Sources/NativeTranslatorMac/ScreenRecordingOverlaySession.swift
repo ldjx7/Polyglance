@@ -234,9 +234,8 @@ final class ScreenRecordingToolbarView: NSView {
             frameRatePopUp.selectedTag(),
             for: settings.format
         )
-        if frameRatePopUp.selectedTag() != settings.frameRate {
-            selectFrameRate(settings.frameRate)
-        }
+        rebuildFrameRateItems()
+        selectFrameRate(settings.frameRate)
         settings.countdownDelay = ScreenRecordingDelay.allCases[delayPopUp.indexOfSelectedItem]
         rebuildQualityTitles()
         systemAudioButton.isEnabled = settings.format.supportsAudio
@@ -248,10 +247,7 @@ final class ScreenRecordingToolbarView: NSView {
     private func configurePopUps() {
         formatPopUp.addItems(withTitles: ScreenRecordingFormat.allCases.map(\.displayName))
         qualityPopUp.addItems(withTitles: ScreenRecordingQuality.allCases.map(\.displayName))
-        for choice in ScreenRecordingFrameRateChoice.allCases {
-            frameRatePopUp.addItem(withTitle: "\(choice.rawValue) FPS")
-            frameRatePopUp.lastItem?.tag = choice.rawValue
-        }
+        rebuildFrameRateItems()
         delayPopUp.addItems(withTitles: ScreenRecordingDelay.allCases.map(\.displayName))
         for popUp in [formatPopUp, qualityPopUp, frameRatePopUp, delayPopUp] {
             popUp.controlSize = .small
@@ -267,6 +263,7 @@ final class ScreenRecordingToolbarView: NSView {
     private func updateSelectionsFromSettings() {
         formatPopUp.selectItem(at: ScreenRecordingFormat.allCases.firstIndex(of: settings.format) ?? 0)
         qualityPopUp.selectItem(at: ScreenRecordingQuality.allCases.firstIndex(of: settings.quality) ?? 1)
+        rebuildFrameRateItems()
         selectFrameRate(settings.frameRate)
         delayPopUp.selectItem(at: ScreenRecordingDelay.allCases.firstIndex(of: settings.countdownDelay) ?? 1)
         rebuildQualityTitles()
@@ -278,6 +275,14 @@ final class ScreenRecordingToolbarView: NSView {
         qualityPopUp.removeAllItems()
         qualityPopUp.addItems(withTitles: ScreenRecordingQuality.allCases.map(\.displayName))
         qualityPopUp.selectItem(at: selectedIndex)
+    }
+
+    private func rebuildFrameRateItems() {
+        frameRatePopUp.removeAllItems()
+        for choice in ScreenRecordingFrameRatePolicy.choices(for: settings.format) {
+            frameRatePopUp.addItem(withTitle: "\(choice) FPS")
+            frameRatePopUp.lastItem?.tag = choice
+        }
     }
 
     private func selectFrameRate(_ frameRate: Int) {
