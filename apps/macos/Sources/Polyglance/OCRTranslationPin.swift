@@ -656,31 +656,61 @@ final class OCRTranslationPinContentView: NSView {
 
     func makeContextMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(withTitle: annotationEditor.isEditing ? "完成标注" : "标注", action: #selector(toggleAnnotationEditing), keyEquivalent: "")
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "显示原图", action: #selector(showOriginalAction), keyEquivalent: "")
-        menu.addItem(withTitle: "显示原文", action: #selector(showSourceTextAction), keyEquivalent: "")
-        menu.addItem(withTitle: "显示译文", action: #selector(showTranslationAction), keyEquivalent: "")
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "复制当前文字", action: #selector(copyTranslationAction), keyEquivalent: "")
+        menu.addItem(menuItem(
+            title: annotationEditor.isEditing ? "完成标注" : "标注",
+            action: #selector(toggleAnnotationEditing),
+            symbol: "pencil.tip.crop.circle",
+            keyEquivalent: " ",
+            modifiers: []
+        ))
         menu.addItem(.separator())
 
-        let lockItem = NSMenuItem(
+        menu.addItem(menuItem(
+            title: "显示原图",
+            action: #selector(showOriginalAction),
+            symbol: "photo"
+        ))
+        menu.addItem(menuItem(
+            title: "显示原文",
+            action: #selector(showSourceTextAction),
+            symbol: "doc.plaintext"
+        ))
+        menu.addItem(menuItem(
+            title: "显示译文",
+            action: #selector(showTranslationAction),
+            symbol: "character.book.closed"
+        ))
+        menu.addItem(.separator())
+
+        menu.addItem(menuItem(
+            title: "复制当前文字",
+            action: #selector(copyTranslationAction),
+            symbol: "doc.on.doc",
+            keyEquivalent: "c"
+        ))
+        menu.addItem(.separator())
+
+        let lockItem = menuItem(
             title: isLocked ? "解锁贴图" : "锁定贴图",
             action: #selector(toggleLock(_:)),
-            keyEquivalent: ""
+            symbol: isLocked ? "lock.open" : "lock"
         )
         lockItem.state = isLocked ? .on : .off
         menu.addItem(lockItem)
-        let alwaysOnTopItem = NSMenuItem(
+
+        let alwaysOnTopItem = menuItem(
             title: isAlwaysOnTop ? "取消置顶" : "置顶贴图",
             action: #selector(toggleAlwaysOnTop(_:)),
-            keyEquivalent: ""
+            symbol: isAlwaysOnTop ? "pin.slash" : "pin"
         )
         alwaysOnTopItem.state = isAlwaysOnTop ? .on : .off
         menu.addItem(alwaysOnTopItem)
 
-        let opacityItem = NSMenuItem(title: "透明度", action: nil, keyEquivalent: "")
+        let opacityItem = menuItem(
+            title: "透明度",
+            action: nil,
+            symbol: "slider.horizontal.3"
+        )
         let opacityMenu = NSMenu()
         for value in [100, 80, 60, 40] {
             let item = NSMenuItem(
@@ -700,47 +730,70 @@ final class OCRTranslationPinContentView: NSView {
         menu.addItem(.separator())
 
         let managerState = actions.currentState()
-        menu.addItem(actionItem(
+
+        // 批量管理子菜单
+        let batchItem = menuItem(
+            title: "批量管理",
+            action: nil,
+            symbol: "square.stack.3d.up"
+        )
+        let batchMenu = NSMenu()
+        batchMenu.addItem(menuItem(
             title: "隐藏其他贴图",
             action: #selector(hideOtherPins),
+            symbol: "eye.slash",
             isEnabled: actions.hideOthers != nil && managerState.activePinCount > 1
         ))
-        menu.addItem(actionItem(
+        batchMenu.addItem(menuItem(
             title: "隐藏全部贴图",
             action: #selector(hideAllPins),
+            symbol: "eye.slash",
             isEnabled: actions.hideAll != nil && managerState.visiblePinCount > 0
         ))
-        menu.addItem(actionItem(
+        batchMenu.addItem(menuItem(
             title: "显示全部贴图",
             action: #selector(showAllPins),
+            symbol: "eye",
             isEnabled: actions.showAll != nil && managerState.hiddenPinCount > 0
         ))
-        menu.addItem(.separator())
-        menu.addItem(actionItem(
-            title: "恢复最近关闭的贴图",
-            action: #selector(restoreMostRecentPin),
-            isEnabled: actions.restoreMostRecent != nil && managerState.canRestoreMostRecent
-        ))
-        menu.addItem(actionItem(
-            title: "关闭贴图",
-            action: #selector(closeAction),
-            isEnabled: true
-        ))
-        menu.addItem(actionItem(
-            title: "彻底销毁翻译贴图",
-            action: #selector(destroyPin),
-            isEnabled: true
-        ))
-        menu.addItem(actionItem(
+        batchMenu.addItem(.separator())
+        batchMenu.addItem(menuItem(
             title: "关闭全部贴图",
             action: #selector(closeAllPins),
+            symbol: "xmark.circle",
             isEnabled: actions.closeAll != nil && managerState.activePinCount > 0
         ))
-        menu.addItem(actionItem(
+        batchMenu.addItem(menuItem(
             title: "彻底销毁全部贴图",
             action: #selector(destroyAllPins),
+            symbol: "trash",
             isEnabled: actions.destroyAll != nil && managerState.activePinCount > 0
         ))
+        menu.setSubmenu(batchMenu, for: batchItem)
+        menu.addItem(batchItem)
+
+        menu.addItem(menuItem(
+            title: "恢复最近关闭的贴图",
+            action: #selector(restoreMostRecentPin),
+            symbol: "arrow.uturn.backward",
+            isEnabled: actions.restoreMostRecent != nil && managerState.canRestoreMostRecent
+        ))
+        menu.addItem(.separator())
+
+        menu.addItem(menuItem(
+            title: "关闭贴图",
+            action: #selector(closeAction),
+            symbol: "xmark",
+            keyEquivalent: "w",
+            isEnabled: true
+        ))
+        menu.addItem(menuItem(
+            title: "彻底销毁翻译贴图",
+            action: #selector(destroyPin),
+            symbol: "trash",
+            isEnabled: true
+        ))
+
         menu.items.forEach { item in
             if item.action != nil { item.target = self }
         }
@@ -754,9 +807,25 @@ final class OCRTranslationPinContentView: NSView {
         annotationEditor.toggleEditing()
     }
 
-    private func actionItem(title: String, action: Selector, isEnabled: Bool) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+    private func menuItem(
+        title: String,
+        action: Selector?,
+        symbol: String? = nil,
+        keyEquivalent: String = "",
+        modifiers: NSEvent.ModifierFlags = [.command],
+        isEnabled: Bool = true
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+        item.target = self
         item.isEnabled = isEnabled
+        if !keyEquivalent.isEmpty {
+            item.keyEquivalentModifierMask = modifiers
+        }
+        if let symbol {
+            let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
+            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)?
+                .withSymbolConfiguration(config)
+        }
         return item
     }
 

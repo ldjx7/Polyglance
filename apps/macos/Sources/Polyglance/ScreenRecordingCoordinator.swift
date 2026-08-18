@@ -118,8 +118,7 @@ final class ScreenRecordingCoordinator: NSObject {
         }
         guard CGPreflightScreenCaptureAccess() else {
             sessionState.close()
-            let granted = CGRequestScreenCaptureAccess()
-            throw ScreenRecordingCoordinatorError.permissionRequired(restartRequired: granted)
+            throw ScreenRecordingCoordinatorError.permissionRequired(restartRequired: false)
         }
         guard let screen = screen(containing: region) else {
             sessionState.close()

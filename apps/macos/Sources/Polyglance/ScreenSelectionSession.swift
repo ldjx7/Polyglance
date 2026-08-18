@@ -480,9 +480,9 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
                 NSGraphicsContext.restoreGraphicsState()
             }
 
-            (isAnnotating ? NSColor.systemRed : NSColor.systemBlue).setStroke()
-            let border = NSBezierPath(rect: selection.insetBy(dx: 0.5, dy: 0.5))
-            border.lineWidth = isAnnotating ? 2 : 1
+            (isAnnotating ? NSColor.systemRed : NSColor.controlAccentColor).setStroke()
+            let border = NSBezierPath(rect: selection.insetBy(dx: 1.0, dy: 1.0))
+            border.lineWidth = isAnnotating ? 2.5 : 2.0
             border.stroke()
 
             if case .selected = capturePhase {
@@ -877,7 +877,9 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         effectView.blendingMode = .withinWindow
         effectView.state = .active
         effectView.wantsLayer = true
-        effectView.layer?.cornerRadius = 10
+        effectView.layer?.cornerRadius = 12
+        effectView.layer?.borderWidth = 0.5
+        effectView.layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
         effectView.layer?.masksToBounds = true
         effectView.isHidden = true
 
@@ -893,26 +895,26 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         }
         undoButton = makeToolbarButton(title: "撤销", symbol: "arrow.uturn.backward", action: #selector(undoAnnotation))
         redoButton = makeToolbarButton(title: "重做", symbol: "arrow.uturn.forward", action: #selector(redoAnnotation))
-        let copyButton = makeToolbarButton(title: "复制", symbol: "doc.on.doc", action: #selector(copySelection))
-        let saveButton = makeToolbarButton(title: "保存", symbol: "square.and.arrow.down", action: #selector(saveSelection))
-        let pinButton = makeToolbarButton(title: "置顶", symbol: "pin.fill", action: #selector(pinSelection))
         let ocrCopyButton = makeToolbarButton(title: "OCR", symbol: "text.viewfinder", action: #selector(ocrCopySelection))
         let ocrTranslateButton = makeToolbarButton(title: "OCR翻译", symbol: "character.bubble", action: #selector(ocrTranslateSelection))
         let longScreenshotButton = makeToolbarButton(title: "长截图", symbol: "scroll", action: #selector(longScreenshotSelection))
         let screenRecordingButton = makeToolbarButton(title: "录屏", symbol: "record.circle", action: #selector(screenRecordingSelection))
+        let pinButton = makeToolbarButton(title: "贴图", symbol: "pin.fill", action: #selector(pinSelection))
+        let saveButton = makeToolbarButton(title: "保存", symbol: "square.and.arrow.down", action: #selector(saveSelection))
         let cancelButton = makeToolbarButton(title: "取消", symbol: "xmark", action: #selector(cancelSelection))
+        let copyButton = makeToolbarButton(title: "复制", symbol: "doc.on.doc", action: #selector(copySelection))
 
         let actionButtons: [NSButton] = [
             undoButton,
             redoButton,
-            copyButton,
-            saveButton,
-            pinButton,
             ocrCopyButton,
             ocrTranslateButton,
             longScreenshotButton,
             screenRecordingButton,
+            pinButton,
+            saveButton,
             cancelButton,
+            copyButton,
         ]
         toolbarToolButtons = toolButtons
         toolbarActionButtons = actionButtons
@@ -1749,13 +1751,13 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             CGPoint(x: selection.maxX, y: selection.maxY),
         ]
         for point in points {
-            let handle = CGRect(x: point.x - 3, y: point.y - 3, width: 6, height: 6)
+            let handle = CGRect(x: point.x - 3.5, y: point.y - 3.5, width: 7, height: 7)
             NSColor.white.setFill()
-            handle.fill()
-            NSColor.systemBlue.setStroke()
-            let path = NSBezierPath(rect: handle.insetBy(dx: 0.5, dy: 0.5))
-            path.lineWidth = 1
-            path.stroke()
+            let handlePath = NSBezierPath(ovalIn: handle)
+            handlePath.fill()
+            NSColor.controlAccentColor.setStroke()
+            handlePath.lineWidth = 1.5
+            handlePath.stroke()
         }
     }
 }

@@ -7,72 +7,113 @@ struct PolyglanceApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            Button("截图工具") {
+            Button {
                 appDelegate.captureScreenshotAndPin()
+            } label: {
+                Label("截图", systemImage: "viewfinder")
             }
 
-            Button("长截图") {
+            Button {
                 appDelegate.captureLongScreenshot()
+            } label: {
+                Label("长截图", systemImage: "rectangle.stack.badge.plus")
             }
 
-            Button("区域录屏") {
+            Button {
                 appDelegate.captureScreenRecordingRegion()
+            } label: {
+                Label("区域录屏", systemImage: "record.circle")
             }
 
-            Button("截屏翻译") {
+            Button {
                 appDelegate.captureScreenTranslation()
-            }
-
-            Button("贴出剪贴板图片") {
-                appDelegate.pinClipboardImage()
-            }
-
-            Button("恢复最近关闭的贴图") {
-                appDelegate.restoreMostRecentPin()
-            }
-
-            Button("隐藏全部贴图") {
-                appDelegate.hideAllPins()
-            }
-
-            Button("显示全部贴图") {
-                appDelegate.showAllPins()
-            }
-
-            Button("关闭全部贴图（可恢复）") {
-                appDelegate.closeAllPins()
-            }
-
-            Button("彻底销毁全部贴图") {
-                appDelegate.destroyAllPins()
+            } label: {
+                Label("截屏翻译", systemImage: "text.viewfinder")
             }
 
             Divider()
-            Button("打开翻译窗口") {
-                appDelegate.showTranslator()
-            }
 
-            Button("读取选区并翻译") {
+            Button {
                 appDelegate.showTranslator(capturingSelection: true, translateImmediately: true)
+            } label: {
+                Label("读取选区并翻译", systemImage: "character.book.closed")
             }
 
-            Button("读取选区（不翻译）") {
-                appDelegate.showTranslator(capturingSelection: true, translateImmediately: false)
+            Button {
+                appDelegate.showTranslator()
+            } label: {
+                Label("打开主翻译窗口", systemImage: "translate")
             }
 
             Divider()
-            Button("设置…") {
+
+            Menu {
+                Button {
+                    appDelegate.pinClipboardImage()
+                } label: {
+                    Label("贴出剪贴板图片", systemImage: "doc.on.clipboard")
+                }
+
+                Button {
+                    appDelegate.restoreMostRecentPin()
+                } label: {
+                    Label("恢复最近关闭的贴图", systemImage: "arrow.uturn.backward")
+                }
+
+                Divider()
+
+                Button {
+                    appDelegate.hideAllPins()
+                } label: {
+                    Label("隐藏全部贴图", systemImage: "eye.slash")
+                }
+
+                Button {
+                    appDelegate.showAllPins()
+                } label: {
+                    Label("显示全部贴图", systemImage: "eye")
+                }
+
+                Divider()
+
+                Button {
+                    appDelegate.closeAllPins()
+                } label: {
+                    Label("关闭全部贴图", systemImage: "xmark.circle")
+                }
+
+                Button {
+                    appDelegate.destroyAllPins()
+                } label: {
+                    Label("彻底销毁全部贴图", systemImage: "trash")
+                }
+            } label: {
+                Label("贴图管理", systemImage: "pin")
+            }
+
+            Divider()
+
+            Button {
                 appDelegate.showSettings()
+            } label: {
+                Label("偏好设置…", systemImage: "gearshape")
+            }
+            .keyboardShortcut(",", modifiers: [.command])
+
+            Button {
+                appDelegate.checkForUpdates()
+            } label: {
+                Label("检查更新…", systemImage: "arrow.triangle.2.circlepath")
             }
 
-            Button("检查更新…") {
-                appDelegate.checkForUpdates()
-            }
             Divider()
 
-            Button("退出 Polyglance") {
+            Button {
                 NSApp.terminate(nil)
+            } label: {
+                Label("退出 Polyglance", systemImage: "power")
             }
+            .keyboardShortcut("q", modifiers: [.command])
         } label: {
             Image(nsImage: PolyglanceMenuBarIcon.image)
                 .accessibilityLabel("Polyglance")

@@ -5,8 +5,6 @@ script_directory="${0:A:h}"
 repository_root="${script_directory:h}"
 macos_root="$repository_root/apps/macos"
 distribution_root="$repository_root/dist"
-app_bundle="$distribution_root/Polyglance.app"
-app_executable="$app_bundle/Contents/MacOS/Polyglance"
 build_script_name="${0:t}"
 should_reset_permissions=true
 
@@ -35,6 +33,17 @@ while (( $# > 0 )); do
     esac
     shift
 done
+
+if [[ "$should_reset_permissions" == "true" ]]; then
+    app_name="Polyglance Dev"
+    bundle_identifier_default="io.polyglance.macos.dev"
+    app_bundle="$distribution_root/Polyglance Dev.app"
+else
+    app_name="Polyglance"
+    bundle_identifier_default="io.polyglance.macos"
+    app_bundle="$distribution_root/Polyglance.app"
+fi
+app_executable="$app_bundle/Contents/MacOS/Polyglance"
 
 function stop_packaged_app() {
     local running_processes
@@ -73,7 +82,7 @@ function reset_development_permissions() {
 
     local permission_service
     for permission_service in Accessibility ScreenCapture Microphone; do
-        /usr/bin/tccutil reset "$permission_service" "$bundle_identifier"
+        /usr/bin/tccutil reset "$permission_service" "$bundle_identifier" || true
     done
 
     print "Cleared Accessibility, Screen Recording, and Microphone permissions for $bundle_identifier"
@@ -104,6 +113,9 @@ mkdir -p "$app_bundle/Contents/Frameworks"
 ditto "$sparkle_framework" "$app_bundle/Contents/Frameworks/Sparkle.framework"
 
 info_plist="$app_bundle/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $app_name" "$info_plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName $app_name" "$info_plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $bundle_identifier_default" "$info_plist"
 if [[ -n "${APP_VERSION:-}" ]]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$info_plist"
 fi
@@ -194,8 +206,8 @@ else
     bundle_identifier="$(/usr/libexec/PlistBuddy \
         -c 'Print :CFBundleIdentifier' \
         "$info_plist")"
-    if [[ "$bundle_identifier" != "io.polyglance.macos" ]]; then
-        print -u2 "The persistent code-signing requirement expects io.polyglance.macos."
+    if [[ "$bundle_identifier" != "io.polyglance.macos" && "$bundle_identifier" != "io.polyglance.macos.dev" ]]; then
+        print -u2 "The persistent code-signing requirement expects io.polyglance.macos or io.polyglance.macos.dev."
         exit 1
     fi
     codesign_requirement_expression="identifier \"$bundle_identifier\" and certificate leaf = H\"$codesign_certificate_sha1\""

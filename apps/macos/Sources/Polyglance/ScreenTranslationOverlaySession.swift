@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 struct ScreenTranslationRenderedParagraph {
     let normalizedRect: CGRect
@@ -204,21 +205,21 @@ final class ScreenTranslationOverlayView: NSView {
     }
 
     private func drawChrome() {
-        let borderColor = NSColor(srgbRed: 0.97, green: 0.35, blue: 0.35, alpha: 1)
+        let borderColor = NSColor.controlAccentColor
         let borderPath = NSBezierPath(rect: contentRect)
-        borderPath.lineWidth = 2
+        borderPath.lineWidth = 2.0
         borderColor.setStroke()
         borderPath.stroke()
 
         for center in handleCenters(in: contentRect) {
             let handleRect = CGRect(
-                x: center.x - 5,
-                y: center.y - 5,
-                width: 10,
-                height: 10
+                x: center.x - 4.5,
+                y: center.y - 4.5,
+                width: 9,
+                height: 9
             )
             let circle = NSBezierPath(ovalIn: handleRect)
-            NSColor(srgbRed: 1, green: 0.92, blue: 0.92, alpha: 1).setFill()
+            NSColor.white.setFill()
             circle.fill()
             circle.lineWidth = 1.5
             borderColor.setStroke()
@@ -322,10 +323,218 @@ final class ScreenTranslationCompareView: NSView {
             showsTranslation: true,
             in: bounds
         )
-        NSColor(srgbRed: 0.97, green: 0.35, blue: 0.35, alpha: 0.85).setStroke()
-        let border = NSBezierPath(rect: bounds.insetBy(dx: 0.5, dy: 0.5))
-        border.lineWidth = 1
+        NSColor.controlAccentColor.withAlphaComponent(0.85).setStroke()
+        let border = NSBezierPath(rect: bounds.insetBy(dx: 1.0, dy: 1.0))
+        border.lineWidth = 2.0
         border.stroke()
+    }
+}
+
+@MainActor
+final class ScreenTranslationToolbarState: ObservableObject {
+    @Published var selectedSourceCode: String?
+    @Published var selectedTargetCode: String = "zh-CN"
+    @Published var isComparing = false
+    @Published var hasTranslation = false
+
+    var onLanguageChanged: (() -> Void)?
+    var onToggleCompare: (() -> Void)?
+    var onCopyTranslation: (() -> Void)?
+    var onExtractText: (() -> Void)?
+    var onReselect: (() -> Void)?
+    var onPin: (() -> Void)?
+    var onRefresh: (() -> Void)?
+    var onClose: (() -> Void)?
+
+    var sourceTitle: String {
+        ScreenTranslationOverlaySession.sourceLanguages.first(where: { $0.code == selectedSourceCode })?.title ?? "自动检测"
+    }
+
+    var targetTitle: String {
+        ScreenTranslationOverlaySession.targetLanguages.first(where: { $0.code == selectedTargetCode })?.title ?? "简体中文"
+    }
+
+    var canSwap: Bool {
+        guard let source = selectedSourceCode else { return false }
+        return source != selectedTargetCode && ScreenTranslationOverlaySession.targetLanguages.contains(where: { $0.code == source })
+    }
+
+    func swapLanguages() {
+        guard let source = selectedSourceCode else { return }
+        let target = selectedTargetCode
+        guard source != target, ScreenTranslationOverlaySession.targetLanguages.contains(where: { $0.code == source }) else { return }
+        selectedSourceCode = target
+        selectedTargetCode = source
+        onLanguageChanged?()
+    }
+}
+
+struct ScreenTranslationToolbarView: View {
+    @ObservedObject var state: ScreenTranslationToolbarState
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // 语言选择胶囊容器
+            HStack(spacing: 4) {
+                Menu {
+                    ForEach(ScreenTranslationOverlaySession.sourceLanguages, id: \.title) { option in
+                        Button(option.title) {
+                            state.selectedSourceCode = option.code
+                            state.onLanguageChanged?()
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 2) {
+                        Text(state.sourceTitle)
+                            .font(.system(size: 12, weight: .medium))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                    .foregroundStyle(.white.opacity(0.95))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                }
+                .menuStyle(.borderlessButton)
+
+                Button {
+                    state.swapLanguages()
+                } label: {
+                    Image(systemName: "arrow.left.arrow.right")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(state.canSwap ? .white.opacity(0.85) : .white.opacity(0.3))
+                        .padding(2)
+                }
+                .buttonStyle(.plain)
+                .disabled(!state.canSwap)
+
+                Menu {
+                    ForEach(ScreenTranslationOverlaySession.targetLanguages, id: \.title) { option in
+                        Button(option.title) {
+                            state.selectedTargetCode = option.code ?? "zh-CN"
+                            state.onLanguageChanged?()
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 2) {
+                        Text(state.targetTitle)
+                            .font(.system(size: 12, weight: .medium))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                    .foregroundStyle(.white.opacity(0.95))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                }
+                .menuStyle(.borderlessButton)
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+            .background(
+                Capsule()
+                    .fill(Color.white.opacity(0.12))
+            )
+
+            Divider()
+                .frame(height: 14)
+                .opacity(0.3)
+
+            // 动作按钮组
+            HStack(spacing: 3) {
+                ToolbarIconButton(
+                    symbol: "square.split.2x1",
+                    tooltip: "对照模式 (原图/译文对照)",
+                    isActive: state.isComparing,
+                    disabled: !state.hasTranslation,
+                    action: { state.onToggleCompare?() }
+                )
+
+                ToolbarIconButton(
+                    symbol: "doc.on.doc",
+                    tooltip: "复制译文",
+                    disabled: !state.hasTranslation,
+                    action: { state.onCopyTranslation?() }
+                )
+
+                ToolbarIconButton(
+                    symbol: "doc.plaintext",
+                    tooltip: "提取文字",
+                    disabled: !state.hasTranslation,
+                    action: { state.onExtractText?() }
+                )
+
+                ToolbarIconButton(
+                    symbol: "viewfinder",
+                    tooltip: "重新选区",
+                    action: { state.onReselect?() }
+                )
+
+                ToolbarIconButton(
+                    symbol: "pin",
+                    tooltip: "钉住为贴图",
+                    disabled: !state.hasTranslation,
+                    action: { state.onPin?() }
+                )
+
+                ToolbarIconButton(
+                    symbol: "arrow.clockwise",
+                    tooltip: "刷新（重新识别）",
+                    action: { state.onRefresh?() }
+                )
+            }
+
+            Divider()
+                .frame(height: 14)
+                .opacity(0.3)
+
+            // 关闭按钮
+            ToolbarIconButton(
+                symbol: "xmark",
+                tooltip: "关闭 (Esc)",
+                action: { state.onClose?() }
+            )
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            Capsule()
+                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.85))
+                .background(.ultraThinMaterial, in: Capsule())
+        )
+        .overlay(
+            Capsule()
+                .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
+        )
+        .shadow(color: Color.black.opacity(0.35), radius: 8, y: 3)
+        .preferredColorScheme(.dark)
+    }
+}
+
+private struct ToolbarIconButton: View {
+    let symbol: String
+    let tooltip: String
+    var isActive: Bool = false
+    var disabled: Bool = false
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(isActive ? Color.accentColor : (disabled ? Color.white.opacity(0.3) : Color.white.opacity(0.88)))
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(isActive ? Color.accentColor.opacity(0.25) : (isHovered ? Color.white.opacity(0.12) : Color.clear))
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .help(tooltip)
+        .onHover { isHovered = $0 }
     }
 }
 
@@ -338,8 +547,8 @@ final class ScreenTranslationOverlaySession {
 
     static let sourceLanguages: [LanguageOption] = [
         LanguageOption(code: nil, title: "自动检测"),
-        LanguageOption(code: "en", title: "英语"),
         LanguageOption(code: "zh-CN", title: "简体中文"),
+        LanguageOption(code: "en", title: "英语"),
         LanguageOption(code: "ja", title: "日语"),
         LanguageOption(code: "ko", title: "韩语"),
     ]
@@ -357,16 +566,7 @@ final class ScreenTranslationOverlaySession {
     private let compareView = ScreenTranslationCompareView(frame: .zero)
     private let overlayView: ScreenTranslationOverlayView
     private let progressIndicator = NSProgressIndicator()
-    private let sourcePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let targetPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let swapButton: NSButton
-    private let compareSwitch = NSSwitch()
-    private let copyTranslationButton: NSButton
-    private let extractTextButton: NSButton
-    private let reselectButton: NSButton
-    private let pinButton: NSButton
-    private let refreshButton: NSButton
-    private let closeButton: NSButton
+    private let toolbarState = ScreenTranslationToolbarState()
     private let screenBounds: CGRect
     private(set) var region: CGRect
     private var dragStartRegion: CGRect?
@@ -406,14 +606,6 @@ final class ScreenTranslationOverlaySession {
         panel.backgroundColor = .clear
         panel.contentView = overlayView
 
-        swapButton = Self.makeButton(symbol: "arrow.left.arrow.right", tooltip: "互换语言")
-        copyTranslationButton = Self.makeButton(symbol: "doc.on.doc", tooltip: "复制译文")
-        extractTextButton = Self.makeButton(symbol: "doc.plaintext", tooltip: "提取文本")
-        reselectButton = Self.makeButton(symbol: "viewfinder", tooltip: "重新截取")
-        pinButton = Self.makeButton(symbol: "pin", tooltip: "钉住为贴图")
-        refreshButton = Self.makeButton(symbol: "arrow.clockwise", tooltip: "刷新（重新识别当前屏幕内容）")
-        closeButton = Self.makeButton(symbol: "xmark", tooltip: "关闭（Esc）")
-
         toolbarPanel = NSPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -426,8 +618,8 @@ final class ScreenTranslationOverlaySession {
         toolbarPanel.hidesOnDeactivate = false
         toolbarPanel.backgroundColor = .clear
         toolbarPanel.isOpaque = false
-        toolbarPanel.hasShadow = true
-        toolbarPanel.appearance = NSAppearance(named: .darkAqua)
+        toolbarPanel.hasShadow = false
+        toolbarPanel.contentView = NSHostingView(rootView: ScreenTranslationToolbarView(state: toolbarState))
 
         comparePanel = NSPanel(
             contentRect: .zero,
@@ -445,11 +637,37 @@ final class ScreenTranslationOverlaySession {
         comparePanel.contentView = compareView
 
         configureProgressIndicator()
-        configureToolbar()
-        configureActions()
+        configureToolbarCallbacks()
         configureDragHandling()
         configureKeyHandling()
-        updateControlAvailability()
+    }
+
+    private func configureToolbarCallbacks() {
+        toolbarState.onLanguageChanged = { [weak self] in
+            guard let self else { return }
+            self.onLanguageChanged?(self.toolbarState.selectedSourceCode, self.toolbarState.selectedTargetCode)
+        }
+        toolbarState.onToggleCompare = { [weak self] in
+            self?.toggleCompare()
+        }
+        toolbarState.onCopyTranslation = { [weak self] in
+            self?.copyTranslation()
+        }
+        toolbarState.onExtractText = { [weak self] in
+            self?.extractText()
+        }
+        toolbarState.onReselect = { [weak self] in
+            self?.reselect()
+        }
+        toolbarState.onPin = { [weak self] in
+            self?.pinResult()
+        }
+        toolbarState.onRefresh = { [weak self] in
+            self?.refresh()
+        }
+        toolbarState.onClose = { [weak self] in
+            self?.closeFromToolbar()
+        }
     }
 
     func present() {
@@ -460,19 +678,17 @@ final class ScreenTranslationOverlaySession {
     }
 
     func setLanguages(source: String?, target: String) {
-        selectOption(in: sourcePopUp, options: Self.sourceLanguages, code: source)
-        selectOption(in: targetPopUp, options: Self.targetLanguages, code: target)
-        updateSwapAvailability()
+        toolbarState.selectedSourceCode = source
+        toolbarState.selectedTargetCode = target
     }
 
     func beginLoading() {
-        hasTranslation = false
+        toolbarState.hasTranslation = false
         overlayView.paragraphs = []
         overlayView.showsTranslation = false
         comparePanel.orderOut(nil)
         progressIndicator.isHidden = false
         progressIndicator.startAnimation(nil)
-        updateControlAvailability()
     }
 
     func showPlainImage(_ image: NSImage) {
@@ -490,14 +706,13 @@ final class ScreenTranslationOverlaySession {
     ) {
         self.sourceText = sourceText
         self.translatedText = translatedText
-        hasTranslation = true
+        toolbarState.hasTranslation = true
         overlayView.image = image
         overlayView.paragraphs = paragraphs
         compareView.image = image
         compareView.paragraphs = paragraphs
         progressIndicator.stopAnimation(nil)
         progressIndicator.isHidden = true
-        updateControlAvailability()
         updatePresentation()
     }
 
@@ -530,29 +745,6 @@ final class ScreenTranslationOverlaySession {
         )
     }
 
-    private static func makeButton(symbol: String, tooltip: String) -> NSButton {
-        let button = NSButton(title: "", target: nil, action: nil)
-        button.isBordered = false
-        button.setButtonType(.momentaryChange)
-        let configuration = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-        button.image = NSImage(
-            systemSymbolName: symbol,
-            accessibilityDescription: tooltip
-        )?.withSymbolConfiguration(configuration)
-        button.contentTintColor = .white
-        button.toolTip = tooltip
-        button.setAccessibilityLabel(tooltip)
-        return button
-    }
-
-    private static func makeSeparator() -> NSBox {
-        let box = NSBox()
-        box.boxType = .separator
-        box.translatesAutoresizingMaskIntoConstraints = false
-        box.heightAnchor.constraint(equalToConstant: 16).isActive = true
-        return box
-    }
-
     private func configureProgressIndicator() {
         progressIndicator.style = .spinning
         progressIndicator.controlSize = .small
@@ -570,91 +762,6 @@ final class ScreenTranslationOverlaySession {
             ),
         ])
         progressIndicator.startAnimation(nil)
-    }
-
-    private func configureToolbar() {
-        for option in Self.sourceLanguages {
-            sourcePopUp.addItem(withTitle: option.title)
-        }
-        for option in Self.targetLanguages {
-            targetPopUp.addItem(withTitle: option.title)
-        }
-        for popUp in [sourcePopUp, targetPopUp] {
-            popUp.controlSize = .small
-            popUp.isBordered = false
-            popUp.font = NSFont.systemFont(ofSize: 12, weight: .medium)
-        }
-        swapButton.controlSize = .small
-        compareSwitch.controlSize = .mini
-        compareSwitch.state = .off
-
-        let compareLabel = NSTextField(labelWithString: "对照")
-        compareLabel.font = NSFont.systemFont(ofSize: 12, weight: .medium)
-        compareLabel.textColor = .white
-
-        let stack = NSStackView(views: [
-            sourcePopUp,
-            swapButton,
-            targetPopUp,
-            Self.makeSeparator(),
-            compareLabel,
-            compareSwitch,
-            Self.makeSeparator(),
-            copyTranslationButton,
-            extractTextButton,
-            reselectButton,
-            pinButton,
-            refreshButton,
-            Self.makeSeparator(),
-            closeButton,
-        ])
-        stack.orientation = .horizontal
-        stack.alignment = .centerY
-        stack.spacing = 10
-        stack.setCustomSpacing(2, after: sourcePopUp)
-        stack.setCustomSpacing(2, after: swapButton)
-        stack.setCustomSpacing(5, after: compareLabel)
-        stack.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        let background = NSVisualEffectView()
-        background.material = .hudWindow
-        background.state = .active
-        background.blendingMode = .behindWindow
-        background.wantsLayer = true
-        background.layer?.cornerRadius = 10
-        background.layer?.masksToBounds = true
-        background.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: background.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: background.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: background.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: background.bottomAnchor),
-        ])
-        toolbarPanel.contentView = background
-    }
-
-    private func configureActions() {
-        sourcePopUp.target = self
-        sourcePopUp.action = #selector(languageSelectionChanged)
-        targetPopUp.target = self
-        targetPopUp.action = #selector(languageSelectionChanged)
-        swapButton.target = self
-        swapButton.action = #selector(swapLanguages)
-        compareSwitch.target = self
-        compareSwitch.action = #selector(compareSwitchChanged)
-        copyTranslationButton.target = self
-        copyTranslationButton.action = #selector(copyTranslation)
-        extractTextButton.target = self
-        extractTextButton.action = #selector(extractText)
-        reselectButton.target = self
-        reselectButton.action = #selector(reselect)
-        pinButton.target = self
-        pinButton.action = #selector(pinResult)
-        refreshButton.target = self
-        refreshButton.action = #selector(refresh)
-        closeButton.target = self
-        closeButton.action = #selector(closeFromToolbar)
     }
 
     private func configureDragHandling() {
@@ -749,27 +856,18 @@ final class ScreenTranslationOverlaySession {
     }
 
     private func positionToolbar() {
-        let toolbarSize = toolbarPanel.contentView?.fittingSize ?? CGSize(width: 460, height: 38)
-        let gap: CGFloat = 6
+        let gap: CGFloat = 8
         let visibleFrame = targetScreen()?.visibleFrame ?? screenBounds
+        let toolbarSize = toolbarPanel.contentView?.fittingSize ?? CGSize(width: 420, height: 42)
         var origin = CGPoint(
-            x: region.midX - toolbarSize.width / 2,
-            y: region.minY - gap - toolbarSize.height
+            x: region.midX - (toolbarSize.width / 2),
+            y: region.minY - toolbarSize.height - gap
         )
         if origin.y < visibleFrame.minY {
-            origin.y = min(region.maxY, visibleFrame.maxY) + gap
+            origin.y = region.maxY + gap
         }
-        if origin.y + toolbarSize.height > visibleFrame.maxY {
-            origin.y = max(
-                visibleFrame.minY,
-                min(region.minY + gap, visibleFrame.maxY - toolbarSize.height)
-            )
-        }
-        origin.x = min(
-            max(origin.x, visibleFrame.minX),
-            visibleFrame.maxX - toolbarSize.width
-        )
-        toolbarPanel.setFrame(CGRect(origin: origin, size: toolbarSize), display: false)
+        origin.x = max(visibleFrame.minX + gap, min(origin.x, visibleFrame.maxX - toolbarSize.width - gap))
+        toolbarPanel.setFrame(CGRect(origin: origin, size: toolbarSize), display: true)
     }
 
     private func targetScreen() -> NSScreen? {
@@ -778,82 +876,24 @@ final class ScreenTranslationOverlaySession {
             ?? NSScreen.screens.first(where: { $0.frame.intersects(screenBounds) })
     }
 
-    private func selectOption(
-        in popUp: NSPopUpButton,
-        options: [LanguageOption],
-        code: String?
-    ) {
-        let index = options.firstIndex(where: { $0.code == code }) ?? 0
-        popUp.selectItem(at: index)
-    }
-
-    private var selectedSourceCode: String? {
-        let index = sourcePopUp.indexOfSelectedItem
-        guard index >= 0, index < Self.sourceLanguages.count else {
-            return nil
-        }
-        return Self.sourceLanguages[index].code
-    }
-
-    private var selectedTargetCode: String {
-        let index = targetPopUp.indexOfSelectedItem
-        guard index >= 0, index < Self.targetLanguages.count else {
-            return Self.targetLanguages[0].code ?? "zh-CN"
-        }
-        return Self.targetLanguages[index].code ?? "zh-CN"
-    }
-
-    private func updateControlAvailability() {
-        compareSwitch.isEnabled = hasTranslation
-        copyTranslationButton.isEnabled = hasTranslation
-        extractTextButton.isEnabled = hasTranslation
-        pinButton.isEnabled = hasTranslation
-        updateSwapAvailability()
-    }
-
-    private func updateSwapAvailability() {
-        swapButton.isEnabled = selectedSourceCode != nil
-    }
-
     private func requestClose() {
         close()
         onClosed?()
     }
 
-    @objc private func languageSelectionChanged() {
-        updateSwapAvailability()
-        onLanguageChanged?(selectedSourceCode, selectedTargetCode)
-    }
-
-    @objc private func swapLanguages() {
-        guard let sourceCode = selectedSourceCode else {
-            return
-        }
-        let targetCode = selectedTargetCode
-        guard sourceCode != targetCode else {
-            return
-        }
-        guard Self.targetLanguages.contains(where: { $0.code == sourceCode }) else {
-            return
-        }
-        selectOption(in: sourcePopUp, options: Self.sourceLanguages, code: targetCode)
-        selectOption(in: targetPopUp, options: Self.targetLanguages, code: sourceCode)
-        languageSelectionChanged()
-    }
-
-    @objc private func compareSwitchChanged() {
+    private func toggleCompare() {
+        toolbarState.isComparing.toggle()
         updatePresentation()
     }
 
     private func updatePresentation() {
-        guard hasTranslation else {
+        guard toolbarState.hasTranslation else {
             overlayView.showsTranslation = false
             comparePanel.orderOut(nil)
             return
         }
-        let comparing = compareSwitch.state == .on
-        overlayView.showsTranslation = !comparing
-        if comparing {
+        overlayView.showsTranslation = !toolbarState.isComparing
+        if toolbarState.isComparing {
             positionComparePanel()
             comparePanel.orderFrontRegardless()
         } else {
@@ -881,21 +921,21 @@ final class ScreenTranslationOverlaySession {
         )
     }
 
-    @objc private func copyTranslation() {
+    private func copyTranslation() {
         copyToPasteboard(translatedText)
     }
 
-    @objc private func extractText() {
+    private func extractText() {
         onExtractText?()
     }
 
-    @objc private func reselect() {
+    private func reselect() {
         close()
         onReselect?()
     }
 
-    @objc private func pinResult() {
-        guard hasTranslation,
+    private func pinResult() {
+        guard toolbarState.hasTranslation,
               let exported = ScreenTranslationRenderer.exportImage(
                   image: overlayView.image,
                   paragraphs: overlayView.paragraphs,
@@ -908,11 +948,11 @@ final class ScreenTranslationOverlaySession {
         onPin?(exported, region)
     }
 
-    @objc private func refresh() {
+    private func refresh() {
         onRefresh?()
     }
 
-    @objc private func closeFromToolbar() {
+    private func closeFromToolbar() {
         requestClose()
     }
 

@@ -115,8 +115,8 @@ final class ScreenshotCoordinator {
             isCapturing = false
         }
         guard CGPreflightScreenCaptureAccess() else {
-            let granted = CGRequestScreenCaptureAccess()
-            throw ScreenshotError.permissionRequired(restartRequired: granted)
+            _ = CGRequestScreenCaptureAccess()
+            throw ScreenshotError.permissionRequired(restartRequired: false)
         }
         guard let screen = screenUnderPointer() else {
             throw ScreenshotError.screenUnavailable

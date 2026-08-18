@@ -33,9 +33,23 @@ public final class TranslatorViewModel: ObservableObject {
         errorMessage = message
     }
 
+    private var undoHistory: [(source: String, target: String)] = []
+
     public func clear() {
+        if !sourceText.isEmpty || !translatedText.isEmpty {
+            undoHistory.append((source: sourceText, target: translatedText))
+        }
         sourceText = ""
         translatedText = ""
+        errorMessage = nil
+    }
+
+    public func undo() {
+        guard let last = undoHistory.popLast() else {
+            return
+        }
+        sourceText = last.source
+        translatedText = last.target
         errorMessage = nil
     }
 

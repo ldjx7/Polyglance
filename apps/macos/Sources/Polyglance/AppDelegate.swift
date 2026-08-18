@@ -157,6 +157,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 try await screenshotCoordinator.captureAndPin(preferredAction: preferredAction)
             } catch {
+                if case .permissionRequired = error as? ScreenshotError {
+                    return
+                }
                 operationErrorPresenter.present(.screenshot(error))
             }
         }
@@ -213,7 +216,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case let .text(text):
             selectedText = text
         case .permissionRequired:
-            operationErrorPresenter.present(.accessibilityPermissionRequired())
             return
         case .noSelection:
             if !Task.isCancelled {
@@ -281,16 +283,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 500),
-            styleMask: [.titled, .closable, .resizable, .utilityWindow],
+            contentRect: NSRect(x: 0, y: 0, width: 620, height: 380),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         panel.title = "Polyglance"
+        panel.titlebarAppearsTransparent = true
+        panel.titleVisibility = .hidden
+        panel.isMovableByWindowBackground = true
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentViewController = NSHostingController(rootView: TranslationView(viewModel: viewModel))
         panel.center()
