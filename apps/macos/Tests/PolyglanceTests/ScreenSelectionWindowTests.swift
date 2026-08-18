@@ -967,7 +967,7 @@ final class ScreenSelectionWindowTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(buttons.count, 12)
         XCTAssertTrue(Set(buttons.map(\.title)).isSuperset(of: [
             "画笔", "矩形", "椭圆", "箭头", "文字", "马赛克",
-            "撤销", "重做", "复制", "保存", "置顶", "取消",
+            "撤销", "重做", "复制", "保存", "贴图", "取消",
         ]))
         XCTAssertLessThanOrEqual(toolbar.frame.maxX, window.selectionView.bounds.maxX - 8)
         XCTAssertGreaterThanOrEqual(toolbar.frame.minX, window.selectionView.bounds.minX + 8)

@@ -472,8 +472,20 @@ final class PinWindowManagerTests: XCTestCase {
         ])
     }
 
+    private func findMenuItem(_ title: String, in menu: NSMenu) -> NSMenuItem? {
+        for item in menu.items {
+            if item.title == title {
+                return item
+            }
+            if let submenu = item.submenu, let found = findMenuItem(title, in: submenu) {
+                return found
+            }
+        }
+        return nil
+    }
+
     private func menuItem(_ title: String, in menu: NSMenu) throws -> NSMenuItem {
-        try XCTUnwrap(menu.items.first(where: { $0.title == title }))
+        try XCTUnwrap(findMenuItem(title, in: menu))
     }
 
     private func performMenuItem(
@@ -483,7 +495,7 @@ final class PinWindowManagerTests: XCTestCase {
         line: UInt = #line
     ) {
         let menu = view.makeContextMenu()
-        guard let item = menu.items.first(where: { $0.title == title }),
+        guard let item = findMenuItem(title, in: menu),
               item.isEnabled,
               let action = item.action else {
             XCTFail("Missing enabled menu item: \(title)", file: file, line: line)

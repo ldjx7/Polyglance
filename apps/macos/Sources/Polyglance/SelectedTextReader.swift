@@ -32,7 +32,6 @@ struct SelectedTextReader {
 
     func read() async -> SelectedTextReadResult {
         guard accessibilityTrustCheck() else {
-            accessibilityPermissionRequest()
             return .permissionRequired
         }
         let pipeline = SelectionCapturePipeline(
