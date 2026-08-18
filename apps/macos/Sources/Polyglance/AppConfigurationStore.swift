@@ -162,24 +162,7 @@ final class AppConfigurationStore: @unchecked Sendable {
 struct KeychainCredentialStore: CredentialStoring, Sendable {
     private let service = "io.polyglance.credentials"
 
-    // Credentials saved before the Polyglance rename live under the old service
-    // name. Keep adopting them until existing installs have all migrated;
-    // removing this drops the user's stored API key without any warning.
-    private let renamedFromService = "com.native-translator.credentials"
-
     func load(_ slot: CredentialSlot) throws -> String? {
-        if let value = try loadValue(slot, from: service) {
-            return value
-        }
-        guard let migrated = try loadValue(slot, from: renamedFromService) else {
-            return nil
-        }
-        try save(migrated, for: slot)
-        deleteValue(slot, from: renamedFromService)
-        return migrated
-    }
-
-    private func loadValue(_ slot: CredentialSlot, from service: String) throws -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -196,14 +179,6 @@ struct KeychainCredentialStore: CredentialStoring, Sendable {
             throw CredentialError.operationFailed(status)
         }
         return String(data: data, encoding: .utf8)
-    }
-
-    private func deleteValue(_ slot: CredentialSlot, from service: String) {
-        SecItemDelete([
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: slot.rawValue,
-        ] as CFDictionary)
     }
 
     func save(_ value: String, for slot: CredentialSlot) throws {
