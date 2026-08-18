@@ -6,7 +6,7 @@ repository_root="${script_directory:h}"
 macos_root="$repository_root/apps/macos"
 distribution_root="$repository_root/dist"
 app_bundle="$distribution_root/Polyglance.app"
-app_executable="$app_bundle/Contents/MacOS/NativeTranslatorMac"
+app_executable="$app_bundle/Contents/MacOS/Polyglance"
 build_script_name="${0:t}"
 should_reset_permissions=true
 
@@ -91,7 +91,7 @@ if [[ -e "$app_bundle" ]]; then
 fi
 
 mkdir -p "$app_bundle/Contents/MacOS" "$app_bundle/Contents/Resources"
-cp "$binary_directory/NativeTranslatorMac" "$app_bundle/Contents/MacOS/NativeTranslatorMac"
+cp "$binary_directory/Polyglance" "$app_bundle/Contents/MacOS/Polyglance"
 cp "$macos_root/Resources/Info.plist" "$app_bundle/Contents/Info.plist"
 cp "$macos_root/Resources/Polyglance.icns" "$app_bundle/Contents/Resources/Polyglance.icns"
 

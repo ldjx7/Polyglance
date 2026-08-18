@@ -61,7 +61,7 @@ impl TranslationEngine {
     pub fn new() -> Result<Arc<Self>, TranslationFailure> {
         let runtime = Builder::new_multi_thread()
             .enable_all()
-            .thread_name("native-translator")
+            .thread_name("polyglance")
             .build()
             .map_err(|_| TranslationFailure::Initialization)?;
         Ok(Arc::new(Self { runtime }))

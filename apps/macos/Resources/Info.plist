@@ -7,7 +7,7 @@
     <key>CFBundleDisplayName</key>
     <string>Polyglance</string>
     <key>CFBundleExecutable</key>
-    <string>NativeTranslatorMac</string>
+    <string>Polyglance</string>
     <key>CFBundleIdentifier</key>
     <string>io.polyglance.macos</string>
     <key>CFBundleInfoDictionaryVersion</key>

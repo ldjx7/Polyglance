@@ -3,7 +3,7 @@
 ## 1. 文档信息
 
 - 产品名：Polyglance
-- 目录名：`native-translator`
+- 目录名：`polyglance`
 - 文档状态：初版方案
 - 目标平台：macOS、Windows
 - 核心技术：Rust + Swift + C#
@@ -141,7 +141,7 @@ Rust 内核不得依赖 AppKit、SwiftUI、WinUI 或 Windows UI Automation。
 ## 5. 推荐目录结构
 
 ```text
-native-translator/
+polyglance/
 ├── Cargo.toml
 ├── README.md
 ├── docs/

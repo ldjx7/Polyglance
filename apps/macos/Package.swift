@@ -8,12 +8,12 @@ let packageDirectory = URL(fileURLWithPath: #filePath)
     .path
 
 let package = Package(
-    name: "NativeTranslatorMac",
+    name: "Polyglance",
     platforms: [
         .macOS(.v15),
     ],
     products: [
-        .executable(name: "NativeTranslatorMac", targets: ["NativeTranslatorMac"]),
+        .executable(name: "Polyglance", targets: ["Polyglance"]),
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.4"),
@@ -34,17 +34,17 @@ let package = Package(
             path: "Generated/TranslatorCore"
         ),
         .target(
-            name: "NativeTranslatorMacKit",
-            path: "Sources/NativeTranslatorMacKit"
+            name: "PolyglanceKit",
+            path: "Sources/PolyglanceKit"
         ),
         .executableTarget(
-            name: "NativeTranslatorMac",
+            name: "Polyglance",
             dependencies: [
-                "NativeTranslatorMacKit",
+                "PolyglanceKit",
                 "TranslatorCore",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
-            path: "Sources/NativeTranslatorMac",
+            path: "Sources/Polyglance",
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-rpath",
@@ -58,14 +58,14 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "NativeTranslatorMacKitTests",
-            dependencies: ["NativeTranslatorMacKit"],
-            path: "Tests/NativeTranslatorMacKitTests"
+            name: "PolyglanceKitTests",
+            dependencies: ["PolyglanceKit"],
+            path: "Tests/PolyglanceKitTests"
         ),
         .testTarget(
-            name: "NativeTranslatorMacTests",
-            dependencies: ["NativeTranslatorMac"],
-            path: "Tests/NativeTranslatorMacTests"
+            name: "PolyglanceTests",
+            dependencies: ["Polyglance"],
+            path: "Tests/PolyglanceTests"
         ),
     ],
     swiftLanguageModes: [.v5]
