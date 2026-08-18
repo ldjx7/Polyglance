@@ -278,6 +278,9 @@ struct SettingsView: View {
             VStack(spacing: 4) {
                 Text("Polyglance")
                     .font(.system(size: 16, weight: .bold))
+                Text(AppVersionInfo.displayString)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Text("多语言内容，一眼看懂")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)

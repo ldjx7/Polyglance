@@ -48,3 +48,19 @@ enum PolyglanceMenuBarIcon {
         return image
     }()
 }
+
+@MainActor
+enum AppVersionInfo {
+    static var versionString: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.3"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+        if let build, !build.isEmpty, build != version {
+            return "\(version) (\(build))"
+        }
+        return version
+    }
+
+    static var displayString: String {
+        "v\(versionString)"
+    }
+}

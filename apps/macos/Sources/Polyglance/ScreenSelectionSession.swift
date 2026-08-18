@@ -37,8 +37,50 @@ typealias ScreenshotRegionRefiner = @Sendable (CGPoint) async -> CGRect?
 @MainActor
 final class ScreenshotToolbarButton: NSButton {
     var onHoverChanged: ((ScreenshotToolbarButton, Bool) -> Void)?
-
     private var hoverTrackingArea: NSTrackingArea?
+    private var isHovered = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 5
+        updateAppearance()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        wantsLayer = true
+        layer?.cornerRadius = 5
+        updateAppearance()
+    }
+
+    override var isEnabled: Bool {
+        didSet {
+            updateAppearance()
+        }
+    }
+
+    var isActive: Bool = false {
+        didSet {
+            updateAppearance()
+        }
+    }
+
+    func updateAppearance() {
+        if !isEnabled {
+            contentTintColor = NSColor.black.withAlphaComponent(0.2)
+            layer?.backgroundColor = NSColor.clear.cgColor
+        } else if isActive {
+            contentTintColor = NSColor.systemBlue
+            layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.12).cgColor
+        } else if isHovered {
+            contentTintColor = NSColor(white: 0.08, alpha: 1.0)
+            layer?.backgroundColor = NSColor.black.withAlphaComponent(0.08).cgColor
+        } else {
+            contentTintColor = NSColor(white: 0.18, alpha: 1.0)
+            layer?.backgroundColor = NSColor.clear.cgColor
+        }
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -57,12 +99,103 @@ final class ScreenshotToolbarButton: NSButton {
 
     override func mouseEntered(with event: NSEvent) {
         super.mouseEntered(with: event)
+        isHovered = true
+        updateAppearance()
         onHoverChanged?(self, true)
     }
 
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
+        isHovered = false
+        updateAppearance()
         onHoverChanged?(self, false)
+    }
+}
+
+@MainActor
+final class ScreenshotToolbarContainerView: NSVisualEffectView {
+    private let backgroundCard = NSView()
+
+    var cornerRadius: CGFloat = 22 {
+        didSet {
+            updateShape()
+        }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setup()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup()
+    }
+
+    private func setup() {
+        wantsLayer = true
+        material = .popover
+        state = .active
+        appearance = NSAppearance(named: .aqua)
+
+        layer?.masksToBounds = false
+        layer?.shadowColor = NSColor.black.withAlphaComponent(0.16).cgColor
+        layer?.shadowOpacity = 1
+        layer?.shadowOffset = CGSize(width: 0, height: -3)
+        layer?.shadowRadius = 8
+
+        backgroundCard.wantsLayer = true
+        backgroundCard.layer?.backgroundColor = NSColor.white.cgColor
+        backgroundCard.layer?.borderWidth = 0.5
+        backgroundCard.layer?.borderColor = NSColor.black.withAlphaComponent(0.08).cgColor
+        backgroundCard.layer?.masksToBounds = true
+        backgroundCard.autoresizingMask = [.width, .height]
+        backgroundCard.frame = bounds
+        addSubview(backgroundCard, positioned: .below, relativeTo: nil)
+
+        updateShape()
+    }
+
+    override func layout() {
+        super.layout()
+        updateShape()
+    }
+
+    private func updateShape() {
+        backgroundCard.frame = bounds
+        backgroundCard.layer?.cornerRadius = cornerRadius
+        layer?.cornerRadius = cornerRadius
+        maskImage = Self.makeMaskImage(cornerRadius: cornerRadius)
+
+        let path = CGPath(
+            roundedRect: bounds,
+            cornerWidth: cornerRadius,
+            cornerHeight: cornerRadius,
+            transform: nil
+        )
+        layer?.shadowPath = path
+    }
+
+    private static func makeMaskImage(cornerRadius: CGFloat) -> NSImage {
+        let size = CGSize(width: cornerRadius * 2 + 2, height: cornerRadius * 2 + 2)
+        let image = NSImage(size: size, flipped: false) { rect in
+            let path = NSBezierPath(
+                roundedRect: rect,
+                xRadius: cornerRadius,
+                yRadius: cornerRadius
+            )
+            NSColor.black.setFill()
+            path.fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(
+            top: cornerRadius,
+            left: cornerRadius,
+            bottom: cornerRadius,
+            right: cornerRadius
+        )
+        image.resizingMode = .stretch
+        return image
     }
 }
 
@@ -303,7 +436,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     private var activeAnnotationElement: ScreenshotAnnotationElement?
     private(set) var selectedAnnotationTool: ScreenshotAnnotationTool = .freehand
     private var annotationStyle = ScreenshotAnnotationStyle.default
-    private var toolbar: NSVisualEffectView!
+    private var toolbar: ScreenshotToolbarContainerView!
     private var toolbarStack: NSStackView!
     private var toolbarToolRow: NSStackView!
     private var toolbarActionRow: NSStackView!
@@ -872,16 +1005,9 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     }
 
     private func configureToolbar() {
-        let effectView = NSVisualEffectView(frame: CGRect(origin: .zero, size: toolbarSize))
-        effectView.material = .hudWindow
-        effectView.blendingMode = .withinWindow
-        effectView.state = .active
-        effectView.wantsLayer = true
-        effectView.layer?.cornerRadius = 12
-        effectView.layer?.borderWidth = 0.5
-        effectView.layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
-        effectView.layer?.masksToBounds = true
-        effectView.isHidden = true
+        let container = ScreenshotToolbarContainerView(frame: CGRect(origin: .zero, size: toolbarSize))
+        container.cornerRadius = usesTwoRowToolbar ? 12 : 22
+        container.isHidden = true
 
         let toolButtons = ScreenshotAnnotationTool.allCases.map { tool in
             let button = makeToolbarButton(
@@ -921,12 +1047,12 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         toolbarButtons = toolButtons + actionButtons
         toolbarToolRow = makeToolbarRow([])
         toolbarActionRow = makeToolbarRow([])
-        let stack = NSStackView(frame: effectView.bounds.insetBy(dx: 6, dy: 6))
-        stack.frame = effectView.bounds.insetBy(dx: 6, dy: 6)
+        let stack = NSStackView(frame: container.bounds.insetBy(dx: 10, dy: 5))
+        stack.frame = container.bounds.insetBy(dx: 10, dy: 5)
         stack.autoresizingMask = [.width, .height]
-        effectView.addSubview(stack)
-        addSubview(effectView)
-        toolbar = effectView
+        container.addSubview(stack)
+        addSubview(container)
+        toolbar = container
         toolbarStack = stack
         configureToolbarHelpBubble()
         updateToolbarLayout(force: true)
@@ -957,14 +1083,14 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         button.bezelStyle = .toolbar
         button.isBordered = false
         button.controlSize = .large
-        let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+        let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
         button.image = NSImage(
             systemSymbolName: symbol,
             accessibilityDescription: title
         )?.withSymbolConfiguration(symbolConfiguration)
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleProportionallyDown
-        button.contentTintColor = .white
+        button.contentTintColor = NSColor(white: 0.18, alpha: 1.0)
         button.toolTip = title
         button.setAccessibilityLabel(title)
         button.setAccessibilityHelp(title)
@@ -1365,7 +1491,11 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         for (tool, button) in annotationToolButtons {
             let isSelected = isAnnotating && tool == selectedAnnotationTool
             button.state = .off
-            button.contentTintColor = isSelected ? .controlAccentColor : .white
+            if let toolbarBtn = button as? ScreenshotToolbarButton {
+                toolbarBtn.isActive = isSelected
+            } else {
+                button.contentTintColor = isSelected ? .controlAccentColor : NSColor(white: 0.18, alpha: 1.0)
+            }
         }
         undoButton?.isEnabled = annotationHistory.canUndo
         redoButton?.isEnabled = annotationHistory.canRedo
@@ -1374,6 +1504,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     private func updateToolbarButtonPresentation() {
         for button in toolbarButtons {
             button.imagePosition = .imageOnly
+            (button as? ScreenshotToolbarButton)?.updateAppearance()
         }
     }
 
@@ -1383,6 +1514,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             return
         }
         toolbarUsesTwoRows = usesTwoRows
+        toolbar.cornerRadius = usesTwoRows ? 12 : 22
         removeAllArrangedSubviews(from: toolbarStack)
         removeAllArrangedSubviews(from: toolbarToolRow)
         removeAllArrangedSubviews(from: toolbarActionRow)

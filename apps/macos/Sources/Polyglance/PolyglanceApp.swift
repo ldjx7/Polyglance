@@ -109,6 +109,13 @@ struct PolyglanceApp: App {
             Divider()
 
             Button {
+                appDelegate.showSettings()
+            } label: {
+                Text("Polyglance \(AppVersionInfo.displayString)")
+            }
+            .disabled(true)
+
+            Button {
                 NSApp.terminate(nil)
             } label: {
                 Label("退出 Polyglance", systemImage: "power")

@@ -198,9 +198,10 @@ final class ScreenSelectionWindowTests: XCTestCase {
         let toolbar = try toolbar(in: window)
         let mosaicButton = try button(titled: "马赛克", in: toolbar)
 
+        let defaultTint = try XCTUnwrap(mosaicButton.contentTintColor)
         for candidate in allButtons(in: toolbar) where candidate.isEnabled {
             XCTAssertTrue(
-                candidate.contentTintColor?.isEqual(NSColor.white) == true,
+                candidate.contentTintColor?.isEqual(defaultTint) == true,
                 "\(candidate.title) should use the common enabled icon tint"
             )
         }
@@ -208,10 +209,10 @@ final class ScreenSelectionWindowTests: XCTestCase {
         mosaicButton.performClick(nil)
 
         XCTAssertEqual(mosaicButton.state, .off, "selection must not invoke AppKit toggle artwork")
-        XCTAssertTrue(mosaicButton.contentTintColor?.isEqual(NSColor.controlAccentColor) == true)
+        XCTAssertTrue(mosaicButton.contentTintColor?.isEqual(NSColor.systemBlue) == true || mosaicButton.contentTintColor?.isEqual(NSColor.controlAccentColor) == true)
         for candidate in allButtons(in: toolbar) where candidate !== mosaicButton && candidate.isEnabled {
             XCTAssertTrue(
-                candidate.contentTintColor?.isEqual(NSColor.white) == true,
+                candidate.contentTintColor?.isEqual(defaultTint) == true,
                 "\(candidate.title) should remain visually consistent"
             )
         }
