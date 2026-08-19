@@ -205,7 +205,10 @@ mod tests {
     fn bitrate_stays_inside_the_profile_bounds() {
         let profile = profile(RecordingQuality::Standard, RecordingFormat::Mp4);
 
-        assert_eq!(profile.video_bitrate(Size::new(64.0, 64.0), None), 2_000_000);
+        assert_eq!(
+            profile.video_bitrate(Size::new(64.0, 64.0), None),
+            2_000_000
+        );
         assert_eq!(
             profile.video_bitrate(Size::new(7680.0, 4320.0), None),
             24_000_000

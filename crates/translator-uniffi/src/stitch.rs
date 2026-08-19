@@ -169,7 +169,10 @@ impl LongScreenshotStitcher {
     #[uniffi::constructor]
     pub fn new(configuration: StitchConfiguration, direction: StitchDirection) -> Self {
         Self {
-            inner: Mutex::new(stitch::Stitcher::new(configuration.into(), direction.into())),
+            inner: Mutex::new(stitch::Stitcher::new(
+                configuration.into(),
+                direction.into(),
+            )),
         }
     }
 

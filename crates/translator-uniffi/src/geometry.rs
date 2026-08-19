@@ -284,8 +284,7 @@ pub fn capture_selection_edit_target(
     selection: CaptureRect,
     handle_tolerance: f64,
 ) -> Option<CaptureEditTarget> {
-    core::selection_edit_target(point.into(), selection.into(), handle_tolerance)
-        .map(Into::into)
+    core::selection_edit_target(point.into(), selection.into(), handle_tolerance).map(Into::into)
 }
 
 #[uniffi::export]
@@ -312,13 +311,7 @@ pub fn capture_expanded_selection(
     target: CaptureEditTarget,
     bounds: CaptureRect,
 ) -> CaptureRect {
-    core::expanded_selection(
-        selection.into(),
-        point.into(),
-        target.into(),
-        bounds.into(),
-    )
-    .into()
+    core::expanded_selection(selection.into(), point.into(), target.into(), bounds.into()).into()
 }
 
 #[uniffi::export]

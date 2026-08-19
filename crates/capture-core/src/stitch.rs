@@ -214,7 +214,11 @@ impl Stitcher {
         let height_limit_reached = accepted_height < frame.height
             || accepted_height == self.configuration.maximum_output_height;
         self.previous_frame = Some(frame);
-        Ok(self.result(Disposition::Initial, width_limit_reached, height_limit_reached))
+        Ok(self.result(
+            Disposition::Initial,
+            width_limit_reached,
+            height_limit_reached,
+        ))
     }
 
     fn extend_output(
@@ -351,8 +355,8 @@ impl Stitcher {
         let preview_height = ((self.output_height as f64 * scale).round() as usize).max(1);
         let mut preview_bytes = vec![0u8; preview_width * preview_height * 4];
         for target_y in 0..preview_height {
-            let source_y = ((target_y * self.output_height) / preview_height)
-                .min(self.output_height - 1);
+            let source_y =
+                ((target_y * self.output_height) / preview_height).min(self.output_height - 1);
             for target_x in 0..preview_width {
                 let source_x =
                     ((target_x * self.output_width) / preview_width).min(self.output_width - 1);
@@ -589,7 +593,12 @@ fn mismatch_score(
         while row < maximum_row {
             let previous_index = (row * previous.width + previous_column) * 4;
             let current_index = (row * current.width + current_column) * 4;
-            difference += rgb_difference(&previous.bytes, previous_index, &current.bytes, current_index);
+            difference += rgb_difference(
+                &previous.bytes,
+                previous_index,
+                &current.bytes,
+                current_index,
+            );
             channel_count += 3;
             row += sampling.row_stride;
         }
@@ -613,32 +622,41 @@ fn global_mismatch_score(
     let mut row = sampling.vertical_inset;
     let maximum_row = sampling.vertical_inset + sampling.sampled_height;
     while row < maximum_row {
-        let previous_row = row + if direction == Direction::Vertical {
-            offset.max(0) as usize
-        } else {
-            0
-        };
-        let current_row = row + if direction == Direction::Vertical {
-            (-offset).max(0) as usize
-        } else {
-            0
-        };
-        let mut column = sampling.horizontal_inset;
-        let maximum_column = sampling.horizontal_inset + sampling.sampled_width;
-        while column < maximum_column {
-            let previous_column = column + if direction == Direction::Horizontal {
+        let previous_row = row
+            + if direction == Direction::Vertical {
                 offset.max(0) as usize
             } else {
                 0
             };
-            let current_column = column + if direction == Direction::Horizontal {
+        let current_row = row
+            + if direction == Direction::Vertical {
                 (-offset).max(0) as usize
             } else {
                 0
             };
+        let mut column = sampling.horizontal_inset;
+        let maximum_column = sampling.horizontal_inset + sampling.sampled_width;
+        while column < maximum_column {
+            let previous_column = column
+                + if direction == Direction::Horizontal {
+                    offset.max(0) as usize
+                } else {
+                    0
+                };
+            let current_column = column
+                + if direction == Direction::Horizontal {
+                    (-offset).max(0) as usize
+                } else {
+                    0
+                };
             let previous_index = (previous_row * previous.width + previous_column) * 4;
             let current_index = (current_row * current.width + current_column) * 4;
-            difference += rgb_difference(&previous.bytes, previous_index, &current.bytes, current_index);
+            difference += rgb_difference(
+                &previous.bytes,
+                previous_index,
+                &current.bytes,
+                current_index,
+            );
             channel_count += 3;
             column += sampling.column_stride;
         }
@@ -702,7 +720,12 @@ impl Sampling {
     }
 }
 
-fn rgb_difference(previous: &[u8], previous_index: usize, current: &[u8], current_index: usize) -> u64 {
+fn rgb_difference(
+    previous: &[u8],
+    previous_index: usize,
+    current: &[u8],
+    current_index: usize,
+) -> u64 {
     let red = previous[previous_index].abs_diff(current[current_index]) as u64;
     let green = previous[previous_index + 1].abs_diff(current[current_index + 1]) as u64;
     let blue = previous[previous_index + 2].abs_diff(current[current_index + 2]) as u64;
@@ -749,7 +772,9 @@ mod tests {
     #[test]
     fn the_first_frame_seeds_the_output() {
         let mut stitcher = new_stitcher();
-        let result = stitcher.append(gradient_frame(40, 200, 0), 40, 200).unwrap();
+        let result = stitcher
+            .append(gradient_frame(40, 200, 0), 40, 200)
+            .unwrap();
 
         assert_eq!(result.disposition, Disposition::Initial);
         assert_eq!(result.frame_count, 1);
@@ -760,8 +785,12 @@ mod tests {
     #[test]
     fn an_identical_frame_changes_nothing() {
         let mut stitcher = new_stitcher();
-        stitcher.append(gradient_frame(40, 200, 0), 40, 200).unwrap();
-        let result = stitcher.append(gradient_frame(40, 200, 0), 40, 200).unwrap();
+        stitcher
+            .append(gradient_frame(40, 200, 0), 40, 200)
+            .unwrap();
+        let result = stitcher
+            .append(gradient_frame(40, 200, 0), 40, 200)
+            .unwrap();
 
         assert_eq!(result.disposition, Disposition::Unchanged);
         assert_eq!(result.total_height, 200);
@@ -770,8 +799,12 @@ mod tests {
     #[test]
     fn scrolling_down_extends_the_output_by_the_scrolled_amount() {
         let mut stitcher = new_stitcher();
-        stitcher.append(gradient_frame(40, 200, 0), 40, 200).unwrap();
-        let result = stitcher.append(gradient_frame(40, 200, 30), 40, 200).unwrap();
+        stitcher
+            .append(gradient_frame(40, 200, 0), 40, 200)
+            .unwrap();
+        let result = stitcher
+            .append(gradient_frame(40, 200, 30), 40, 200)
+            .unwrap();
 
         assert_eq!(
             result.disposition,
@@ -787,8 +820,12 @@ mod tests {
     #[test]
     fn scrolling_up_prepends_rows() {
         let mut stitcher = new_stitcher();
-        stitcher.append(gradient_frame(40, 200, 30), 40, 200).unwrap();
-        let result = stitcher.append(gradient_frame(40, 200, 0), 40, 200).unwrap();
+        stitcher
+            .append(gradient_frame(40, 200, 30), 40, 200)
+            .unwrap();
+        let result = stitcher
+            .append(gradient_frame(40, 200, 0), 40, 200)
+            .unwrap();
 
         assert_eq!(
             result.disposition,
@@ -803,7 +840,9 @@ mod tests {
     #[test]
     fn changing_frame_dimensions_is_rejected() {
         let mut stitcher = new_stitcher();
-        stitcher.append(gradient_frame(40, 200, 0), 40, 200).unwrap();
+        stitcher
+            .append(gradient_frame(40, 200, 0), 40, 200)
+            .unwrap();
 
         assert_eq!(
             stitcher.append(gradient_frame(40, 180, 0), 40, 180),
@@ -885,8 +924,12 @@ mod tests {
             ..Configuration::default()
         };
         let mut stitcher = Stitcher::new(configuration, Direction::Vertical);
-        stitcher.append(gradient_frame(40, 200, 0), 40, 200).unwrap();
-        let result = stitcher.append(gradient_frame(40, 200, 30), 40, 200).unwrap();
+        stitcher
+            .append(gradient_frame(40, 200, 0), 40, 200)
+            .unwrap();
+        let result = stitcher
+            .append(gradient_frame(40, 200, 30), 40, 200)
+            .unwrap();
 
         assert_eq!(result.total_height, 210);
         assert_eq!(result.limit_reached, Some(Limit::OutputHeight));
@@ -898,8 +941,12 @@ mod tests {
         assert!(stitcher.set_direction(Direction::Horizontal));
 
         let mut stitcher = new_stitcher();
-        stitcher.append(gradient_frame(40, 200, 0), 40, 200).unwrap();
-        stitcher.append(gradient_frame(40, 200, 30), 40, 200).unwrap();
+        stitcher
+            .append(gradient_frame(40, 200, 0), 40, 200)
+            .unwrap();
+        stitcher
+            .append(gradient_frame(40, 200, 30), 40, 200)
+            .unwrap();
 
         assert!(!stitcher.set_direction(Direction::Horizontal));
     }
@@ -916,8 +963,12 @@ mod tests {
     #[test]
     fn rendering_returns_the_full_output_buffer() {
         let mut stitcher = new_stitcher();
-        stitcher.append(gradient_frame(40, 200, 0), 40, 200).unwrap();
-        stitcher.append(gradient_frame(40, 200, 30), 40, 200).unwrap();
+        stitcher
+            .append(gradient_frame(40, 200, 0), 40, 200)
+            .unwrap();
+        stitcher
+            .append(gradient_frame(40, 200, 30), 40, 200)
+            .unwrap();
         let bytes = stitcher.render().unwrap();
 
         assert_eq!(bytes.len(), 40 * 230 * 4);
@@ -926,7 +977,9 @@ mod tests {
     #[test]
     fn the_preview_is_downscaled_within_the_requested_bounds() {
         let mut stitcher = new_stitcher();
-        stitcher.append(gradient_frame(400, 2_000, 0), 400, 2_000).unwrap();
+        stitcher
+            .append(gradient_frame(400, 2_000, 0), 400, 2_000)
+            .unwrap();
         let (bytes, width, height) = stitcher.render_preview(220, 1_600).unwrap();
 
         assert!(width <= 220);

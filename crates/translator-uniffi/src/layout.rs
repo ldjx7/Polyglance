@@ -39,5 +39,8 @@ impl From<layout::Paragraph> for LayoutParagraph {
 #[uniffi::export]
 pub fn layout_paragraphs(lines: Vec<LayoutTextLine>) -> Vec<LayoutParagraph> {
     let lines: Vec<layout::TextLine> = lines.into_iter().map(Into::into).collect();
-    layout::paragraphs(&lines).into_iter().map(Into::into).collect()
+    layout::paragraphs(&lines)
+        .into_iter()
+        .map(Into::into)
+        .collect()
 }

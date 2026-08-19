@@ -143,7 +143,8 @@ pub fn toolbar_origin(
     spacing: f64,
     edge_inset: f64,
 ) -> Point {
-    let maximum_x = (bounds.min_x() + edge_inset).max(bounds.max_x() - toolbar_size.width - edge_inset);
+    let maximum_x =
+        (bounds.min_x() + edge_inset).max(bounds.max_x() - toolbar_size.width - edge_inset);
     let x = (selection.max_x() - toolbar_size.width)
         .max(bounds.min_x() + edge_inset)
         .min(maximum_x);
@@ -228,10 +229,7 @@ pub fn selection_edit_target(
     }
 }
 
-pub fn selection_expansion_target(
-    point: Point,
-    selection: Rect,
-) -> Option<SelectionEditTarget> {
+pub fn selection_expansion_target(point: Point, selection: Rect) -> Option<SelectionEditTarget> {
     let selection = selection.standardized();
     if selection.is_null() || selection.is_empty() {
         return None;
@@ -538,11 +536,7 @@ mod tests {
 
     #[test]
     fn selection_is_clamped_to_bounds_and_normalized() {
-        let rect = selection_rect(
-            Point::new(-40.0, 260.0),
-            Point::new(120.0, 40.0),
-            bounds(),
-        );
+        let rect = selection_rect(Point::new(-40.0, 260.0), Point::new(120.0, 40.0), bounds());
 
         assert_eq!(rect, Rect::new(0.0, 40.0, 120.0, 160.0));
     }
@@ -621,11 +615,19 @@ mod tests {
             Some(SelectionEditTarget::Resize(ResizeHandle::TopLeft))
         );
         assert_eq!(
-            selection_edit_target(Point::new(100.0, 150.0), selection, DEFAULT_HANDLE_TOLERANCE),
+            selection_edit_target(
+                Point::new(100.0, 150.0),
+                selection,
+                DEFAULT_HANDLE_TOLERANCE
+            ),
             Some(SelectionEditTarget::Resize(ResizeHandle::Top))
         );
         assert_eq!(
-            selection_edit_target(Point::new(100.0, 100.0), selection, DEFAULT_HANDLE_TOLERANCE),
+            selection_edit_target(
+                Point::new(100.0, 100.0),
+                selection,
+                DEFAULT_HANDLE_TOLERANCE
+            ),
             Some(SelectionEditTarget::Move)
         );
         assert_eq!(
@@ -735,19 +737,11 @@ mod tests {
     #[test]
     fn capture_size_never_drops_below_the_reported_pixels() {
         assert_eq!(
-            preferred_capture_pixel_size(
-                Size::new(1440.0, 900.0),
-                2.0,
-                Size::new(3840.0, 2160.0)
-            ),
+            preferred_capture_pixel_size(Size::new(1440.0, 900.0), 2.0, Size::new(3840.0, 2160.0)),
             Size::new(3840.0, 2160.0)
         );
         assert_eq!(
-            preferred_capture_pixel_size(
-                Size::new(1440.0, 900.0),
-                2.0,
-                Size::new(1440.0, 900.0)
-            ),
+            preferred_capture_pixel_size(Size::new(1440.0, 900.0), 2.0, Size::new(1440.0, 900.0)),
             Size::new(2880.0, 1800.0)
         );
     }

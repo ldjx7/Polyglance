@@ -50,7 +50,10 @@ impl From<TranslationSegmentPair> for alignment::SegmentPair {
 }
 
 #[uniffi::export]
-pub fn pin_operable_initial_size(image_size: CaptureSize, maximum_size: CaptureSize) -> CaptureSize {
+pub fn pin_operable_initial_size(
+    image_size: CaptureSize,
+    maximum_size: CaptureSize,
+) -> CaptureSize {
     pin::operable_initial_size(image_size.into(), maximum_size.into()).into()
 }
 

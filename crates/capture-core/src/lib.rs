@@ -4,8 +4,8 @@ pub mod alignment;
 pub mod geometry;
 pub mod layout;
 pub mod pin;
-pub mod rect;
 pub mod recording;
+pub mod rect;
 pub mod stitch;
 pub mod text;
 
@@ -16,5 +16,5 @@ pub use geometry::{
 };
 pub use layout::{Paragraph, TextLine};
 pub use pin::SizeLimits;
-pub use rect::{Point, Rect, Size};
 pub use recording::{EncodingProfile, RecordingFormat, RecordingQuality};
+pub use rect::{Point, Rect, Size};

@@ -31,8 +31,8 @@ pub fn operable_initial_size(image_size: Size, maximum_size: Size) -> Size {
     let scale_needed_for_minimum_size = 1.0_f64
         .max(MINIMUM_WIDTH / image_size.width)
         .max(MINIMUM_HEIGHT / image_size.height);
-    let scale_allowed_by_screen = (maximum_size.width / image_size.width)
-        .min(maximum_size.height / image_size.height);
+    let scale_allowed_by_screen =
+        (maximum_size.width / image_size.width).min(maximum_size.height / image_size.height);
     scaled(
         image_size,
         scale_needed_for_minimum_size.min(scale_allowed_by_screen),
@@ -51,11 +51,11 @@ pub fn size_limits(initial_size: Size) -> SizeLimits {
         };
     }
 
-    let scale_needed_for_minimum_size = (MINIMUM_WIDTH / initial_size.width)
-        .max(MINIMUM_HEIGHT / initial_size.height);
+    let scale_needed_for_minimum_size =
+        (MINIMUM_WIDTH / initial_size.width).max(MINIMUM_HEIGHT / initial_size.height);
     let lower_scale = 1.0_f64.min(MINIMUM_SCALE.max(scale_needed_for_minimum_size));
-    let scale_allowed_by_dimension_limit = (MAXIMUM_DIMENSION / initial_size.width)
-        .min(MAXIMUM_DIMENSION / initial_size.height);
+    let scale_allowed_by_dimension_limit =
+        (MAXIMUM_DIMENSION / initial_size.width).min(MAXIMUM_DIMENSION / initial_size.height);
     let upper_scale = 1.0_f64.max(
         MAXIMUM_SCALE
             .max(scale_needed_for_minimum_size)
@@ -87,8 +87,11 @@ pub fn scaled_frame(
     } else {
         1.0
     };
-    let lower_scale = positive_ratio(minimum_size.width, frame.width, 0.0)
-        .max(positive_ratio(minimum_size.height, frame.height, 0.0));
+    let lower_scale = positive_ratio(minimum_size.width, frame.width, 0.0).max(positive_ratio(
+        minimum_size.height,
+        frame.height,
+        0.0,
+    ));
     let upper_scale = positive_ratio(maximum_size.width, frame.width, f64::MAX)
         .min(positive_ratio(maximum_size.height, frame.height, f64::MAX));
     let valid_lower_scale = 0.0_f64.max(lower_scale.min(upper_scale));

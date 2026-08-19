@@ -99,8 +99,7 @@ pub fn recording_video_bitrate(
     output_size: CaptureSize,
     override_frame_rate: Option<u32>,
 ) -> u32 {
-    recording::EncodingProfile::from(profile)
-        .video_bitrate(output_size.into(), override_frame_rate)
+    recording::EncodingProfile::from(profile).video_bitrate(output_size.into(), override_frame_rate)
 }
 
 #[uniffi::export]

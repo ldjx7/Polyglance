@@ -3,7 +3,7 @@
 //! Only parsing, request shaping, and emission throttling live here; each
 //! platform keeps its own HTTP transport.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StreamEvent {
@@ -160,7 +160,10 @@ mod tests {
             stream_event(r#"data: {"choices":[{"delta":{"content":""}}]}"#),
             Ok(None)
         );
-        assert_eq!(stream_event(r#"data: {"choices":[{"delta":{}}]}"#), Ok(None));
+        assert_eq!(
+            stream_event(r#"data: {"choices":[{"delta":{}}]}"#),
+            Ok(None)
+        );
         assert_eq!(stream_event(r#"data: {"choices":[]}"#), Ok(None));
     }
 
