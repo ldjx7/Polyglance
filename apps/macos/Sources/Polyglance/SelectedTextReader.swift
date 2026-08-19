@@ -32,6 +32,9 @@ struct SelectedTextReader {
 
     func read() async -> SelectedTextReadResult {
         guard accessibilityTrustCheck() else {
+            // The system prompt is also what registers the app in the
+            // Accessibility list, so without it the user has no entry to grant.
+            accessibilityPermissionRequest()
             return .permissionRequired
         }
         let pipeline = SelectionCapturePipeline(
