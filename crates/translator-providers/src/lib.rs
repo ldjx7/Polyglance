@@ -9,6 +9,7 @@ use crate::openai::ProviderError;
 pub mod google;
 pub mod microsoft;
 pub mod openai;
+pub mod streaming;
 
 #[derive(Clone)]
 pub(crate) struct SharedHttpClient {

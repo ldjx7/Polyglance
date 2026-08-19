@@ -16,6 +16,7 @@ pub mod layout;
 pub mod pin;
 pub mod recording;
 pub mod stitch;
+pub mod streaming;
 
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct TranslationInput {

@@ -1,23 +1,23 @@
 import Foundation
 import PolyglanceKit
+import TranslatorCore
 
+/// Thin forwarding layer over `translator-providers`.
 struct TranslationStreamEmissionPolicy {
-    let minimumInterval: Duration
-    private var lastEmission: Duration?
+    private let policy: StreamEmissionPolicy
 
     init(minimumInterval: Duration) {
-        self.minimumInterval = max(.zero, minimumInterval)
+        let components = max(.zero, minimumInterval).components
+        let nanoseconds = components.seconds * 1_000_000_000
+            + components.attoseconds / 1_000_000_000
+        policy = StreamEmissionPolicy(minimumIntervalNanoseconds: nanoseconds)
     }
 
-    mutating func shouldEmit(at elapsed: Duration, isFinal: Bool) -> Bool {
-        if isFinal { return true }
-        guard let lastEmission else {
-            self.lastEmission = elapsed
-            return true
-        }
-        guard elapsed - lastEmission >= minimumInterval else { return false }
-        self.lastEmission = elapsed
-        return true
+    func shouldEmit(at elapsed: Duration, isFinal: Bool) -> Bool {
+        let components = elapsed.components
+        let nanoseconds = components.seconds * 1_000_000_000
+            + components.attoseconds / 1_000_000_000
+        return policy.shouldEmit(elapsedNanoseconds: nanoseconds, isFinal: isFinal)
     }
 }
 
@@ -28,28 +28,20 @@ enum OpenAIStreamEvent: Equatable {
 
 enum OpenAIStreamParser {
     static func event(from line: String) throws -> OpenAIStreamEvent? {
-        guard line.hasPrefix("data:") else { return nil }
-        let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-        guard !payload.isEmpty else { return nil }
-        if payload == "[DONE]" { return .done }
-
-        guard let data = payload.data(using: .utf8),
-              let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        do {
+            switch try TranslatorCore.streamEvent(line: line) {
+            case .none:
+                return nil
+            case let .delta(text):
+                return .delta(text)
+            case .done:
+                return .done
+            }
+        } catch StreamParseFailure.InvalidResponse {
             throw OpenAIStreamingError.invalidResponse
-        }
-        if let error = object["error"] as? [String: Any],
-           let message = error["message"] as? String {
+        } catch let StreamParseFailure.Provider(message) {
             throw OpenAIStreamingError.provider(message)
         }
-        guard let choices = object["choices"] as? [[String: Any]],
-              let first = choices.first,
-              let delta = first["delta"] as? [String: Any] else {
-            return nil
-        }
-        guard let content = delta["content"] as? String, !content.isEmpty else {
-            return nil
-        }
-        return .delta(content)
     }
 }
 
@@ -82,42 +74,25 @@ struct OpenAIStreamingConfiguration: Sendable {
     }
 
     func makeRequest(_ request: AppTranslationRequest) throws -> URLRequest {
-        let url = chatCompletionsURL()
+        guard let url = URL(string: streamChatCompletionsUrl(endpoint: endpoint.absoluteString)) else {
+            throw OpenAIStreamingError.invalidConfiguration
+        }
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
         urlRequest.timeoutInterval = 60
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let sourceInstruction = request.sourceLanguage.map { " from \($0)" }
-            ?? " after detecting its language"
-        let prompt = "Translate the user's text\(sourceInstruction) to \(request.targetLanguage). Return only the translated text, without explanations or quotation marks. Preserve paragraph and sentence boundaries where natural."
-        var body: [String: Any] = [
-            "model": model,
-            "temperature": 0,
-            "stream": true,
-            "messages": [
-                ["role": "system", "content": prompt],
-                ["role": "user", "content": request.text],
-            ],
-        ]
-        if denyDataCollection {
-            body["provider"] = ["data_collection": "deny"]
-        }
-        urlRequest.httpBody = try JSONSerialization.data(withJSONObject: body)
+        urlRequest.httpBody = Data(
+            streamRequestBody(
+                model: model,
+                text: request.text,
+                sourceLanguage: request.sourceLanguage,
+                targetLanguage: request.targetLanguage,
+                denyDataCollection: denyDataCollection
+            ).utf8
+        )
         return urlRequest
-    }
-
-    private func chatCompletionsURL() -> URL {
-        if endpoint.path.hasSuffix("/chat/completions") { return endpoint }
-        var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)!
-        components.path = endpoint.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            .isEmpty
-            ? "/chat/completions"
-            : endpoint.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                .withLeadingSlash + "/chat/completions"
-        return components.url!
     }
 
     private static func isLoopback(_ url: URL) -> Bool {
@@ -181,10 +156,6 @@ final class OpenAIStreamingTranslationService: @unchecked Sendable {
             continuation.onTermination = { _ in task.cancel() }
         }
     }
-}
-
-private extension String {
-    var withLeadingSlash: String { hasPrefix("/") ? self : "/" + self }
 }
 
 private enum OpenAIStreamingError: LocalizedError {
