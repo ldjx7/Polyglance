@@ -3,11 +3,8 @@
 use std::sync::Arc;
 use tokio::runtime::{Builder, Runtime};
 use translator_core::{TranslationError as CoreError, TranslationRequest};
-use translator_providers::google::{GoogleConfig, GoogleProvider};
-use translator_providers::microsoft::{MicrosoftConfig, MicrosoftProvider};
-use translator_providers::openai::{
-    OpenAiCompatibleConfig, OpenAiCompatibleProvider, ProviderError,
-};
+use translator_providers::dispatch;
+use translator_providers::openai::ProviderError;
 
 uniffi::setup_scaffolding!();
 
@@ -84,45 +81,13 @@ impl TranslationEngine {
             &input.target_language,
         )
         .map_err(map_core_error)?;
-        let result = match input.provider.as_str() {
-            "openai-compatible" | "free-ai" => {
-                let mut config =
-                    OpenAiCompatibleConfig::new(input.endpoint, input.api_key, input.model)
-                        .map_err(map_provider_error)?;
-                if input.provider == "free-ai" {
-                    config = config.denying_data_collection();
-                }
-                let provider = OpenAiCompatibleProvider::new(config).map_err(map_provider_error)?;
-                self.runtime
-                    .block_on(provider.translate(&request))
-                    .map_err(map_provider_error)?
-            }
-            "google" => {
-                let config = if input.endpoint.trim().is_empty() {
-                    GoogleConfig::new()
-                } else {
-                    GoogleConfig::with_endpoint(input.endpoint)
-                }
+        let selection =
+            dispatch::select(&input.provider, input.endpoint, input.api_key, input.model)
                 .map_err(map_provider_error)?;
-                let provider = GoogleProvider::new(config).map_err(map_provider_error)?;
-                self.runtime
-                    .block_on(provider.translate(&request))
-                    .map_err(map_provider_error)?
-            }
-            "microsoft" => {
-                let config = if input.endpoint.trim().is_empty() {
-                    MicrosoftConfig::new()
-                } else {
-                    MicrosoftConfig::with_endpoint(input.endpoint)
-                }
-                .map_err(map_provider_error)?;
-                let provider = MicrosoftProvider::new(config).map_err(map_provider_error)?;
-                self.runtime
-                    .block_on(provider.translate(&request))
-                    .map_err(map_provider_error)?
-            }
-            _ => return Err(TranslationFailure::InvalidConfiguration),
-        };
+        let result = self
+            .runtime
+            .block_on(dispatch::translate(selection, &request))
+            .map_err(map_provider_error)?;
 
         Ok(TranslationOutput {
             text: result.text,

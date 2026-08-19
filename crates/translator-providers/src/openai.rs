@@ -64,6 +64,10 @@ impl OpenAiCompatibleConfig {
         self
     }
 
+    pub fn denies_data_collection(&self) -> bool {
+        self.deny_data_collection
+    }
+
     fn chat_completions_url(&self) -> Result<Url, ProviderError> {
         if self.endpoint.path().ends_with("/chat/completions") {
             return Ok(self.endpoint.clone());
