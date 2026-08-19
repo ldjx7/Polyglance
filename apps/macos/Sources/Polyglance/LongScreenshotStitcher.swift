@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import TranslatorCore
 
 enum LongScreenshotLimit: Equatable {
     case outputWidth
@@ -32,6 +33,19 @@ enum LongScreenshotStitchError: LocalizedError, Equatable {
     case noFrames
     case imageCreationFailed
 
+    init(_ failure: StitchFailure) {
+        switch failure {
+        case .InvalidConfiguration: self = .invalidConfiguration
+        case .InvalidFrame: self = .invalidFrame
+        case .FrameDimensionsChanged: self = .frameDimensionsChanged
+        case .NoReliableVerticalOverlap: self = .noReliableVerticalOverlap
+        case .PixelLimitExceeded: self = .pixelLimitExceeded
+        case .WorkingMemoryLimitExceeded: self = .workingMemoryLimitExceeded
+        case .FrameLimitExceeded: self = .frameLimitExceeded
+        case .NoFrames: self = .noFrames
+        }
+    }
+
     var errorDescription: String? {
         switch self {
         case .invalidConfiguration:
@@ -56,277 +70,106 @@ enum LongScreenshotStitchError: LocalizedError, Equatable {
     }
 }
 
+/// Thin forwarding layer over `capture-core`.
+///
+/// Only CGImage decoding and encoding stay here; overlap detection and frame
+/// splicing live in Rust so every platform stitches identically.
 struct LongScreenshotStitcher {
-    private struct PixelFrame {
-        let width: Int
-        let height: Int
-        let bytes: [UInt8]
-
-        var byteCount: Int { bytes.count }
-    }
-
-    private struct OffsetScore {
-        let offset: Int
-        let score: Double
-    }
-
-    private let configuration: LongScreenshotConfiguration
-    private var outputBytes: [UInt8] = []
-    private var previousFrame: PixelFrame?
-    private var didExtendOutput = false
-    private var outputAxisOrigin = 0
-    private var outputAxisEnd = 0
-    private var previousFrameAxisOrigin = 0
-
-    private(set) var frameCount = 0
-    private(set) var outputWidth = 0
-    private(set) var outputHeight = 0
-    private(set) var currentFrameOffset = 0
-    private(set) var direction: LongScreenshotDirection
+    private let stitcher: TranslatorCore.LongScreenshotStitcher
 
     init(
         configuration: LongScreenshotConfiguration = .default,
         direction: LongScreenshotDirection = .vertical
     ) {
-        self.configuration = configuration
-        self.direction = direction
+        stitcher = TranslatorCore.LongScreenshotStitcher(
+            configuration: configuration.captureValue,
+            direction: direction.captureValue
+        )
     }
+
+    var frameCount: Int { Int(stitcher.frameCount()) }
+    var outputWidth: Int { Int(stitcher.outputWidth()) }
+    var outputHeight: Int { Int(stitcher.outputHeight()) }
+    var currentFrameOffset: Int { Int(stitcher.currentFrameOffset()) }
+    var direction: LongScreenshotDirection { stitcher.direction().stitchValue }
 
     @discardableResult
-    mutating func setDirection(_ direction: LongScreenshotDirection) -> Bool {
-        guard !didExtendOutput else { return false }
-        self.direction = direction
-        outputAxisOrigin = 0
-        outputAxisEnd = direction == .vertical ? outputHeight : outputWidth
-        previousFrameAxisOrigin = 0
-        currentFrameOffset = 0
-        return true
+    func setDirection(_ direction: LongScreenshotDirection) -> Bool {
+        stitcher.setDirection(direction: direction.captureValue)
     }
 
-    mutating func append(_ image: CGImage) throws -> LongScreenshotAppendResult {
-        try validateConfiguration()
-        let frame = try Self.normalizedFrame(from: image)
-        guard frame.width > 0, frame.height > 0 else {
-            throw LongScreenshotStitchError.invalidFrame
-        }
-        if let previousFrame,
-           frame.width != previousFrame.width || frame.height != previousFrame.height {
-            throw LongScreenshotStitchError.frameDimensionsChanged
-        }
-
-        try validatePixelCount(
-            width: max(outputWidth, frame.width),
-            height: max(outputHeight, frame.height)
-        )
-        try validateWorkingMemory(
-            outputByteCount: max(outputBytes.count, frame.byteCount),
-            frameByteCount: frame.byteCount
-        )
-
-        if previousFrame == nil {
-            frameCount = 1
-            let acceptedWidth = min(frame.width, configuration.maximumOutputWidth)
-            let acceptedHeight = min(frame.height, configuration.maximumOutputHeight)
-            try validatePixelCount(width: acceptedWidth, height: acceptedHeight)
-            outputBytes = Self.croppedBytes(
-                from: frame,
-                width: acceptedWidth,
-                height: acceptedHeight
+    func append(_ image: CGImage) throws -> LongScreenshotAppendResult {
+        let bytes = try Self.normalizedBytes(from: image)
+        do {
+            let result = try stitcher.append(
+                bytes: bytes,
+                width: UInt32(image.width),
+                height: UInt32(image.height)
             )
-            outputWidth = acceptedWidth
-            outputHeight = acceptedHeight
-            outputAxisOrigin = 0
-            outputAxisEnd = direction == .vertical ? acceptedHeight : acceptedWidth
-            previousFrameAxisOrigin = 0
-            currentFrameOffset = 0
-            previousFrame = frame
-            return result(
-                disposition: .initial,
-                widthLimitReached: acceptedWidth < frame.width
-                    || acceptedWidth == configuration.maximumOutputWidth,
-                heightLimitReached: acceptedHeight < frame.height
-                    || acceptedHeight == configuration.maximumOutputHeight
+            return LongScreenshotAppendResult(
+                disposition: result.disposition.stitchValue,
+                frameCount: Int(result.frameCount),
+                totalWidth: Int(result.totalWidth),
+                totalHeight: Int(result.totalHeight),
+                limitReached: result.limitReached.map { $0.stitchValue }
             )
-        }
-
-        let offset = try estimatedOffset(previous: previousFrame!, current: frame)
-        previousFrame = frame
-        if offset == 0 {
-            return result(
-                disposition: .unchanged,
-                widthLimitReached: false,
-                heightLimitReached: false
-            )
-        }
-        return try extendOutput(with: frame, signedOffset: offset)
-    }
-
-    private mutating func extendOutput(
-        with frame: PixelFrame,
-        signedOffset: Int
-    ) throws -> LongScreenshotAppendResult {
-        let frameLength = direction == .vertical ? frame.height : frame.width
-        let currentOrigin = previousFrameAxisOrigin + signedOffset
-        let currentEnd = currentOrigin + frameLength
-        let requestedBefore = max(0, outputAxisOrigin - currentOrigin)
-        let requestedAfter = max(0, currentEnd - outputAxisEnd)
-        previousFrameAxisOrigin = currentOrigin
-
-        guard requestedBefore > 0 || requestedAfter > 0 else {
-            currentFrameOffset = currentOrigin - outputAxisOrigin
-            return result(
-                disposition: .unchanged,
-                widthLimitReached: false,
-                heightLimitReached: false
-            )
-        }
-        guard frameCount < configuration.maximumFrameCount else {
-            throw LongScreenshotStitchError.frameLimitExceeded
-        }
-        frameCount += 1
-
-        switch direction {
-        case .vertical:
-            let remainingRows = configuration.maximumOutputHeight - outputHeight
-            let rowsBefore = min(requestedBefore, max(0, remainingRows))
-            let rowsAfter = min(requestedAfter, max(0, remainingRows - rowsBefore))
-            let proposedHeight = outputHeight + rowsBefore + rowsAfter
-            try validatePixelCount(width: outputWidth, height: proposedHeight)
-            try validateWorkingMemory(
-                outputByteCount: proposedHeight * outputWidth * 4,
-                frameByteCount: frame.byteCount
-            )
-            if rowsBefore > 0 {
-                prependRows(
-                    from: frame,
-                    firstRow: requestedBefore - rowsBefore,
-                    count: rowsBefore
-                )
-                outputAxisOrigin -= rowsBefore
-            }
-            if rowsAfter > 0 {
-                appendRows(
-                    from: frame,
-                    firstRow: frame.height - requestedAfter,
-                    count: rowsAfter
-                )
-                outputAxisEnd += rowsAfter
-            }
-            outputHeight = proposedHeight
-            didExtendOutput = didExtendOutput || rowsBefore > 0 || rowsAfter > 0
-            currentFrameOffset = currentOrigin - outputAxisOrigin
-            return result(
-                disposition: .appended(direction: .vertical, offset: signedOffset),
-                widthLimitReached: false,
-                heightLimitReached: rowsBefore < requestedBefore
-                    || rowsAfter < requestedAfter
-                    || outputHeight == configuration.maximumOutputHeight
-            )
-        case .horizontal:
-            let remainingColumns = configuration.maximumOutputWidth - outputWidth
-            let columnsBefore = min(requestedBefore, max(0, remainingColumns))
-            let columnsAfter = min(requestedAfter, max(0, remainingColumns - columnsBefore))
-            let proposedWidth = outputWidth + columnsBefore + columnsAfter
-            try validatePixelCount(width: proposedWidth, height: outputHeight)
-            try validateWorkingMemory(
-                outputByteCount: proposedWidth * outputHeight * 4,
-                frameByteCount: frame.byteCount
-            )
-            if columnsBefore > 0 {
-                prependColumns(
-                    from: frame,
-                    firstColumn: requestedBefore - columnsBefore,
-                    count: columnsBefore
-                )
-                outputAxisOrigin -= columnsBefore
-            }
-            if columnsAfter > 0 {
-                appendColumns(
-                    from: frame,
-                    firstColumn: frame.width - requestedAfter,
-                    count: columnsAfter
-                )
-                outputAxisEnd += columnsAfter
-            }
-            outputWidth = proposedWidth
-            didExtendOutput = didExtendOutput || columnsBefore > 0 || columnsAfter > 0
-            currentFrameOffset = currentOrigin - outputAxisOrigin
-            return result(
-                disposition: .appended(direction: .horizontal, offset: signedOffset),
-                widthLimitReached: columnsBefore < requestedBefore
-                    || columnsAfter < requestedAfter
-                    || outputWidth == configuration.maximumOutputWidth,
-                heightLimitReached: false
-            )
+        } catch let failure as StitchFailure {
+            throw LongScreenshotStitchError(failure)
         }
     }
 
     func render() throws -> CGImage {
-        guard outputWidth > 0, outputHeight > 0, !outputBytes.isEmpty else {
-            throw LongScreenshotStitchError.noFrames
+        let bytes: Data
+        do {
+            bytes = try stitcher.render()
+        } catch let failure as StitchFailure {
+            throw LongScreenshotStitchError(failure)
         }
-        guard let provider = CGDataProvider(data: Data(outputBytes) as CFData),
-              let image = CGImage(
-                  width: outputWidth,
-                  height: outputHeight,
-                  bitsPerComponent: 8,
-                  bitsPerPixel: 32,
-                  bytesPerRow: outputWidth * 4,
-                  space: CGColorSpaceCreateDeviceRGB(),
-                  bitmapInfo: CGBitmapInfo(
-                      rawValue: CGImageAlphaInfo.premultipliedLast.rawValue
-                          | CGBitmapInfo.byteOrder32Big.rawValue
-                  ),
-                  provider: provider,
-                  decode: nil,
-                  shouldInterpolate: false,
-                  intent: .defaultIntent
-              ) else {
-            throw LongScreenshotStitchError.imageCreationFailed
-        }
-        return image
+        return try Self.makeImage(
+            bytes: bytes,
+            width: outputWidth,
+            height: outputHeight,
+            shouldInterpolate: false
+        )
     }
 
     func renderPreview(
         maximumPixelWidth: Int = 220,
         maximumPixelHeight: Int = 1_600
     ) throws -> CGImage {
-        guard outputWidth > 0, outputHeight > 0, !outputBytes.isEmpty else {
+        let preview: StitchPreview
+        do {
+            preview = try stitcher.renderPreview(
+                maximumPixelWidth: UInt32(max(0, maximumPixelWidth)),
+                maximumPixelHeight: UInt32(max(0, maximumPixelHeight))
+            )
+        } catch let failure as StitchFailure {
+            throw LongScreenshotStitchError(failure)
+        }
+        return try Self.makeImage(
+            bytes: preview.bytes,
+            width: Int(preview.width),
+            height: Int(preview.height),
+            shouldInterpolate: true
+        )
+    }
+
+    private static func makeImage(
+        bytes: Data,
+        width: Int,
+        height: Int,
+        shouldInterpolate: Bool
+    ) throws -> CGImage {
+        guard width > 0, height > 0, !bytes.isEmpty else {
             throw LongScreenshotStitchError.noFrames
         }
-        guard maximumPixelWidth > 0, maximumPixelHeight > 0 else {
-            throw LongScreenshotStitchError.invalidConfiguration
-        }
-        let scale = min(
-            1,
-            Double(maximumPixelWidth) / Double(outputWidth),
-            Double(maximumPixelHeight) / Double(outputHeight)
-        )
-        let previewWidth = max(1, Int((Double(outputWidth) * scale).rounded()))
-        let previewHeight = max(1, Int((Double(outputHeight) * scale).rounded()))
-        var previewBytes = [UInt8](repeating: 0, count: previewWidth * previewHeight * 4)
-        for targetY in 0 ..< previewHeight {
-            let sourceY = min(
-                outputHeight - 1,
-                Int(Double(targetY) * Double(outputHeight) / Double(previewHeight))
-            )
-            for targetX in 0 ..< previewWidth {
-                let sourceX = min(
-                    outputWidth - 1,
-                    Int(Double(targetX) * Double(outputWidth) / Double(previewWidth))
-                )
-                let sourceIndex = (sourceY * outputWidth + sourceX) * 4
-                let targetIndex = (targetY * previewWidth + targetX) * 4
-                previewBytes[targetIndex ..< targetIndex + 4] = outputBytes[sourceIndex ..< sourceIndex + 4]
-            }
-        }
-        guard let provider = CGDataProvider(data: Data(previewBytes) as CFData),
+        guard let provider = CGDataProvider(data: bytes as CFData),
               let image = CGImage(
-                  width: previewWidth,
-                  height: previewHeight,
+                  width: width,
+                  height: height,
                   bitsPerComponent: 8,
                   bitsPerPixel: 32,
-                  bytesPerRow: previewWidth * 4,
+                  bytesPerRow: width * 4,
                   space: CGColorSpaceCreateDeviceRGB(),
                   bitmapInfo: CGBitmapInfo(
                       rawValue: CGImageAlphaInfo.premultipliedLast.rawValue
@@ -334,7 +177,7 @@ struct LongScreenshotStitcher {
                   ),
                   provider: provider,
                   decode: nil,
-                  shouldInterpolate: true,
+                  shouldInterpolate: shouldInterpolate,
                   intent: .defaultIntent
               ) else {
             throw LongScreenshotStitchError.imageCreationFailed
@@ -342,335 +185,7 @@ struct LongScreenshotStitcher {
         return image
     }
 
-    private func result(
-        disposition: LongScreenshotAppendDisposition,
-        widthLimitReached: Bool,
-        heightLimitReached: Bool
-    ) -> LongScreenshotAppendResult {
-        let limit: LongScreenshotLimit?
-        if widthLimitReached {
-            limit = .outputWidth
-        } else if heightLimitReached {
-            limit = .outputHeight
-        } else if frameCount >= configuration.maximumFrameCount,
-                  disposition != .unchanged {
-            limit = .frameCount
-        } else {
-            limit = nil
-        }
-        return LongScreenshotAppendResult(
-            disposition: disposition,
-            frameCount: frameCount,
-            totalWidth: outputWidth,
-            totalHeight: outputHeight,
-            limitReached: limit
-        )
-    }
-
-    private func validateConfiguration() throws {
-        guard configuration.captureInterval > 0,
-              configuration.maximumFrameCount > 0,
-              configuration.maximumOutputWidth > 0,
-              configuration.maximumOutputHeight > 0,
-              configuration.maximumPixelCount > 0,
-              configuration.maximumWorkingBytes > 0,
-              configuration.minimumOverlapRows > 0,
-              configuration.maximumScrollFraction > 0,
-              configuration.maximumScrollFraction < 1,
-              configuration.matchThreshold >= 0,
-              configuration.matchThreshold < 1 else {
-            throw LongScreenshotStitchError.invalidConfiguration
-        }
-    }
-
-    private func validatePixelCount(width: Int, height: Int) throws {
-        let (pixelCount, overflow) = width.multipliedReportingOverflow(by: height)
-        guard !overflow, pixelCount <= configuration.maximumPixelCount else {
-            throw LongScreenshotStitchError.pixelLimitExceeded
-        }
-    }
-
-    private func validateWorkingMemory(outputByteCount: Int, frameByteCount: Int) throws {
-        let (twoFrames, frameOverflow) = frameByteCount.multipliedReportingOverflow(by: 2)
-        let (estimatedBytes, totalOverflow) = outputByteCount.addingReportingOverflow(twoFrames)
-        guard !frameOverflow,
-              !totalOverflow,
-              estimatedBytes <= configuration.maximumWorkingBytes else {
-            throw LongScreenshotStitchError.workingMemoryLimitExceeded
-        }
-    }
-
-    private func estimatedOffset(
-        previous: PixelFrame,
-        current: PixelFrame
-    ) throws -> Int {
-        let unchangedScore = Self.mismatchScore(
-            previous: previous,
-            current: current,
-            direction: direction,
-            offset: 0
-        )
-        if unchangedScore <= configuration.matchThreshold {
-            return 0
-        }
-
-        let length = direction == .vertical ? previous.height : previous.width
-        let fractionLimit = Int((Double(length) * configuration.maximumScrollFraction).rounded(.down))
-        let overlapLimit = length - configuration.minimumOverlapRows
-        let maximumOffset = min(fractionLimit, overlapLimit)
-        guard maximumOffset >= 1 else {
-            throw LongScreenshotStitchError.noReliableVerticalOverlap
-        }
-
-        var best: OffsetScore?
-        for distance in 1 ... maximumOffset {
-            for offset in [distance, -distance] {
-                let score = Self.mismatchScore(
-                    previous: previous,
-                    current: current,
-                    direction: direction,
-                    offset: offset
-                )
-                if let currentBest = best {
-                    if score < currentBest.score - 0.000_001
-                        || abs(score - currentBest.score) <= 0.000_001
-                            && abs(offset) < abs(currentBest.offset) {
-                        best = OffsetScore(offset: offset, score: score)
-                    }
-                } else {
-                    best = OffsetScore(offset: offset, score: score)
-                }
-            }
-        }
-        guard let best, best.score <= configuration.matchThreshold else {
-            throw LongScreenshotStitchError.noReliableVerticalOverlap
-        }
-        return best.offset
-    }
-
-    private static func mismatchScore(
-        previous: PixelFrame,
-        current: PixelFrame,
-        direction: LongScreenshotDirection,
-        offset: Int
-    ) -> Double {
-        if direction == .vertical {
-            return globalMismatchScore(
-                previous: previous,
-                current: current,
-                direction: direction,
-                offset: offset
-            )
-        }
-        let distance = abs(offset)
-        let overlapWidth = previous.width - (direction == .horizontal ? distance : 0)
-        let overlapHeight = previous.height - (direction == .vertical ? distance : 0)
-        guard overlapWidth > 0, overlapHeight > 0 else { return 1 }
-        let horizontalInset = previous.width >= 20 ? previous.width / 20 : 0
-        let verticalInset = previous.height >= 20 ? previous.height / 20 : 0
-        let sampledWidth = max(1, overlapWidth - horizontalInset * 2)
-        let sampledHeight = max(1, overlapHeight - verticalInset * 2)
-        let columnStride = max(1, sampledWidth / 96)
-        let rowStride = max(1, sampledHeight / 96)
-        var sliceScores: [Double] = []
-        switch direction {
-        case .vertical:
-            var row = verticalInset
-            let maximumRow = verticalInset + sampledHeight
-            while row < maximumRow {
-                var difference = 0
-                var channelCount = 0
-                let previousRow = row + max(offset, 0)
-                let currentRow = row + max(-offset, 0)
-                var column = horizontalInset
-                let maximumColumn = horizontalInset + sampledWidth
-                while column < maximumColumn {
-                    let previousIndex = (previousRow * previous.width + column) * 4
-                    let currentIndex = (currentRow * current.width + column) * 4
-                    difference += Self.rgbDifference(
-                        previous.bytes,
-                        previousIndex,
-                        current.bytes,
-                        currentIndex
-                    )
-                    channelCount += 3
-                    column += columnStride
-                }
-                sliceScores.append(Double(difference) / Double(max(1, channelCount) * 255))
-                row += rowStride
-            }
-        case .horizontal:
-            var column = horizontalInset
-            let maximumColumn = horizontalInset + sampledWidth
-            while column < maximumColumn {
-                var difference = 0
-                var channelCount = 0
-                let previousColumn = column + max(offset, 0)
-                let currentColumn = column + max(-offset, 0)
-                var row = verticalInset
-                let maximumRow = verticalInset + sampledHeight
-                while row < maximumRow {
-                    let previousIndex = (row * previous.width + previousColumn) * 4
-                    let currentIndex = (row * current.width + currentColumn) * 4
-                    difference += Self.rgbDifference(
-                        previous.bytes,
-                        previousIndex,
-                        current.bytes,
-                        currentIndex
-                    )
-                    channelCount += 3
-                    row += rowStride
-                }
-                sliceScores.append(Double(difference) / Double(max(1, channelCount) * 255))
-                column += columnStride
-            }
-        }
-        return Self.robustMean(sliceScores)
-    }
-
-    private static func globalMismatchScore(
-        previous: PixelFrame,
-        current: PixelFrame,
-        direction: LongScreenshotDirection,
-        offset: Int
-    ) -> Double {
-        let distance = abs(offset)
-        let overlapWidth = previous.width - (direction == .horizontal ? distance : 0)
-        let overlapHeight = previous.height - (direction == .vertical ? distance : 0)
-        guard overlapWidth > 0, overlapHeight > 0 else { return 1 }
-        let horizontalInset = previous.width >= 20 ? previous.width / 20 : 0
-        let verticalInset = previous.height >= 20 ? previous.height / 20 : 0
-        let sampledWidth = max(1, overlapWidth - horizontalInset * 2)
-        let sampledHeight = max(1, overlapHeight - verticalInset * 2)
-        let columnStride = max(1, sampledWidth / 96)
-        let rowStride = max(1, sampledHeight / 96)
-        var difference = 0
-        var channelCount = 0
-        var row = verticalInset
-        let maximumRow = verticalInset + sampledHeight
-        while row < maximumRow {
-            let previousRow = row + (direction == .vertical ? max(offset, 0) : 0)
-            let currentRow = row + (direction == .vertical ? max(-offset, 0) : 0)
-            var column = horizontalInset
-            let maximumColumn = horizontalInset + sampledWidth
-            while column < maximumColumn {
-                let previousColumn = column + (direction == .horizontal ? max(offset, 0) : 0)
-                let currentColumn = column + (direction == .horizontal ? max(-offset, 0) : 0)
-                let previousIndex = (previousRow * previous.width + previousColumn) * 4
-                let currentIndex = (currentRow * current.width + currentColumn) * 4
-                difference += rgbDifference(
-                    previous.bytes,
-                    previousIndex,
-                    current.bytes,
-                    currentIndex
-                )
-                channelCount += 3
-                column += columnStride
-            }
-            row += rowStride
-        }
-        guard channelCount > 0 else { return 1 }
-        return Double(difference) / Double(channelCount * 255)
-    }
-
-    private static func rgbDifference(
-        _ previous: [UInt8],
-        _ previousIndex: Int,
-        _ current: [UInt8],
-        _ currentIndex: Int
-    ) -> Int {
-        abs(Int(previous[previousIndex]) - Int(current[currentIndex]))
-            + abs(Int(previous[previousIndex + 1]) - Int(current[currentIndex + 1]))
-            + abs(Int(previous[previousIndex + 2]) - Int(current[currentIndex + 2]))
-    }
-
-    private static func robustMean(_ scores: [Double]) -> Double {
-        guard !scores.isEmpty else { return 1 }
-        let sorted = scores.sorted()
-        let retainedCount = max(1, Int(ceil(Double(sorted.count) * 0.65)))
-        return sorted.prefix(retainedCount).reduce(0, +) / Double(retainedCount)
-    }
-
-    private mutating func appendColumns(
-        from frame: PixelFrame,
-        firstColumn: Int,
-        count: Int
-    ) {
-        let oldWidth = outputWidth
-        let newWidth = oldWidth + count
-        var combined = [UInt8]()
-        combined.reserveCapacity(newWidth * outputHeight * 4)
-        for row in 0 ..< outputHeight {
-            let existingStart = row * oldWidth * 4
-            combined.append(contentsOf: outputBytes[existingStart ..< existingStart + oldWidth * 4])
-            let newStart = (row * frame.width + firstColumn) * 4
-            combined.append(contentsOf: frame.bytes[newStart ..< newStart + count * 4])
-        }
-        outputBytes = combined
-    }
-
-    private mutating func prependColumns(
-        from frame: PixelFrame,
-        firstColumn: Int,
-        count: Int
-    ) {
-        let oldWidth = outputWidth
-        let newWidth = oldWidth + count
-        var combined = [UInt8]()
-        combined.reserveCapacity(newWidth * outputHeight * 4)
-        for row in 0 ..< outputHeight {
-            let newStart = (row * frame.width + firstColumn) * 4
-            combined.append(contentsOf: frame.bytes[newStart ..< newStart + count * 4])
-            let existingStart = row * oldWidth * 4
-            combined.append(contentsOf: outputBytes[existingStart ..< existingStart + oldWidth * 4])
-        }
-        outputBytes = combined
-    }
-
-    private mutating func appendRows(
-        from frame: PixelFrame,
-        firstRow: Int,
-        count: Int
-    ) {
-        for row in firstRow ..< firstRow + count {
-            let start = row * frame.width * 4
-            outputBytes.append(contentsOf: frame.bytes[start ..< start + outputWidth * 4])
-        }
-    }
-
-    private mutating func prependRows(
-        from frame: PixelFrame,
-        firstRow: Int,
-        count: Int
-    ) {
-        var prefix = [UInt8]()
-        prefix.reserveCapacity(count * outputWidth * 4)
-        for row in firstRow ..< firstRow + count {
-            let start = row * frame.width * 4
-            prefix.append(contentsOf: frame.bytes[start ..< start + outputWidth * 4])
-        }
-        prefix.append(contentsOf: outputBytes)
-        outputBytes = prefix
-    }
-
-    private static func croppedBytes(
-        from frame: PixelFrame,
-        width: Int,
-        height: Int
-    ) -> [UInt8] {
-        if width == frame.width, height == frame.height {
-            return frame.bytes
-        }
-        var cropped = [UInt8]()
-        cropped.reserveCapacity(width * height * 4)
-        for row in 0 ..< height {
-            let start = row * frame.width * 4
-            cropped.append(contentsOf: frame.bytes[start ..< start + width * 4])
-        }
-        return cropped
-    }
-
-    private static func normalizedFrame(from image: CGImage) throws -> PixelFrame {
+    private static func normalizedBytes(from image: CGImage) throws -> Data {
         guard image.width > 0, image.height > 0 else {
             throw LongScreenshotStitchError.invalidFrame
         }
@@ -687,11 +202,7 @@ struct LongScreenshotStitcher {
            alphaInfo == .premultipliedLast || alphaInfo == .last,
            let sourceData = image.dataProvider?.data as Data?,
            sourceData.count >= byteCount {
-            return PixelFrame(
-                width: image.width,
-                height: image.height,
-                bytes: Array(sourceData.prefix(byteCount))
-            )
+            return sourceData.prefix(byteCount)
         }
 
         var bytes = [UInt8](repeating: 0, count: byteCount)
@@ -719,6 +230,63 @@ struct LongScreenshotStitcher {
         guard didDraw else {
             throw LongScreenshotStitchError.invalidFrame
         }
-        return PixelFrame(width: image.width, height: image.height, bytes: bytes)
+        return Data(bytes)
+    }
+}
+
+private extension LongScreenshotConfiguration {
+    var captureValue: StitchConfiguration {
+        StitchConfiguration(
+            captureInterval: captureInterval,
+            maximumFrameCount: UInt32(max(0, maximumFrameCount)),
+            maximumOutputWidth: UInt32(max(0, maximumOutputWidth)),
+            maximumOutputHeight: UInt32(max(0, maximumOutputHeight)),
+            maximumPixelCount: UInt64(max(0, maximumPixelCount)),
+            maximumWorkingBytes: UInt64(max(0, maximumWorkingBytes)),
+            minimumOverlapRows: UInt32(max(0, minimumOverlapRows)),
+            maximumScrollFraction: maximumScrollFraction,
+            matchThreshold: matchThreshold
+        )
+    }
+}
+
+private extension LongScreenshotDirection {
+    var captureValue: StitchDirection {
+        switch self {
+        case .vertical: .vertical
+        case .horizontal: .horizontal
+        }
+    }
+}
+
+private extension StitchDirection {
+    var stitchValue: LongScreenshotDirection {
+        switch self {
+        case .vertical: .vertical
+        case .horizontal: .horizontal
+        }
+    }
+}
+
+private extension StitchLimit {
+    var stitchValue: LongScreenshotLimit {
+        switch self {
+        case .outputWidth: .outputWidth
+        case .outputHeight: .outputHeight
+        case .frameCount: .frameCount
+        }
+    }
+}
+
+private extension StitchDisposition {
+    var stitchValue: LongScreenshotAppendDisposition {
+        switch self {
+        case .initial:
+            return .initial
+        case .unchanged:
+            return .unchanged
+        case let .appended(direction, offset):
+            return .appended(direction: direction.stitchValue, offset: Int(offset))
+        }
     }
 }

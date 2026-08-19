@@ -6,6 +6,7 @@ pub mod layout;
 pub mod pin;
 pub mod rect;
 pub mod recording;
+pub mod stitch;
 pub mod text;
 
 pub use alignment::SegmentPair;
