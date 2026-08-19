@@ -998,3 +998,145 @@ mod tests {
         assert_eq!(bytes[last_row_start], ((30 + 199) % 251) as u8);
     }
 }
+
+#[cfg(test)]
+mod placement_tests {
+    use super::*;
+
+    fn gradient(width: usize, height: usize, first_row_value: usize) -> Vec<u8> {
+        let mut bytes = vec![0u8; width * height * 4];
+        for row in 0..height {
+            let value = ((first_row_value + row) % 251) as u8;
+            for column in 0..width {
+                let index = (row * width + column) * 4;
+                bytes[index] = value;
+                bytes[index + 1] = value.wrapping_mul(3);
+                bytes[index + 2] = value.wrapping_add(17);
+                bytes[index + 3] = 255;
+            }
+        }
+        bytes
+    }
+
+    fn row_value(bytes: &[u8], width: usize, row: usize) -> u8 {
+        bytes[row * width * 4]
+    }
+
+    #[test]
+    fn scrolling_up_places_new_rows_above_the_existing_output() {
+        let width = 4;
+        let height = 200;
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        // First frame shows rows 30..229, then the user scrolls up to rows 0..199.
+        stitcher.append(gradient(width, height, 30), width as u32, height as u32).unwrap();
+        let result = stitcher.append(gradient(width, height, 0), width as u32, height as u32).unwrap();
+        let bytes = stitcher.render().unwrap();
+
+        assert_eq!(result.total_height, 230);
+        assert_eq!(row_value(&bytes, width, 0), 0, "top row must be the newly revealed content");
+        assert_eq!(row_value(&bytes, width, 29), 29);
+        assert_eq!(row_value(&bytes, width, 30), 30, "original content must start after the prepended rows");
+        assert_eq!(row_value(&bytes, width, 229), 229, "bottom row must stay the original bottom");
+    }
+
+    #[test]
+    fn scrolling_down_places_new_rows_below_the_existing_output() {
+        let width = 4;
+        let height = 200;
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        stitcher.append(gradient(width, height, 0), width as u32, height as u32).unwrap();
+        stitcher.append(gradient(width, height, 30), width as u32, height as u32).unwrap();
+        let bytes = stitcher.render().unwrap();
+
+        assert_eq!(row_value(&bytes, width, 0), 0);
+        assert_eq!(row_value(&bytes, width, 229), 229);
+    }
+
+    /// Deterministic pseudo-random rows so no shifted window can match by chance.
+    fn noise(width: usize, height: usize, first_row: usize) -> Vec<u8> {
+        let mut bytes = vec![0u8; width * height * 4];
+        for row in 0..height {
+            let seed = (first_row + row) as u64;
+            let hashed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            for column in 0..width {
+                let index = (row * width + column) * 4;
+                bytes[index] = (hashed >> 33) as u8;
+                bytes[index + 1] = (hashed >> 41) as u8;
+                bytes[index + 2] = (hashed >> 49) as u8;
+                bytes[index + 3] = 255;
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn a_fast_scroll_beyond_the_search_window_is_rejected() {
+        let width = 4;
+        let height = 200;
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        stitcher.append(noise(width, height, 0), width as u32, height as u32).unwrap();
+        // 170 rows of scroll leaves 30 rows of overlap, below minimum_overlap_rows = 32.
+        let result = stitcher.append(noise(width, height, 170), width as u32, height as u32);
+
+        assert_eq!(result, Err(StitchError::NoReliableVerticalOverlap));
+    }
+
+    /// A list-like page whose rows repeat every 10 pixels: shifting by any
+    /// multiple of the period looks identical in both directions.
+    fn periodic(width: usize, height: usize, first_row: usize) -> Vec<u8> {
+        let mut bytes = vec![0u8; width * height * 4];
+        for row in 0..height {
+            let phase = (first_row + row) % 10;
+            let value = (phase * 25) as u8;
+            for column in 0..width {
+                let index = (row * width + column) * 4;
+                bytes[index] = value;
+                bytes[index + 1] = value;
+                bytes[index + 2] = value;
+                bytes[index + 3] = 255;
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn scrolling_up_on_periodic_content_must_not_be_read_as_scrolling_down() {
+        let width = 4;
+        let height = 200;
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        // Shown rows 33.., then the user scrolls up to rows 0.. (offset -33).
+        stitcher.append(periodic(width, height, 33), width as u32, height as u32).unwrap();
+        let result = stitcher.append(periodic(width, height, 0), width as u32, height as u32).unwrap();
+
+        match result.disposition {
+            Disposition::Appended { offset, .. } => assert!(
+                offset < 0,
+                "an upward scroll must yield a negative offset, got {offset}"
+            ),
+            other => panic!("expected an append, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_moderate_scroll_is_matched_on_noisy_content() {
+        let width = 4;
+        let height = 200;
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        stitcher.append(noise(width, height, 0), width as u32, height as u32).unwrap();
+        let down = stitcher.append(noise(width, height, 60), width as u32, height as u32).unwrap();
+
+        assert_eq!(
+            down.disposition,
+            Disposition::Appended { direction: Direction::Vertical, offset: 60 }
+        );
+
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        stitcher.append(noise(width, height, 60), width as u32, height as u32).unwrap();
+        let up = stitcher.append(noise(width, height, 0), width as u32, height as u32).unwrap();
+
+        assert_eq!(
+            up.disposition,
+            Disposition::Appended { direction: Direction::Vertical, offset: -60 }
+        );
+    }
+}
