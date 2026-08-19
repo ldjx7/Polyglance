@@ -60,8 +60,8 @@ pub struct Configuration {
 impl Default for Configuration {
     fn default() -> Self {
         Self {
-            capture_interval: 0.12,
-            maximum_frame_count: 120,
+            capture_interval: 0.18,
+            maximum_frame_count: 240,
             maximum_output_width: 32_768,
             maximum_output_height: 32_768,
             maximum_pixel_count: 80_000_000,
@@ -529,10 +529,10 @@ fn cropped_bytes(frame: &PixelFrame, width: usize, height: usize) -> Vec<u8> {
     cropped
 }
 
-/// Scrolling is continuous, so the previous offset predicts the next one.
-/// Candidates are visited outward from that prediction and the search stops as
-/// soon as an unambiguously good match appears, which keeps the common case at
-/// a handful of comparisons instead of the full window.
+/// Scrolling is continuous, so the previous offset predicts the next one and
+/// candidates are visited outward from that prediction. The search still
+/// examines the whole window unless it finds an exact match, because a merely
+/// plausible offset would silently drop the rows between it and the true one.
 ///
 /// Ordering also decides ties: whichever candidate is nearest the prediction is
 /// kept. With no history the prediction is zero, which reproduces the original
@@ -561,11 +561,11 @@ fn estimated_offset(
         return Err(StitchError::NoReliableVerticalOverlap);
     }
 
-    let decisive_score = configuration.match_threshold * 0.25;
     let mut best: Option<(i64, f64)> = None;
     for offset in candidate_offsets(maximum_offset, predicted_offset) {
         let score = mismatch_score(direction, previous, current, offset);
-        if score <= decisive_score {
+        // Nothing can beat an exact match, so the remaining window is pointless.
+        if score <= 0.0 {
             return Ok(offset);
         }
         let is_better = match best {
@@ -1258,6 +1258,53 @@ mod placement_tests {
             3,
             "a prediction beyond the window clamps to it"
         );
+    }
+
+    /// Ruled content: strong marker rows every 10 pixels, each with its own
+    /// brightness. A shift of 3 realigns the rules and therefore scores well,
+    /// but only the true shift of 43 lines the brightnesses up exactly.
+    fn ruled(width: usize, height: usize, first_row: usize) -> Vec<u8> {
+        let mut bytes = vec![0u8; width * height * 4];
+        for row in 0..height {
+            let absolute = first_row + row;
+            let value: u8 = if absolute % 10 == 0 {
+                // Aperiodic within any capture, so only the true shift matches exactly.
+                150 + ((absolute / 10) * 37 % 40) as u8
+            } else {
+                250
+            };
+            for column in 0..width {
+                let index = (row * width + column) * 4;
+                bytes[index] = value;
+                bytes[index + 1] = value;
+                bytes[index + 2] = value;
+                bytes[index + 3] = 255;
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn a_plausible_near_match_never_beats_the_exact_one() {
+        let width = 4;
+        let height = 200;
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        stitcher
+            .append(ruled(width, height, 0), width as u32, height as u32)
+            .unwrap();
+        let result = stitcher
+            .append(ruled(width, height, 43), width as u32, height as u32)
+            .unwrap();
+
+        assert_eq!(
+            result.disposition,
+            Disposition::Appended {
+                direction: Direction::Vertical,
+                offset: 43
+            },
+            "stopping at a merely plausible offset drops the rows in between"
+        );
+        assert_eq!(result.total_height, 243);
     }
 
     #[test]
