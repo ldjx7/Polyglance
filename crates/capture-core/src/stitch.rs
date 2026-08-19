@@ -60,7 +60,7 @@ pub struct Configuration {
 impl Default for Configuration {
     fn default() -> Self {
         Self {
-            capture_interval: 0.35,
+            capture_interval: 0.12,
             maximum_frame_count: 120,
             maximum_output_width: 32_768,
             maximum_output_height: 32_768,
@@ -98,6 +98,7 @@ pub struct Stitcher {
     output_width: usize,
     output_height: usize,
     current_frame_offset: i64,
+    predicted_offset: i64,
 }
 
 impl Stitcher {
@@ -115,6 +116,7 @@ impl Stitcher {
             output_width: 0,
             output_height: 0,
             current_frame_offset: 0,
+            predicted_offset: 0,
         }
     }
 
@@ -151,6 +153,7 @@ impl Stitcher {
         };
         self.previous_frame_axis_origin = 0;
         self.current_frame_offset = 0;
+        self.predicted_offset = 0;
         true
     }
 
@@ -182,11 +185,18 @@ impl Stitcher {
         }
 
         let previous = self.previous_frame.as_ref().expect("a previous frame");
-        let offset = estimated_offset(&self.configuration, self.direction, previous, &frame)?;
+        let offset = estimated_offset(
+            &self.configuration,
+            self.direction,
+            previous,
+            &frame,
+            self.predicted_offset,
+        )?;
         self.previous_frame = Some(frame);
         if offset == 0 {
             return Ok(self.result(Disposition::Unchanged, false, false));
         }
+        self.predicted_offset = offset;
         let frame = self.previous_frame.take().expect("the frame just stored");
         let outcome = self.extend_output(&frame, offset);
         self.previous_frame = Some(frame);
@@ -519,11 +529,20 @@ fn cropped_bytes(frame: &PixelFrame, width: usize, height: usize) -> Vec<u8> {
     cropped
 }
 
+/// Scrolling is continuous, so the previous offset predicts the next one.
+/// Candidates are visited outward from that prediction and the search stops as
+/// soon as an unambiguously good match appears, which keeps the common case at
+/// a handful of comparisons instead of the full window.
+///
+/// Ordering also decides ties: whichever candidate is nearest the prediction is
+/// kept. With no history the prediction is zero, which reproduces the original
+/// "smallest shift wins" behaviour.
 fn estimated_offset(
     configuration: &Configuration,
     direction: Direction,
     previous: &PixelFrame,
     current: &PixelFrame,
+    predicted_offset: i64,
 ) -> Result<i64, StitchError> {
     let unchanged_score = mismatch_score(direction, previous, current, 0);
     if unchanged_score <= configuration.match_threshold {
@@ -542,27 +561,37 @@ fn estimated_offset(
         return Err(StitchError::NoReliableVerticalOverlap);
     }
 
+    let decisive_score = configuration.match_threshold * 0.25;
     let mut best: Option<(i64, f64)> = None;
-    for distance in 1..=maximum_offset {
-        for offset in [distance, -distance] {
-            let score = mismatch_score(direction, previous, current, offset);
-            match best {
-                Some((best_offset, best_score)) => {
-                    if score < best_score - 0.000_001
-                        || ((score - best_score).abs() <= 0.000_001
-                            && offset.abs() < best_offset.abs())
-                    {
-                        best = Some((offset, score));
-                    }
-                }
-                None => best = Some((offset, score)),
-            }
+    for offset in candidate_offsets(maximum_offset, predicted_offset) {
+        let score = mismatch_score(direction, previous, current, offset);
+        if score <= decisive_score {
+            return Ok(offset);
+        }
+        let is_better = match best {
+            Some((_, best_score)) => score < best_score - 0.000_001,
+            None => true,
+        };
+        if is_better {
+            best = Some((offset, score));
         }
     }
     match best {
         Some((offset, score)) if score <= configuration.match_threshold => Ok(offset),
         _ => Err(StitchError::NoReliableVerticalOverlap),
     }
+}
+
+/// Every non-zero offset within the window, nearest to the prediction first.
+/// Equal distances put the larger offset first so a zero prediction reproduces
+/// the original `[+d, -d]` visiting order.
+fn candidate_offsets(maximum_offset: i64, predicted_offset: i64) -> Vec<i64> {
+    let prediction = predicted_offset.clamp(-maximum_offset, maximum_offset);
+    let mut offsets: Vec<i64> = (-maximum_offset..=maximum_offset)
+        .filter(|offset| *offset != 0)
+        .collect();
+    offsets.sort_by_key(|offset| ((offset - prediction).abs(), -*offset));
+    offsets
 }
 
 /// Vertical scrolling compares the whole overlap; horizontal scrolling scores
@@ -1028,15 +1057,31 @@ mod placement_tests {
         let height = 200;
         let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
         // First frame shows rows 30..229, then the user scrolls up to rows 0..199.
-        stitcher.append(gradient(width, height, 30), width as u32, height as u32).unwrap();
-        let result = stitcher.append(gradient(width, height, 0), width as u32, height as u32).unwrap();
+        stitcher
+            .append(gradient(width, height, 30), width as u32, height as u32)
+            .unwrap();
+        let result = stitcher
+            .append(gradient(width, height, 0), width as u32, height as u32)
+            .unwrap();
         let bytes = stitcher.render().unwrap();
 
         assert_eq!(result.total_height, 230);
-        assert_eq!(row_value(&bytes, width, 0), 0, "top row must be the newly revealed content");
+        assert_eq!(
+            row_value(&bytes, width, 0),
+            0,
+            "top row must be the newly revealed content"
+        );
         assert_eq!(row_value(&bytes, width, 29), 29);
-        assert_eq!(row_value(&bytes, width, 30), 30, "original content must start after the prepended rows");
-        assert_eq!(row_value(&bytes, width, 229), 229, "bottom row must stay the original bottom");
+        assert_eq!(
+            row_value(&bytes, width, 30),
+            30,
+            "original content must start after the prepended rows"
+        );
+        assert_eq!(
+            row_value(&bytes, width, 229),
+            229,
+            "bottom row must stay the original bottom"
+        );
     }
 
     #[test]
@@ -1044,8 +1089,12 @@ mod placement_tests {
         let width = 4;
         let height = 200;
         let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
-        stitcher.append(gradient(width, height, 0), width as u32, height as u32).unwrap();
-        stitcher.append(gradient(width, height, 30), width as u32, height as u32).unwrap();
+        stitcher
+            .append(gradient(width, height, 0), width as u32, height as u32)
+            .unwrap();
+        stitcher
+            .append(gradient(width, height, 30), width as u32, height as u32)
+            .unwrap();
         let bytes = stitcher.render().unwrap();
 
         assert_eq!(row_value(&bytes, width, 0), 0);
@@ -1057,7 +1106,9 @@ mod placement_tests {
         let mut bytes = vec![0u8; width * height * 4];
         for row in 0..height {
             let seed = (first_row + row) as u64;
-            let hashed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let hashed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             for column in 0..width {
                 let index = (row * width + column) * 4;
                 bytes[index] = (hashed >> 33) as u8;
@@ -1074,7 +1125,9 @@ mod placement_tests {
         let width = 4;
         let height = 200;
         let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
-        stitcher.append(noise(width, height, 0), width as u32, height as u32).unwrap();
+        stitcher
+            .append(noise(width, height, 0), width as u32, height as u32)
+            .unwrap();
         // 170 rows of scroll leaves 30 rows of overlap, below minimum_overlap_rows = 32.
         let result = stitcher.append(noise(width, height, 170), width as u32, height as u32);
 
@@ -1105,8 +1158,12 @@ mod placement_tests {
         let height = 200;
         let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
         // Shown rows 33.., then the user scrolls up to rows 0.. (offset -33).
-        stitcher.append(periodic(width, height, 33), width as u32, height as u32).unwrap();
-        let result = stitcher.append(periodic(width, height, 0), width as u32, height as u32).unwrap();
+        stitcher
+            .append(periodic(width, height, 33), width as u32, height as u32)
+            .unwrap();
+        let result = stitcher
+            .append(periodic(width, height, 0), width as u32, height as u32)
+            .unwrap();
 
         match result.disposition {
             Disposition::Appended { offset, .. } => assert!(
@@ -1118,25 +1175,125 @@ mod placement_tests {
     }
 
     #[test]
+    fn a_continued_upward_scroll_keeps_its_direction() {
+        let width = 4;
+        let height = 200;
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        stitcher
+            .append(noise(width, height, 120), width as u32, height as u32)
+            .unwrap();
+        stitcher
+            .append(noise(width, height, 80), width as u32, height as u32)
+            .unwrap();
+        let third = stitcher
+            .append(noise(width, height, 40), width as u32, height as u32)
+            .unwrap();
+
+        assert_eq!(
+            third.disposition,
+            Disposition::Appended {
+                direction: Direction::Vertical,
+                offset: -40
+            }
+        );
+        assert_eq!(third.total_height, 280);
+    }
+
+    #[test]
+    fn the_prediction_never_blocks_a_reversal() {
+        let width = 4;
+        let height = 200;
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        stitcher
+            .append(noise(width, height, 100), width as u32, height as u32)
+            .unwrap();
+        stitcher
+            .append(noise(width, height, 150), width as u32, height as u32)
+            .unwrap();
+        // Now scroll back up past the starting point, so 40 rows are genuinely new.
+        let reversed = stitcher
+            .append(noise(width, height, 60), width as u32, height as u32)
+            .unwrap();
+
+        assert_eq!(
+            reversed.disposition,
+            Disposition::Appended {
+                direction: Direction::Vertical,
+                offset: -90
+            }
+        );
+        assert_eq!(reversed.total_height, 290);
+    }
+
+    #[test]
+    fn scrolling_back_over_captured_content_adds_nothing() {
+        let width = 4;
+        let height = 200;
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        stitcher
+            .append(noise(width, height, 0), width as u32, height as u32)
+            .unwrap();
+        stitcher
+            .append(noise(width, height, 50), width as u32, height as u32)
+            .unwrap();
+        let revisited = stitcher
+            .append(noise(width, height, 20), width as u32, height as u32)
+            .unwrap();
+
+        assert_eq!(revisited.disposition, Disposition::Unchanged);
+        assert_eq!(revisited.total_height, 250);
+    }
+
+    #[test]
+    fn candidates_start_at_the_prediction_and_fan_outward() {
+        assert_eq!(
+            candidate_offsets(3, 0),
+            vec![1, -1, 2, -2, 3, -3],
+            "no history must reproduce the original visiting order"
+        );
+        assert_eq!(candidate_offsets(3, 2)[0], 2);
+        assert_eq!(candidate_offsets(3, -2)[0], -2);
+        assert_eq!(
+            candidate_offsets(3, 99)[0],
+            3,
+            "a prediction beyond the window clamps to it"
+        );
+    }
+
+    #[test]
     fn a_moderate_scroll_is_matched_on_noisy_content() {
         let width = 4;
         let height = 200;
         let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
-        stitcher.append(noise(width, height, 0), width as u32, height as u32).unwrap();
-        let down = stitcher.append(noise(width, height, 60), width as u32, height as u32).unwrap();
+        stitcher
+            .append(noise(width, height, 0), width as u32, height as u32)
+            .unwrap();
+        let down = stitcher
+            .append(noise(width, height, 60), width as u32, height as u32)
+            .unwrap();
 
         assert_eq!(
             down.disposition,
-            Disposition::Appended { direction: Direction::Vertical, offset: 60 }
+            Disposition::Appended {
+                direction: Direction::Vertical,
+                offset: 60
+            }
         );
 
         let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
-        stitcher.append(noise(width, height, 60), width as u32, height as u32).unwrap();
-        let up = stitcher.append(noise(width, height, 0), width as u32, height as u32).unwrap();
+        stitcher
+            .append(noise(width, height, 60), width as u32, height as u32)
+            .unwrap();
+        let up = stitcher
+            .append(noise(width, height, 0), width as u32, height as u32)
+            .unwrap();
 
         assert_eq!(
             up.disposition,
-            Disposition::Appended { direction: Direction::Vertical, offset: -60 }
+            Disposition::Appended {
+                direction: Direction::Vertical,
+                offset: -60
+            }
         );
     }
 }

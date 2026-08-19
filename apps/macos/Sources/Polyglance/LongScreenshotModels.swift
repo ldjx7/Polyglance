@@ -13,7 +13,7 @@ struct LongScreenshotConfiguration: Equatable, Sendable {
     var matchThreshold: Double
 
     static let `default` = Self(
-        captureInterval: 0.35,
+        captureInterval: 0.12,
         maximumFrameCount: 120,
         maximumOutputWidth: 32_768,
         maximumOutputHeight: 32_768,
