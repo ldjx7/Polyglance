@@ -12,6 +12,7 @@ use translator_providers::openai::{
 uniffi::setup_scaffolding!();
 
 pub mod geometry;
+pub mod pin;
 
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct TranslationInput {
