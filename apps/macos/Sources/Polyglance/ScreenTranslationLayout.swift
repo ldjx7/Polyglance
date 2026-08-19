@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import TranslatorCore
 
 struct ScreenTranslationParagraph: Equatable {
     let text: String
@@ -7,92 +8,31 @@ struct ScreenTranslationParagraph: Equatable {
     let lineCount: Int
 }
 
+/// Thin forwarding layer over `capture-core`.
 enum ScreenTranslationLayout {
     static func paragraphs(from document: OCRDocument) -> [ScreenTranslationParagraph] {
-        var groups: [[OCRTextLine]] = []
-        for line in document.lines where !line.text.isEmpty {
-            if var currentGroup = groups.last,
-               let previousLine = currentGroup.last,
-               belongsToSameParagraph(previousLine, line) {
-                currentGroup.append(line)
-                groups[groups.count - 1] = currentGroup
-            } else {
-                groups.append([line])
-            }
-        }
-        return groups.map { lines in
-            ScreenTranslationParagraph(
-                text: joinedText(of: lines),
-                boundingBox: unionBox(of: lines),
-                lineCount: lines.count
+        let lines = document.lines.map { line in
+            LayoutTextLine(
+                text: line.text,
+                boundingBox: CaptureRect(
+                    x: line.boundingBox.origin.x,
+                    y: line.boundingBox.origin.y,
+                    width: line.boundingBox.width,
+                    height: line.boundingBox.height
+                )
             )
         }
-    }
-
-    private static func belongsToSameParagraph(
-        _ above: OCRTextLine,
-        _ below: OCRTextLine
-    ) -> Bool {
-        let aboveBox = above.boundingBox.standardized
-        let belowBox = below.boundingBox.standardized
-        let referenceHeight = min(aboveBox.height, belowBox.height)
-        guard referenceHeight > 0 else {
-            return false
-        }
-        let verticalGap = aboveBox.minY - belowBox.maxY
-        guard verticalGap <= referenceHeight * 0.85, verticalGap >= -referenceHeight * 0.4 else {
-            return false
-        }
-        let horizontalOverlap = min(aboveBox.maxX, belowBox.maxX)
-            - max(aboveBox.minX, belowBox.minX)
-        guard horizontalOverlap >= -referenceHeight * 1.5 else {
-            return false
-        }
-        let heightRatio = max(aboveBox.height, belowBox.height)
-            / max(referenceHeight, .leastNonzeroMagnitude)
-        return heightRatio <= 1.9
-    }
-
-    private static func joinedText(of lines: [OCRTextLine]) -> String {
-        var result = ""
-        for line in lines {
-            let text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else {
-                continue
-            }
-            if result.isEmpty {
-                result = text
-            } else if let previous = result.last, let next = text.first,
-                      isCJK(previous) || isCJK(next) {
-                result += text
-            } else {
-                result += " " + text
-            }
-        }
-        return result
-    }
-
-    private static func unionBox(of lines: [OCRTextLine]) -> CGRect {
-        lines.dropFirst().reduce(lines[0].boundingBox.standardized) { box, line in
-            box.union(line.boundingBox.standardized)
-        }
-    }
-
-    private static func isCJK(_ character: Character) -> Bool {
-        guard let scalar = character.unicodeScalars.first else {
-            return false
-        }
-        switch scalar.value {
-        case 0x2E80...0x303F,
-             0x3040...0x30FF,
-             0x3400...0x4DBF,
-             0x4E00...0x9FFF,
-             0xAC00...0xD7AF,
-             0xF900...0xFAFF,
-             0xFF00...0xFF60:
-            return true
-        default:
-            return false
+        return layoutParagraphs(lines: lines).map { paragraph in
+            ScreenTranslationParagraph(
+                text: paragraph.text,
+                boundingBox: CGRect(
+                    x: paragraph.boundingBox.x,
+                    y: paragraph.boundingBox.y,
+                    width: paragraph.boundingBox.width,
+                    height: paragraph.boundingBox.height
+                ),
+                lineCount: Int(paragraph.lineCount)
+            )
         }
     }
 }

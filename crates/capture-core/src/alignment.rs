@@ -138,23 +138,9 @@ fn is_segment_punctuation(unit: u16) -> bool {
     )
 }
 
-/// Mirrors `CharacterSet.whitespacesAndNewlines`, which unlike the Unicode
-/// `White_Space` property also contains U+200B.
+/// Mirrors `CharacterSet.whitespacesAndNewlines`.
 fn is_foundation_whitespace(unit: u16) -> bool {
-    matches!(
-        unit,
-        0x0009..=0x000D
-            | 0x0020
-            | 0x0085
-            | 0x00A0
-            | 0x1680
-            | 0x2000..=0x200B
-            | 0x2028
-            | 0x2029
-            | 0x202F
-            | 0x205F
-            | 0x3000
-    )
+    crate::text::is_foundation_whitespace_unit(unit)
 }
 
 #[cfg(test)]
