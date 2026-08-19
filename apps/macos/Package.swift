@@ -35,6 +35,7 @@ let package = Package(
         ),
         .target(
             name: "PolyglanceKit",
+            dependencies: ["TranslatorCore"],
             path: "Sources/PolyglanceKit"
         ),
         .executableTarget(

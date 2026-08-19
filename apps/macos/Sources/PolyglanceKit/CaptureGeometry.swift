@@ -1,4 +1,5 @@
 import CoreGraphics
+import TranslatorCore
 
 public enum CaptureSelectionResizeHandle: Equatable, Sendable {
     case topLeft
@@ -59,20 +60,21 @@ public struct CaptureSelectionKeyboardAdjustment: Equatable, Sendable {
     }
 }
 
+/// Thin forwarding layer over `capture-core`.
+///
+/// The geometry itself lives in Rust so Windows and Linux share one
+/// implementation; this type only maps between CoreGraphics and the FFI shapes.
 public enum CaptureGeometry {
     public static func selectionRect(
         from start: CGPoint,
         to end: CGPoint,
         in bounds: CGRect
     ) -> CGRect {
-        let clampedStart = clamp(start, to: bounds)
-        let clampedEnd = clamp(end, to: bounds)
-        return CGRect(
-            x: min(clampedStart.x, clampedEnd.x),
-            y: min(clampedStart.y, clampedEnd.y),
-            width: abs(clampedEnd.x - clampedStart.x),
-            height: abs(clampedEnd.y - clampedStart.y)
-        )
+        captureSelectionRect(
+            start: start.captureValue,
+            end: end.captureValue,
+            bounds: bounds.captureValue
+        ).cgValue
     }
 
     public static func pixelCropRect(
@@ -80,28 +82,11 @@ public enum CaptureGeometry {
         viewSize: CGSize,
         imagePixelSize: CGSize
     ) -> CGRect {
-        guard viewSize.width > 0,
-              viewSize.height > 0,
-              imagePixelSize.width > 0,
-              imagePixelSize.height > 0 else {
-            return .zero
-        }
-
-        let viewBounds = CGRect(origin: .zero, size: viewSize)
-        let clippedSelection = selection.standardized.intersection(viewBounds)
-        guard !clippedSelection.isNull else {
-            return .zero
-        }
-
-        let scaleX = imagePixelSize.width / viewSize.width
-        let scaleY = imagePixelSize.height / viewSize.height
-        let crop = CGRect(
-            x: clippedSelection.minX * scaleX,
-            y: (viewSize.height - clippedSelection.maxY) * scaleY,
-            width: clippedSelection.width * scaleX,
-            height: clippedSelection.height * scaleY
-        ).integral
-        return crop.intersection(CGRect(origin: .zero, size: imagePixelSize))
+        capturePixelCropRect(
+            selection: selection.captureValue,
+            viewSize: viewSize.captureValue,
+            imagePixelSize: imagePixelSize.captureValue
+        ).cgValue
     }
 
     public static func outputPixelSize(
@@ -109,34 +94,25 @@ public enum CaptureGeometry {
         viewSize: CGSize,
         imagePixelSize: CGSize
     ) -> CGSize {
-        pixelCropRect(
-            selection: selection,
-            viewSize: viewSize,
-            imagePixelSize: imagePixelSize
-        ).size
+        captureOutputPixelSize(
+            selection: selection.captureValue,
+            viewSize: viewSize.captureValue,
+            imagePixelSize: imagePixelSize.captureValue
+        ).cgValue
     }
 
     public static func isUsable(_ selection: CGRect, minimumSide: CGFloat = 4) -> Bool {
-        selection.width >= minimumSide && selection.height >= minimumSide
+        captureIsUsable(selection: selection.captureValue, minimumSide: minimumSide)
     }
 
     public static func fittedPinSize(
         imageSize: CGSize,
         maximumSize: CGSize
     ) -> CGSize {
-        guard imageSize.width > 0,
-              imageSize.height > 0,
-              maximumSize.width > 0,
-              maximumSize.height > 0 else {
-            return .zero
-        }
-
-        let scale = min(
-            1,
-            maximumSize.width / imageSize.width,
-            maximumSize.height / imageSize.height
-        )
-        return CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        captureFittedPinSize(
+            imageSize: imageSize.captureValue,
+            maximumSize: maximumSize.captureValue
+        ).cgValue
     }
 
     public static func preferredCapturePixelSize(
@@ -144,14 +120,11 @@ public enum CaptureGeometry {
         backingScaleFactor: CGFloat,
         reportedPixelSize: CGSize
     ) -> CGSize {
-        let scaledPointSize = CGSize(
-            width: ceil(screenPointSize.width * backingScaleFactor),
-            height: ceil(screenPointSize.height * backingScaleFactor)
-        )
-        return CGSize(
-            width: max(scaledPointSize.width, reportedPixelSize.width),
-            height: max(scaledPointSize.height, reportedPixelSize.height)
-        )
+        capturePreferredCapturePixelSize(
+            screenPointSize: screenPointSize.captureValue,
+            backingScaleFactor: backingScaleFactor,
+            reportedPixelSize: reportedPixelSize.captureValue
+        ).cgValue
     }
 
     public static func toolbarOrigin(
@@ -161,22 +134,13 @@ public enum CaptureGeometry {
         spacing: CGFloat = 8,
         edgeInset: CGFloat = 8
     ) -> CGPoint {
-        let maximumX = max(bounds.minX + edgeInset, bounds.maxX - toolbarSize.width - edgeInset)
-        let x = min(
-            max(selection.maxX - toolbarSize.width, bounds.minX + edgeInset),
-            maximumX
-        )
-        let belowY = selection.minY - toolbarSize.height - spacing
-        let y: CGFloat
-        if belowY >= bounds.minY + edgeInset {
-            y = belowY
-        } else {
-            y = min(
-                selection.maxY + spacing,
-                bounds.maxY - toolbarSize.height - edgeInset
-            )
-        }
-        return CGPoint(x: x, y: y)
+        captureToolbarOrigin(
+            selection: selection.captureValue,
+            toolbarSize: toolbarSize.captureValue,
+            bounds: bounds.captureValue,
+            spacing: spacing,
+            edgeInset: edgeInset
+        ).cgValue
     }
 
     public static func fittedToolbarSize(
@@ -184,19 +148,11 @@ public enum CaptureGeometry {
         bounds: CGRect,
         edgeInset: CGFloat = 8
     ) -> CGSize {
-        let bounds = bounds.standardized
-        guard preferred.width > 0,
-              preferred.height > 0,
-              !bounds.isEmpty,
-              !bounds.isNull else {
-            return .zero
-        }
-        let availableWidth = max(1, bounds.width - max(0, edgeInset) * 2)
-        let availableHeight = max(1, bounds.height - max(0, edgeInset) * 2)
-        return CGSize(
-            width: min(preferred.width, availableWidth),
-            height: min(preferred.height, availableHeight)
-        )
+        captureFittedToolbarSize(
+            preferred: preferred.captureValue,
+            bounds: bounds.captureValue,
+            edgeInset: edgeInset
+        ).cgValue
     }
 
     public static func annotationPixelPoint(
@@ -204,13 +160,11 @@ public enum CaptureGeometry {
         selection: CGRect,
         imagePixelSize: CGSize
     ) -> CGPoint {
-        guard selection.width > 0, selection.height > 0 else {
-            return .zero
-        }
-        return CGPoint(
-            x: (point.x - selection.minX) * imagePixelSize.width / selection.width,
-            y: (point.y - selection.minY) * imagePixelSize.height / selection.height
-        )
+        captureAnnotationPixelPoint(
+            point: point.captureValue,
+            selection: selection.captureValue,
+            imagePixelSize: imagePixelSize.captureValue
+        ).cgValue
     }
 
     public static func selectionEditTarget(
@@ -218,85 +172,21 @@ public enum CaptureGeometry {
         selection: CGRect,
         handleTolerance: CGFloat = 6
     ) -> CaptureSelectionEditTarget? {
-        let selection = selection.standardized
-        guard selection.insetBy(dx: -handleTolerance, dy: -handleTolerance).contains(point) else {
-            return nil
-        }
-
-        let distanceToLeft = abs(point.x - selection.minX)
-        let distanceToRight = abs(point.x - selection.maxX)
-        let distanceToBottom = abs(point.y - selection.minY)
-        let distanceToTop = abs(point.y - selection.maxY)
-        let horizontalEdge: CaptureSelectionResizeHandle? = {
-            guard min(distanceToLeft, distanceToRight) <= handleTolerance else {
-                return nil
-            }
-            return distanceToLeft <= distanceToRight ? .left : .right
-        }()
-        let verticalEdge: CaptureSelectionResizeHandle? = {
-            guard min(distanceToBottom, distanceToTop) <= handleTolerance else {
-                return nil
-            }
-            return distanceToBottom <= distanceToTop ? .bottom : .top
-        }()
-
-        switch (horizontalEdge, verticalEdge) {
-        case (.left, .top):
-            return .resize(.topLeft)
-        case (.right, .top):
-            return .resize(.topRight)
-        case (.right, .bottom):
-            return .resize(.bottomRight)
-        case (.left, .bottom):
-            return .resize(.bottomLeft)
-        case let (horizontal?, nil):
-            return .resize(horizontal)
-        case let (nil, vertical?):
-            return .resize(vertical)
-        default:
-            return selection.contains(point) ? .move : nil
-        }
+        captureSelectionEditTarget(
+            point: point.captureValue,
+            selection: selection.captureValue,
+            handleTolerance: handleTolerance
+        )?.selectionValue
     }
 
     public static func selectionExpansionTarget(
         at point: CGPoint,
         selection: CGRect
     ) -> CaptureSelectionEditTarget? {
-        let selection = selection.standardized
-        guard !selection.isNull, !selection.isEmpty else {
-            return nil
-        }
-        let horizontal: CaptureSelectionResizeHandle? = if point.x < selection.minX {
-            .left
-        } else if point.x > selection.maxX {
-            .right
-        } else {
-            nil
-        }
-        let vertical: CaptureSelectionResizeHandle? = if point.y < selection.minY {
-            .bottom
-        } else if point.y > selection.maxY {
-            .top
-        } else {
-            nil
-        }
-
-        switch (horizontal, vertical) {
-        case (.left, .top):
-            return .resize(.topLeft)
-        case (.right, .top):
-            return .resize(.topRight)
-        case (.right, .bottom):
-            return .resize(.bottomRight)
-        case (.left, .bottom):
-            return .resize(.bottomLeft)
-        case let (horizontal?, nil):
-            return .resize(horizontal)
-        case let (nil, vertical?):
-            return .resize(vertical)
-        default:
-            return nil
-        }
+        captureSelectionExpansionTarget(
+            point: point.captureValue,
+            selection: selection.captureValue
+        )?.selectionValue
     }
 
     public static func expandedSelection(
@@ -304,16 +194,11 @@ public enum CaptureGeometry {
         toward point: CGPoint,
         in bounds: CGRect
     ) -> CGRect {
-        guard let target = selectionExpansionTarget(at: point, selection: selection) else {
-            let clippedSelection = selection.standardized.intersection(bounds.standardized)
-            return clippedSelection.isNull ? .zero : clippedSelection
-        }
-        return expandedSelection(
-            selection,
-            toward: point,
-            target: target,
-            in: bounds
-        )
+        captureExpandedSelectionToward(
+            selection: selection.captureValue,
+            point: point.captureValue,
+            bounds: bounds.captureValue
+        ).cgValue
     }
 
     public static func expandedSelection(
@@ -322,47 +207,12 @@ public enum CaptureGeometry {
         target: CaptureSelectionEditTarget,
         in bounds: CGRect
     ) -> CGRect {
-        let bounds = bounds.standardized
-        let selection = selection.standardized.intersection(bounds)
-        guard !selection.isNull, !selection.isEmpty else {
-            return .zero
-        }
-        let point = clamp(point, to: bounds)
-        guard case let .resize(handle) = target else {
-            return selection
-        }
-        let expandsLeft: Bool
-        let expandsRight: Bool
-        let expandsBottom: Bool
-        let expandsTop: Bool
-        switch handle {
-        case .topLeft:
-            (expandsLeft, expandsRight, expandsBottom, expandsTop) = (true, false, false, true)
-        case .top:
-            (expandsLeft, expandsRight, expandsBottom, expandsTop) = (false, false, false, true)
-        case .topRight:
-            (expandsLeft, expandsRight, expandsBottom, expandsTop) = (false, true, false, true)
-        case .right:
-            (expandsLeft, expandsRight, expandsBottom, expandsTop) = (false, true, false, false)
-        case .bottomRight:
-            (expandsLeft, expandsRight, expandsBottom, expandsTop) = (false, true, true, false)
-        case .bottom:
-            (expandsLeft, expandsRight, expandsBottom, expandsTop) = (false, false, true, false)
-        case .bottomLeft:
-            (expandsLeft, expandsRight, expandsBottom, expandsTop) = (true, false, true, false)
-        case .left:
-            (expandsLeft, expandsRight, expandsBottom, expandsTop) = (true, false, false, false)
-        }
-        let minimumX = expandsLeft ? min(selection.minX, point.x) : selection.minX
-        let maximumX = expandsRight ? max(selection.maxX, point.x) : selection.maxX
-        let minimumY = expandsBottom ? min(selection.minY, point.y) : selection.minY
-        let maximumY = expandsTop ? max(selection.maxY, point.y) : selection.maxY
-        return CGRect(
-            x: minimumX,
-            y: minimumY,
-            width: maximumX - minimumX,
-            height: maximumY - minimumY
-        )
+        captureExpandedSelection(
+            selection: selection.captureValue,
+            point: point.captureValue,
+            target: target.captureValue,
+            bounds: bounds.captureValue
+        ).cgValue
     }
 
     public static func editedSelection(
@@ -373,74 +223,14 @@ public enum CaptureGeometry {
         bounds: CGRect,
         minimumSide: CGFloat = 4
     ) -> CGRect {
-        let original = original.standardized
-        let bounds = bounds.standardized
-
-        switch target {
-        case .move:
-            let proposedOrigin = CGPoint(
-                x: original.minX + current.x - dragStart.x,
-                y: original.minY + current.y - dragStart.y
-            )
-            let maximumX = max(bounds.minX, bounds.maxX - original.width)
-            let maximumY = max(bounds.minY, bounds.maxY - original.height)
-            return CGRect(
-                origin: CGPoint(
-                    x: clamp(proposedOrigin.x, minimum: bounds.minX, maximum: maximumX),
-                    y: clamp(proposedOrigin.y, minimum: bounds.minY, maximum: maximumY)
-                ),
-                size: original.size
-            )
-
-        case let .resize(handle):
-            let deltaX = current.x - dragStart.x
-            let deltaY = current.y - dragStart.y
-            var minimumX = original.minX
-            var maximumX = original.maxX
-            var minimumY = original.minY
-            var maximumY = original.maxY
-
-            switch handle {
-            case .topLeft, .left, .bottomLeft:
-                minimumX = clamp(
-                    original.minX + deltaX,
-                    minimum: bounds.minX,
-                    maximum: original.maxX - minimumSide
-                )
-            case .topRight, .right, .bottomRight:
-                maximumX = clamp(
-                    original.maxX + deltaX,
-                    minimum: original.minX + minimumSide,
-                    maximum: bounds.maxX
-                )
-            case .top, .bottom:
-                break
-            }
-
-            switch handle {
-            case .bottomLeft, .bottom, .bottomRight:
-                minimumY = clamp(
-                    original.minY + deltaY,
-                    minimum: bounds.minY,
-                    maximum: original.maxY - minimumSide
-                )
-            case .topLeft, .top, .topRight:
-                maximumY = clamp(
-                    original.maxY + deltaY,
-                    minimum: original.minY + minimumSide,
-                    maximum: bounds.maxY
-                )
-            case .left, .right:
-                break
-            }
-
-            return CGRect(
-                x: minimumX,
-                y: minimumY,
-                width: maximumX - minimumX,
-                height: maximumY - minimumY
-            )
-        }
+        captureEditedSelection(
+            original: original.captureValue,
+            dragStart: dragStart.captureValue,
+            current: current.captureValue,
+            target: target.captureValue,
+            bounds: bounds.captureValue,
+            minimumSide: minimumSide
+        ).cgValue
     }
 
     public static func adjustedSelection(
@@ -450,107 +240,115 @@ public enum CaptureGeometry {
         minimumSide: CGFloat = 1,
         pixelsPerPoint: CGFloat = 1
     ) -> CGRect {
-        let bounds = bounds.standardized
-        guard !bounds.isEmpty, !bounds.isNull else {
-            return .zero
-        }
-        let selection = selection.standardized.intersection(bounds)
-        guard !selection.isEmpty, !selection.isNull else {
-            return .zero
-        }
+        captureAdjustedSelection(
+            selection: selection.captureValue,
+            adjustment: adjustment.captureValue,
+            bounds: bounds.captureValue,
+            minimumSide: minimumSide,
+            pixelsPerPoint: pixelsPerPoint
+        ).cgValue
+    }
+}
 
-        let effectivePixelsPerPoint = pixelsPerPoint.isFinite && pixelsPerPoint > 0
-            ? pixelsPerPoint
-            : 1
-        let distance = adjustment.step.points / effectivePixelsPerPoint
-        switch adjustment.operation {
+private extension CGPoint {
+    var captureValue: CapturePoint { CapturePoint(x: x, y: y) }
+}
+
+private extension CGSize {
+    var captureValue: CaptureSize { CaptureSize(width: width, height: height) }
+}
+
+private extension CGRect {
+    var captureValue: CaptureRect {
+        CaptureRect(x: origin.x, y: origin.y, width: width, height: height)
+    }
+}
+
+private extension CapturePoint {
+    var cgValue: CGPoint { CGPoint(x: x, y: y) }
+}
+
+private extension CaptureSize {
+    var cgValue: CGSize { CGSize(width: width, height: height) }
+}
+
+private extension CaptureRect {
+    var cgValue: CGRect { CGRect(x: x, y: y, width: width, height: height) }
+}
+
+private extension CaptureSelectionResizeHandle {
+    var captureValue: CaptureResizeHandle {
+        switch self {
+        case .topLeft: .topLeft
+        case .top: .top
+        case .topRight: .topRight
+        case .right: .right
+        case .bottomRight: .bottomRight
+        case .bottom: .bottom
+        case .bottomLeft: .bottomLeft
+        case .left: .left
+        }
+    }
+}
+
+private extension CaptureResizeHandle {
+    var selectionValue: CaptureSelectionResizeHandle {
+        switch self {
+        case .topLeft: .topLeft
+        case .top: .top
+        case .topRight: .topRight
+        case .right: .right
+        case .bottomRight: .bottomRight
+        case .bottom: .bottom
+        case .bottomLeft: .bottomLeft
+        case .left: .left
+        }
+    }
+}
+
+private extension CaptureSelectionEditTarget {
+    var captureValue: CaptureEditTarget {
+        switch self {
         case .move:
-            let delta: CGPoint = switch adjustment.direction {
-            case .left:
-                CGPoint(x: -distance, y: 0)
-            case .right:
-                CGPoint(x: distance, y: 0)
-            case .up:
-                CGPoint(x: 0, y: distance)
-            case .down:
-                CGPoint(x: 0, y: -distance)
-            }
-            return CGRect(
-                x: clamp(
-                    selection.minX + delta.x,
-                    minimum: bounds.minX,
-                    maximum: bounds.maxX - selection.width
-                ),
-                y: clamp(
-                    selection.minY + delta.y,
-                    minimum: bounds.minY,
-                    maximum: bounds.maxY - selection.height
-                ),
-                width: selection.width,
-                height: selection.height
-            )
-
-        case .shrink:
-            let requestedMinimumSide = minimumSide.isFinite && minimumSide > 0
-                ? minimumSide
-                : 1
-            let minimumWidth = min(selection.width, requestedMinimumSide)
-            let minimumHeight = min(selection.height, requestedMinimumSide)
-            var minimumX = selection.minX
-            var maximumX = selection.maxX
-            var minimumY = selection.minY
-            var maximumY = selection.maxY
-
-            switch adjustment.direction {
-            case .left:
-                minimumX += min(distance, selection.width - minimumWidth)
-            case .right:
-                maximumX -= min(distance, selection.width - minimumWidth)
-            case .up:
-                maximumY -= min(distance, selection.height - minimumHeight)
-            case .down:
-                minimumY += min(distance, selection.height - minimumHeight)
-            }
-            return CGRect(
-                x: minimumX,
-                y: minimumY,
-                width: maximumX - minimumX,
-                height: maximumY - minimumY
-            )
-
-        case .expand:
-            var minimumX = selection.minX
-            var maximumX = selection.maxX
-            var minimumY = selection.minY
-            var maximumY = selection.maxY
-
-            switch adjustment.direction {
-            case .left:
-                minimumX = max(bounds.minX, minimumX - distance)
-            case .right:
-                maximumX = min(bounds.maxX, maximumX + distance)
-            case .up:
-                maximumY = min(bounds.maxY, maximumY + distance)
-            case .down:
-                minimumY = max(bounds.minY, minimumY - distance)
-            }
-            return CGRect(
-                x: minimumX,
-                y: minimumY,
-                width: maximumX - minimumX,
-                height: maximumY - minimumY
-            )
+            return .move
+        case let .resize(handle):
+            return .resize(handle: handle.captureValue)
         }
     }
+}
 
-    private static func clamp(_ point: CGPoint, to bounds: CGRect) -> CGPoint {
-        CGPoint(
-            x: min(max(point.x, bounds.minX), bounds.maxX),
-            y: min(max(point.y, bounds.minY), bounds.maxY)
-        )
+private extension CaptureEditTarget {
+    var selectionValue: CaptureSelectionEditTarget {
+        switch self {
+        case .move:
+            return .move
+        case let .resize(handle):
+            return .resize(handle.selectionValue)
+        }
     }
+}
 
-    private static func clamp(_ value: CGFloat, minimum: CGFloat, maximum: CGFloat) -> CGFloat {
-        min(max(value, minimum), maximum)
+private extension CaptureSelectionKeyboardAdjustment {
+    var captureValue: CaptureKeyboardAdjustment {
+        let direction: CaptureKeyboardDirection = switch self.direction {
+        case .left: .left
+        case .right: .right
+        case .up: .up
+        case .down: .down
+        }
+        let operation: CaptureKeyboardOperation = switch self.operation {
+        case .move: .move
+        case .shrink: .shrink
+        case .expand: .expand
+        }
+        let step: CaptureKeyboardStep = switch self.step {
+        case .standard: .standard
+        case .accelerated: .accelerated
+        }
+        return CaptureKeyboardAdjustment(
+            direction: direction,
+            operation: operation,
+            step: step
+        )
     }
 }

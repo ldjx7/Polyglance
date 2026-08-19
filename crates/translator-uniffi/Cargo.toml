@@ -9,6 +9,7 @@ rust-version.workspace = true
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
+capture-core.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 translator-core.workspace = true
