@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import TranslatorCore
 
 enum ScreenRecordingFormat: String, CaseIterable, Codable, Sendable {
     case mp4
@@ -60,52 +61,25 @@ enum ScreenRecordingQuality: String, CaseIterable, Codable, Sendable {
     }
 
     func profile(for format: ScreenRecordingFormat) -> ScreenRecordingEncodingProfile {
-        switch (self, format) {
-        case (.compact, .mp4):
-            return ScreenRecordingEncodingProfile(
-                frameRate: 24,
-                maxDimension: 1_920,
-                bitsPerPixelPerFrame: 0.07,
-                minimumVideoBitrate: 1_000_000,
-                maximumVideoBitrate: 12_000_000
-            )
-        case (.standard, .mp4):
-            return ScreenRecordingEncodingProfile(
-                frameRate: 30,
-                maxDimension: 2_560,
-                bitsPerPixelPerFrame: 0.10,
-                minimumVideoBitrate: 2_000_000,
-                maximumVideoBitrate: 24_000_000
-            )
-        case (.high, .mp4):
-            return ScreenRecordingEncodingProfile(
-                frameRate: 60,
-                maxDimension: 3_840,
-                bitsPerPixelPerFrame: 0.13,
-                minimumVideoBitrate: 4_000_000,
-                maximumVideoBitrate: 50_000_000
-            )
-        case (.compact, .gif):
-            return ScreenRecordingEncodingProfile(
-                frameRate: 8,
-                maxDimension: 960,
-                maximumDuration: 90,
-                maximumFrameCount: 720
-            )
-        case (.standard, .gif):
-            return ScreenRecordingEncodingProfile(
-                frameRate: 12,
-                maxDimension: 1_280,
-                maximumDuration: 60,
-                maximumFrameCount: 720
-            )
-        case (.high, .gif):
-            return ScreenRecordingEncodingProfile(
-                frameRate: 15,
-                maxDimension: 1_600,
-                maximumDuration: 45,
-                maximumFrameCount: 675
-            )
+        ScreenRecordingEncodingProfile(
+            recordingProfile(quality: captureValue, format: format.captureValue)
+        )
+    }
+
+    private var captureValue: RecordingQualityKind {
+        switch self {
+        case .compact: .compact
+        case .standard: .standard
+        case .high: .high
+        }
+    }
+}
+
+extension ScreenRecordingFormat {
+    var captureValue: RecordingFormatKind {
+        switch self {
+        case .mp4: .mp4
+        case .gif: .gif
         }
     }
 }
@@ -127,34 +101,18 @@ enum ScreenRecordingDelay: Int, CaseIterable, Codable, Sendable {
     }
 }
 
-enum ScreenRecordingFrameRateChoice: Int, CaseIterable, Sendable {
-    case five = 5
-    case sixteen = 16
-    case twentyFour = 24
-    case thirty = 30
-    case sixty = 60
-}
-
 enum ScreenRecordingFrameRatePolicy {
     static func choices(for format: ScreenRecordingFormat) -> [Int] {
-        switch format {
-        case .mp4:
-            return ScreenRecordingFrameRateChoice.allCases.map(\.rawValue)
-        case .gif:
-            return [
-                ScreenRecordingFrameRateChoice.five.rawValue,
-                ScreenRecordingFrameRateChoice.sixteen.rawValue,
-            ]
-        }
+        recordingFrameRateChoices(format: format.captureValue).map(Int.init)
     }
 
     static func normalized(_ requested: Int, for format: ScreenRecordingFormat) -> Int {
-        let supported = choices(for: format)
-        return supported.min { left, right in
-            let leftDistance = abs(left - requested)
-            let rightDistance = abs(right - requested)
-            return leftDistance == rightDistance ? left > right : leftDistance < rightDistance
-        } ?? ScreenRecordingFrameRateChoice.thirty.rawValue
+        Int(
+            recordingNormalizedFrameRate(
+                requested: UInt32(max(0, requested)),
+                format: format.captureValue
+            )
+        )
     }
 }
 
@@ -270,56 +228,44 @@ struct ScreenRecordingEncodingProfile: Equatable, Sendable {
     let maximumDuration: TimeInterval?
     let maximumFrameCount: Int?
 
-    init(
-        frameRate: Int,
-        maxDimension: Int,
-        bitsPerPixelPerFrame: Double = 0,
-        minimumVideoBitrate: Int = 0,
-        maximumVideoBitrate: Int = 0,
-        maximumDuration: TimeInterval? = nil,
-        maximumFrameCount: Int? = nil
-    ) {
-        self.frameRate = frameRate
-        self.maxDimension = maxDimension
-        self.bitsPerPixelPerFrame = bitsPerPixelPerFrame
-        self.minimumVideoBitrate = minimumVideoBitrate
-        self.maximumVideoBitrate = maximumVideoBitrate
-        self.maximumDuration = maximumDuration
-        self.maximumFrameCount = maximumFrameCount
+    fileprivate init(_ profile: RecordingEncodingProfile) {
+        frameRate = Int(profile.frameRate)
+        maxDimension = Int(profile.maxDimension)
+        bitsPerPixelPerFrame = profile.bitsPerPixelPerFrame
+        minimumVideoBitrate = Int(profile.minimumVideoBitrate)
+        maximumVideoBitrate = Int(profile.maximumVideoBitrate)
+        maximumDuration = profile.maximumDuration
+        maximumFrameCount = profile.maximumFrameCount.map(Int.init)
+    }
+
+    fileprivate var captureValue: RecordingEncodingProfile {
+        RecordingEncodingProfile(
+            frameRate: UInt32(frameRate),
+            maxDimension: UInt32(maxDimension),
+            bitsPerPixelPerFrame: bitsPerPixelPerFrame,
+            minimumVideoBitrate: UInt32(minimumVideoBitrate),
+            maximumVideoBitrate: UInt32(maximumVideoBitrate),
+            maximumDuration: maximumDuration,
+            maximumFrameCount: maximumFrameCount.map(UInt32.init)
+        )
     }
 
     func outputSize(for sourceSize: CGSize) -> CGSize {
-        guard sourceSize.width.isFinite,
-              sourceSize.height.isFinite,
-              sourceSize.width > 0,
-              sourceSize.height > 0 else {
-            return .zero
-        }
-        let longestSide = max(sourceSize.width, sourceSize.height)
-        let scale = min(1, CGFloat(maxDimension) / longestSide)
-        return CGSize(
-            width: Self.evenDimension(sourceSize.width * scale),
-            height: Self.evenDimension(sourceSize.height * scale)
+        let size = recordingOutputSize(
+            profile: captureValue,
+            sourceSize: CaptureSize(width: sourceSize.width, height: sourceSize.height)
         )
+        return CGSize(width: size.width, height: size.height)
     }
 
     func videoBitrate(for outputSize: CGSize, frameRate overrideFrameRate: Int? = nil) -> Int {
-        guard bitsPerPixelPerFrame > 0,
-              minimumVideoBitrate > 0,
-              maximumVideoBitrate >= minimumVideoBitrate else {
-            return 0
-        }
-        let fps = max(1, overrideFrameRate ?? frameRate)
-        let estimate = Int(
-            (Double(outputSize.width) * Double(outputSize.height) * Double(fps) * bitsPerPixelPerFrame)
-                .rounded()
+        Int(
+            recordingVideoBitrate(
+                profile: captureValue,
+                outputSize: CaptureSize(width: outputSize.width, height: outputSize.height),
+                overrideFrameRate: overrideFrameRate.map(UInt32.init)
+            )
         )
-        return min(maximumVideoBitrate, max(minimumVideoBitrate, estimate))
-    }
-
-    private static func evenDimension(_ value: CGFloat) -> CGFloat {
-        let rounded = max(2, Int(value.rounded()))
-        return CGFloat(rounded - rounded % 2)
     }
 }
 

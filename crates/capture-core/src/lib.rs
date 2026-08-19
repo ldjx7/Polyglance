@@ -4,6 +4,7 @@ pub mod alignment;
 pub mod geometry;
 pub mod pin;
 pub mod rect;
+pub mod recording;
 
 pub use alignment::SegmentPair;
 pub use geometry::{
@@ -12,3 +13,4 @@ pub use geometry::{
 };
 pub use pin::SizeLimits;
 pub use rect::{Point, Rect, Size};
+pub use recording::{EncodingProfile, RecordingFormat, RecordingQuality};

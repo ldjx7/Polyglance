@@ -68,10 +68,6 @@ final class RecordingSettingsTests: XCTestCase {
         XCTAssertEqual(ScreenRecordingDelay.fiveSeconds.displayName, "5 秒")
     }
 
-    func testRecordingFrameRateChoicesMatchPixPinToolbarChoices() {
-        XCTAssertEqual(ScreenRecordingFrameRateChoice.allCases.map(\.rawValue), [5, 16, 24, 30, 60])
-    }
-
     func testFrameRatePolicyKeepsMP4ChoiceAndMapsUnsupportedGIFFPS() {
         XCTAssertEqual(ScreenRecordingFrameRatePolicy.normalized(60, for: .mp4), 60)
         XCTAssertEqual(ScreenRecordingFrameRatePolicy.normalized(60, for: .gif), 16)

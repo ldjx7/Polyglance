@@ -13,6 +13,7 @@ uniffi::setup_scaffolding!();
 
 pub mod geometry;
 pub mod pin;
+pub mod recording;
 
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct TranslationInput {
