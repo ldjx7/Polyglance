@@ -1024,7 +1024,7 @@ mod tests {
         let bytes = stitcher.render().unwrap();
         let last_row_start = (229 * 4) * 4;
 
-        assert_eq!(bytes[last_row_start], ((30 + 199) % 251) as u8);
+        assert_eq!(bytes[last_row_start], 229);
     }
 }
 

@@ -161,7 +161,7 @@ final class ScreenRecordingEngine: NSObject, @unchecked Sendable {
             throw captureStopError
         }
 
-        return try await withCheckedThrowingContinuation { continuation in
+        let finalizedURL: URL = try await withCheckedThrowingContinuation { continuation in
             sampleQueue.async { [self] in
                 guard sessionStarted else {
                     writer?.cancelWriting()
@@ -203,6 +203,10 @@ final class ScreenRecordingEngine: NSObject, @unchecked Sendable {
                 }
             }
         }
+        return try await ScreenRecordingAudioMixdown.mixIfNeeded(
+            sourceURL: finalizedURL,
+            options: options
+        )
     }
 
     func cancel() async {

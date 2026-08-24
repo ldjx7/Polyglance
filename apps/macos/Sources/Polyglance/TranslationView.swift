@@ -23,6 +23,35 @@ struct TranslationView: View {
         ("俄语", "ru"),
     ]
 
+    @AppStorage("translation.provider") private var currentProviderRaw = TranslationProvider.microsoft.rawValue
+
+    private var currentProvider: TranslationProvider {
+        get { TranslationProvider(rawValue: currentProviderRaw) ?? .microsoft }
+        set { currentProviderRaw = newValue.rawValue }
+    }
+
+    private let sourceLanguages = [
+        ("自动检测", ""),
+        ("英语 (EN)", "en"),
+        ("中文 (ZH)", "zh-CN"),
+        ("日语 (JA)", "ja"),
+        ("韩语 (KO)", "ko"),
+        ("法语 (FR)", "fr"),
+        ("德语 (DE)", "de"),
+        ("西班牙语", "es"),
+        ("俄语 (RU)", "ru"),
+    ]
+
+    private var currentSourceLanguageDisplayName: String {
+        if let code = viewModel.sourceLanguage, !code.isEmpty {
+            return sourceLanguages.first(where: { $0.1 == code })?.0 ?? "自动检测"
+        }
+        if let detected = viewModel.detectedLanguageDisplayName {
+            return "自动检测 (\(detected))"
+        }
+        return "自动检测"
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             // 1. 顶部单行整合栏（紧贴窗口顶部，与系统红绿灯垂直居中对齐）
@@ -35,15 +64,37 @@ struct TranslationView: View {
 
                 // 居中语言切换胶囊
                 HStack(spacing: 6) {
-                    Text("自动检测 / 英语")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
+                    Menu {
+                        ForEach(sourceLanguages, id: \.1) { language in
+                            Button {
+                                viewModel.sourceLanguage = language.1.isEmpty ? nil : language.1
+                            } label: {
+                                HStack {
+                                    Text(language.0)
+                                    if (viewModel.sourceLanguage ?? "") == language.1 {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text(currentSourceLanguageDisplayName)
+                                .font(.system(size: 12, weight: .semibold))
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.secondary)
+                        }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
                         .background(
                             Capsule()
                                 .fill(Color(nsColor: .controlBackgroundColor).opacity(0.8))
                         )
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
 
                     Image(systemName: "arrow.left.arrow.right")
                         .font(.system(size: 10, weight: .bold))
@@ -78,6 +129,8 @@ struct TranslationView: View {
                         )
                     }
                     .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
                 }
                 .padding(2)
                 .background(
@@ -91,11 +144,51 @@ struct TranslationView: View {
 
                 Spacer()
 
+                // 服务商切换
+                Menu {
+                    ForEach(TranslationProvider.allCases, id: \.self) { p in
+                        Button {
+                            currentProviderRaw = p.rawValue
+                            if !viewModel.sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Task {
+                                    await viewModel.translate()
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                Text(p.displayName)
+                                if currentProvider == p {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Text(currentProvider.displayName)
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.8))
+                    )
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+
                 // 右侧置顶按钮
                 Button {
                     isPinned.toggle()
-                    if let window = NSApp.keyWindow ?? NSApp.windows.first(where: { $0 is NSPanel }) {
+                    if let window = (NSApp.keyWindow ?? NSApp.windows.first(where: { $0 is NSPanel })) as? NSPanel {
                         window.level = isPinned ? .floating : .normal
+                        window.hidesOnDeactivate = !isPinned
                     }
                 } label: {
                     Image(systemName: isPinned ? "pin.fill" : "pin")
@@ -118,12 +211,6 @@ struct TranslationView: View {
                         Label("原文", systemImage: "doc.text")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
-
-                        if !viewModel.sourceText.isEmpty {
-                            Text("(\(viewModel.sourceText.count) 字)")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.tertiary)
-                        }
 
                         Spacer()
 
@@ -163,20 +250,11 @@ struct TranslationView: View {
                                 .padding(6)
                         }
 
-                        if viewModel.translatedText.isEmpty || isEditingSource {
-                            TextEditor(text: $viewModel.sourceText)
-                                .font(.system(size: 13))
-                                .scrollContentBackground(.hidden)
-                                .focused($isSourceFocused)
-                                .padding(2)
-                        } else {
-                            LinkedTranslationColumn(
-                                segments: viewModel.alignedSegments,
-                                side: .source,
-                                hoveredSegmentID: $hoveredSegmentID
-                            )
+                        TextEditor(text: $viewModel.sourceText)
+                            .font(.system(size: 13))
+                            .scrollContentBackground(.hidden)
+                            .focused($isSourceFocused)
                             .padding(2)
-                        }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
@@ -367,6 +445,13 @@ struct TranslationView: View {
         .padding(.top, 6)
         .background(.ultraThinMaterial)
         .frame(minWidth: 580, minHeight: 350)
+        .onChange(of: currentProviderRaw) { _, _ in
+            if !viewModel.sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Task {
+                    await viewModel.translate()
+                }
+            }
+        }
     }
 
     private var currentLanguageDisplayName: String {
@@ -431,4 +516,3 @@ private struct LinkedTranslationColumn: View {
         }
     }
 }
-

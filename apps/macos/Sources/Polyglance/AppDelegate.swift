@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let configurationStore = AppConfigurationStore()
     let shortcutStore = GlobalShortcutConfigurationStore()
     let recordingSettingsStore = RecordingSettingsStore()
+    let launchAtLoginManager = LaunchAtLoginManager()
 
     private lazy var translationClient: any TranslationClient = makeTranslationClient()
     private(set) lazy var viewModel = TranslatorViewModel(client: translationClient)
@@ -294,7 +295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.isMovableByWindowBackground = true
         panel.isFloatingPanel = true
         panel.level = .floating
-        panel.hidesOnDeactivate = false
+        panel.hidesOnDeactivate = true
         panel.isReleasedWhenClosed = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -309,15 +310,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settingsView = SettingsView(
             store: configurationStore,
             shortcutStore: shortcutStore,
-            recordingSettingsStore: recordingSettingsStore
-        ) { [weak self] configuration, shortcuts, recordingSettings in
+            recordingSettingsStore: recordingSettingsStore,
+            launchAtLoginManager: launchAtLoginManager
+        ) { [weak self] configuration, shortcuts, recordingSettings, launchAtLoginEnabled in
             guard let self else {
                 return
             }
             try saveSettings(
                 configuration,
                 shortcuts: shortcuts,
-                recordingSettings: recordingSettings
+                recordingSettings: recordingSettings,
+                launchAtLoginEnabled: launchAtLoginEnabled
             )
         }
         let window = NSWindow(
@@ -337,15 +340,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func saveSettings(
         _ configuration: AppConfiguration,
         shortcuts: GlobalShortcutConfiguration,
-        recordingSettings: RecordingSettings
+        recordingSettings: RecordingSettings,
+        launchAtLoginEnabled: Bool
     ) throws {
         let previousShortcuts = shortcutConfiguration
         let previousConfiguration = try configurationStore.load()
         let previousRecordingSettings = recordingSettingsStore.load()
+        let previousLaunchAtLoginEnabled = launchAtLoginManager.isEnabled
         try shortcuts.validate()
         try hotKeyManager.register(shortcuts)
 
+        var launchAtLoginWasApplied = false
         do {
+            try launchAtLoginManager.setEnabled(launchAtLoginEnabled)
+            launchAtLoginWasApplied = true
             try configurationStore.save(configuration)
             try shortcutStore.save(shortcuts)
             try recordingSettingsStore.save(recordingSettings)
@@ -354,6 +362,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try? configurationStore.save(previousConfiguration)
             try? shortcutStore.save(previousShortcuts)
             try? recordingSettingsStore.save(previousRecordingSettings)
+            if launchAtLoginWasApplied {
+                try? launchAtLoginManager.setEnabled(previousLaunchAtLoginEnabled)
+            }
             throw error
         }
 

@@ -1,0 +1,70 @@
+name: Windows CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/windows/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "scripts/build-windows-*.ps1"
+      - "scripts/test-windows-installer.ps1"
+      - ".github/workflows/windows-ci.yml"
+  pull_request:
+    paths:
+      - "apps/windows/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "scripts/build-windows-*.ps1"
+      - "scripts/test-windows-installer.ps1"
+      - ".github/workflows/windows-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-2025
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install .NET 9
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Check Rust formatting
+        run: cargo fmt --all --check
+
+      - name: Run Rust tests
+        run: cargo test --workspace
+
+      - name: Run Windows tests
+        run: dotnet test apps/windows/Polyglance.sln --configuration Release
+
+      - name: Build the Windows application
+        shell: pwsh
+        run: ./scripts/build-windows-app.ps1
+
+      - name: Build the Windows installer
+        shell: pwsh
+        run: |
+          ./scripts/build-windows-installer.ps1 `
+            -Version "0.0.0-ci" `
+            -BuildNumber "${{ github.run_number }}"
+
+      - name: Test Windows install and uninstall
+        shell: pwsh
+        run: ./scripts/test-windows-installer.ps1 -InstallerPath "dist/installer/Polyglance-0.0.0-ci-Windows-x64-Setup.exe"

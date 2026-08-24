@@ -1,0 +1,169 @@
+<UserControl x:Class="Polyglance.UI.Controls.ScreenshotToolbar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d">
+    <UserControl.Resources>
+        <!-- 主工具按钮样式 -->
+        <Style x:Key="ToolbarButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="28"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Margin" Value="2,0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#15000000"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#25000000"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.25"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 垂直分割线 -->
+        <Style x:Key="DividerStyle" TargetType="Rectangle">
+            <Setter Property="Width" Value="1"/>
+            <Setter Property="Height" Value="18"/>
+            <Setter Property="Fill" Value="#18000000"/>
+            <Setter Property="Margin" Value="4,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </UserControl.Resources>
+
+    <StackPanel Orientation="Vertical">
+        <!-- 二级画笔与调色板工具栏 (展开时显示) -->
+        <Border x:Name="SubToolbarBorder" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="16" Padding="8,4" Margin="0,0,0,6" HorizontalAlignment="Center" Visibility="Collapsed">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- 线宽选择 -->
+                <RadioButton GroupName="StrokeSize" Margin="2,0" VerticalAlignment="Center" Cursor="Hand" Checked="OnStrokeSizeChecked" Tag="2">
+                    <Ellipse Width="4" Height="4" Fill="#333333"/>
+                </RadioButton>
+                <RadioButton GroupName="StrokeSize" Margin="4,0" IsChecked="True" VerticalAlignment="Center" Cursor="Hand" Checked="OnStrokeSizeChecked" Tag="4">
+                    <Ellipse Width="8" Height="8" Fill="#333333"/>
+                </RadioButton>
+                <RadioButton GroupName="StrokeSize" Margin="2,0" VerticalAlignment="Center" Cursor="Hand" Checked="OnStrokeSizeChecked" Tag="8">
+                    <Ellipse Width="12" Height="12" Fill="#333333"/>
+                </RadioButton>
+
+                <Rectangle Style="{StaticResource DividerStyle}"/>
+
+                <!-- 颜色调色盘 -->
+                <RadioButton GroupName="ColorPicker" Margin="3,0" IsChecked="True" Cursor="Hand" Checked="OnColorChecked" Tag="#EF4444">
+                    <Ellipse Width="16" Height="16" Fill="#EF4444" Stroke="#30000000" StrokeThickness="1"/>
+                </RadioButton>
+                <RadioButton GroupName="ColorPicker" Margin="3,0" Cursor="Hand" Checked="OnColorChecked" Tag="#F97316">
+                    <Ellipse Width="16" Height="16" Fill="#F97316" Stroke="#30000000" StrokeThickness="1"/>
+                </RadioButton>
+                <RadioButton GroupName="ColorPicker" Margin="3,0" Cursor="Hand" Checked="OnColorChecked" Tag="#FACC15">
+                    <Ellipse Width="16" Height="16" Fill="#FACC15" Stroke="#30000000" StrokeThickness="1"/>
+                </RadioButton>
+                <RadioButton GroupName="ColorPicker" Margin="3,0" Cursor="Hand" Checked="OnColorChecked" Tag="#10B981">
+                    <Ellipse Width="16" Height="16" Fill="#10B981" Stroke="#30000000" StrokeThickness="1"/>
+                </RadioButton>
+                <RadioButton GroupName="ColorPicker" Margin="3,0" Cursor="Hand" Checked="OnColorChecked" Tag="#3B82F6">
+                    <Ellipse Width="16" Height="16" Fill="#3B82F6" Stroke="#30000000" StrokeThickness="1"/>
+                </RadioButton>
+                <RadioButton GroupName="ColorPicker" Margin="3,0" Cursor="Hand" Checked="OnColorChecked" Tag="#8B5CF6">
+                    <Ellipse Width="16" Height="16" Fill="#8B5CF6" Stroke="#30000000" StrokeThickness="1"/>
+                </RadioButton>
+                <RadioButton GroupName="ColorPicker" Margin="3,0" Cursor="Hand" Checked="OnColorChecked" Tag="#1F2937">
+                    <Ellipse Width="16" Height="16" Fill="#1F2937" Stroke="#30000000" StrokeThickness="1"/>
+                </RadioButton>
+                <RadioButton GroupName="ColorPicker" Margin="3,0" Cursor="Hand" Checked="OnColorChecked" Tag="#FFFFFF">
+                    <Ellipse Width="16" Height="16" Fill="#FFFFFF" Stroke="#60000000" StrokeThickness="1.5"/>
+                </RadioButton>
+            </StackPanel>
+        </Border>
+
+        <!-- 一级主工具栏 (纯白 22pt 圆角胶囊) -->
+        <Border Background="#FFFFFF"
+                BorderBrush="#E2E8F0"
+                BorderThickness="1"
+                CornerRadius="22"
+                Padding="6,3">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- 标注工具 -->
+                <Button x:Name="BtnPen" Style="{StaticResource ToolbarButtonStyle}" ToolTip="画笔 (P)" Click="OnToolClicked" Tag="Pen">
+                    <Path Data="M3,17.25 V21 H6.75 L17.81,9.94 L14.06,6.19 Z M20.71,7.04 C21.1,6.65 21.1,6.02 20.71,5.63 L18.37,3.29 C17.98,2.9 17.35,2.9 16.96,3.29 L15.13,5.12 L18.88,8.87 Z" Fill="#1E293B" Width="14" Height="14" Stretch="Uniform"/>
+                </Button>
+                <Button x:Name="BtnRect" Style="{StaticResource ToolbarButtonStyle}" ToolTip="矩形 (R)" Click="OnToolClicked" Tag="Rect">
+                    <Path Data="M3,3 H21 V21 H3 Z" Stroke="#1E293B" StrokeThickness="1.8" Width="14" Height="14" Stretch="Uniform"/>
+                </Button>
+                <Button x:Name="BtnEllipse" Style="{StaticResource ToolbarButtonStyle}" ToolTip="椭圆 (O)" Click="OnToolClicked" Tag="Ellipse">
+                    <Ellipse Width="14" Height="14" Stroke="#1E293B" StrokeThickness="1.8"/>
+                </Button>
+                <Button x:Name="BtnArrow" Style="{StaticResource ToolbarButtonStyle}" ToolTip="箭头 (A)" Click="OnToolClicked" Tag="Arrow">
+                    <Path Data="M4,18 L18,4 M18,4 L9,4 M18,4 L18,13" Stroke="#1E293B" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Width="14" Height="14" Stretch="Uniform"/>
+                </Button>
+                <Button x:Name="BtnText" Style="{StaticResource ToolbarButtonStyle}" ToolTip="文字 (T)" Click="OnToolClicked" Tag="Text">
+                    <TextBlock Text="T" FontSize="14" FontWeight="Black" Foreground="#1E293B" FontFamily="Segoe UI, Arial"/>
+                </Button>
+                <Button x:Name="BtnMosaic" Style="{StaticResource ToolbarButtonStyle}" ToolTip="马赛克 (M)" Click="OnToolClicked" Tag="Mosaic">
+                    <Path Data="M2,2 H8 V8 H2 Z M8,2 H14 V8 H8 Z M14,2 H20 V8 H14 Z M2,8 H8 V14 H2 Z M8,8 H14 V14 H8 Z M14,8 H20 V14 H14 Z M2,14 H8 V20 H2 Z M8,14 H14 V20 H8 Z M14,14 H20 V20 H14 Z" Fill="#1E293B" Width="14" Height="14" Stretch="Uniform"/>
+                </Button>
+
+                <Rectangle Style="{StaticResource DividerStyle}"/>
+
+                <!-- 历史操作 -->
+                <Button x:Name="BtnUndo" Style="{StaticResource ToolbarButtonStyle}" ToolTip="撤销 (Ctrl+Z)" Click="OnActionClicked" Tag="Undo" IsEnabled="False">
+                    <Path Data="M12.5,8 C9.5,8 6.9,9.3 5.2,11.3 L2,8 V16 H10 L6.6,12.6 C7.9,11 9.9,10 12.5,10 C16.6,10 20,13.4 20,17.5 C20,18.5 19.8,19.4 19.4,20.2 L21.1,21.1 C21.7,19.9 22,18.7 22,17.5 C22,12.3 17.7,8 12.5,8 Z" Fill="#1E293B" Width="14" Height="14" Stretch="Uniform"/>
+                </Button>
+                <Button x:Name="BtnRedo" Style="{StaticResource ToolbarButtonStyle}" ToolTip="重做 (Ctrl+Y)" Click="OnActionClicked" Tag="Redo" IsEnabled="False">
+                    <Path Data="M18.8,11.3 C17.1,9.3 14.5,8 11.5,8 C6.3,8 2,12.3 2,17.5 C2,18.7 2.3,19.9 2.9,21.1 L4.6,20.2 C4.2,19.4 4,18.5 4,17.5 C4,13.4 7.4,10 11.5,10 C14.1,10 16.1,11 17.4,12.6 L14,16 H22 V8 L18.8,11.3 Z" Fill="#1E293B" Width="14" Height="14" Stretch="Uniform"/>
+                </Button>
+
+                <Rectangle Style="{StaticResource DividerStyle}"/>
+
+                <!-- 功能操作 -->
+                <Button x:Name="BtnOCR" Style="{StaticResource ToolbarButtonStyle}" ToolTip="提取文字 (OCR)" Click="OnActionClicked" Tag="OCR">
+                    <Border Background="#100078D4" CornerRadius="4" Padding="3,1">
+                        <TextBlock Text="OCR" FontSize="10" FontWeight="Bold" Foreground="#0078D4"/>
+                    </Border>
+                </Button>
+                <Button x:Name="BtnTranslate" Style="{StaticResource ToolbarButtonStyle}" ToolTip="截屏翻译" Click="OnActionClicked" Tag="Translate">
+                    <Border Background="#150A84FF" CornerRadius="4" Padding="3,1">
+                        <TextBlock Text="译" FontSize="12" FontWeight="Bold" Foreground="#0A84FF"/>
+                    </Border>
+                </Button>
+                <Button x:Name="BtnLongScreenshot" Style="{StaticResource ToolbarButtonStyle}" ToolTip="长截图" Click="OnActionClicked" Tag="LongScreenshot">
+                    <Path Data="M19,3 H5 C3.9,3 3,3.9 3,5 V19 C3,20.1 3.9,21 5,21 H19 C20.1,21 21,20.1 21,19 V5 C21,3.9 20.1,3 19,3 Z M12,6 L15,9 H13 V15 H15 L12,18 L9,15 H11 V9 H9 L12,6 Z" Fill="#1E293B" Width="14" Height="14" Stretch="Uniform"/>
+                </Button>
+                <Button x:Name="BtnScreenRecording" Style="{StaticResource ToolbarButtonStyle}" ToolTip="录屏" Click="OnActionClicked" Tag="ScreenRecording">
+                    <Grid Width="14" Height="14">
+                        <Ellipse Width="14" Height="14" Stroke="#EF4444" StrokeThickness="1.5"/>
+                        <Ellipse Width="6" Height="6" Fill="#EF4444"/>
+                    </Grid>
+                </Button>
+                <Button x:Name="BtnPin" Style="{StaticResource ToolbarButtonStyle}" ToolTip="贴图到桌面 (F)" Click="OnActionClicked" Tag="Pin">
+                    <Path Data="M16,12 V4 H17 V2 H7 V4 H8 V12 L6,14 V16 H11 V22 L12,23 L13,22 V16 H18 V14 L16,12 Z" Fill="#1E293B" Width="14" Height="14" Stretch="Uniform"/>
+                </Button>
+                <Button x:Name="BtnSave" Style="{StaticResource ToolbarButtonStyle}" ToolTip="保存图片 (Ctrl+S)" Click="OnActionClicked" Tag="Save">
+                    <Path Data="M19,9 H15 V3 H9 V9 H5 L12,16 L19,9 Z M5,18 V20 H19 V18 H5 Z" Fill="#1E293B" Width="14" Height="14" Stretch="Uniform"/>
+                </Button>
+                <Button x:Name="BtnCancel" Style="{StaticResource ToolbarButtonStyle}" ToolTip="取消 (Esc)" Click="OnActionClicked" Tag="Cancel">
+                    <Path Data="M19,6.41 L17.59,5 L12,10.59 L6.41,5 L5,6.41 L10.59,12 L5,17.59 L6.41,19 L12,13.41 L17.59,19 L19,17.59 L13.41,12 Z" Fill="#EF4444" Width="13" Height="13" Stretch="Uniform"/>
+                </Button>
+                <!-- 纯正双页复制图标 -->
+                <Button x:Name="BtnCopy" Style="{StaticResource ToolbarButtonStyle}" ToolTip="复制到剪贴板 (Enter)" Click="OnActionClicked" Tag="Copy">
+                    <Path Data="M16,1 H4 C2.9,1 2,1.9 2,3 V17 H4 V3 H16 V1 Z M19,5 H8 C6.9,5 6,5.9 6,7 V21 C6,22.1 6.9,23 8,23 H19 C20.1,23 21,22.1 21,21 V7 C21,5.9 20.1,5 19,5 Z M19,21 H8 V7 H19 V21 Z" Fill="#1E293B" Width="14" Height="14" Stretch="Uniform"/>
+                </Button>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

@@ -4,7 +4,7 @@
 
 - 产品名：Polyglance
 - 目录名：`polyglance`
-- 文档状态：初版方案
+- 文档状态：持续更新的实施方案
 - 目标平台：macOS、Windows
 - 核心技术：Rust + Swift + C#
 
@@ -14,7 +14,7 @@
 
 - Rust 负责翻译流程、服务适配、文本处理、缓存、历史记录和错误模型。
 - macOS 使用 SwiftUI 和 AppKit，负责菜单栏、全局快捷键、划词、悬浮窗口、OCR 和系统权限。
-- Windows 使用 C# 和 WinUI 3，负责托盘、全局快捷键、UI Automation、悬浮窗口、OCR 和系统权限。
+- Windows 使用 C#、WPF 和 Win32，负责托盘、全局快捷键、UI Automation、悬浮窗口、OCR 和系统权限。
 - macOS 通过 UniFFI 调用 Rust；Windows 通过稳定的 C ABI 和 .NET P/Invoke 调用 Rust。
 
 这套架构优先保证原生体验，同时让最容易产生重复和行为差异的翻译业务逻辑只维护一份。
@@ -48,7 +48,7 @@
 - API 密钥存入系统安全凭据存储。
 - 请求取消、超时、重试和清晰的错误提示。
 
-### 3.4 MVP 明确不做
+### 3.4 初始 MVP 明确不做
 
 - 截图 OCR。
 - 原图翻译。
@@ -60,7 +60,7 @@
 - 浏览器扩展和移动端。
 - 自动更新服务。
 
-OCR 很重要，但它会显著增加权限、系统 API、错误处理和测试范围，因此放在第二阶段。
+以上是项目启动时的范围约束；OCR、截图、贴图、录屏和自动更新目前已经进入后续 Beta 阶段，不再代表当前功能状态。
 
 ## 4. 总体架构
 
@@ -74,8 +74,8 @@ flowchart TB
     end
 
     subgraph Windows["Windows App"]
-        WinUI["WinUI 3 界面"]
-        WinServices["UI Automation、Windows OCR、Credential Manager"]
+        WPF["WPF 界面与 Win32 悬浮窗"]
+        WinServices["UI Automation、Windows OCR、DPAPI"]
         DotNetBinding["C# Native Binding"]
         CApi["Rust C ABI Adapter"]
     end
@@ -93,8 +93,8 @@ flowchart TB
     AppKit --> SwiftBinding
     SwiftBinding --> FFI
 
-    WinUI --> WinServices
-    WinUI --> DotNetBinding
+    WPF --> WinServices
+    WPF --> DotNetBinding
     DotNetBinding --> CApi
     CApi --> FFI
 
@@ -106,7 +106,7 @@ flowchart TB
 
 ### 4.1 边界原则
 
-Rust 内核不得依赖 AppKit、SwiftUI、WinUI 或 Windows UI Automation。
+Rust 内核不得依赖 AppKit、SwiftUI、WPF 或 Windows UI Automation。
 
 平台层不得自行实现翻译重试、服务降级、缓存键生成和历史数据规则。这些逻辑必须进入 Rust，否则两个平台会逐渐产生不同的行为。
 
@@ -133,7 +133,7 @@ Rust 内核不得依赖 AppKit、SwiftUI、WinUI 或 Windows UI Automation。
 - 悬浮窗口、焦点、多显示器和 DPI。
 - OCR。
 - 辅助功能、录屏等权限。
-- Keychain/Credential Manager。
+- Keychain/DPAPI 等系统安全凭据存储。
 - 系统通知。
 - 安装包、签名、公证和自动更新。
 - 把 Rust 事件调度回 UI 主线程。
@@ -257,7 +257,7 @@ Apple 系统翻译属于平台能力。如果以后接入，应由 Swift 层实�
 - OAuth refresh token。
 - 原始服务商认证响应。
 
-API 密钥由平台层从 Keychain 或 Credential Manager 读取，只在运行时交给 Rust 使用。
+API 密钥由平台层从 Keychain 或当前用户 DPAPI 读取，只在运行时交给 Rust 使用。
 
 ### 6.4 `translator-ffi`
 
@@ -316,14 +316,14 @@ Rust 静态库分别为 Apple Silicon 和 Intel 构建，打包为 XCFramework�
 ### 8.1 技术选择
 
 - .NET + C#。
-- WinUI 3：正式 UI。
-- Windows App SDK：应用生命周期和窗口能力。
+- WPF：正式 UI，并通过 Win32 互操作实现透明悬浮窗、托盘和全局快捷键。
+- Win32 / Windows Runtime：屏幕捕获、窗口能力和系统集成。
 - UI Automation：获取选中文本。
-- Windows Credential Manager：API 密钥。
-- Windows OCR：后续 OCR。
+- 当前用户 DPAPI：加密 API 密钥。
+- Windows.Media.Ocr：本地 OCR。
 - `LibraryImport`：调用 Rust DLL。
 
-如果 WinUI 3 在悬浮窗口或托盘能力上产生明显阻力，可以让少量窗口代码调用 Win32 API，但不建议因此把整个 UI 改成 Win32。
+WPF 负责视图和交互状态；透明、置顶、鼠标穿透、托盘与全局快捷键等系统能力通过少量 Win32 互操作实现，不在平台层复制 Rust 纯业务规则。
 
 ### 8.2 C ABI 设计
 
@@ -499,9 +499,9 @@ Cancelled
 - 托盘应用。
 - 全局快捷键。
 - UI Automation 取词和剪贴板回退。
-- WinUI 3 悬浮窗口。
-- Credential Manager。
-- 安装包。
+- WPF / Win32 悬浮窗口。
+- DPAPI 当前用户凭据保护。
+- 自包含 ZIP 发布包与 Windows 更新源。
 
 退出标准：Windows 与 macOS 使用相同的配置语义、历史格式、翻译行为和错误类别。
 

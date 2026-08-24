@@ -1,0 +1,41 @@
+<Window x:Class="Polyglance.UI.Views.PinWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        SizeToContent="WidthAndHeight"
+        MouseDown="OnMouseDown"
+        MouseWheel="OnMouseWheel"
+        MouseDoubleClick="OnMouseDoubleClick">
+    <Border x:Name="ContainerBorder" Margin="8" Background="#FFFFFF" BorderBrush="#20000000" BorderThickness="1" CornerRadius="4">
+        <Border.Effect>
+            <DropShadowEffect x:Name="Shadow" BlurRadius="12" Direction="270" ShadowDepth="3" Opacity="0.3"/>
+        </Border.Effect>
+        <Grid>
+            <Image x:Name="PinImage" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+        </Grid>
+        <Border.ContextMenu>
+            <ContextMenu>
+                <MenuItem Header="复制图片 (Copy)" Click="OnCopyClick"/>
+                <MenuItem Header="保存图片 (Save)..." Click="OnSaveClick"/>
+                <Separator/>
+                <MenuItem Header="透明度 (Opacity)">
+                    <MenuItem Header="100% (默认)" Click="OnSetOpacity100"/>
+                    <MenuItem Header="80%" Click="OnSetOpacity80"/>
+                    <MenuItem Header="60%" Click="OnSetOpacity60"/>
+                    <MenuItem Header="40%" Click="OnSetOpacity40"/>
+                </MenuItem>
+                <MenuItem Header="总在最前 (Topmost)" IsCheckable="True" IsChecked="True" Click="OnToggleTopmostClick"/>
+                <MenuItem Header="阴影效果 (Shadow)" IsCheckable="True" IsChecked="True" Click="OnToggleShadowClick"/>
+                <Separator/>
+                <MenuItem Header="关闭贴图 (Close)" Click="OnCloseClick"/>
+            </ContextMenu>
+        </Border.ContextMenu>
+    </Border>
+</Window>

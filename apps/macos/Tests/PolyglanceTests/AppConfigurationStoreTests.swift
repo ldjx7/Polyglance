@@ -127,18 +127,25 @@ final class AppConfigurationStoreTests: XCTestCase {
         }
     }
 
-    func testBundledFreeAIConfigurationRequiresAnHTTPSBuildTimeKeyConfiguration() {
-        XCTAssertNil(BundledFreeAIConfiguration(infoDictionary: [:]))
+    func testBundledFreeAIConfigurationRequiresBuildOrEnvironmentInjectionAndHTTPS() {
+        XCTAssertNil(BundledFreeAIConfiguration(infoDictionary: [:], environment: [:]))
+        let environmentConfiguration = BundledFreeAIConfiguration(
+            infoDictionary: [:],
+            environment: ["POLYGLANCE_FREE_AI_API_KEY": "environment-secret"]
+        )
+        XCTAssertEqual(environmentConfiguration?.apiKey, "environment-secret")
+        XCTAssertEqual(environmentConfiguration?.endpoint, BundledFreeAIConfiguration.defaultEndpoint)
+        XCTAssertEqual(environmentConfiguration?.model, BundledFreeAIConfiguration.defaultModel)
         XCTAssertNil(BundledFreeAIConfiguration(infoDictionary: [
             "PolyglanceFreeAIAPIKey": "build-secret",
             "PolyglanceFreeAIEndpoint": "http://openrouter.ai/api/v1",
-        ]))
+        ], environment: [:]))
 
         let configuration = BundledFreeAIConfiguration(infoDictionary: [
             "PolyglanceFreeAIAPIKey": "build-secret",
             "PolyglanceFreeAIEndpoint": "https://openrouter.ai/api/v1",
             "PolyglanceFreeAIModel": "openrouter/free",
-        ])
+        ], environment: [:])
 
         XCTAssertEqual(configuration?.apiKey, "build-secret")
         XCTAssertEqual(configuration?.endpoint, "https://openrouter.ai/api/v1")

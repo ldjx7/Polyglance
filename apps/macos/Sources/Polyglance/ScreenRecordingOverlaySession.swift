@@ -12,6 +12,8 @@ final class ScreenRecordingToolbarButton: NSButton {
     var onHoverChanged: ((ScreenRecordingToolbarButton, Bool) -> Void)?
     private var hoverTrackingArea: NSTrackingArea?
 
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverTrackingArea {
@@ -45,6 +47,10 @@ final class ScreenRecordingToolbarHelpBubble: NSView {
 
 @MainActor
 final class ScreenRecordingToolbarView: NSView {
+    private static let horizontalInset: CGFloat = 12
+    private static let iconButtonSize: CGFloat = 28
+    private static let toolbarWidth: CGFloat = 642
+
     let statusLabel = NSTextField(labelWithString: "待录制")
     let formatPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     let qualityPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -72,9 +78,9 @@ final class ScreenRecordingToolbarView: NSView {
 
     init(settings: RecordingSettings) {
         self.settings = settings
-        super.init(frame: CGRect(x: 0, y: 0, width: 720, height: 80))
+        super.init(frame: CGRect(x: 0, y: 0, width: Self.toolbarWidth, height: 46))
         wantsLayer = true
-        layer?.cornerRadius = 10
+        layer?.cornerRadius = 14
         layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor
 
         statusLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
@@ -137,7 +143,8 @@ final class ScreenRecordingToolbarView: NSView {
         ])
         controls.orientation = .horizontal
         controls.alignment = .centerY
-        controls.spacing = 7
+        controls.distribution = .fill
+        controls.spacing = 6
         controls.translatesAutoresizingMaskIntoConstraints = false
         addSubview(controls)
 
@@ -154,15 +161,15 @@ final class ScreenRecordingToolbarView: NSView {
         addSubview(helpBubble, positioned: .above, relativeTo: controls)
 
         NSLayoutConstraint.activate([
-            controls.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
-            controls.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-            controls.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
-            controls.heightAnchor.constraint(equalToConstant: 32),
-            statusLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 54),
+            controls.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.horizontalInset),
+            controls.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Self.horizontalInset),
+            controls.centerYAnchor.constraint(equalTo: centerYAnchor),
+            controls.heightAnchor.constraint(equalToConstant: 30),
+            statusLabel.widthAnchor.constraint(equalToConstant: 54),
             formatPopUp.widthAnchor.constraint(equalToConstant: 68),
-            qualityPopUp.widthAnchor.constraint(equalToConstant: 78),
+            qualityPopUp.widthAnchor.constraint(equalToConstant: 74),
             frameRatePopUp.widthAnchor.constraint(equalToConstant: 76),
-            delayPopUp.widthAnchor.constraint(equalToConstant: 70),
+            delayPopUp.widthAnchor.constraint(equalToConstant: 84),
         ])
         updateSelectionsFromSettings()
         update(state: .ready)
@@ -172,6 +179,9 @@ final class ScreenRecordingToolbarView: NSView {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    private var recordingTimer: Timer?
+    private var elapsedSeconds: Int = 0
 
     func update(state: ScreenRecordingSessionState) {
         hideHelp()
@@ -189,22 +199,28 @@ final class ScreenRecordingToolbarView: NSView {
         closeButton.isEnabled = state != .finalizing && state != .starting
         switch state {
         case .idle:
+            stopTimer()
             statusLabel.stringValue = "已关闭"
         case .ready:
+            stopTimer()
             statusLabel.stringValue = "待录制"
         case let .countingDown(remaining):
+            stopTimer()
             statusLabel.stringValue = "\(remaining)"
         case .starting:
+            stopTimer()
             statusLabel.stringValue = "启动中"
         case .recording:
-            statusLabel.stringValue = "● 录制中"
-            statusLabel.textColor = .systemRed
+            startTimerIfNeeded()
         case .paused:
+            pauseTimer()
             statusLabel.stringValue = "Ⅱ 暂停"
             statusLabel.textColor = .systemOrange
         case .finalizing:
+            stopTimer()
             statusLabel.stringValue = "生成中"
         case .reviewing:
+            stopTimer()
             statusLabel.stringValue = "预览"
         }
         if state != .recording && state != .paused {
@@ -214,6 +230,40 @@ final class ScreenRecordingToolbarView: NSView {
         pauseResumeButton.toolTip = isPaused ? "继续录制" : "暂停录制"
         pauseResumeButton.setAccessibilityLabel(isPaused ? "继续录制" : "暂停录制")
         pauseResumeButton.image = symbol(isPaused ? "play.fill" : "pause.fill")
+    }
+
+    private func startTimerIfNeeded() {
+        if recordingTimer == nil {
+            elapsedSeconds = 0
+            updateElapsedLabel()
+            recordingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.elapsedSeconds += 1
+                    self.updateElapsedLabel()
+                }
+            }
+        } else {
+            updateElapsedLabel()
+        }
+    }
+
+    private func updateElapsedLabel() {
+        let mm = elapsedSeconds / 60
+        let ss = elapsedSeconds % 60
+        statusLabel.stringValue = String(format: "● %02d:%02d", mm, ss)
+        statusLabel.textColor = .systemRed
+    }
+
+    private func pauseTimer() {
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+    }
+
+    private func stopTimer() {
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        elapsedSeconds = 0
     }
 
     func update(settings: RecordingSettings) {
@@ -294,35 +344,64 @@ final class ScreenRecordingToolbarView: NSView {
     }
 
     private func updateTogglePresentation() {
+        let activeColor = NSColor.systemBlue
+        let inactiveColor = NSColor.secondaryLabelColor
+
         systemAudioButton.state = settings.capturesSystemAudio ? .on : .off
         microphoneButton.state = settings.capturesMicrophone ? .on : .off
         cursorButton.state = settings.showsCursor ? .on : .off
-        systemAudioButton.contentTintColor = settings.capturesSystemAudio ? .controlAccentColor : .secondaryLabelColor
-        microphoneButton.contentTintColor = settings.capturesMicrophone ? .controlAccentColor : .secondaryLabelColor
-        cursorButton.contentTintColor = settings.showsCursor ? .controlAccentColor : .secondaryLabelColor
+        systemAudioButton.contentTintColor = settings.capturesSystemAudio ? activeColor : inactiveColor
+        microphoneButton.contentTintColor = settings.capturesMicrophone ? activeColor : inactiveColor
+        cursorButton.contentTintColor = settings.showsCursor ? activeColor : inactiveColor
+
+        systemAudioButton.image = symbol(
+            settings.capturesSystemAudio ? "speaker.wave.2.fill" : "speaker.slash.fill",
+            color: settings.capturesSystemAudio ? activeColor : inactiveColor
+        )
+        systemAudioButton.toolTip = "录制系统声音"
+
+        microphoneButton.image = symbol(
+            settings.capturesMicrophone ? "mic.fill" : "mic.slash.fill",
+            color: settings.capturesMicrophone ? activeColor : inactiveColor
+        )
+        microphoneButton.toolTip = "录制麦克风"
+
+        cursorButton.image = symbol(
+            "cursorarrow",
+            color: settings.showsCursor ? activeColor : inactiveColor
+        )
+        cursorButton.toolTip = "显示鼠标指针"
     }
 
     private func makeIconButton(title: String, symbol symbolName: String, action: Selector) -> NSButton {
-        let button = ScreenRecordingToolbarButton(title: title, target: self, action: action)
-        button.bezelStyle = .toolbar
-        button.setButtonType(.momentaryPushIn)
-        button.controlSize = .large
+        let button = ScreenRecordingToolbarButton(title: "", target: self, action: action)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.isBordered = false
+        button.bezelStyle = .texturedRounded
         button.image = symbol(symbolName)
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleProportionallyDown
+        button.refusesFirstResponder = true
         button.toolTip = title
         button.setAccessibilityLabel(title)
         button.setAccessibilityHelp(title)
         button.onHoverChanged = { [weak self] button, hovering in
             hovering ? self?.showHelp(for: button) : self?.hideHelp(for: button)
         }
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(equalToConstant: Self.iconButtonSize),
+            button.heightAnchor.constraint(equalToConstant: Self.iconButtonSize),
+        ])
         return button
     }
 
-    private func symbol(_ name: String) -> NSImage? {
-        NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-        )
+    private func symbol(_ name: String, color: NSColor? = nil) -> NSImage? {
+        guard let base = NSImage(systemSymbolName: name, accessibilityDescription: nil) else { return nil }
+        var config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        if let color {
+            config = config.applying(NSImage.SymbolConfiguration(hierarchicalColor: color))
+        }
+        return base.withSymbolConfiguration(config)
     }
 
     private func showHelp(for button: NSButton) {
@@ -498,8 +577,11 @@ final class ScreenRecordingToolbarPanel: NSPanel {
         isOpaque = false
         hasShadow = true
         isReleasedWhenClosed = false
+        becomesKeyOnlyIfNeeded = true
         contentView = toolbarView
     }
+
+    override var canBecomeKey: Bool { true }
 
     func position(near region: CGRect, on screen: NSScreen) {
         let visible = screen.visibleFrame

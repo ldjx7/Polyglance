@@ -67,6 +67,76 @@ final class ScreenRecordingOverlayTests: XCTestCase {
         XCTAssertEqual(changedSettings?.frameRate, 60)
     }
 
+    func testRecordingOptionButtonsToggleModelCallbackAndVisibleButtonState() {
+        _ = NSApplication.shared
+        var settings = RecordingSettings.default
+        settings.capturesSystemAudio = true
+        settings.capturesMicrophone = false
+        settings.showsCursor = true
+        let toolbar = ScreenRecordingToolbarView(settings: settings)
+        var changes: [RecordingSettings] = []
+        toolbar.onSettingsChanged = { changes.append($0) }
+
+        toolbar.systemAudioButton.performClick(nil)
+        XCTAssertFalse(toolbar.settings.capturesSystemAudio)
+        XCTAssertEqual(toolbar.systemAudioButton.state, .off)
+
+        toolbar.microphoneButton.performClick(nil)
+        XCTAssertTrue(toolbar.settings.capturesMicrophone)
+        XCTAssertEqual(toolbar.microphoneButton.state, .on)
+
+        toolbar.cursorButton.performClick(nil)
+        XCTAssertFalse(toolbar.settings.showsCursor)
+        XCTAssertEqual(toolbar.cursorButton.state, .off)
+        XCTAssertEqual(changes.count, 3)
+    }
+
+    func testToolbarUsesSymmetricInsetsAndStableIconSlots() throws {
+        _ = NSApplication.shared
+        let toolbar = ScreenRecordingToolbarView(settings: .default)
+        toolbar.layoutSubtreeIfNeeded()
+
+        let buttons = [
+            try XCTUnwrap(toolbar.systemAudioButton),
+            try XCTUnwrap(toolbar.microphoneButton),
+            try XCTUnwrap(toolbar.cursorButton),
+            try XCTUnwrap(toolbar.startButton),
+            try XCTUnwrap(toolbar.pauseResumeButton),
+            try XCTUnwrap(toolbar.stopButton),
+            try XCTUnwrap(toolbar.closeButton),
+        ]
+        for button in buttons {
+            let widthConstraint = button.constraints.first {
+                $0.firstAttribute == .width && $0.relation == .equal
+            }
+            XCTAssertEqual(widthConstraint?.constant, 28)
+        }
+
+        let statusAlignment = toolbar.statusLabel.alignmentRect(forFrame: toolbar.statusLabel.frame)
+        let closeAlignment = toolbar.closeButton.alignmentRect(forFrame: toolbar.closeButton.frame)
+        let statusFrame = toolbar.statusLabel.superview?.convert(statusAlignment, to: toolbar) ?? .zero
+        let closeFrame = toolbar.closeButton.superview?.convert(closeAlignment, to: toolbar) ?? .zero
+        let leadingInset = statusFrame.minX
+        let trailingInset = toolbar.bounds.maxX - closeFrame.maxX
+        XCTAssertEqual(leadingInset, trailingInset, accuracy: 0.5)
+
+        let originalAudioFrame = toolbar.systemAudioButton.frame
+        toolbar.systemAudioButton.performClick(nil)
+        toolbar.layoutSubtreeIfNeeded()
+        XCTAssertEqual(toolbar.systemAudioButton.frame.midX, originalAudioFrame.midX, accuracy: 0.5)
+    }
+
+    func testNoDelaySelectionHasEnoughWidthToDisplayItsFullTitle() {
+        _ = NSApplication.shared
+        var settings = RecordingSettings.default
+        settings.countdownDelay = .immediate
+        let toolbar = ScreenRecordingToolbarView(settings: settings)
+        toolbar.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(toolbar.delayPopUp.titleOfSelectedItem, "无延时")
+        XCTAssertGreaterThanOrEqual(toolbar.delayPopUp.frame.width, 84)
+    }
+
     func testToolbarUsesIconButtonsAndVisibleInWindowHoverHelp() throws {
         _ = NSApplication.shared
         let toolbar = ScreenRecordingToolbarView(settings: .default)

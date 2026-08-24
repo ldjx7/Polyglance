@@ -10,13 +10,13 @@ enum TranslationProvider: String, CaseIterable, Codable, Sendable {
     var displayName: String {
         switch self {
         case .google:
-            return "Google 免费翻译"
+            return "Google 翻译"
         case .microsoft:
-            return "Microsoft 免费翻译"
+            return "Microsoft 翻译"
         case .freeAI:
-            return "免费 AI 翻译"
+            return "FreeAI 翻译"
         case .openAICompatible:
-            return "自定义 AI"
+            return "OpenAI 兼容"
         }
     }
 
@@ -61,15 +61,21 @@ protocol CredentialStoring: Sendable {
 
 struct BundledFreeAIConfiguration: Equatable, Sendable {
     static let defaultEndpoint = "https://openrouter.ai/api/v1"
-    static let defaultModel = "openrouter/free"
+    static let defaultModel = "openrouter/auto"
+    static let defaultApiKey = ""
 
     let endpoint: String
     let apiKey: String
     let model: String
 
-    init?(infoDictionary: [String: Any] = Bundle.main.infoDictionary ?? [:]) {
-        let apiKey = (infoDictionary["PolyglanceFreeAIAPIKey"] as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    init?(
+        infoDictionary: [String: Any] = Bundle.main.infoDictionary ?? [:],
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) {
+        let apiKey = ((infoDictionary["PolyglanceFreeAIAPIKey"] as? String)
+            ?? environment["POLYGLANCE_FREE_AI_API_KEY"]
+            ?? Self.defaultApiKey)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !apiKey.isEmpty else {
             return nil
         }

@@ -7,13 +7,15 @@ struct SettingsView: View {
     let store: AppConfigurationStore
     let shortcutStore: GlobalShortcutConfigurationStore
     let recordingSettingsStore: RecordingSettingsStore
+    let launchAtLoginManager: LaunchAtLoginManager
     let onSave: (
         AppConfiguration,
         GlobalShortcutConfiguration,
-        RecordingSettings
+        RecordingSettings,
+        Bool
     ) throws -> Void
 
-    @State private var selectedTab = "services"
+    @State private var selectedTab = "general"
     @State private var endpoint = ""
     @State private var apiKey = ""
     @State private var model = ""
@@ -22,11 +24,18 @@ struct SettingsView: View {
     @State private var targetLanguage = "zh-CN"
     @State private var shortcuts = GlobalShortcutConfiguration.default
     @State private var recordingSettings = RecordingSettings.default
+    @State private var launchAtLoginEnabled = false
     @State private var statusMessage: String?
 
     var body: some View {
         VStack(spacing: 0) {
             TabView(selection: $selectedTab) {
+                generalTab
+                    .tabItem {
+                        Label("通用", systemImage: "gearshape")
+                    }
+                    .tag("general")
+
                 translationServicesTab
                     .tabItem {
                         Label("翻译服务", systemImage: "character.book.closed")
@@ -79,6 +88,28 @@ struct SettingsView: View {
     }
 
     // MARK: - Tabs
+
+    private var generalTab: some View {
+        Form {
+            Section {
+                Toggle("登录时自动启动 Polyglance", isOn: $launchAtLoginEnabled)
+
+                HStack {
+                    Text("由 macOS 系统登录项管理")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("打开登录项设置") {
+                        launchAtLoginManager.openSystemSettings()
+                    }
+                    .controlSize(.small)
+                }
+            } header: {
+                Text("启动")
+            }
+        }
+        .formStyle(.grouped)
+    }
 
     private var translationServicesTab: some View {
         Form {
@@ -321,6 +352,7 @@ struct SettingsView: View {
             aiStreamingEnabled = configuration.aiStreamingEnabled
             shortcuts = shortcutStore.load()
             recordingSettings = recordingSettingsStore.load()
+            launchAtLoginEnabled = launchAtLoginManager.isEnabled
             recordingSettings.frameRate = ScreenRecordingFrameRatePolicy.normalized(
                 recordingSettings.frameRate,
                 for: recordingSettings.format
@@ -340,7 +372,7 @@ struct SettingsView: View {
                 targetLanguage: targetLanguage,
                 aiStreamingEnabled: aiStreamingEnabled
             )
-            try onSave(configuration, shortcuts, recordingSettings)
+            try onSave(configuration, shortcuts, recordingSettings, launchAtLoginEnabled)
             statusMessage = "设置已保存"
         } catch {
             statusMessage = error.localizedDescription
@@ -408,4 +440,3 @@ struct SettingsView: View {
         recordingSettings.saveDirectoryPath = url.path
     }
 }
-

@@ -5,6 +5,7 @@ import Foundation
 public final class TranslatorViewModel: ObservableObject {
     @Published public var sourceText = ""
     @Published public private(set) var translatedText = ""
+    @Published public private(set) var detectedLanguageDisplayName: String?
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var isTranslating = false
     @Published public var sourceLanguage: String?
@@ -15,9 +16,67 @@ public final class TranslatorViewModel: ObservableObject {
     }
 
     private let client: any TranslationClient
+    private var cancellables = Set<AnyCancellable>()
+    private var undoHistory: [(source: String, target: String)] = []
 
     public init(client: any TranslationClient) {
         self.client = client
+        setupDebouncedTranslation()
+    }
+
+    private func setupDebouncedTranslation() {
+        $sourceText
+            .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
+            .removeDuplicates()
+            .sink { [weak self] text in
+                guard let self = self else { return }
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty {
+                    self.translatedText = ""
+                    self.detectedLanguageDisplayName = nil
+                    self.errorMessage = nil
+                } else {
+                    self.detectLanguage(for: trimmed)
+                    Task {
+                        await self.translate()
+                    }
+                }
+            }
+            .store(in: &cancellables)
+
+        Publishers.CombineLatest($sourceLanguage, $targetLanguage)
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                if !self.sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Task {
+                        await self.translate()
+                    }
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func detectLanguage(for text: String) {
+        if sourceLanguage != nil && !sourceLanguage!.isEmpty {
+            detectedLanguageDisplayName = nil
+            return
+        }
+
+        // 简易语言检测 heuristic
+        let hasChinese = text.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) }
+        let hasJapanese = text.unicodeScalars.contains { (0x3040...0x30FF).contains($0.value) }
+        let hasKorean = text.unicodeScalars.contains { (0xAC00...0xD7AF).contains($0.value) }
+
+        if hasJapanese {
+            detectedLanguageDisplayName = "日语"
+        } else if hasKorean {
+            detectedLanguageDisplayName = "韩语"
+        } else if hasChinese {
+            detectedLanguageDisplayName = "中文"
+        } else {
+            detectedLanguageDisplayName = "英语"
+        }
     }
 
     public func applyCapturedText(_ text: String) {
@@ -33,14 +92,13 @@ public final class TranslatorViewModel: ObservableObject {
         errorMessage = message
     }
 
-    private var undoHistory: [(source: String, target: String)] = []
-
     public func clear() {
         if !sourceText.isEmpty || !translatedText.isEmpty {
             undoHistory.append((source: sourceText, target: translatedText))
         }
         sourceText = ""
         translatedText = ""
+        detectedLanguageDisplayName = nil
         errorMessage = nil
     }
 
@@ -61,7 +119,6 @@ public final class TranslatorViewModel: ObservableObject {
         }
 
         isTranslating = true
-        translatedText = ""
         errorMessage = nil
         defer { isTranslating = false }
 

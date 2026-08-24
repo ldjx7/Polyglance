@@ -39,7 +39,7 @@ final class ScreenRecordingReviewView: NSView {
             playPauseButton.toolTip = playPauseButton.title
             playPauseButton.setAccessibilityHelp(playPauseButton.title)
         }
-        saveButton = makeButton("保存…", #selector(save))
+        saveButton = makeButton("保存为", #selector(save))
         quickSaveButton = makeButton("快速保存", #selector(quickSave))
         copyButton = makeButton("复制文件", #selector(copyFile))
         restartButton = makeButton("重新录制", #selector(restart))

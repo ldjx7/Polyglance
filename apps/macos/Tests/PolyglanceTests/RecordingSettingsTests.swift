@@ -3,6 +3,24 @@ import XCTest
 @testable import Polyglance
 
 final class RecordingSettingsTests: XCTestCase {
+    func testAudioMixdownPolicyOnlyMixesTwoEnabledMp4Sources() {
+        XCTAssertTrue(ScreenRecordingAudioMixdownPolicy.shouldMix(
+            format: .mp4,
+            capturesSystemAudio: true,
+            capturesMicrophone: true
+        ))
+        XCTAssertFalse(ScreenRecordingAudioMixdownPolicy.shouldMix(
+            format: .mp4,
+            capturesSystemAudio: true,
+            capturesMicrophone: false
+        ))
+        XCTAssertFalse(ScreenRecordingAudioMixdownPolicy.shouldMix(
+            format: .gif,
+            capturesSystemAudio: true,
+            capturesMicrophone: true
+        ))
+    }
+
     func testDefaultSettingsFavorCompatibleMP4AndAskForDestination() {
         let settings = RecordingSettings.default
 

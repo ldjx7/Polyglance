@@ -1,0 +1,89 @@
+<Window x:Class="Polyglance.UI.Views.InPlaceTranslationOverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        mc:Ignorable="d"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        WindowState="Normal"
+        KeyDown="OnKeyDown"
+        KeyUp="OnKeyUp"
+        MouseDown="OnMouseDown">
+    <Grid x:Name="RootGrid">
+        <!-- 底图 -->
+        <Image x:Name="BackgroundImage" Stretch="Fill"/>
+
+        <!-- 原位译文覆盖层 -->
+        <Canvas x:Name="OverlayCanvas"/>
+
+        <!-- 底部悬浮工具栏 (对齐 macOS 原位翻译控制条) -->
+        <Canvas x:Name="FloatingToolbarCanvas">
+            <Border x:Name="ToolbarBorder"
+                    Background="#FFFFFF"
+                    BorderBrush="#E5E7EB"
+                    BorderThickness="1"
+                    CornerRadius="20"
+                    Padding="8,4">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="16" Direction="270" ShadowDepth="3" Opacity="0.1" Color="#000000"/>
+                </Border.Effect>
+
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- 提示文字 -->
+                    <TextBlock Text="按住 Space 预览原文"
+                               FontSize="11.5"
+                               Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                               VerticalAlignment="Center"
+                               Margin="6,0,8,0"/>
+
+                    <Rectangle Width="1" Height="14" Fill="#E5E7EB" Margin="0,0,6,0" VerticalAlignment="Center"/>
+
+                    <!-- 复制全部 -->
+                    <ui:Button Appearance="Transparent"
+                               Icon="{ui:SymbolIcon Copy24}"
+                               Content="复制译文"
+                               Height="28"
+                               FontSize="12"
+                               Padding="8,0"
+                               Margin="0,0,4,0"
+                               Click="OnCopyAllClick"/>
+
+                    <!-- 贴到桌面 -->
+                    <ui:Button Appearance="Transparent"
+                               Icon="{ui:SymbolIcon Pin24}"
+                               Content="贴在桌面"
+                               Height="28"
+                               FontSize="12"
+                               Padding="8,0"
+                               Margin="0,0,4,0"
+                               Click="OnPinClick"/>
+
+                    <!-- 保存图片 -->
+                    <ui:Button Appearance="Transparent"
+                               Icon="{ui:SymbolIcon Save24}"
+                               Content="保存"
+                               Height="28"
+                               FontSize="12"
+                               Padding="8,0"
+                               Margin="0,0,4,0"
+                               Click="OnSaveClick"/>
+
+                    <!-- 退出 -->
+                    <ui:Button Appearance="Primary"
+                               Icon="{ui:SymbolIcon Dismiss24}"
+                               Content="完成 (Esc)"
+                               Height="28"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Padding="12,0"
+                               Click="OnCloseClick"/>
+                </StackPanel>
+            </Border>
+        </Canvas>
+    </Grid>
+</Window>

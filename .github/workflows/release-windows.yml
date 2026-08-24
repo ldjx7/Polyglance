@@ -1,0 +1,133 @@
+name: Release Windows
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-2025
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Require the tag commit to be on main
+        shell: pwsh
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) { throw "The tag commit is not on main." }
+
+      - name: Validate version and release notes
+        id: version
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -notmatch '^v([0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?)$') {
+            throw "Expected a semantic version tag such as v1.2.3."
+          }
+          $version = $tag.Substring(1)
+          $numericVersion = ($version -split '[-+]')[0]
+          $releaseNotes = "docs/releases/$tag.md"
+          if (-not (Test-Path $releaseNotes) -or (Get-Item $releaseNotes).Length -eq 0) {
+            throw "Missing release notes: $releaseNotes"
+          }
+          "number=$version" >> $env:GITHUB_OUTPUT
+          "numeric=$numericVersion" >> $env:GITHUB_OUTPUT
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install .NET 9
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Run Rust tests
+        run: cargo test --workspace
+
+      - name: Run Windows tests
+        run: dotnet test apps/windows/Polyglance.sln --configuration Release
+
+      - name: Build the Windows application
+        shell: pwsh
+        env:
+          POLYGLANCE_FREE_AI_API_KEY: ${{ secrets.FREE_AI_OPENROUTER_API_KEY }}
+        run: |
+          ./scripts/build-windows-app.ps1 `
+            -Version "${{ steps.version.outputs.number }}" `
+            -BuildNumber "${{ github.run_number }}"
+
+      - name: Package application and update feed
+        id: package
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.number }}"
+          $numericVersion = "${{ steps.version.outputs.numeric }}"
+          $archiveName = "Polyglance-$version-Windows-x64-Portable.zip"
+          $setupName = "Polyglance-$version-Windows-x64-Setup.exe"
+          $releaseDirectory = Join-Path $env:RUNNER_TEMP "polyglance-windows-release"
+          New-Item -ItemType Directory -Path $releaseDirectory -Force | Out-Null
+          $archivePath = Join-Path $releaseDirectory $archiveName
+          Compress-Archive -Path "dist/windows/*" -DestinationPath $archivePath -CompressionLevel Optimal
+
+          ./scripts/build-windows-installer.ps1 `
+            -Version $version `
+            -BuildNumber "${{ github.run_number }}" `
+            -OutputDirectory $releaseDirectory
+          ./scripts/test-windows-installer.ps1 `
+            -InstallerPath (Join-Path $releaseDirectory $setupName)
+
+          $downloadUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME/$archiveName"
+          $buildVersion = "$numericVersion.${{ github.run_number }}"
+          $appcast = @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+            <channel>
+              <title>Polyglance Windows Updates</title>
+              <item>
+                <title>Polyglance $version</title>
+                <sparkle:version>$buildVersion</sparkle:version>
+                <description>See the GitHub release notes for this version.</description>
+                <enclosure url="$downloadUrl" type="application/zip" />
+              </item>
+            </channel>
+          </rss>
+          "@
+          $appcastPath = Join-Path $releaseDirectory "appcast-windows.xml"
+          [IO.File]::WriteAllText($appcastPath, $appcast.Trim(), [Text.UTF8Encoding]::new($false))
+          "directory=$releaseDirectory" >> $env:GITHUB_OUTPUT
+          "archive=$archiveName" >> $env:GITHUB_OUTPUT
+          "setup=$setupName" >> $env:GITHUB_OUTPUT
+
+      - name: Upload Windows assets to the GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_DIRECTORY: ${{ steps.package.outputs.directory }}
+          ARCHIVE_NAME: ${{ steps.package.outputs.archive }}
+          SETUP_NAME: ${{ steps.package.outputs.setup }}
+        run: |
+          for ($attempt = 1; $attempt -le 60; $attempt++) {
+            gh release view $env:GITHUB_REF_NAME *> $null
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -eq 60) { throw "The GitHub Release was not created in time." }
+            Start-Sleep -Seconds 10
+          }
+          gh release upload $env:GITHUB_REF_NAME `
+            (Join-Path $env:RELEASE_DIRECTORY $env:ARCHIVE_NAME) `
+            (Join-Path $env:RELEASE_DIRECTORY $env:SETUP_NAME) `
+            (Join-Path $env:RELEASE_DIRECTORY "appcast-windows.xml") `
+            --clobber

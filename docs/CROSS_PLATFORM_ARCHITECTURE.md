@@ -147,7 +147,13 @@ Tauri、Flutter、Qt、Avalonia 等方案**已评估，不采用**，理由记�
 2. `uniffi-bindgen` 从 dylib 生成 Swift 绑定
 3. 产物拷入 `apps/macos/Generated/`（Swift 源 + C 头 + modulemap）与 `apps/macos/Libraries/`（静态库）
 
-**Windows（待建）** 需产出对等物：C ABI 头文件 + 静态/动态库 + 供 `LibraryImport` 使用的 P/Invoke 声明，放置路径与生成脚本一并确定后写回本节。
+**Windows（已建立）**：`scripts/build-windows-core.ps1` 与 `scripts/build-windows-app.ps1`
+
+1. `cargo build --release -p polyglance-cabi` 生成 `polyglance_cabi.dll`
+2. `Polyglance.Core/Native/NativeMethods.cs` 通过 `LibraryImport` 声明稳定 C ABI
+3. `dotnet publish` 生成 .NET 9 WPF 自包含目录，并复制 Rust DLL
+4. Windows CI 在 `windows-2025` 上运行 Rust/C# 测试和完整构建；tag 发布同时生成免安装 Portable ZIP、当前用户级 Inno Setup 安装包与 `appcast-windows.xml`
+5. 安装包使用固定 `AppId` 支持原位升级，在“应用和功能”注册卸载入口；卸载清理程序文件、快捷方式和开机自启项，但保留 `%APPDATA%\Polyglance` 与 `%LOCALAPPDATA%\Polyglance` 用户数据
 
 **规则：**
 
@@ -246,11 +252,13 @@ Tauri、Flutter、Qt、Avalonia 等方案**已评估，不采用**，理由记�
 
 ## 11. 当前状态
 
-截至 v0.0.4-beta.1：
+截至 v0.0.4-beta.2 后的开发版本：
 
 - 共享内核约 6,150 行，macOS 平台层约 18,000 行，共享比例约 25%
 - `capture-core` 模块：`rect` `geometry` `pin` `alignment` `layout` `recording` `stitch` `text`
 - `translator-providers` 含 `dispatch` `google` `microsoft` `openai` `streaming`；服务分发与隐私策略在 `dispatch`，FFI 层只保留运行时与类型映射
+- `polyglance-cabi` 已提供翻译、文本布局/对齐、录屏策略、长截图拼接和选区几何 C ABI；所有状态型入口隔离 panic，字节缓冲区使用 boxed slice 所有权协议
+- Windows WPF 原型已接入托盘、快捷键、截图/OCR/贴图/录屏/长截图；配置 JSON 与 DPAPI 凭据分离，并由 Windows CI 验证
 
 **有意留在平台层**（不是待办，不要"顺手"迁走）：
 

@@ -13,7 +13,15 @@ use crate::openai::{OpenAiCompatibleConfig, OpenAiCompatibleProvider, ProviderEr
 pub const GOOGLE: &str = "google";
 pub const MICROSOFT: &str = "microsoft";
 pub const FREE_AI: &str = "free-ai";
+pub const FREEAI: &str = "freeai";
 pub const OPENAI_COMPATIBLE: &str = "openai-compatible";
+pub const OPENAICOMPATIBLE: &str = "openaicompatible";
+pub const DEFAULT_FREE_AI_KEY: &str = match option_env!("POLYGLANCE_FREE_AI_API_KEY") {
+    Some(value) => value,
+    None => "",
+};
+pub const DEFAULT_FREE_AI_ENDPOINT: &str = "https://openrouter.ai/api/v1";
+pub const DEFAULT_FREE_AI_MODEL: &str = "openrouter/auto";
 
 /// A resolved service, ready to translate.
 pub enum Selection {
@@ -49,11 +57,49 @@ pub fn select(
             }?;
             Ok(Selection::Microsoft(config))
         }
-        FREE_AI | OPENAI_COMPATIBLE => {
-            let mut config = OpenAiCompatibleConfig::new(endpoint, api_key, model)?;
-            // The bundled free service is the publisher's credential, so opt out
-            // of the provider retaining user text.
-            if provider == FREE_AI {
+        FREE_AI | FREEAI | OPENAI_COMPATIBLE | OPENAICOMPATIBLE => {
+            let is_free_ai = provider == FREE_AI || provider == FREEAI;
+            let (ep, key, mdl) = if is_free_ai {
+                (
+                    if endpoint.trim().is_empty() {
+                        DEFAULT_FREE_AI_ENDPOINT.to_string()
+                    } else {
+                        endpoint
+                    },
+                    if api_key.trim().is_empty() {
+                        DEFAULT_FREE_AI_KEY.to_string()
+                    } else {
+                        api_key
+                    },
+                    if model.trim().is_empty() {
+                        DEFAULT_FREE_AI_MODEL.to_string()
+                    } else {
+                        model
+                    },
+                )
+            } else {
+                if api_key.trim().is_empty() {
+                    return Err(ProviderError::InvalidConfig(
+                        "未配置 API Key，请在偏好设置中填写 OpenAI / DeepSeek / SiliconFlow 等兼容 API Key".to_string(),
+                    ));
+                }
+                (
+                    if endpoint.trim().is_empty() {
+                        "https://api.openai.com/v1".to_string()
+                    } else {
+                        endpoint
+                    },
+                    api_key,
+                    if model.trim().is_empty() {
+                        "gpt-4o-mini".to_string()
+                    } else {
+                        model
+                    },
+                )
+            };
+
+            let mut config = OpenAiCompatibleConfig::new(ep, key, mdl)?;
+            if is_free_ai {
                 config = config.denying_data_collection();
             }
             Ok(Selection::OpenAiCompatible(config))

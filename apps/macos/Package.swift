@@ -56,6 +56,7 @@ let package = Package(
                 .linkedFramework("Carbon"),
                 .linkedFramework("ScreenCaptureKit"),
                 .linkedFramework("Security"),
+                .linkedFramework("ServiceManagement"),
             ]
         ),
         .testTarget(

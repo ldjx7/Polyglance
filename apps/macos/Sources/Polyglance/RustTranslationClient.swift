@@ -160,7 +160,7 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
                     var accumulated = ""
                     let clock = ContinuousClock()
                     let startedAt = clock.now
-                    var emissionPolicy = TranslationStreamEmissionPolicy(
+                    let emissionPolicy = TranslationStreamEmissionPolicy(
                         minimumInterval: .milliseconds(40)
                     )
                     for try await delta in service.deltas(for: request) {

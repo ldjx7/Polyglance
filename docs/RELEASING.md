@@ -1,6 +1,31 @@
-# Polyglance macOS 发布与自动更新
+# Polyglance 发布与自动更新
 
-## 发布模型
+## Windows 发布、安装与卸载
+
+Windows tag 工作流会构建并上传两个 x64 应用包：
+
+- `Polyglance-<版本>-Windows-x64-Setup.exe`：推荐给普通用户。使用 Inno Setup 进行当前用户级安装，不请求管理员权限；默认安装到 `%LOCALAPPDATA%\Programs\Polyglance`，提供英文和简体中文安装界面，创建开始菜单入口并可选创建桌面快捷方式。
+- `Polyglance-<版本>-Windows-x64-Portable.zip`：完整解压后直接运行 `Polyglance.UI.exe`，不创建安装记录和快捷方式。
+
+安装版使用固定 `AppId=io.polyglance.windows`，因此后续版本会识别并覆盖现有安装，而不是创建并列的卸载项。安装和卸载开始前如果 Polyglance 仍在托盘运行，安装器会要求先退出应用，避免替换或删除正在使用的文件。
+
+用户可从“设置 → 应用 → 已安装的应用”或开始菜单的 `Uninstall Polyglance` 入口卸载。卸载会移除安装器管理的程序文件、开始菜单/桌面快捷方式和 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 中的 Polyglance 开机自启值；不会删除 `%APPDATA%\Polyglance` 的配置或 `%LOCALAPPDATA%\Polyglance` 的受保护凭据与缓存，方便升级或重装后继续使用。
+
+Windows CI 会对安装包执行一次隔离目录的静默安装/卸载烟雾测试，验证主程序与卸载器存在、卸载后程序和启动项消失、两类用户数据仍然保留。`appcast-windows.xml` 继续指向 Portable ZIP，以兼容当前应用内 ZIP 更新器。
+
+为避免覆盖开发机已有正式安装的卸载登记，`test-windows-installer.ps1` 检测到当前用户已安装 Polyglance 时会拒绝运行；CI 使用全新的 Windows runner，因此仍会执行完整安装/卸载验证。
+
+本地 Windows 构建：
+
+```powershell
+./scripts/build-windows-app.ps1 -Version "0.0.5" -BuildNumber "1"
+./scripts/build-windows-installer.ps1 -Version "0.0.5" -BuildNumber "1"
+./scripts/test-windows-installer.ps1 -InstallerPath "dist/installer/Polyglance-0.0.5-Windows-x64-Setup.exe"
+```
+
+安装器构建需要 Inno Setup 6。GitHub `windows-2025` runner 已包含该工具。
+
+## macOS 发布模型
 
 Polyglance 使用 Sparkle 2 检查和安装更新。应用只接受 HTTPS feed，并使用项目专属 Ed25519 公钥验证更新包；私钥不得提交到 Git。
 

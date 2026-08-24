@@ -31,17 +31,20 @@ macOS 第一条可运行纵向切片已经实现：
 
 项目默认采用免费、未公证的 GitHub Release 分发，不要求维护者加入 Apple Developer Program。首次从浏览器下载时，macOS 可能会提示应用来自互联网，或要求在 Finder 中右键“打开”一次；确认后可正常使用和接收 Sparkle 更新。完整发布与安装说明见[发布文档](docs/RELEASING.md)。
 
+Windows Release 同时提供两种 x64 产物：`Windows-x64-Setup.exe` 是推荐的当前用户级安装包，支持升级覆盖、开始菜单和“应用和功能”卸载；`Windows-x64-Portable.zip` 解压即用，不创建安装或卸载记录。标准卸载会移除程序、快捷方式和开机自启项，但保留用户配置与受保护凭据。
+
 ## 技术方向
 
 - 共享内核：Rust
 - macOS：SwiftUI + AppKit + Rust
-- Windows：C# + WinUI 3 + Rust
+- Windows：C# + WPF + Win32 + Rust
 - macOS 绑定：UniFFI / XCFramework
 - Windows 绑定：C ABI + .NET `LibraryImport`
 
 ## 文档
 
 - [完整项目方案](docs/PROJECT_PLAN.md)
+- [跨平台架构与边界](docs/CROSS_PLATFORM_ARCHITECTURE.md)
 - [macOS 开发说明](docs/MACOS_DEVELOPMENT.md)
 - [PixPin 功能对照与实施路线](docs/PIXPin_FEATURE_PARITY.md)
 - [品牌与 Logo 说明](docs/BRANDING.md)
@@ -58,5 +61,5 @@ open "dist/Polyglance.app"
 
 1. Rust 只承载真正能够跨平台复用的业务逻辑。
 2. 划词、OCR、快捷键、悬浮窗口和凭据存储由各平台原生实现。
-3. 先完成一个可靠的 macOS MVP，再接入 Windows，不同时开发两个 UI。
+3. macOS 保持稳定基线；Windows 原生外壳按共享 Rust 契约逐步对齐，不复制业务规则。
 4. 第一版保持克制，不做 Bob 或 Easydict 的完整复刻。

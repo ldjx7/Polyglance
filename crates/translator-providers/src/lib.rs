@@ -32,19 +32,56 @@ impl SharedHttpClient {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn detect_local_proxy() -> Option<String> {
+    if std::env::var("HTTP_PROXY").is_ok()
+        || std::env::var("HTTPS_PROXY").is_ok()
+        || std::env::var("ALL_PROXY").is_ok()
+    {
+        return None;
+    }
+
+    let ports = [7897, 7890, 10808, 10809, 20811, 17890, 1080, 8080];
+    for port in ports {
+        let addr = format!("127.0.0.1:{}", port);
+        if let Ok(socket_addr) = addr.parse() {
+            if std::net::TcpStream::connect_timeout(
+                &socket_addr,
+                std::time::Duration::from_millis(50),
+            )
+            .is_ok()
+            {
+                return Some(format!("http://127.0.0.1:{}", port));
+            }
+        }
+    }
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+fn detect_local_proxy() -> Option<String> {
+    None
+}
+
 pub(crate) fn shared_http_client() -> Result<SharedHttpClient, ProviderError> {
     static CLIENT: OnceLock<SharedHttpClient> = OnceLock::new();
     if let Some(client) = CLIENT.get() {
         return Ok(client.clone());
     }
 
+    let mut builder =
+        Client::builder().user_agent(concat!("Polyglance/", env!("CARGO_PKG_VERSION")));
+
+    if let Some(proxy_url) = detect_local_proxy() {
+        if let Ok(proxy) = reqwest::Proxy::all(&proxy_url) {
+            let proxy = proxy.no_proxy(reqwest::NoProxy::from_string("localhost,127.0.0.1,::1"));
+            builder = builder.proxy(proxy);
+        }
+    }
+
     let client = SharedHttpClient {
         inner: Arc::new(
-            Client::builder()
-                // Microsoft's free endpoint rejects requests without one
-                // ("Client Browser Version not supported"), and reqwest sends
-                // none by default.
-                .user_agent(concat!("Polyglance/", env!("CARGO_PKG_VERSION")))
+            builder
                 .build()
                 .map_err(|error| ProviderError::Network(error.to_string()))?,
         ),

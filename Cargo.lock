@@ -848,6 +848,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
+name = "polyglance-cabi"
+version = "0.0.3"
+dependencies = [
+ "capture-core",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "translator-core",
+ "translator-providers",
+]
+
+[[package]]
 name = "potential_utf"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -34,6 +34,14 @@ pub struct GoogleProvider {
     config: GoogleConfig,
 }
 
+fn map_language_for_google(code: &str) -> &str {
+    match code {
+        "zh-Hans" | "zh-Hans-CN" | "zh-CN" | "zh" => "zh-CN",
+        "zh-Hant" | "zh-TW" | "zh-HK" => "zh-TW",
+        other => other,
+    }
+}
+
 impl GoogleProvider {
     pub fn new(config: GoogleConfig) -> Result<Self, ProviderError> {
         let client = shared_http_client()?;
@@ -44,18 +52,25 @@ impl GoogleProvider {
         &self,
         request: &TranslationRequest,
     ) -> Result<TranslationResult, ProviderError> {
+        let sl = request
+            .source_language()
+            .map(|l| map_language_for_google(l.as_str()))
+            .unwrap_or("auto");
+        let tl = map_language_for_google(request.target_language().as_str());
+
         let body = GoogleTranslationRequest {
-            sl: request
-                .source_language()
-                .map(LanguageCode::as_str)
-                .unwrap_or("auto"),
-            tl: request.target_language().as_str(),
+            sl,
+            tl,
             q: request.text(),
         };
         let started_at = Instant::now();
         let response = self
             .client
             .post(self.config.endpoint.clone())
+            .header(
+                reqwest::header::USER_AGENT,
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            )
             .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECONDS))
             .form(&body)
             .send()
