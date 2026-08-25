@@ -51,16 +51,28 @@ enum PolyglanceMenuBarIcon {
 
 @MainActor
 enum AppVersionInfo {
-    static var versionString: String {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.3"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
-        if let build, !build.isEmpty, build != version {
-            return "\(version) (\(build))"
+    static func versionString(infoDictionary: [String: Any]?) -> String {
+        var version = (infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.4")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if version.lowercased().hasPrefix("polyglance ") {
+            version.removeFirst("Polyglance ".count)
         }
-        return version
+        if version.lowercased().hasPrefix("v") {
+            version.removeFirst()
+        }
+        version = String(version.split(separator: "+", maxSplits: 1).first ?? "")
+        return version.isEmpty ? "0.0.4" : version
+    }
+
+    static var versionString: String {
+        versionString(infoDictionary: Bundle.main.infoDictionary)
+    }
+
+    static func displayString(infoDictionary: [String: Any]?) -> String {
+        "v\(versionString(infoDictionary: infoDictionary))"
     }
 
     static var displayString: String {
-        "v\(versionString)"
+        displayString(infoDictionary: Bundle.main.infoDictionary)
     }
 }

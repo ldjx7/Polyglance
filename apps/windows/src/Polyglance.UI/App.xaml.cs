@@ -95,17 +95,13 @@ public partial class App : Application
             appIcon = SystemIcons.Application;
         }
 
-        string versionStr = Assembly.GetEntryAssembly()?
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
-            .InformationalVersion
-            ?? Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3)
-            ?? "0.0.4-dev";
+        string versionStr = AppVersionDisplay.FromAssembly(Assembly.GetEntryAssembly());
 
         _notifyIcon = new NotifyIcon
         {
             Icon = appIcon,
             Visible = true,
-            Text = $"Polyglance v{versionStr}"
+            Text = versionStr
         };
 
         var contextMenu = new ContextMenuStrip();
@@ -145,7 +141,7 @@ public partial class App : Application
         contextMenu.Items.Add(new ToolStripSeparator());
 
         // Group 5: 版本信息（只读置灰）与退出
-        var versionItem = new ToolStripMenuItem($"Polyglance v{versionStr}") { Enabled = false };
+        var versionItem = new ToolStripMenuItem(versionStr) { Enabled = false };
         contextMenu.Items.Add(versionItem);
 
         contextMenu.Items.Add("退出 Polyglance", null, (s, e) => ShutdownApp());

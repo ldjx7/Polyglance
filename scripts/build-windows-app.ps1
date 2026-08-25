@@ -46,6 +46,7 @@ dotnet publish apps/windows/src/Polyglance.UI/Polyglance.UI.csproj `
     --self-contained true `
     -p:Version=$assemblyVersion `
     -p:InformationalVersion=$Version `
+    -p:IncludeSourceRevisionInInformationalVersion=false `
     -o $outDir
 
 # 3. Copy Rust DLL to output directory

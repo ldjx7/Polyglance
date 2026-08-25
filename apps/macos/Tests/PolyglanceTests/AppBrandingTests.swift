@@ -4,6 +4,25 @@ import XCTest
 
 @MainActor
 final class AppBrandingTests: XCTestCase {
+    func testDisplayedVersionContainsOnlyTheSemanticVersion() {
+        let infoDictionary: [String: Any] = [
+            "CFBundleShortVersionString": "0.0.4-beta.4+30bf6a517581515aa00770180ce71f580c08f3fa",
+            "CFBundleVersion": "29",
+        ]
+
+        XCTAssertEqual(
+            AppVersionInfo.displayString(infoDictionary: infoDictionary),
+            "v0.0.4-beta.4"
+        )
+    }
+
+    func testDisplayedVersionDoesNotDuplicateAnExistingPrefix() {
+        XCTAssertEqual(
+            AppVersionInfo.displayString(infoDictionary: ["CFBundleShortVersionString": "v0.0.4-beta.4"]),
+            "v0.0.4-beta.4"
+        )
+    }
+
     func testMenuBarIconIsAnAdaptiveTemplateAtStatusItemSize() throws {
         let image = PolyglanceMenuBarIcon.image
 

@@ -39,13 +39,9 @@ public partial class SettingsWindow : FluentWindow
             Loaded += (_, _) => ShowStatus(error.Message, isError: true);
         }
 
-        string versionStr = Assembly.GetEntryAssembly()?
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
-            .InformationalVersion
-            ?? Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3)
-            ?? "0.0.4-dev";
+        string versionStr = AppVersionDisplay.FromAssembly(Assembly.GetEntryAssembly());
 
-        TxtCurrentVersion.Text = $"当前版本: v{versionStr}";
+        TxtCurrentVersion.Text = versionStr;
 
         LoadConfigToUi();
     }

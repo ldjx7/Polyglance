@@ -111,7 +111,7 @@ struct PolyglanceApp: App {
             Button {
                 appDelegate.showSettings()
             } label: {
-                Text("Polyglance \(AppVersionInfo.displayString)")
+                Text(AppVersionInfo.displayString)
             }
             .disabled(true)
 

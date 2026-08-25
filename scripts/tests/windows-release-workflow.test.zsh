@@ -64,6 +64,7 @@ require_pattern "$build_app_script" 'Stop-Process'
 require_pattern "$build_app_script" 'Polyglance.UI'
 require_pattern "$build_app_script" 'dist/installer'
 require_pattern "$build_app_script" 'Remove-Item $outDir -Recurse -Force'
+require_pattern "$build_app_script" 'IncludeSourceRevisionInInformationalVersion=false'
 
 require_pattern "$recording_toolbar" 'x:Key="RecordingComboBoxStyle"'
 require_pattern "$recording_toolbar" 'Style="{StaticResource RecordingComboBoxStyle}"'
