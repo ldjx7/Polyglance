@@ -90,9 +90,11 @@ public static class AppUpdater
             if (string.IsNullOrWhiteSpace(downloadUrl))
                 return Failed("更新信息格式无效：缺少下载地址。");
 
-            bool semanticVersionsValid =
-                SemanticVersion.TryParse(semanticVersion, out SemanticVersion? remoteSemanticVersion)
-                && SemanticVersion.TryParse(currentSemanticVersion, out SemanticVersion? currentParsedVersion);
+            bool remoteSemanticVersionValid =
+                SemanticVersion.TryParse(semanticVersion, out SemanticVersion? remoteSemanticVersion);
+            bool currentSemanticVersionValid =
+                SemanticVersion.TryParse(currentSemanticVersion, out SemanticVersion? currentParsedVersion);
+            bool semanticVersionsValid = remoteSemanticVersionValid && currentSemanticVersionValid;
             int semanticComparison = semanticVersionsValid
                 ? remoteSemanticVersion!.CompareTo(currentParsedVersion)
                 : 0;
