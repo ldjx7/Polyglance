@@ -9,7 +9,7 @@ public sealed class AppUpdaterTests
     [Fact]
     public async Task Beta4DetectsBeta5AndUsesTheSemanticVersionForDisplay()
     {
-        using var client = CreateClient(Response(Appcast("0.0.4-beta.5", "0.0.4.3")));
+        using var client = CreateClient(_ => Response(Appcast("0.0.4-beta.5", "0.0.4.3")));
 
         UpdateCheckResult result = await AppUpdater.CheckForUpdatesAsync(
             "https://updates.example.test/appcast.xml",
@@ -27,7 +27,7 @@ public sealed class AppUpdaterTests
     [Fact]
     public async Task SameSemanticAndBuildVersionIsUpToDate()
     {
-        using var client = CreateClient(Response(Appcast("0.0.4-beta.5", "0.0.4.3")));
+        using var client = CreateClient(_ => Response(Appcast("0.0.4-beta.5", "0.0.4.3")));
 
         UpdateCheckResult result = await AppUpdater.CheckForUpdatesAsync(
             "https://updates.example.test/appcast.xml",
@@ -59,7 +59,7 @@ public sealed class AppUpdaterTests
     [Fact]
     public async Task InvalidXmlIsReportedInsteadOfBeingCalledUpToDate()
     {
-        using var client = CreateClient(Response("not xml"));
+        using var client = CreateClient(_ => Response("not xml"));
 
         UpdateCheckResult result = await AppUpdater.CheckForUpdatesAsync(
             "https://updates.example.test/appcast.xml",
