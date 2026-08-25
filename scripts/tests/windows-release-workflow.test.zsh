@@ -87,5 +87,7 @@ require_pattern "$release_workflow" "build-windows-installer.ps1"
 require_pattern "$release_workflow" "test-windows-installer.ps1"
 require_pattern "$release_workflow" 'SETUP_NAME:'
 require_pattern "$release_workflow" '$env:SETUP_NAME'
+require_pattern "$release_workflow" '<sparkle:shortVersionString>$version</sparkle:shortVersionString>'
+require_pattern "$release_workflow" '<sparkle:version>$buildVersion</sparkle:version>'
 
 print "Windows release and installer contract passed"

@@ -99,6 +99,7 @@ jobs:
               <title>Polyglance Windows Updates</title>
               <item>
                 <title>Polyglance $version</title>
+                <sparkle:shortVersionString>$version</sparkle:shortVersionString>
                 <sparkle:version>$buildVersion</sparkle:version>
                 <description>See the GitHub release notes for this version.</description>
                 <enclosure url="$downloadUrl" type="application/zip" />

@@ -42,6 +42,7 @@ public partial class SettingsWindow : FluentWindow
         string versionStr = AppVersionDisplay.FromAssembly(Assembly.GetEntryAssembly());
 
         TxtCurrentVersion.Text = versionStr;
+        TxtAboutVersion.Text = versionStr;
 
         LoadConfigToUi();
     }
@@ -129,9 +130,10 @@ public partial class SettingsWindow : FluentWindow
 
         try
         {
-            var update = await AppUpdater.CheckForUpdatesAsync(_config.AppcastUrl);
-            if (update != null)
+            UpdateCheckResult check = await AppUpdater.CheckForUpdatesAsync(_config.AppcastUrl);
+            if (check.Status == UpdateCheckStatus.UpdateAvailable)
             {
+                UpdateInfo update = check.Update!;
                 var result = System.Windows.MessageBox.Show(
                     $"发现新版本 v{update.Version}！\n\n更新内容:\n{update.ReleaseNotes}\n\n是否立即下载并更新？",
                     "Polyglance 自动更新",
@@ -142,12 +144,28 @@ public partial class SettingsWindow : FluentWindow
                 if (result == System.Windows.MessageBoxResult.Yes)
                 {
                     BtnCheckUpdate.Content = "正在下载更新...";
-                    await AppUpdater.DownloadAndApplyUpdateAsync(update.DownloadUrl);
+                    bool started = await AppUpdater.DownloadAndApplyUpdateAsync(update.DownloadUrl);
+                    if (!started)
+                    {
+                        System.Windows.MessageBox.Show(
+                            "更新包下载或替换失败，请稍后重试，或从 GitHub Release 手动安装。",
+                            "Polyglance 自动更新",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                    }
                 }
+            }
+            else if (check.Status == UpdateCheckStatus.UpToDate)
+            {
+                System.Windows.MessageBox.Show("当前已是最新版本！", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             else
             {
-                System.Windows.MessageBox.Show("当前已是最新版本！", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Information);
+                System.Windows.MessageBox.Show(
+                    check.ErrorMessage,
+                    "检查更新失败",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
             }
         }
         catch (Exception ex)

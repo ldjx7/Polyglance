@@ -464,7 +464,7 @@
                                         <TextBlock Text="P" FontWeight="Black" FontSize="32" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Border>
                                     <TextBlock Text="Polyglance" FontSize="19" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" HorizontalAlignment="Center"/>
-                                    <TextBlock Text="v0.0.4 (Fluent Edition)" FontSize="12.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" HorizontalAlignment="Center" Margin="0,3,0,10"/>
+                                    <TextBlock x:Name="TxtAboutVersion" Text="v0.0.4" FontSize="12.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" HorizontalAlignment="Center" Margin="0,3,0,10"/>
                                     <TextBlock Text="多语言内容，一眼看懂" FontSize="13.5" FontWeight="Medium" Foreground="{DynamicResource TextFillColorSecondaryBrush}" HorizontalAlignment="Center" Margin="0,0,0,12"/>
                                     <TextBlock Text="基于 Rust 共享内核的原生跨平台翻译与截图工具" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" HorizontalAlignment="Center"/>
                                 </StackPanel>

@@ -2,19 +2,37 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Reflection;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Xml;
 using System.Xml.Linq;
+using Polyglance.Core.Services;
 
 namespace Polyglance.Platform.Update;
 
 public sealed class UpdateInfo
 {
     public string Version { get; set; } = "";
+    public string BuildVersion { get; set; } = "";
     public string DownloadUrl { get; set; } = "";
     public string ReleaseNotes { get; set; } = "";
     public string Title { get; set; } = "";
+}
+
+public enum UpdateCheckStatus
+{
+    UpdateAvailable,
+    UpToDate,
+    Failed
+}
+
+public sealed class UpdateCheckResult
+{
+    public UpdateCheckStatus Status { get; init; }
+    public UpdateInfo? Update { get; init; }
+    public string ErrorMessage { get; init; } = "";
 }
 
 public static class AppUpdater
@@ -23,46 +41,115 @@ public static class AppUpdater
 
     public static Version CurrentVersion => Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0, 3);
 
-    public static async Task<UpdateInfo?> CheckForUpdatesAsync(string appcastUrl)
+    public static string CurrentSemanticVersion =>
+        AppVersionDisplay.FromAssembly(Assembly.GetEntryAssembly()).TrimStart('v', 'V');
+
+    public static Task<UpdateCheckResult> CheckForUpdatesAsync(string appcastUrl) =>
+        CheckForUpdatesAsync(appcastUrl, _httpClient, CurrentSemanticVersion, CurrentVersion);
+
+    internal static async Task<UpdateCheckResult> CheckForUpdatesAsync(
+        string appcastUrl,
+        HttpClient httpClient,
+        string currentSemanticVersion,
+        Version currentBuildVersion)
     {
+        if (string.IsNullOrWhiteSpace(appcastUrl))
+            return Failed("更新地址未配置。");
+
         try
         {
-            if (string.IsNullOrWhiteSpace(appcastUrl))
-                return null;
+            using var request = new HttpRequestMessage(HttpMethod.Get, appcastUrl);
+            request.Headers.UserAgent.Add(new ProductInfoHeaderValue("Polyglance", currentSemanticVersion));
+            request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true, NoStore = true };
 
-            string xmlContent = await _httpClient.GetStringAsync(appcastUrl);
+            using HttpResponseMessage response = await httpClient.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+            string xmlContent = await response.Content.ReadAsStringAsync();
+
             var doc = XDocument.Parse(xmlContent);
             XNamespace sparkleNs = "http://www.andymatuschak.org/xml-namespaces/sparkle";
 
             var item = doc.Root?.Element("channel")?.Element("item");
-            if (item == null) return null;
+            if (item == null)
+                return Failed("更新信息格式无效：缺少版本条目。");
 
-            string versionStr = item.Element(sparkleNs + "version")?.Value
-                                ?? item.Element("version")?.Value
-                                ?? "";
+            string buildVersion = item.Element(sparkleNs + "version")?.Value
+                                  ?? item.Element("version")?.Value
+                                  ?? "";
+            string title = item.Element("title")?.Value ?? "Polyglance 新版本";
+            string semanticVersion = item.Element(sparkleNs + "shortVersionString")?.Value
+                                     ?? VersionFromTitle(title)
+                                     ?? buildVersion;
 
             var enclosure = item.Element("enclosure");
             string downloadUrl = enclosure?.Attribute("url")?.Value ?? "";
-            string title = item.Element("title")?.Value ?? "Polyglance 新版本";
             string releaseNotes = item.Element("description")?.Value ?? "";
 
-            if (Version.TryParse(versionStr, out var remoteVer) && remoteVer > CurrentVersion)
+            if (!Version.TryParse(buildVersion, out Version? remoteBuildVersion))
+                return Failed("更新信息格式无效：构建版本号无法识别。");
+            if (string.IsNullOrWhiteSpace(downloadUrl))
+                return Failed("更新信息格式无效：缺少下载地址。");
+
+            bool semanticVersionsValid =
+                SemanticVersion.TryParse(semanticVersion, out SemanticVersion? remoteSemanticVersion)
+                && SemanticVersion.TryParse(currentSemanticVersion, out SemanticVersion? currentParsedVersion);
+            int semanticComparison = semanticVersionsValid
+                ? remoteSemanticVersion!.CompareTo(currentParsedVersion)
+                : 0;
+            bool isNewer = semanticVersionsValid
+                ? semanticComparison > 0
+                    || (semanticComparison == 0 && remoteBuildVersion > currentBuildVersion)
+                : remoteBuildVersion > currentBuildVersion;
+
+            if (isNewer)
             {
-                return new UpdateInfo
+                return new UpdateCheckResult
                 {
-                    Version = versionStr,
-                    DownloadUrl = downloadUrl,
-                    Title = title,
-                    ReleaseNotes = releaseNotes
+                    Status = UpdateCheckStatus.UpdateAvailable,
+                    Update = new UpdateInfo
+                    {
+                        Version = semanticVersion.TrimStart('v', 'V'),
+                        BuildVersion = buildVersion,
+                        DownloadUrl = downloadUrl,
+                        Title = title,
+                        ReleaseNotes = releaseNotes
+                    }
                 };
             }
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Update check failed: {ex.Message}");
-        }
 
-        return null;
+            return new UpdateCheckResult { Status = UpdateCheckStatus.UpToDate };
+        }
+        catch (TaskCanceledException error)
+        {
+            return Failed($"连接更新服务器超时：{error.Message}");
+        }
+        catch (HttpRequestException error)
+        {
+            return Failed($"无法访问更新服务器：{error.Message}");
+        }
+        catch (XmlException error)
+        {
+            return Failed($"更新信息格式无效：{error.Message}");
+        }
+        catch (Exception error)
+        {
+            Debug.WriteLine($"Update check failed: {error.Message}");
+            return Failed($"检查更新失败：{error.Message}");
+        }
+    }
+
+    private static UpdateCheckResult Failed(string message) => new()
+    {
+        Status = UpdateCheckStatus.Failed,
+        ErrorMessage = message
+    };
+
+    private static string? VersionFromTitle(string title)
+    {
+        const string prefix = "Polyglance ";
+        return title.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            ? title[prefix.Length..].Trim()
+            : null;
     }
 
     public static async Task<bool> DownloadAndApplyUpdateAsync(string downloadUrl, IProgress<int>? progress = null)
