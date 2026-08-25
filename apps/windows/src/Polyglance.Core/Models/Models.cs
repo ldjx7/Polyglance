@@ -2,6 +2,34 @@ using System.Text.Json.Serialization;
 
 namespace Polyglance.Core.Models;
 
+public enum ScreenshotCaptureIntent
+{
+    Standard,
+    ScreenTranslation,
+    LongScreenshot,
+    ScreenRecording
+}
+
+public enum ScreenshotSelectionAction
+{
+    None,
+    ScreenTranslation,
+    LongScreenshot,
+    ScreenRecording
+}
+
+public static class ScreenshotCaptureIntentExtensions
+{
+    public static ScreenshotSelectionAction ActionAfterSelection(this ScreenshotCaptureIntent intent) =>
+        intent switch
+        {
+            ScreenshotCaptureIntent.ScreenTranslation => ScreenshotSelectionAction.ScreenTranslation,
+            ScreenshotCaptureIntent.LongScreenshot => ScreenshotSelectionAction.LongScreenshot,
+            ScreenshotCaptureIntent.ScreenRecording => ScreenshotSelectionAction.ScreenRecording,
+            _ => ScreenshotSelectionAction.None
+        };
+}
+
 public enum TranslationProvider
 {
     Google,
@@ -69,6 +97,27 @@ public sealed class TranslationResult
 }
 
 public sealed class LayoutTextLine
+{
+    [JsonPropertyName("text")]
+    public string Text { get; set; } = "";
+
+    [JsonPropertyName("x")]
+    public double X { get; set; }
+
+    [JsonPropertyName("y")]
+    public double Y { get; set; }
+
+    [JsonPropertyName("width")]
+    public double Width { get; set; }
+
+    [JsonPropertyName("height")]
+    public double Height { get; set; }
+
+    [JsonPropertyName("words")]
+    public List<LayoutTextWord> Words { get; set; } = [];
+}
+
+public sealed class LayoutTextWord
 {
     [JsonPropertyName("text")]
     public string Text { get; set; } = "";
@@ -153,7 +202,7 @@ public struct StitchConfiguration
         MaximumWorkingBytes = 250_000_000,
         MinimumOverlapRows = 12,
         MaximumScrollFraction = 0.85,
-        MatchThreshold = 0.88
+        MatchThreshold = 0.035
     };
 }
 

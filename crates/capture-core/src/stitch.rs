@@ -544,8 +544,12 @@ fn estimated_offset(
     current: &PixelFrame,
     predicted_offset: i64,
 ) -> Result<i64, StitchError> {
-    let unchanged_score = mismatch_score(direction, previous, current, 0);
-    if unchanged_score <= configuration.match_threshold {
+    // A low whole-frame mismatch is not sufficient to mean "unchanged":
+    // document and terminal captures are mostly uniform background, so even a
+    // real scroll may alter less than the overlap threshold. Exact equality is
+    // both cheap and unambiguous; small animations in a stationary frame will
+    // simply fail overlap detection and be skipped by the platform session.
+    if previous.bytes == current.bytes {
         return Ok(0);
     }
 
@@ -798,6 +802,30 @@ mod tests {
         Stitcher::new(Configuration::default(), Direction::Vertical)
     }
 
+    /// Mostly-white editor/document content. Ink occupies less than the normal
+    /// overlap error threshold, so a scrolled frame must not be classified as
+    /// unchanged merely because most background pixels are still white.
+    fn sparse_document_frame(width: usize, height: usize, first_document_row: usize) -> Vec<u8> {
+        let mut bytes = vec![255u8; width * height * 4];
+        for row in 0..height {
+            let document_row = first_document_row + row;
+            if document_row % 43 >= 2 {
+                continue;
+            }
+
+            let line = document_row / 43;
+            let start = (line * 17) % (width / 3);
+            let end = (start + width / 3).min(width);
+            for column in start..end {
+                let index = (row * width + column) * 4;
+                bytes[index] = (line.wrapping_mul(31) % 180) as u8;
+                bytes[index + 1] = (line.wrapping_mul(47) % 180) as u8;
+                bytes[index + 2] = (line.wrapping_mul(61) % 180) as u8;
+            }
+        }
+        bytes
+    }
+
     #[test]
     fn the_first_frame_seeds_the_output() {
         let mut stitcher = new_stitcher();
@@ -844,6 +872,37 @@ mod tests {
         );
         assert_eq!(result.total_height, 230);
         assert_eq!(result.frame_count, 2);
+    }
+
+    #[test]
+    fn sparse_document_scroll_is_not_mistaken_for_an_unchanged_frame() {
+        let width = 300;
+        let height = 300;
+        let mut stitcher = new_stitcher();
+        stitcher
+            .append(
+                sparse_document_frame(width, height, 0),
+                width as u32,
+                height as u32,
+            )
+            .unwrap();
+
+        let result = stitcher
+            .append(
+                sparse_document_frame(width, height, 20),
+                width as u32,
+                height as u32,
+            )
+            .unwrap();
+
+        assert_eq!(
+            result.disposition,
+            Disposition::Appended {
+                direction: Direction::Vertical,
+                offset: 20,
+            }
+        );
+        assert_eq!(result.total_height, 320);
     }
 
     #[test]

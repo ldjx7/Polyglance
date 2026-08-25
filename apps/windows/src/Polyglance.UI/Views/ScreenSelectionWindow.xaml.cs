@@ -32,6 +32,7 @@ public partial class ScreenSelectionWindow : Window
     private readonly Rect _screenBounds;
     private readonly TranslationService _translationService;
     private readonly AppConfiguration _config;
+    private readonly ScreenshotCaptureIntent _captureIntent;
 
     private SelectionPhase _phase = SelectionPhase.Ready;
     private NativeSelectionEditTarget _currentEditTarget = NativeSelectionEditTarget.None;
@@ -50,7 +51,8 @@ public partial class ScreenSelectionWindow : Window
         BitmapSource fullScreenBitmap,
         Rect screenBounds,
         TranslationService translationService,
-        AppConfiguration config)
+        AppConfiguration config,
+        ScreenshotCaptureIntent captureIntent = ScreenshotCaptureIntent.Standard)
     {
         InitializeComponent();
 
@@ -58,6 +60,7 @@ public partial class ScreenSelectionWindow : Window
         _screenBounds = screenBounds;
         _translationService = translationService;
         _config = config;
+        _captureIntent = captureIntent;
 
         Left = screenBounds.X;
         Top = screenBounds.Y;
@@ -222,7 +225,22 @@ public partial class ScreenSelectionWindow : Window
             {
                 _phase = SelectionPhase.Selected;
                 _currentEditTarget = NativeSelectionEditTarget.None;
-                PositionToolbar();
+                var preferredAction = _captureIntent.ActionAfterSelection();
+                if (preferredAction == ScreenshotSelectionAction.None)
+                {
+                    PositionToolbar();
+                }
+                else
+                {
+                    Toolbar.Visibility = Visibility.Collapsed;
+                    OnActionTriggered(preferredAction switch
+                    {
+                        ScreenshotSelectionAction.ScreenTranslation => "ScreenTranslation",
+                        ScreenshotSelectionAction.LongScreenshot => "LongScreenshot",
+                        ScreenshotSelectionAction.ScreenRecording => "ScreenRecording",
+                        _ => throw new InvalidOperationException("Unsupported screenshot selection action")
+                    });
+                }
             }
             else
             {
@@ -429,11 +447,14 @@ public partial class ScreenSelectionWindow : Window
 
     private void PositionToolbar()
     {
+        Toolbar.SetCompactLayout(Width < 700);
         Toolbar.Visibility = Visibility.Visible;
-        double toolbarWidth = 470;
-        double toolbarHeight = 50;
+        Toolbar.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        double toolbarWidth = Toolbar.DesiredSize.Width;
+        double toolbarHeight = Toolbar.DesiredSize.Height;
 
-        double left = Math.Clamp(_selectionRect.Right - toolbarWidth, 12, Width - toolbarWidth - 12);
+        double maximumLeft = Math.Max(12, Width - toolbarWidth - 12);
+        double left = Math.Clamp(_selectionRect.Right - toolbarWidth, 12, maximumLeft);
         double top = _selectionRect.Bottom + 10;
 
         if (top + toolbarHeight > Height - 12)
@@ -662,7 +683,7 @@ public partial class ScreenSelectionWindow : Window
                 break;
 
             case "Pin":
-                var pinWin = new PinWindow(cropped);
+                var pinWin = new PinWindow(cropped, _translationService, _config);
                 pinWin.Left = Left + _selectionRect.X;
                 pinWin.Top = Top + _selectionRect.Y;
                 pinWin.Show();
@@ -690,7 +711,12 @@ public partial class ScreenSelectionWindow : Window
                 break;
 
             case "LongScreenshot":
-                var longWin = new LongScreenshotSessionWindow(_fullScreenBitmap, _screenBounds, _selectionRect);
+                var longWin = new LongScreenshotSessionWindow(
+                    _fullScreenBitmap,
+                    _screenBounds,
+                    _selectionRect,
+                    _translationService,
+                    _config);
                 longWin.Show();
                 Close();
                 break;
@@ -702,31 +728,98 @@ public partial class ScreenSelectionWindow : Window
                 break;
 
             case "OCR":
-                var lines = await WindowsMediaOcr.RecognizeLinesAsync(cropped);
-                var fullText = string.Join("\n", lines.ConvertAll(l => l.Text));
-                if (!string.IsNullOrWhiteSpace(fullText))
+                try
                 {
-                    Clipboard.SetText(fullText);
+                    var document = await WindowsMediaOcr.RecognizeDocumentAsync(cropped);
+                    if (string.IsNullOrWhiteSpace(document.FullText))
+                    {
+                        throw new WindowsOcrException("当前截图中没有识别到文字。");
+                    }
+                    var ocrWindow = new OcrSelectionWindow(
+                        cropped,
+                        document,
+                        _translationService,
+                        _config,
+                        SelectedScreenFrame());
+                    ocrWindow.Show();
+                    ocrWindow.Activate();
+                    Close();
                 }
-                Close();
+                catch (Exception error)
+                {
+                    ShowCaptureError("OCR 识别失败", error);
+                }
                 break;
 
-            case "Translate":
-                var ocrLines = await WindowsMediaOcr.RecognizeLinesAsync(cropped);
-                if (ocrLines.Count > 0)
+            case "OCRTranslate":
+                try
                 {
+                    var document = await WindowsMediaOcr.RecognizeDocumentAsync(cropped);
+                    if (string.IsNullOrWhiteSpace(document.FullText))
+                    {
+                        throw new WindowsOcrException("当前截图中没有识别到文字。");
+                    }
+                    var result = await _translationService.TranslateAsync(
+                        document.FullText,
+                        _config.TargetLanguage,
+                        _config.SourceLanguage,
+                        _config);
+                    var resultWindow = new ScreenTranslationWindow(
+                        document.FullText,
+                        result.Text,
+                        cropped,
+                        _translationService,
+                        _config)
+                    {
+                        Left = SelectedScreenFrame().X,
+                        Top = SelectedScreenFrame().Y
+                    };
+                    resultWindow.Show();
+                    resultWindow.Activate();
+                    Close();
+                }
+                catch (Exception error)
+                {
+                    ShowCaptureError("OCR 翻译失败", error);
+                }
+                break;
+
+            case "ScreenTranslation":
+                try
+                {
+                    var document = await WindowsMediaOcr.RecognizeDocumentAsync(cropped);
+                    if (document.Lines.Count == 0)
+                    {
+                        throw new WindowsOcrException("当前截图中没有识别到文字。");
+                    }
                     var inPlaceWin = new InPlaceTranslationOverlayWindow(
                         cropped,
-                        new Rect(Left + _selectionRect.X, Top + _selectionRect.Y, _selectionRect.Width, _selectionRect.Height),
-                        ocrLines,
+                        SelectedScreenFrame(),
+                        [.. document.Lines],
                         _translationService,
                         _config
                     );
                     inPlaceWin.Show();
+                    inPlaceWin.Activate();
+                    Close();
                 }
-                Close();
+                catch (Exception error)
+                {
+                    ShowCaptureError("截图翻译失败", error);
+                }
                 break;
         }
+    }
+
+    private Rect SelectedScreenFrame() => new(
+        Left + _selectionRect.X,
+        Top + _selectionRect.Y,
+        _selectionRect.Width,
+        _selectionRect.Height);
+
+    private static void ShowCaptureError(string title, Exception error)
+    {
+        MessageBox.Show(error.Message, title, MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     private BitmapSource? GetRenderedCroppedBitmap()

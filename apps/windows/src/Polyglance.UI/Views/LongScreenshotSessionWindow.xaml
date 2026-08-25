@@ -1,10 +1,6 @@
 <Window x:Class="Polyglance.UI.Views.LongScreenshotSessionWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-        mc:Ignorable="d"
         WindowStyle="None"
         AllowsTransparency="True"
         Background="Transparent"
@@ -16,11 +12,40 @@
         MouseMove="OnMouseMove"
         MouseUp="OnMouseUp"
         MouseWheel="OnMouseWheel">
+    <Window.Resources>
+        <Style x:Key="LongCaptureToolbarButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="34"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="#FF2E2E2E"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="ToolTipService.InitialShowDelay" Value="300"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          SnapsToDevicePixels="True"/>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Opacity" Value="0.55"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.3"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
     <Grid x:Name="RootGrid">
-        <!-- 底图 -->
+        <!-- Only used while the user chooses a region. It is removed before
+             capturing so the underlying document remains live and visible. -->
         <Image x:Name="BackgroundImage" Stretch="Fill"/>
 
-        <!-- 4块半透明暗化遮罩 -->
         <Canvas x:Name="MaskCanvas" IsHitTestVisible="False">
             <Rectangle x:Name="MaskTop" Fill="#77000000"/>
             <Rectangle x:Name="MaskBottom" Fill="#77000000"/>
@@ -28,7 +53,6 @@
             <Rectangle x:Name="MaskRight" Fill="#77000000"/>
         </Canvas>
 
-        <!-- 选区边框与指示 -->
         <Canvas x:Name="SelectionCanvas" IsHitTestVisible="False">
             <Border x:Name="SelectionBorder"
                     BorderBrush="#0A84FF"
@@ -39,7 +63,6 @@
                 </Border.Effect>
             </Border>
 
-            <!-- 拼接高度状态胶囊 -->
             <Border x:Name="StatusBadge"
                     Background="#E61E1E24"
                     BorderBrush="#33FFFFFF"
@@ -47,58 +70,79 @@
                     CornerRadius="14"
                     Padding="10,4"
                     Visibility="Collapsed">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock x:Name="TxtStatus" Text="请滚动鼠标滚轮开始拼接…" Foreground="#FFFFFF" FontSize="12" FontWeight="SemiBold"/>
-                </StackPanel>
+                <TextBlock x:Name="TxtStatus"
+                           Text="滚动页面以继续捕获"
+                           Foreground="#FFFFFF"
+                           FontSize="12"
+                           FontWeight="SemiBold"/>
             </Border>
         </Canvas>
 
-        <!-- 悬浮控制工具栏 -->
         <Canvas x:Name="OverlayCanvas">
-            <Border x:Name="ControlToolbar"
-                    Background="#FFFFFF"
-                    BorderBrush="#E5E7EB"
+            <!-- Live thumbnail grows with stitched content, capped to a small
+                 side panel just like the macOS long-screenshot preview. -->
+            <Border x:Name="PreviewBorder"
+                    Background="#F8FFFFFF"
+                    BorderBrush="#33000000"
                     BorderThickness="1"
-                    CornerRadius="20"
-                    Padding="8,4"
+                    CornerRadius="8"
+                    Padding="5"
                     Visibility="Collapsed">
                 <Border.Effect>
-                    <DropShadowEffect BlurRadius="16" Direction="270" ShadowDepth="3" Opacity="0.1" Color="#000000"/>
+                    <DropShadowEffect BlurRadius="12" Direction="270" ShadowDepth="3" Opacity="0.16"/>
                 </Border.Effect>
+                <Image x:Name="PreviewImage"
+                       Stretch="Uniform"
+                       RenderOptions.BitmapScalingMode="HighQuality"/>
+            </Border>
 
+            <Border x:Name="ControlToolbar"
+                    Background="#F8FFFFFF"
+                    BorderBrush="#26000000"
+                    BorderThickness="1"
+                    CornerRadius="22"
+                    Padding="8,5"
+                    Visibility="Collapsed">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="16" Direction="270" ShadowDepth="3" Opacity="0.14"/>
+                </Border.Effect>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <!-- 自动向下滚动开关 -->
-                    <ui:Button x:Name="BtnAutoScroll"
-                               Appearance="Transparent"
-                               Icon="{ui:SymbolIcon Play24}"
-                               Content="自动滚动"
-                               Height="30"
-                               FontSize="12"
-                               Padding="8,0"
-                               Margin="0,0,4,0"
-                               Click="OnToggleAutoScrollClick"/>
-
-                    <Rectangle Width="1" Height="16" Fill="#E5E7EB" Margin="2,0,6,0" VerticalAlignment="Center"/>
-
-                    <!-- 完成拼接 -->
-                    <ui:Button Appearance="Primary"
-                               Icon="{ui:SymbolIcon Checkmark24}"
-                               Content="完成拼接"
-                               Height="30"
-                               FontSize="12"
-                               FontWeight="SemiBold"
-                               Padding="14,0"
-                               Margin="0,0,4,0"
-                               Click="OnFinishClick"/>
-
-                    <!-- 取消 -->
-                    <ui:Button Appearance="Transparent"
-                               Icon="{ui:SymbolIcon Dismiss24}"
-                               Content="取消"
-                               Height="30"
-                               FontSize="12"
-                               Padding="8,0"
-                               Click="OnCancelClick"/>
+                    <Button Style="{StaticResource LongCaptureToolbarButtonStyle}"
+                            ToolTip="贴图"
+                            Click="OnPinClick">
+                        <Path Data="M16,12 V4 H17 V2 H7 V4 H8 V12 L6,14 V16 H11 V22 L12,23 L13,22 V16 H18 V14 L16,12 Z"
+                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              Width="14"
+                              Height="14"
+                              Stretch="Uniform"/>
+                    </Button>
+                    <Button Style="{StaticResource LongCaptureToolbarButtonStyle}"
+                            ToolTip="复制"
+                            Margin="3,0,0,0"
+                            Click="OnCopyClick">
+                        <Path Data="M16,3 H5 C3.9,3 3,3.9 3,5 V16 M8,7 H19 C20.1,7 21,7.9 21,9 V20 C21,21.1 20.1,22 19,22 H8 C6.9,22 6,21.1 6,20 V9 C6,7.9 6.9,7 8,7 Z"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              StrokeThickness="1.7"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"
+                              StrokeLineJoin="Round"
+                              Fill="Transparent"
+                              Width="14"
+                              Height="14"
+                              Stretch="Uniform"/>
+                    </Button>
+                    <Rectangle Width="1" Height="18" Fill="#22000000" Margin="7,0"/>
+                    <Button Style="{StaticResource LongCaptureToolbarButtonStyle}"
+                            ToolTip="关闭"
+                            Click="OnCancelClick">
+                        <Path Data="M5,5 L19,19 M19,5 L5,19"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              StrokeThickness="1.8"
+                              StrokeStartLineCap="Round"
+                              Width="13"
+                              Height="13"
+                              Stretch="Uniform"/>
+                    </Button>
                 </StackPanel>
             </Border>
         </Canvas>

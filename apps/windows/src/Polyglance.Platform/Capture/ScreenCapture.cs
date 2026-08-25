@@ -10,6 +10,21 @@ namespace Polyglance.Platform.Capture;
 
 public static class ScreenCapture
 {
+    public static Int32Rect InsetOverlayBorder(Int32Rect region, int inset)
+    {
+        int requestedInset = Math.Max(0, inset);
+        int maximumInset = Math.Min(
+            Math.Max(0, (region.Width - 1) / 2),
+            Math.Max(0, (region.Height - 1) / 2));
+        int appliedInset = Math.Min(requestedInset, maximumInset);
+
+        return new Int32Rect(
+            region.X + appliedInset,
+            region.Y + appliedInset,
+            Math.Max(1, region.Width - appliedInset * 2),
+            Math.Max(1, region.Height - appliedInset * 2));
+    }
+
     public static (BitmapSource Bitmap, Rect Bounds) CaptureVirtualScreen()
     {
         int x = NativeWin32.GetSystemMetrics(NativeWin32.SM_XVIRTUALSCREEN);

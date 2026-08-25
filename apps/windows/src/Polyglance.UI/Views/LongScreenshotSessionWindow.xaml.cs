@@ -1,66 +1,94 @@
 using System;
-using System.IO;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Polyglance.Core.Models;
 using Polyglance.Core.Services;
 using Polyglance.Platform.Capture;
+using Polyglance.Platform.Interop;
 
 namespace Polyglance.UI.Views;
 
 public partial class LongScreenshotSessionWindow : Window
 {
+    // The transparent WPF overlay is still included by GDI BitBlt on some
+    // Windows/RDP configurations. Capture just inside the selection chrome so
+    // its blue border and shadow never become part of every stitched frame.
+    private const int CaptureOverlayGuardPixels = 6;
+
     private enum SessionPhase
     {
         SelectingRegion,
-        Stitching
+        Capturing
     }
 
     private readonly BitmapSource _fullScreenBitmap;
     private readonly Rect _screenBounds;
+    private readonly TranslationService? _translationService;
+    private readonly AppConfiguration? _configuration;
+    private readonly DispatcherTimer _captureTimer;
     private LongScreenshotService? _stitcher;
     private SessionPhase _phase = SessionPhase.SelectingRegion;
     private Point _dragStart;
     private Rect _cropRect = Rect.Empty;
-    private DispatcherTimer? _autoScrollTimer;
-    private uint _frameCount = 0;
-    private uint _stitchedHeight = 0;
+    private IntPtr _scrollTarget = IntPtr.Zero;
+    private bool _isCapturingFrame;
+    private uint _lastPreviewFrameCount;
 
-    public LongScreenshotSessionWindow(BitmapSource fullScreenBitmap, Rect screenBounds)
+    public LongScreenshotSessionWindow(
+        BitmapSource fullScreenBitmap,
+        Rect screenBounds,
+        TranslationService? translationService = null,
+        AppConfiguration? configuration = null)
     {
         InitializeComponent();
-
         _fullScreenBitmap = fullScreenBitmap;
         _screenBounds = screenBounds;
+        _translationService = translationService;
+        _configuration = configuration;
+        _captureTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(110) };
+        _captureTimer.Tick += (_, _) => CaptureAndAppendCurrentFrame();
+        SourceInitialized += (_, _) =>
+        {
+            IntPtr handle = new WindowInteropHelper(this).Handle;
+            _ = NativeWin32.SetWindowDisplayAffinity(handle, NativeWin32.WDA_EXCLUDEFROMCAPTURE);
+        };
 
         Left = screenBounds.X;
         Top = screenBounds.Y;
         Width = screenBounds.Width;
         Height = screenBounds.Height;
-
         BackgroundImage.Source = fullScreenBitmap;
         UpdateMask(Rect.Empty);
     }
 
-    public LongScreenshotSessionWindow(BitmapSource fullScreenBitmap, Rect screenBounds, Rect initialCropRect) : this(fullScreenBitmap, screenBounds)
+    public LongScreenshotSessionWindow(
+        BitmapSource fullScreenBitmap,
+        Rect screenBounds,
+        Rect initialCropRect,
+        TranslationService? translationService = null,
+        AppConfiguration? configuration = null)
+        : this(fullScreenBitmap, screenBounds, translationService, configuration)
     {
         if (initialCropRect.Width > 20 && initialCropRect.Height > 20)
         {
             _cropRect = initialCropRect;
             UpdateSelectionDisplay();
-            StartStitchingSession();
+            Loaded += (_, _) => StartCapturingSession();
         }
     }
 
     private void OnMouseDown(object sender, MouseButtonEventArgs e)
     {
-        Point pt = e.GetPosition(this);
-        if (ControlToolbar.IsMouseOver) return;
+        Point point = e.GetPosition(this);
+        if (ControlToolbar.IsMouseOver || PreviewBorder.IsMouseOver)
+        {
+            return;
+        }
 
         if (e.RightButton == MouseButtonState.Pressed)
         {
@@ -70,121 +98,174 @@ public partial class LongScreenshotSessionWindow : Window
 
         if (e.LeftButton == MouseButtonState.Pressed && _phase == SessionPhase.SelectingRegion)
         {
-            _dragStart = pt;
-            _cropRect = new Rect(pt, new Size(0, 0));
+            _dragStart = point;
+            _cropRect = new Rect(point, new Size(0, 0));
         }
     }
 
     private void OnMouseMove(object sender, MouseEventArgs e)
     {
-        if (_phase == SessionPhase.SelectingRegion && e.LeftButton == MouseButtonState.Pressed)
+        if (_phase != SessionPhase.SelectingRegion || e.LeftButton != MouseButtonState.Pressed)
         {
-            Point pt = e.GetPosition(this);
-            double x = Math.Min(_dragStart.X, pt.X);
-            double y = Math.Min(_dragStart.Y, pt.Y);
-            double w = Math.Abs(pt.X - _dragStart.X);
-            double h = Math.Abs(pt.Y - _dragStart.Y);
-
-            _cropRect = new Rect(x, y, w, h);
-            UpdateSelectionDisplay();
+            return;
         }
+
+        Point point = e.GetPosition(this);
+        _cropRect = new Rect(
+            new Point(Math.Min(_dragStart.X, point.X), Math.Min(_dragStart.Y, point.Y)),
+            new Point(Math.Max(_dragStart.X, point.X), Math.Max(_dragStart.Y, point.Y)));
+        UpdateSelectionDisplay();
     }
 
     private void OnMouseUp(object sender, MouseButtonEventArgs e)
     {
         if (_phase == SessionPhase.SelectingRegion && _cropRect.Width > 50 && _cropRect.Height > 50)
         {
-            StartStitchingSession();
+            StartCapturingSession();
         }
     }
 
-    private void StartStitchingSession()
+    private void StartCapturingSession()
     {
-        _phase = SessionPhase.Stitching;
+        if (_phase == SessionPhase.Capturing)
+        {
+            return;
+        }
+
+        _phase = SessionPhase.Capturing;
         _stitcher = new LongScreenshotService();
-
+        BackgroundImage.Visibility = Visibility.Collapsed;
         ControlToolbar.Visibility = Visibility.Visible;
-        double left = Math.Clamp(_cropRect.Right - 280, 10, Width - 290);
-        double top = _cropRect.Bottom + 12;
-        if (top + 50 > Height) top = _cropRect.Top - 50;
+        TxtStatus.Text = "滚动页面以继续捕获";
+        PositionControls();
 
-        Canvas.SetLeft(ControlToolbar, left);
-        Canvas.SetTop(ControlToolbar, top);
+        var (centreX, centreY) = CaptureCentreScreenPoint();
+        _scrollTarget = UnderlyingWindowScroller.FindTarget(centreX, centreY);
 
-        // Capture initial frame
-        CaptureAndAppendCurrentFrame();
+        Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, () =>
+        {
+            CaptureAndAppendCurrentFrame();
+            _captureTimer.Start();
+        });
     }
 
     private void OnMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (_phase == SessionPhase.Stitching)
+        if (_phase != SessionPhase.Capturing)
         {
-            CaptureAndAppendCurrentFrame();
+            return;
         }
+
+        var (screenX, screenY) = CaptureCentreScreenPoint();
+        bool forwarded = UnderlyingWindowScroller.ForwardWheel(
+            _scrollTarget,
+            e.Delta,
+            screenX,
+            screenY);
+        if (!forwarded)
+        {
+            _scrollTarget = UnderlyingWindowScroller.FindTarget(screenX, screenY);
+            _ = UnderlyingWindowScroller.ForwardWheel(_scrollTarget, e.Delta, screenX, screenY);
+        }
+        e.Handled = true;
+    }
+
+    private Int32Rect SelectionPhysicalRegion()
+    {
+        // PointToScreen is the authoritative WPF conversion to desktop device
+        // pixels. Combining a physical virtual-screen origin with a DIP matrix
+        // is unreliable when Windows applies RDP/system-DPI virtualization.
+        Point topLeft = PointToScreen(_cropRect.TopLeft);
+        Point bottomRight = PointToScreen(_cropRect.BottomRight);
+        int left = checked((int)Math.Floor(Math.Min(topLeft.X, bottomRight.X)));
+        int top = checked((int)Math.Floor(Math.Min(topLeft.Y, bottomRight.Y)));
+        int right = checked((int)Math.Ceiling(Math.Max(topLeft.X, bottomRight.X)));
+        int bottom = checked((int)Math.Ceiling(Math.Max(topLeft.Y, bottomRight.Y)));
+        return new Int32Rect(
+            left,
+            top,
+            Math.Max(1, right - left),
+            Math.Max(1, bottom - top));
+    }
+
+    private (int X, int Y) CaptureCentreScreenPoint()
+    {
+        Int32Rect region = SelectionPhysicalRegion();
+        return (
+            checked(region.X + region.Width / 2),
+            checked(region.Y + region.Height / 2));
     }
 
     private void CaptureAndAppendCurrentFrame()
     {
-        if (_stitcher == null || _cropRect.Width <= 0 || _cropRect.Height <= 0) return;
+        if (_isCapturingFrame || _stitcher == null || _cropRect.Width <= 0 || _cropRect.Height <= 0)
+        {
+            return;
+        }
+
+        _isCapturingFrame = true;
+        try
+        {
+            Int32Rect selectionRegion = SelectionPhysicalRegion();
+            Int32Rect region = ScreenCapture.InsetOverlayBorder(
+                selectionRegion,
+                CaptureOverlayGuardPixels);
+            var frame = ScreenCapture.CaptureRegion(region, showCursor: false);
+            byte[] rgba = ScreenCapture.GetRgbaBytes(frame);
+            var result = _stitcher.AppendFrame(rgba, (uint)frame.PixelWidth, (uint)frame.PixelHeight);
+            if (result.FrameCount != _lastPreviewFrameCount)
+            {
+                _lastPreviewFrameCount = result.FrameCount;
+                UpdatePreview();
+            }
+            if (result.LimitReached != 0)
+            {
+                _captureTimer.Stop();
+                TxtStatus.Text = "已达到最大长度，请贴图或复制";
+            }
+        }
+        catch (Exception error)
+        {
+            // A frame without reliable overlap is recoverable while the user is
+            // stationary or an animation is running. Keep the session alive.
+            System.Diagnostics.Debug.WriteLine($"Long screenshot frame skipped: {error.Message}");
+        }
+        finally
+        {
+            _isCapturingFrame = false;
+        }
+    }
+
+    private void UpdatePreview()
+    {
+        if (_stitcher == null)
+        {
+            return;
+        }
 
         try
         {
-            // Capture fresh screen
-            var (freshFull, _) = ScreenCapture.CaptureVirtualScreen();
-            var cropped = ScreenCapture.Crop(freshFull, new Int32Rect((int)_cropRect.X, (int)_cropRect.Y, (int)_cropRect.Width, (int)_cropRect.Height));
-
-            // Convert to RGBA
-            int width = cropped.PixelWidth;
-            int height = cropped.PixelHeight;
-            int stride = width * 4;
-            byte[] pixels = new byte[height * stride];
-            cropped.CopyPixels(pixels, stride, 0);
-
-            // BGR to RGBA conversion
-            for (int i = 0; i < pixels.Length; i += 4)
-            {
-                byte b = pixels[i];
-                byte r = pixels[i + 2];
-                pixels[i] = r;
-                pixels[i + 2] = b;
-            }
-
-            var result = _stitcher.AppendFrame(pixels, (uint)width, (uint)height);
-            _frameCount++;
-            _stitchedHeight = result.TotalHeight;
-
-            TxtStatus.Text = $"已拼接 {_frameCount} 帧 · 总高 {_stitchedHeight}px (继续滚动或完成)";
+            BitmapSource preview = CreateBitmapSource(_stitcher.RenderPreview());
+            PreviewImage.Source = preview;
+            double scale = Math.Min(1, Math.Min(180d / preview.PixelWidth, 300d / preview.PixelHeight));
+            PreviewImage.Width = Math.Max(1, preview.PixelWidth * scale);
+            PreviewImage.Height = Math.Max(1, preview.PixelHeight * scale);
+            PreviewBorder.Visibility = Visibility.Visible;
+            PositionControls();
         }
-        catch (Exception ex)
+        catch (Exception error)
         {
-            System.Diagnostics.Debug.WriteLine($"Append frame error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"Long screenshot preview skipped: {error.Message}");
         }
     }
 
-    private void OnToggleAutoScrollClick(object sender, RoutedEventArgs e)
-    {
-        if (_autoScrollTimer == null)
-        {
-            _autoScrollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
-            _autoScrollTimer.Tick += (s, ev) =>
-            {
-                // Simulate mouse wheel down
-                CaptureAndAppendCurrentFrame();
-            };
-            _autoScrollTimer.Start();
-            BtnAutoScroll.Content = "暂停滚动";
-        }
-        else
-        {
-            _autoScrollTimer.Stop();
-            _autoScrollTimer = null;
-            BtnAutoScroll.Content = "自动滚动";
-        }
-    }
+    private void OnPinClick(object sender, RoutedEventArgs e) => CompleteCapture(pin: true);
 
-    private void OnFinishClick(object sender, RoutedEventArgs e)
+    private void OnCopyClick(object sender, RoutedEventArgs e) => CompleteCapture(pin: false);
+
+    private void CompleteCapture(bool pin)
     {
-        _autoScrollTimer?.Stop();
+        _captureTimer.Stop();
         if (_stitcher == null)
         {
             CloseSession();
@@ -193,33 +274,46 @@ public partial class LongScreenshotSessionWindow : Window
 
         try
         {
-            var rawPngBytes = _stitcher.Render();
-            if (rawPngBytes.Length > 0)
+            BitmapSource finalBitmap = CreateBitmapSource(_stitcher.Render());
+            if (pin)
             {
-                using var ms = new MemoryStream(rawPngBytes);
-                var decoder = new PngBitmapDecoder(ms, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-                var finalBmp = decoder.Frames[0];
-
-                Clipboard.SetImage(finalBmp);
-
-                var pin = new PinWindow(finalBmp);
-                pin.Left = Left + _cropRect.X;
-                pin.Top = Top + _cropRect.Y;
-                pin.Show();
+                var pinWindow = new PinWindow(finalBitmap, _translationService, _configuration)
+                {
+                    Left = Left + _cropRect.X,
+                    Top = Top + _cropRect.Y
+                };
+                pinWindow.Show();
             }
+            else
+            {
+                Clipboard.SetImage(finalBitmap);
+            }
+            CloseSession();
         }
-        catch (Exception ex)
+        catch (Exception error)
         {
-            MessageBox.Show($"拼接完成生成失败: {ex.Message}", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show($"长截图生成失败：{error.Message}", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Warning);
+            _captureTimer.Start();
         }
-
-        CloseSession();
     }
 
-    private void OnCancelClick(object sender, RoutedEventArgs e)
+    private static BitmapSource CreateBitmapSource(RgbaImageBuffer image)
     {
-        CloseSession();
+        byte[] bgraPixels = image.CopyBgraPixels();
+        var bitmap = BitmapSource.Create(
+            checked((int)image.Width),
+            checked((int)image.Height),
+            96,
+            96,
+            PixelFormats.Bgra32,
+            palette: null,
+            bgraPixels,
+            image.Stride);
+        bitmap.Freeze();
+        return bitmap;
     }
+
+    private void OnCancelClick(object sender, RoutedEventArgs e) => CloseSession();
 
     private void OnKeyDown(object sender, KeyEventArgs e)
     {
@@ -227,16 +321,17 @@ public partial class LongScreenshotSessionWindow : Window
         {
             CloseSession();
         }
-        else if (e.Key == Key.Enter && _phase == SessionPhase.Stitching)
+        else if (e.Key == Key.Enter && _phase == SessionPhase.Capturing)
         {
-            OnFinishClick(sender, new RoutedEventArgs());
+            CompleteCapture(pin: false);
         }
     }
 
     private void CloseSession()
     {
-        _autoScrollTimer?.Stop();
+        _captureTimer.Stop();
         _stitcher?.Dispose();
+        _stitcher = null;
         Close();
     }
 
@@ -244,19 +339,89 @@ public partial class LongScreenshotSessionWindow : Window
     {
         SelectionBorder.Visibility = Visibility.Visible;
         StatusBadge.Visibility = Visibility.Visible;
-
         Canvas.SetLeft(SelectionBorder, _cropRect.X);
         Canvas.SetTop(SelectionBorder, _cropRect.Y);
         SelectionBorder.Width = _cropRect.Width;
         SelectionBorder.Height = _cropRect.Height;
 
         double badgeTop = _cropRect.Top - 34;
-        if (badgeTop < 6) badgeTop = _cropRect.Bottom + 6;
-
+        if (badgeTop < 6)
+        {
+            badgeTop = _cropRect.Bottom + 6;
+        }
         Canvas.SetLeft(StatusBadge, _cropRect.Left + 4);
         Canvas.SetTop(StatusBadge, badgeTop);
-
         UpdateMask(_cropRect);
+    }
+
+    private void PositionControls()
+    {
+        const double toolbarWidth = 132;
+        const double toolbarHeight = 44;
+        double toolbarLeft = Math.Clamp(
+            _cropRect.Right - toolbarWidth,
+            10,
+            Math.Max(10, Width - toolbarWidth - 10));
+        double toolbarTop = _cropRect.Bottom + 10;
+        if (toolbarTop + toolbarHeight > Height - 10)
+        {
+            toolbarTop = Math.Max(10, _cropRect.Top - toolbarHeight - 10);
+        }
+        Canvas.SetLeft(ControlToolbar, toolbarLeft);
+        Canvas.SetTop(ControlToolbar, toolbarTop);
+
+        if (PreviewBorder.Visibility == Visibility.Visible)
+        {
+            double previewWidth = PreviewImage.Width + 12;
+            double previewHeight = PreviewImage.Height + 12;
+            const double gap = 10;
+            const double margin = 8;
+            double previewLeft;
+            double previewTop;
+
+            if (_cropRect.Right + gap + previewWidth <= Width - margin)
+            {
+                previewLeft = _cropRect.Right + gap;
+                previewTop = Math.Clamp(
+                    _cropRect.Top,
+                    margin,
+                    Math.Max(margin, Height - previewHeight - margin));
+            }
+            else if (_cropRect.Left - gap - previewWidth >= margin)
+            {
+                previewLeft = _cropRect.Left - gap - previewWidth;
+                previewTop = Math.Clamp(
+                    _cropRect.Top,
+                    margin,
+                    Math.Max(margin, Height - previewHeight - margin));
+            }
+            else if (_cropRect.Bottom + gap + previewHeight <= Height - margin)
+            {
+                previewLeft = Math.Clamp(
+                    _cropRect.Left,
+                    margin,
+                    Math.Max(margin, Width - previewWidth - margin));
+                previewTop = _cropRect.Bottom + gap;
+            }
+            else if (_cropRect.Top - gap - previewHeight >= margin)
+            {
+                previewLeft = Math.Clamp(
+                    _cropRect.Left,
+                    margin,
+                    Math.Max(margin, Width - previewWidth - margin));
+                previewTop = _cropRect.Top - gap - previewHeight;
+            }
+            else
+            {
+                // A full-screen selection leaves nowhere to show a thumbnail
+                // without recording it. Prefer an uncontaminated screenshot.
+                PreviewBorder.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            Canvas.SetLeft(PreviewBorder, previewLeft);
+            Canvas.SetTop(PreviewBorder, previewTop);
+        }
     }
 
     private void UpdateMask(Rect hole)
@@ -267,20 +432,27 @@ public partial class LongScreenshotSessionWindow : Window
             Canvas.SetTop(MaskTop, 0);
             MaskTop.Width = Width;
             MaskTop.Height = Height;
-            MaskBottom.Width = 0; MaskLeft.Width = 0; MaskRight.Width = 0;
+            MaskBottom.Width = 0;
+            MaskLeft.Width = 0;
+            MaskRight.Width = 0;
             return;
         }
 
-        Canvas.SetLeft(MaskTop, 0); Canvas.SetTop(MaskTop, 0);
-        MaskTop.Width = Width; MaskTop.Height = Math.Max(0, hole.Top);
-
-        Canvas.SetLeft(MaskBottom, 0); Canvas.SetTop(MaskBottom, hole.Bottom);
-        MaskBottom.Width = Width; MaskBottom.Height = Math.Max(0, Height - hole.Bottom);
-
-        Canvas.SetLeft(MaskLeft, 0); Canvas.SetTop(MaskLeft, hole.Top);
-        MaskLeft.Width = Math.Max(0, hole.Left); MaskLeft.Height = hole.Height;
-
-        Canvas.SetLeft(MaskRight, hole.Right); Canvas.SetTop(MaskRight, hole.Top);
-        MaskRight.Width = Math.Max(0, Width - hole.Right); MaskRight.Height = hole.Height;
+        Canvas.SetLeft(MaskTop, 0);
+        Canvas.SetTop(MaskTop, 0);
+        MaskTop.Width = Width;
+        MaskTop.Height = Math.Max(0, hole.Top);
+        Canvas.SetLeft(MaskBottom, 0);
+        Canvas.SetTop(MaskBottom, hole.Bottom);
+        MaskBottom.Width = Width;
+        MaskBottom.Height = Math.Max(0, Height - hole.Bottom);
+        Canvas.SetLeft(MaskLeft, 0);
+        Canvas.SetTop(MaskLeft, hole.Top);
+        MaskLeft.Width = Math.Max(0, hole.Left);
+        MaskLeft.Height = hole.Height;
+        Canvas.SetLeft(MaskRight, hole.Right);
+        Canvas.SetTop(MaskRight, hole.Top);
+        MaskRight.Width = Math.Max(0, Width - hole.Right);
+        MaskRight.Height = hole.Height;
     }
 }

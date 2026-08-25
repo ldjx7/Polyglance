@@ -19,6 +19,7 @@ public static partial class NativeWin32
     public const int WS_EX_TRANSPARENT = 0x00000020;
     public const int WS_EX_TOPMOST = 0x00000008;
     public const int WS_EX_TOOLWINDOW = 0x00000080;
+    public const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011;
 
     public const uint MOD_ALT = 0x0001;
     public const uint MOD_CONTROL = 0x0002;
@@ -27,6 +28,11 @@ public static partial class NativeWin32
     public const uint MOD_NOREPEAT = 0x4000;
 
     public const int WM_HOTKEY = 0x0312;
+    public const int WM_MOUSEWHEEL = 0x020A;
+
+    public const uint CWP_SKIPINVISIBLE = 0x0001;
+    public const uint CWP_SKIPDISABLED = 0x0002;
+    public const uint CWP_SKIPTRANSPARENT = 0x0004;
 
     public const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     public const int DWMWCP_ROUND = 2;
@@ -92,6 +98,30 @@ public static partial class NativeWin32
 
     [LibraryImport("user32.dll")]
     public static partial IntPtr WindowFromPoint(POINT Point);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
+
+    [LibraryImport("user32.dll")]
+    public static partial IntPtr ChildWindowFromPointEx(IntPtr hWndParent, POINT point, uint flags);
+
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+
+    [LibraryImport("user32.dll")]
+    public static partial uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    [LibraryImport("user32.dll", EntryPoint = "PostMessageW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool PostMessage(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SetWindowDisplayAffinity(IntPtr hWnd, uint affinity);
 
     [LibraryImport("user32.dll")]
     public static partial IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);

@@ -68,29 +68,55 @@ public partial class InPlaceTranslationOverlayWindow : Window
 
         if (_ocrLines.Count == 0) return;
 
-        // Group nearby lines into paragraphs
-        var paragraphs = GroupLinesIntoParagraphs(_ocrLines);
-
-        foreach (var p in paragraphs)
+        // Use the shared Rust layout engine, matching the macOS paragraph
+        // grouping instead of maintaining a Windows-only heuristic.
+        var paragraphs = TranslationService.AggregateParagraphs(_ocrLines);
+        if (paragraphs.Count == 0)
         {
-            string srcText = string.Join(" ", p.Lines.ConvertAll(l => l.Text)).Trim();
+            TxtStatus.Text = "未识别到可翻译内容";
+            MessageBox.Show(
+                "当前截图中没有识别到可翻译的文字。",
+                "截图翻译",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        for (int index = 0; index < paragraphs.Count; index++)
+        {
+            var p = paragraphs[index];
+            string srcText = p.Text.Trim();
             if (string.IsNullOrWhiteSpace(srcText)) continue;
 
-            string targetText = srcText;
+            string targetText;
             try
             {
-                var res = await _translationService.TranslateAsync(srcText, _config.TargetLanguage, null, _config);
+                TxtStatus.Text = $"正在翻译 {index + 1}/{paragraphs.Count}…";
+                var res = await _translationService.TranslateAsync(
+                    srcText,
+                    _config.TargetLanguage,
+                    _config.SourceLanguage,
+                    _config);
                 targetText = res.Text;
             }
-            catch { }
+            catch (Exception error)
+            {
+                TxtStatus.Text = "翻译失败";
+                MessageBox.Show(
+                    $"截图翻译失败：{error.Message}",
+                    "Polyglance",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
 
             _translatedParagraphs.Add(targetText);
 
             // Create in-place overlay card
-            double pX = p.Bounds.X;
-            double pY = p.Bounds.Y;
-            double pW = p.Bounds.Width;
-            double pH = p.Bounds.Height;
+            double pX = p.X;
+            double pY = p.Y;
+            double pW = p.Width;
+            double pH = p.Height;
 
             var bgBrush = new SolidColorBrush(Color.FromArgb(240, 255, 255, 255));
             var fgBrush = new SolidColorBrush(Color.FromArgb(255, 20, 20, 20));
@@ -112,7 +138,7 @@ public partial class InPlaceTranslationOverlayWindow : Window
             {
                 Text = targetText,
                 Foreground = fgBrush,
-                FontSize = Math.Max(11, Math.Min(16, pH / Math.Max(1, p.Lines.Count) * 0.75)),
+                FontSize = Math.Max(11, Math.Min(16, pH / Math.Max(1u, p.LineCount) * 0.75)),
                 TextWrapping = TextWrapping.Wrap,
                 FontWeight = FontWeights.Medium,
                 FontFamily = new System.Windows.Media.FontFamily("Segoe UI, Microsoft YaHei UI")
@@ -126,44 +152,22 @@ public partial class InPlaceTranslationOverlayWindow : Window
                 Clipboard.SetText(capturedText);
                 e.Handled = true;
             };
+            card.MouseEnter += (_, _) =>
+            {
+                card.Background = new SolidColorBrush(Color.FromArgb(248, 224, 239, 255));
+                card.BorderBrush = new SolidColorBrush(Color.FromArgb(210, 10, 132, 255));
+            };
+            card.MouseLeave += (_, _) =>
+            {
+                card.Background = bgBrush;
+                card.BorderBrush = new SolidColorBrush(Color.FromArgb(50, 10, 132, 255));
+            };
 
             Canvas.SetLeft(card, pX);
             Canvas.SetTop(card, pY);
             OverlayCanvas.Children.Add(card);
         }
-    }
-
-    private sealed class ParagraphGroup
-    {
-        public Rect Bounds { get; set; }
-        public List<LayoutTextLine> Lines { get; } = new();
-    }
-
-    private List<ParagraphGroup> GroupLinesIntoParagraphs(List<LayoutTextLine> lines)
-    {
-        var groups = new List<ParagraphGroup>();
-        foreach (var line in lines)
-        {
-            var r = new Rect(line.X, line.Y, line.Width, line.Height);
-            bool added = false;
-            foreach (var g in groups)
-            {
-                if (Math.Abs(g.Bounds.Bottom - r.Top) < 18 && Math.Abs(g.Bounds.Left - r.Left) < 60)
-                {
-                    g.Lines.Add(line);
-                    g.Bounds = Rect.Union(g.Bounds, r);
-                    added = true;
-                    break;
-                }
-            }
-            if (!added)
-            {
-                var g = new ParagraphGroup { Bounds = r };
-                g.Lines.Add(line);
-                groups.Add(g);
-            }
-        }
-        return groups;
+        TxtStatus.Text = "按住 Space 预览原文";
     }
 
     private void OnKeyDown(object sender, KeyEventArgs e)
@@ -207,7 +211,7 @@ public partial class InPlaceTranslationOverlayWindow : Window
         var rendered = RenderMergedBitmap();
         if (rendered != null)
         {
-            var pin = new PinWindow(rendered);
+            var pin = new PinWindow(rendered, _translationService, _config);
             pin.Left = Left;
             pin.Top = Top;
             pin.Show();

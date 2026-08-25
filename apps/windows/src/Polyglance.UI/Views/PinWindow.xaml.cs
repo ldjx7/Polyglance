@@ -4,6 +4,9 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
+using Polyglance.Core.Models;
+using Polyglance.Core.Services;
+using Polyglance.Platform.Ocr;
 using Polyglance.Platform.Pin;
 
 namespace Polyglance.UI.Views;
@@ -11,17 +14,33 @@ namespace Polyglance.UI.Views;
 public partial class PinWindow : Window
 {
     private readonly BitmapSource _bitmap;
+    private readonly TranslationService? _translationService;
+    private readonly AppConfiguration? _configuration;
     private double _scale = 1.0;
 
-    public PinWindow(BitmapSource bitmap)
+    public PinWindow(
+        BitmapSource bitmap,
+        TranslationService? translationService = null,
+        AppConfiguration? configuration = null)
     {
         InitializeComponent();
         _bitmap = bitmap;
+        _translationService = translationService;
+        _configuration = configuration;
         PinImage.Source = bitmap;
-        PinImage.Width = bitmap.PixelWidth;
-        PinImage.Height = bitmap.PixelHeight;
+        Rect workArea = SystemParameters.WorkArea;
+        double maximumWidth = Math.Max(240, workArea.Width * 0.72);
+        double maximumHeight = Math.Max(180, workArea.Height * 0.72);
+        _scale = Math.Min(1, Math.Min(
+            maximumWidth / Math.Max(1, bitmap.PixelWidth),
+            maximumHeight / Math.Max(1, bitmap.PixelHeight)));
+        PinImage.Width = bitmap.PixelWidth * _scale;
+        PinImage.Height = bitmap.PixelHeight * _scale;
 
         PinHistoryManager.SavePinToHistory(bitmap);
+
+        OcrMenuItem.IsEnabled = translationService != null && configuration != null;
+        TranslateMenuItem.IsEnabled = translationService != null && configuration != null;
     }
 
     private void OnMouseDown(object sender, MouseButtonEventArgs e)
@@ -59,9 +78,7 @@ public partial class PinWindow : Window
     {
         if (e.LeftButton == MouseButtonState.Pressed)
         {
-            _scale = 1.0;
-            PinImage.Width = _bitmap.PixelWidth;
-            PinImage.Height = _bitmap.PixelHeight;
+            Close();
         }
     }
 
@@ -99,6 +116,73 @@ public partial class PinWindow : Window
     private void OnToggleShadowClick(object sender, RoutedEventArgs e)
     {
         Shadow.Opacity = Shadow.Opacity > 0 ? 0.0 : 0.3;
+    }
+
+    private async void OnOcrClick(object sender, RoutedEventArgs e)
+    {
+        if (_translationService == null || _configuration == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var document = await WindowsMediaOcr.RecognizeDocumentAsync(_bitmap);
+            if (string.IsNullOrWhiteSpace(document.FullText))
+            {
+                throw new WindowsOcrException("当前贴图中没有识别到文字。");
+            }
+            var ocrWindow = new OcrSelectionWindow(
+                _bitmap,
+                document,
+                _translationService,
+                _configuration,
+                new Rect(Left, Top, ActualWidth, ActualHeight));
+            ocrWindow.Show();
+            ocrWindow.Activate();
+        }
+        catch (Exception error)
+        {
+            MessageBox.Show(error.Message, "OCR 识别失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async void OnTranslateClick(object sender, RoutedEventArgs e)
+    {
+        if (_translationService == null || _configuration == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var document = await WindowsMediaOcr.RecognizeDocumentAsync(_bitmap);
+            if (string.IsNullOrWhiteSpace(document.FullText))
+            {
+                throw new WindowsOcrException("当前贴图中没有识别到文字。");
+            }
+            var result = await _translationService.TranslateAsync(
+                document.FullText,
+                _configuration.TargetLanguage,
+                _configuration.SourceLanguage,
+                _configuration);
+            var resultWindow = new ScreenTranslationWindow(
+                document.FullText,
+                result.Text,
+                _bitmap,
+                _translationService,
+                _configuration)
+            {
+                Left = Left,
+                Top = Top
+            };
+            resultWindow.Show();
+            resultWindow.Activate();
+        }
+        catch (Exception error)
+        {
+            MessageBox.Show($"截图翻译失败：{error.Message}", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     private void OnCloseClick(object sender, RoutedEventArgs e)

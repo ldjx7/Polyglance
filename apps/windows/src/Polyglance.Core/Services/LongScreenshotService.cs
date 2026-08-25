@@ -42,7 +42,7 @@ public sealed class LongScreenshotService : IDisposable
         }
     }
 
-    public byte[] Render()
+    public RgbaImageBuffer Render()
     {
         if (_disposed || _stitcher == IntPtr.Zero)
             throw new ObjectDisposedException(nameof(LongScreenshotService));
@@ -55,7 +55,36 @@ public sealed class LongScreenshotService : IDisposable
         {
             byte[] managed = new byte[(int)outLen];
             Marshal.Copy(outBytes, managed, 0, (int)outLen);
-            return managed;
+            var dimensions = GetDimensions();
+            return new RgbaImageBuffer(managed, dimensions.Width, dimensions.Height);
+        }
+        finally
+        {
+            NativeMethods.polyglance_free_buffer(outBytes, outLen);
+        }
+    }
+
+    public RgbaImageBuffer RenderPreview(uint maximumWidth = 220, uint maximumHeight = 1600)
+    {
+        if (_disposed || _stitcher == IntPtr.Zero)
+            throw new ObjectDisposedException(nameof(LongScreenshotService));
+
+        int ret = NativeMethods.polyglance_stitcher_render_preview(
+            _stitcher,
+            maximumWidth,
+            maximumHeight,
+            out IntPtr outBytes,
+            out nuint outLen,
+            out uint width,
+            out uint height);
+        if (ret != 0 || outBytes == IntPtr.Zero || outLen == 0)
+            throw new InvalidOperationException("Failed to render stitched screenshot preview");
+
+        try
+        {
+            byte[] managed = new byte[(int)outLen];
+            Marshal.Copy(outBytes, managed, 0, (int)outLen);
+            return new RgbaImageBuffer(managed, width, height);
         }
         finally
         {

@@ -47,6 +47,7 @@ Windows Release 同时提供两种 x64 产物：`Windows-x64-Setup.exe` 是推�
 - [跨平台架构与边界](docs/CROSS_PLATFORM_ARCHITECTURE.md)
 - [macOS 开发说明](docs/MACOS_DEVELOPMENT.md)
 - [PixPin 功能对照与实施路线](docs/PIXPin_FEATURE_PARITY.md)
+- [Bob 风格 OCR 与截图翻译改造规格](docs/BOB_STYLE_OCR_TRANSLATION_REDESIGN.md)
 - [品牌与 Logo 说明](docs/BRANDING.md)
 - [macOS 发布与自动更新](docs/RELEASING.md)
 

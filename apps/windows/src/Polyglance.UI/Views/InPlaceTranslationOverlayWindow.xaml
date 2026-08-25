@@ -35,7 +35,8 @@
 
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <!-- 提示文字 -->
-                    <TextBlock Text="按住 Space 预览原文"
+                    <TextBlock x:Name="TxtStatus"
+                               Text="正在翻译…"
                                FontSize="11.5"
                                Foreground="{DynamicResource TextFillColorTertiaryBrush}"
                                VerticalAlignment="Center"

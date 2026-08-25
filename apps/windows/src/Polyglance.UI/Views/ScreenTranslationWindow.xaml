@@ -34,19 +34,48 @@
                 </Button>
             </DockPanel>
 
-            <!-- 原文区域卡片 -->
-            <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="10,8" Margin="0,0,0,10">
-                <TextBlock x:Name="TxtSource" Text="Source Text" FontSize="12" Foreground="#64748B" TextWrapping="Wrap" LineHeight="18"/>
-            </Border>
-
-            <!-- 译文结果卡片 -->
-            <Border Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="10" Padding="12,10" Margin="0,0,0,14">
-                <TextBlock x:Name="TxtTarget" Text="Target Translated Text" FontSize="14" FontWeight="SemiBold" Foreground="#0F172A" TextWrapping="Wrap" LineHeight="22"/>
-            </Border>
+            <!-- 与 macOS 一致：原图、OCR 原文、译文三种显示模式 -->
+            <Grid MinHeight="150" MaxHeight="420" Margin="0,0,0,14">
+                <Border x:Name="OriginalPanel"
+                        Visibility="Collapsed"
+                        Background="#F8FAFC"
+                        BorderBrush="#E2E8F0"
+                        BorderThickness="1"
+                        CornerRadius="10"
+                        Padding="6">
+                    <Image x:Name="OriginalImage" Stretch="Uniform" MaxWidth="500" MaxHeight="390"/>
+                </Border>
+                <Border x:Name="SourcePanel"
+                        Visibility="Collapsed"
+                        Background="#F8FAFC"
+                        BorderBrush="#E2E8F0"
+                        BorderThickness="1"
+                        CornerRadius="10"
+                        Padding="12,10">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <TextBlock x:Name="TxtSource" Text="Source Text" FontSize="13" Foreground="#334155" TextWrapping="Wrap" LineHeight="20"/>
+                    </ScrollViewer>
+                </Border>
+                <Border x:Name="TargetPanel"
+                        Background="#FFFFFF"
+                        BorderBrush="#CBD5E1"
+                        BorderThickness="1"
+                        CornerRadius="10"
+                        Padding="12,10">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <TextBlock x:Name="TxtTarget" Text="Target Translated Text" FontSize="14" FontWeight="SemiBold" Foreground="#0F172A" TextWrapping="Wrap" LineHeight="22"/>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
 
             <!-- 底部操作按钮 -->
             <DockPanel>
-                <Button Content="贴出原图 (Pin)" Padding="12,6" Background="#F1F5F9" Foreground="#334155" BorderThickness="0" FontWeight="Medium" FontSize="12" Cursor="Hand" Click="OnPinOriginalClick"/>
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="原图" Padding="10,6" ToolTip="显示原图" Click="OnShowOriginalClick"/>
+                    <Button Content="原文" Padding="10,6" Margin="5,0,0,0" ToolTip="显示 OCR 原文" Click="OnShowSourceClick"/>
+                    <Button Content="译文" Padding="10,6" Margin="5,0,0,0" ToolTip="显示译文" Click="OnShowTranslationClick"/>
+                    <Button Content="贴图" Padding="10,6" Margin="5,0,0,0" ToolTip="贴出原图" Click="OnPinOriginalClick"/>
+                </StackPanel>
 
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Content="复制译文" Padding="16,6" Background="#0A84FF" Foreground="White" BorderThickness="0" FontWeight="SemiBold" FontSize="12" Cursor="Hand" Click="OnCopyTranslationClick">

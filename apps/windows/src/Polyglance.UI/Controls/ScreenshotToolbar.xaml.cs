@@ -13,6 +13,7 @@ public partial class ScreenshotToolbar : UserControl
     public event Action<Color>? ColorChanged;
 
     private Button? _selectedToolButton;
+    private bool _isCompactLayout;
 
     public double CurrentStrokeSize { get; private set; } = 4;
     public Color CurrentColor { get; private set; } = Color.FromRgb(0xEF, 0x44, 0x44);
@@ -28,7 +29,7 @@ public partial class ScreenshotToolbar : UserControl
         {
             if (_selectedToolButton != null)
             {
-                _selectedToolButton.Background = Brushes.Transparent;
+                ClearSelectedAppearance(_selectedToolButton);
             }
 
             if (_selectedToolButton == btn)
@@ -40,7 +41,8 @@ public partial class ScreenshotToolbar : UserControl
             else
             {
                 _selectedToolButton = btn;
-                btn.Background = new SolidColorBrush(Color.FromArgb(0x20, 0x0A, 0x84, 0xFF));
+                btn.Foreground = (System.Windows.Media.Brush)FindResource("ToolbarActiveBrush");
+                btn.Background = (System.Windows.Media.Brush)FindResource("ToolbarActiveBackgroundBrush");
                 SubToolbarBorder.Visibility = Visibility.Visible;
                 ToolSelected?.Invoke(tool);
             }
@@ -85,5 +87,30 @@ public partial class ScreenshotToolbar : UserControl
     {
         BtnUndo.IsEnabled = canUndo;
         BtnRedo.IsEnabled = canRedo;
+    }
+
+    public void SetCompactLayout(bool compact)
+    {
+        if (_isCompactLayout == compact)
+        {
+            return;
+        }
+
+        _isCompactLayout = compact;
+        ToolbarRows.Orientation = compact ? Orientation.Vertical : Orientation.Horizontal;
+        MainToolbarBorder.CornerRadius = compact ? new CornerRadius(12) : new CornerRadius(22);
+
+        ToolRow.HorizontalAlignment = compact
+            ? System.Windows.HorizontalAlignment.Left
+            : System.Windows.HorizontalAlignment.Center;
+        ActionRow.HorizontalAlignment = compact
+            ? System.Windows.HorizontalAlignment.Left
+            : System.Windows.HorizontalAlignment.Center;
+    }
+
+    private static void ClearSelectedAppearance(Button button)
+    {
+        button.ClearValue(ForegroundProperty);
+        button.ClearValue(BackgroundProperty);
     }
 }

@@ -25,6 +25,9 @@
                 <MenuItem Header="复制图片 (Copy)" Click="OnCopyClick"/>
                 <MenuItem Header="保存图片 (Save)..." Click="OnSaveClick"/>
                 <Separator/>
+                <MenuItem x:Name="OcrMenuItem" Header="OCR 文字选择" Click="OnOcrClick"/>
+                <MenuItem x:Name="TranslateMenuItem" Header="截图翻译" Click="OnTranslateClick"/>
+                <Separator/>
                 <MenuItem Header="透明度 (Opacity)">
                     <MenuItem Header="100% (默认)" Click="OnSetOpacity100"/>
                     <MenuItem Header="80%" Click="OnSetOpacity80"/>

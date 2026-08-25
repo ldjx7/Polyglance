@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -48,15 +49,15 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            System.Windows.MessageBox.Show($"初始化核心引擎失败: {ex.Message}", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Error);
+            System.Windows.MessageBox.Show($"初始化核心服务失败: {ex.Message}", "Polyglance 错误", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown();
             return;
         }
 
         _mainWindow = new MainWindow(_translationService, _configStore);
 
-        SetupHiddenHwnd();
-        SetupTrayIcon();
+        CreateHiddenMessageWindow();
+        InitializeNotifyIcon();
         RegisterDynamicHotKeys();
 
         var config = LoadConfigurationOrDefault();
@@ -66,7 +67,7 @@ public partial class App : Application
         }
     }
 
-    private void SetupHiddenHwnd()
+    private void CreateHiddenMessageWindow()
     {
         var parameters = new HwndSourceParameters("PolyglanceHiddenMessageWindow")
         {
@@ -81,44 +82,72 @@ public partial class App : Application
         _hotKeyManager = new GlobalHotKeyManager(_hiddenHwndSource.Handle);
     }
 
-    private void SetupTrayIcon()
+    private void InitializeNotifyIcon()
     {
         Icon appIcon;
         try
         {
-            var uri = new Uri("pack://application:,,,/Polyglance.UI;component/Resources/Polyglance.ico");
-            var streamInfo = Application.GetResourceStream(uri);
-            if (streamInfo != null)
-            {
-                using var stream = streamInfo.Stream;
-                appIcon = new Icon(stream);
-            }
-            else
-            {
-                appIcon = SystemIcons.Application;
-            }
+            var iconStream = Application.GetResourceStream(new Uri("pack://application:,,,/Polyglance.UI;component/Resources/Polyglance.ico"))?.Stream;
+            appIcon = iconStream != null ? new Icon(iconStream) : SystemIcons.Application;
         }
         catch
         {
             appIcon = SystemIcons.Application;
         }
 
+        string versionStr = Assembly.GetEntryAssembly()?
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion
+            ?? Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3)
+            ?? "0.0.4-dev";
+
         _notifyIcon = new NotifyIcon
         {
             Icon = appIcon,
             Visible = true,
-            Text = "Polyglance v0.0.3"
+            Text = $"Polyglance v{versionStr}"
         };
 
         var contextMenu = new ContextMenuStrip();
-        contextMenu.Items.Add("截图并贴图", null, (s, e) => TriggerScreenshot());
-        contextMenu.Items.Add("屏幕原位翻译", null, (s, e) => TriggerScreenTranslate());
-        contextMenu.Items.Add("划词选中文本翻译", null, (s, e) => TriggerSelectedTextTranslate());
-        contextMenu.Items.Add("滚动长截图", null, (s, e) => TriggerLongScreenshot());
+        contextMenu.RenderMode = ToolStripRenderMode.System;
+        contextMenu.ShowImageMargin = true;
+
+        // Group 1: 截图与屏幕录制
+        contextMenu.Items.Add("截图", null, (s, e) => TriggerScreenshot());
+        contextMenu.Items.Add("长截图", null, (s, e) => TriggerLongScreenshot());
+        contextMenu.Items.Add("区域录屏", null, (s, e) => TriggerScreenRecording());
+
         contextMenu.Items.Add(new ToolStripSeparator());
+
+        // Group 2: 文本翻译
+        contextMenu.Items.Add("截图翻译", null, (s, e) => TriggerScreenTranslate());
+        contextMenu.Items.Add("读取选区并翻译", null, (s, e) => TriggerSelectedTextTranslate());
         contextMenu.Items.Add("打开主翻译窗口", null, (s, e) => ShowMainWindow());
-        contextMenu.Items.Add("偏好设置…", null, (s, e) => ShowSettings());
+
         contextMenu.Items.Add(new ToolStripSeparator());
+
+        // Group 3: 贴图管理
+        var pinMenu = new ToolStripMenuItem("贴图管理");
+        pinMenu.DropDownItems.Add("贴出剪贴板图片", null, (s, e) => PinClipboardImage());
+        pinMenu.DropDownItems.Add(new ToolStripSeparator());
+        pinMenu.DropDownItems.Add("隐藏全部贴图", null, (s, e) => HideAllPins());
+        pinMenu.DropDownItems.Add("显示全部贴图", null, (s, e) => ShowAllPins());
+        pinMenu.DropDownItems.Add(new ToolStripSeparator());
+        pinMenu.DropDownItems.Add("关闭全部贴图", null, (s, e) => CloseAllPins());
+        contextMenu.Items.Add(pinMenu);
+
+        contextMenu.Items.Add(new ToolStripSeparator());
+
+        // Group 4: 设置与更新
+        contextMenu.Items.Add("偏好设置…", null, (s, e) => ShowSettings());
+        contextMenu.Items.Add("检查更新…", null, (s, e) => TriggerCheckUpdate());
+
+        contextMenu.Items.Add(new ToolStripSeparator());
+
+        // Group 5: 版本信息（只读置灰）与退出
+        var versionItem = new ToolStripMenuItem($"Polyglance v{versionStr}") { Enabled = false };
+        contextMenu.Items.Add(versionItem);
+
         contextMenu.Items.Add("退出 Polyglance", null, (s, e) => ShutdownApp());
 
         _notifyIcon.ContextMenuStrip = contextMenu;
@@ -178,6 +207,11 @@ public partial class App : Application
 
     public void TriggerScreenshot()
     {
+        BeginScreenshotSelection(ScreenshotCaptureIntent.Standard);
+    }
+
+    private void BeginScreenshotSelection(ScreenshotCaptureIntent intent)
+    {
         Dispatcher.Invoke(() =>
         {
             if (_translationService == null || _configStore == null) return;
@@ -185,7 +219,7 @@ public partial class App : Application
             var (bitmap, bounds) = ScreenCapture.CaptureVirtualScreen();
             var config = LoadConfigurationOrDefault();
 
-            var win = new ScreenSelectionWindow(bitmap, bounds, _translationService, config);
+            var win = new ScreenSelectionWindow(bitmap, bounds, _translationService, config, intent);
             win.Show();
             win.Activate();
         });
@@ -193,7 +227,7 @@ public partial class App : Application
 
     public void TriggerScreenTranslate()
     {
-        TriggerScreenshot();
+        BeginScreenshotSelection(ScreenshotCaptureIntent.ScreenTranslation);
     }
 
     private AppConfiguration LoadConfigurationOrDefault()
@@ -233,13 +267,108 @@ public partial class App : Application
 
     public void TriggerLongScreenshot()
     {
+        BeginScreenshotSelection(ScreenshotCaptureIntent.LongScreenshot);
+    }
+
+    public void TriggerScreenRecording()
+    {
+        BeginScreenshotSelection(ScreenshotCaptureIntent.ScreenRecording);
+    }
+
+    public void PinClipboardImage()
+    {
         Dispatcher.Invoke(() =>
         {
-            var (bitmap, bounds) = ScreenCapture.CaptureVirtualScreen();
-            var win = new LongScreenshotSessionWindow(bitmap, bounds);
-            win.Show();
-            win.Activate();
+            if (System.Windows.Clipboard.ContainsImage())
+            {
+                var image = System.Windows.Clipboard.GetImage();
+                if (image != null)
+                {
+                    var pin = new PinWindow(
+                        image,
+                        _translationService,
+                        LoadConfigurationOrDefault());
+                    pin.Show();
+                }
+            }
+            else
+            {
+                System.Windows.MessageBox.Show("剪贴板中没有图片。", "贴图", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
         });
+    }
+
+    public void HideAllPins()
+    {
+        Dispatcher.Invoke(() =>
+        {
+            foreach (Window window in Application.Current.Windows)
+            {
+                if (window is PinWindow pin)
+                {
+                    pin.Hide();
+                }
+            }
+        });
+    }
+
+    public void ShowAllPins()
+    {
+        Dispatcher.Invoke(() =>
+        {
+            foreach (Window window in Application.Current.Windows)
+            {
+                if (window is PinWindow pin)
+                {
+                    pin.Show();
+                }
+            }
+        });
+    }
+
+    public void CloseAllPins()
+    {
+        Dispatcher.Invoke(() =>
+        {
+            foreach (Window window in Application.Current.Windows)
+            {
+                if (window is PinWindow pin)
+                {
+                    pin.Close();
+                }
+            }
+        });
+    }
+
+    public async void TriggerCheckUpdate()
+    {
+        var config = LoadConfigurationOrDefault();
+        try
+        {
+            var update = await AppUpdater.CheckForUpdatesAsync(config.AppcastUrl);
+            if (update != null)
+            {
+                var result = System.Windows.MessageBox.Show(
+                    $"发现新版本 v{update.Version}！\n\n更新内容:\n{update.ReleaseNotes}\n\n是否立即下载并更新？",
+                    "Polyglance 自动更新",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Information
+                );
+
+                if (result == System.Windows.MessageBoxResult.Yes)
+                {
+                    await AppUpdater.DownloadAndApplyUpdateAsync(update.DownloadUrl);
+                }
+            }
+            else
+            {
+                System.Windows.MessageBox.Show("当前已是最新版本！", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show($"检查更新失败: {ex.Message}", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     public void ShowMainWindow()

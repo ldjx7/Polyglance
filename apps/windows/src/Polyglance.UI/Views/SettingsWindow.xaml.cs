@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Polyglance.Core.Models;
 using Polyglance.Core.Services;
 using Polyglance.Platform.Startup;
@@ -35,25 +36,50 @@ public partial class SettingsWindow : FluentWindow
         catch (ConfigurationStoreException error)
         {
             _config = new AppConfiguration();
-            Loaded += (_, _) => MessageBox.Show(
-                error.Message,
-                "Polyglance 设置",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+            Loaded += (_, _) => ShowStatus(error.Message, isError: true);
         }
 
-        TxtCurrentVersion.Text = $"当前版本: v{Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "0.0.3"}";
+        string versionStr = Assembly.GetEntryAssembly()?
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion
+            ?? Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3)
+            ?? "0.0.4-dev";
+
+        TxtCurrentVersion.Text = $"当前版本: v{versionStr}";
 
         LoadConfigToUi();
     }
 
+    private void OnNavChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is not RadioButton rb || rb.Tag is not string tag) return;
+
+        PanelGeneral.Visibility = tag == "General" ? Visibility.Visible : Visibility.Collapsed;
+        PanelServices.Visibility = tag == "Services" ? Visibility.Visible : Visibility.Collapsed;
+        PanelShortcuts.Visibility = tag == "Shortcuts" ? Visibility.Visible : Visibility.Collapsed;
+        PanelRecording.Visibility = tag == "Recording" ? Visibility.Visible : Visibility.Collapsed;
+        PanelAbout.Visibility = tag == "About" ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private void LoadConfigToUi()
     {
+        // 1. 服务提供商
         foreach (ComboBoxItem item in CmbProvider.Items)
         {
             if (item.Tag?.ToString()?.Equals(_config.Provider, StringComparison.OrdinalIgnoreCase) == true)
             {
                 CmbProvider.SelectedItem = item;
+                break;
+            }
+        }
+
+        // 2. 默认目标语言
+        string targetLang = string.IsNullOrWhiteSpace(_config.TargetLanguage) ? "zh-Hans" : _config.TargetLanguage;
+        foreach (ComboBoxItem item in CmbTargetLang.Items)
+        {
+            if (item.Tag?.ToString()?.Equals(targetLang, StringComparison.OrdinalIgnoreCase) == true)
+            {
+                CmbTargetLang.SelectedItem = item;
                 break;
             }
         }
@@ -78,12 +104,26 @@ public partial class SettingsWindow : FluentWindow
         catch (Exception error)
         {
             ChkLaunchAtLogin.IsChecked = false;
-            Loaded += (_, _) => MessageBox.Show(
-                $"无法读取开机自启状态：{error.Message}",
-                "Polyglance 设置",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+            Loaded += (_, _) => ShowStatus($"无法读取开机自启状态：{error.Message}", isError: true);
         }
+    }
+
+    private void OnResetShortcutsClick(object sender, RoutedEventArgs e)
+    {
+        RecHotkeyScreenshotPin.Hotkey = "Alt+A";
+        RecHotkeyScreenTranslate.Hotkey = "Alt+W";
+        RecHotkeyMainTranslator.Hotkey = "Alt+T";
+        RecHotkeySelectedText.Hotkey = "Alt+D";
+        RecHotkeyLongScreenshot.Hotkey = "Alt+S";
+        ShowStatus("快捷键已恢复默认");
+    }
+
+    private void ShowStatus(string message, bool isError = false)
+    {
+        TxtStatusMessage.Text = message;
+        TxtStatusMessage.Foreground = isError
+            ? new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44))
+            : new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
     }
 
     private async void OnCheckUpdateClick(object sender, RoutedEventArgs e)
@@ -96,7 +136,7 @@ public partial class SettingsWindow : FluentWindow
             var update = await AppUpdater.CheckForUpdatesAsync(_config.AppcastUrl);
             if (update != null)
             {
-                var result = MessageBox.Show(
+                var result = System.Windows.MessageBox.Show(
                     $"发现新版本 v{update.Version}！\n\n更新内容:\n{update.ReleaseNotes}\n\n是否立即下载并更新？",
                     "Polyglance 自动更新",
                     MessageBoxButton.YesNo,
@@ -111,12 +151,12 @@ public partial class SettingsWindow : FluentWindow
             }
             else
             {
-                MessageBox.Show("当前已是最新版本！", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Information);
+                System.Windows.MessageBox.Show("当前已是最新版本！", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"检查更新失败: {ex.Message}", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show($"检查更新失败: {ex.Message}", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         finally
         {
@@ -130,6 +170,11 @@ public partial class SettingsWindow : FluentWindow
         if (CmbProvider.SelectedItem is ComboBoxItem item && item.Tag is string provider)
         {
             _config.Provider = provider;
+        }
+
+        if (CmbTargetLang.SelectedItem is ComboBoxItem langItem && langItem.Tag is string targetLang)
+        {
+            _config.TargetLanguage = targetLang;
         }
 
         _config.Endpoint = TxtEndpoint.Text.Trim();
@@ -152,7 +197,7 @@ public partial class SettingsWindow : FluentWindow
         }
         catch (Exception error)
         {
-            MessageBox.Show(
+            System.Windows.MessageBox.Show(
                 $"无法读取开机自启状态：{error.Message}",
                 "保存设置失败",
                 MessageBoxButton.OK,
@@ -183,7 +228,7 @@ public partial class SettingsWindow : FluentWindow
                 }
             }
 
-            MessageBox.Show(
+            System.Windows.MessageBox.Show(
                 error.Message,
                 "保存设置失败",
                 MessageBoxButton.OK,
