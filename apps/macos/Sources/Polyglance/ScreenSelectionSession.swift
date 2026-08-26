@@ -1562,10 +1562,14 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             refreshMagnifierContent()
         } else if let currentPixelSample {
             colorPasteboard.clearContents()
-            guard colorPasteboard.setString(currentPixelSample.hex, forType: .string) else {
+            // Copy what the magnifier currently shows: switching to RGB must also
+            // switch what lands on the pasteboard.
+            let copied = currentPixelSample.text(format: colorDisplayFormat)
+            guard colorPasteboard.setString(copied, forType: .string) else {
                 NSSound.beep()
                 return true
             }
+            magnifierView.showCopyConfirmation(copied)
         } else {
             NSSound.beep()
         }

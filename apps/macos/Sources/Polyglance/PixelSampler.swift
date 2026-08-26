@@ -88,18 +88,57 @@ final class PixelSampler {
 
     func patch(around coordinate: PixelCoordinate, radius: Int) -> CGImage? {
         let radius = max(0, radius)
-        let requested = CGRect(
-            x: coordinate.x - radius,
-            y: coordinate.y - radius,
-            width: radius * 2 + 1,
-            height: radius * 2 + 1
-        )
-        let imageBounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
-        let clipped = requested.intersection(imageBounds).integral
-        guard !clipped.isNull, !clipped.isEmpty else {
+        guard coordinate.x >= 0,
+              coordinate.y >= 0,
+              coordinate.x < image.width,
+              coordinate.y < image.height else {
             return nil
         }
-        return image.cropping(to: clipped)
+
+        // Always return the complete odd-sized sampling grid. Cropping the patch
+        // at a screen edge and then stretching it back to the preview used to
+        // move the sampled pixel away from the fixed centre crosshair.
+        let side = radius * 2 + 1
+        var pixels = Data(repeating: 0, count: side * side * 4)
+        pixels.withUnsafeMutableBytes { rawBuffer in
+            let bytes = rawBuffer.bindMemory(to: UInt8.self)
+            for patchY in 0..<side {
+                for patchX in 0..<side {
+                    let sourceX = coordinate.x - radius + patchX
+                    let sourceY = coordinate.y - radius + patchY
+                    let offset = (patchY * side + patchX) * 4
+                    bytes[offset + 3] = 255
+                    guard sourceX >= 0,
+                          sourceY >= 0,
+                          sourceX < image.width,
+                          sourceY < image.height,
+                          let color = bitmap.colorAt(x: sourceX, y: sourceY)?
+                            .usingColorSpace(.deviceRGB) else {
+                        continue
+                    }
+                    bytes[offset] = Self.byte(from: color.redComponent)
+                    bytes[offset + 1] = Self.byte(from: color.greenComponent)
+                    bytes[offset + 2] = Self.byte(from: color.blueComponent)
+                }
+            }
+        }
+
+        guard let provider = CGDataProvider(data: pixels as CFData) else {
+            return nil
+        }
+        return CGImage(
+            width: side,
+            height: side,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: side * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        )
     }
 
     private static func byte(from component: CGFloat) -> UInt8 {

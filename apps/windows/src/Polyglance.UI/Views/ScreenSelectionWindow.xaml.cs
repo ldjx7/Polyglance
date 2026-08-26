@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Media;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
@@ -11,6 +14,7 @@ using Microsoft.Win32;
 using Polyglance.Core.Models;
 using Polyglance.Core.Services;
 using Polyglance.Platform.Capture;
+using Polyglance.Platform.Dpi;
 using Polyglance.Platform.Interop;
 using Polyglance.Platform.Ocr;
 
@@ -33,6 +37,7 @@ public partial class ScreenSelectionWindow : Window
     private readonly TranslationService _translationService;
     private readonly AppConfiguration _config;
     private readonly ScreenshotCaptureIntent _captureIntent;
+    private readonly Action<string> _colorClipboardWriter;
 
     private SelectionPhase _phase = SelectionPhase.Ready;
     private NativeSelectionEditTarget _currentEditTarget = NativeSelectionEditTarget.None;
@@ -53,6 +58,23 @@ public partial class ScreenSelectionWindow : Window
         TranslationService translationService,
         AppConfiguration config,
         ScreenshotCaptureIntent captureIntent = ScreenshotCaptureIntent.Standard)
+        : this(
+            fullScreenBitmap,
+            screenBounds,
+            translationService,
+            config,
+            captureIntent,
+            Clipboard.SetText)
+    {
+    }
+
+    internal ScreenSelectionWindow(
+        BitmapSource fullScreenBitmap,
+        Rect screenBounds,
+        TranslationService translationService,
+        AppConfiguration config,
+        ScreenshotCaptureIntent captureIntent,
+        Action<string> colorClipboardWriter)
     {
         InitializeComponent();
 
@@ -61,11 +83,18 @@ public partial class ScreenSelectionWindow : Window
         _translationService = translationService;
         _config = config;
         _captureIntent = captureIntent;
+        _colorClipboardWriter = colorClipboardWriter;
 
+        // screenBounds comes from GetSystemMetrics and is therefore physical
+        // pixels, while Left/Top/Width/Height are DIPs. Assigning it directly
+        // oversizes the overlay on any scaled display, so seed the values for the
+        // first layout pass and then place the window by physical pixels once it
+        // has a handle.
         Left = screenBounds.X;
         Top = screenBounds.Y;
         Width = screenBounds.Width;
         Height = screenBounds.Height;
+        SourceInitialized += (_, _) => CoverCapturedArea();
 
         BackgroundImage.Source = fullScreenBitmap;
 
@@ -145,8 +174,8 @@ public partial class ScreenSelectionWindow : Window
                 _dragStart = pt;
                 _selectionRect = new Rect(pt, new Size(0, 0));
                 Toolbar.Visibility = Visibility.Collapsed;
-                Magnifier.Visibility = Visibility.Collapsed;
                 CandidateBorder.Visibility = Visibility.Collapsed;
+                ShowMagnifier(pt);
                 return;
             }
         }
@@ -170,8 +199,12 @@ public partial class ScreenSelectionWindow : Window
                     ToNativePoint(pt),
                     SelectionBounds()));
                 UpdateSelectionDisplay();
+                ShowMagnifier(pt);
                 break;
 
+            // Editing a confirmed selection keeps the magnifier hidden: macOS runs
+            // these edits while its capture phase is still .selected, and its
+            // updateMagnifier hides on that phase.
             case SelectionPhase.Moving:
                 _selectionRect = ApplySharedEdit(_initialSelection, _currentEditTarget, pt);
                 UpdateSelectionDisplay();
@@ -192,14 +225,60 @@ public partial class ScreenSelectionWindow : Window
                 break;
 
             case SelectionPhase.Ready:
-                // 未划选时跟手放大镜取色
-                if (Magnifier.Visibility != Visibility.Visible)
-                    Magnifier.Visibility = Visibility.Visible;
-
-                Canvas.SetLeft(Magnifier, Math.Min(Width - 160, pt.X + 16));
-                Canvas.SetTop(Magnifier, Math.Min(Height - 190, pt.Y + 16));
-                Magnifier.Update(_fullScreenBitmap, pt, (int)pt.X, (int)pt.Y);
+                ShowMagnifier(pt);
                 break;
+        }
+    }
+
+    /// <summary>
+    /// Keeps the magnifier under the pointer while picking or adjusting a
+    /// selection, matching the macOS session which refreshes it on move, press,
+    /// drag and release so edge pixels stay readable mid-drag.
+    /// </summary>
+    private void ShowMagnifier(Point pt)
+    {
+        if (Magnifier.Visibility != Visibility.Visible)
+            Magnifier.Visibility = Visibility.Visible;
+
+        Size viewSize = OverlayViewSize();
+        Canvas.SetLeft(Magnifier, Math.Min(viewSize.Width - Magnifier.Width - 12, pt.X + 16));
+        Canvas.SetTop(Magnifier, Math.Min(viewSize.Height - Magnifier.Height - 12, pt.Y + 16));
+
+        var (pixelX, pixelY) = CaptureRegionGeometry.ToBitmapPoint(
+            pt,
+            viewSize,
+            _fullScreenBitmap.PixelWidth,
+            _fullScreenBitmap.PixelHeight);
+        Magnifier.Update(_fullScreenBitmap, pixelX, pixelY);
+    }
+
+    private void HideMagnifier()
+    {
+        Magnifier.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// Copies the sampled colour in the format currently displayed. The clipboard
+    /// can be locked by another process, so a failure beeps instead of throwing,
+    /// matching the macOS session's NSSound.beep fallback.
+    /// </summary>
+    private void CopyCurrentColor()
+    {
+        if (Magnifier.CurrentSample is not { } sample)
+        {
+            SystemSounds.Beep.Play();
+            return;
+        }
+
+        try
+        {
+            string copied = sample.Text(Magnifier.DisplayFormat);
+            _colorClipboardWriter(copied);
+            Magnifier.ShowCopyConfirmation(copied);
+        }
+        catch (ExternalException)
+        {
+            SystemSounds.Beep.Play();
         }
     }
 
@@ -219,7 +298,7 @@ public partial class ScreenSelectionWindow : Window
             _phase == SelectionPhase.Resizing ||
             _phase == SelectionPhase.Expanding)
         {
-            Magnifier.Visibility = Visibility.Collapsed;
+            HideMagnifier();
 
             if (_selectionRect.Width > 6 && _selectionRect.Height > 6)
             {
@@ -322,7 +401,11 @@ public partial class ScreenSelectionWindow : Window
             minimumSide: 4));
     }
 
-    private NativeRect SelectionBounds() => new(0, 0, Width, Height);
+    private NativeRect SelectionBounds()
+    {
+        Size view = OverlayViewSize();
+        return new(0, 0, view.Width, view.Height);
+    }
 
     private static NativePoint ToNativePoint(Point point) => new(point.X, point.Y);
 
@@ -397,7 +480,10 @@ public partial class ScreenSelectionWindow : Window
         Canvas.SetLeft(HandleBL, l - 4); Canvas.SetTop(HandleBL, b - 4);
         Canvas.SetLeft(HandleL, l - 4); Canvas.SetTop(HandleL, midY - 4);
 
-        TxtDimension.Text = $"{(int)_selectionRect.Width} × {(int)_selectionRect.Height}";
+        // Report the size of the image the user will actually get, matching the
+        // macOS label which is driven by CaptureGeometry.outputPixelSize.
+        Int32Rect outputRegion = SelectionBitmapRegion();
+        TxtDimension.Text = $"{outputRegion.Width} × {outputRegion.Height} px";
 
         double badgeTop = _selectionRect.Top - 28;
         if (badgeTop < 6)
@@ -411,12 +497,14 @@ public partial class ScreenSelectionWindow : Window
 
     private void UpdateMask(Rect hole)
     {
+        Size view = OverlayViewSize();
+
         if (hole.IsEmpty || hole.Width <= 0 || hole.Height <= 0)
         {
             Canvas.SetLeft(MaskTop, 0);
             Canvas.SetTop(MaskTop, 0);
-            MaskTop.Width = Width;
-            MaskTop.Height = Height;
+            MaskTop.Width = view.Width;
+            MaskTop.Height = view.Height;
 
             MaskBottom.Width = 0;
             MaskLeft.Width = 0;
@@ -426,13 +514,13 @@ public partial class ScreenSelectionWindow : Window
 
         Canvas.SetLeft(MaskTop, 0);
         Canvas.SetTop(MaskTop, 0);
-        MaskTop.Width = Width;
+        MaskTop.Width = view.Width;
         MaskTop.Height = Math.Max(0, hole.Top);
 
         Canvas.SetLeft(MaskBottom, 0);
         Canvas.SetTop(MaskBottom, hole.Bottom);
-        MaskBottom.Width = Width;
-        MaskBottom.Height = Math.Max(0, Height - hole.Bottom);
+        MaskBottom.Width = view.Width;
+        MaskBottom.Height = Math.Max(0, view.Height - hole.Bottom);
 
         Canvas.SetLeft(MaskLeft, 0);
         Canvas.SetTop(MaskLeft, hole.Top);
@@ -441,23 +529,24 @@ public partial class ScreenSelectionWindow : Window
 
         Canvas.SetLeft(MaskRight, hole.Right);
         Canvas.SetTop(MaskRight, hole.Top);
-        MaskRight.Width = Math.Max(0, Width - hole.Right);
+        MaskRight.Width = Math.Max(0, view.Width - hole.Right);
         MaskRight.Height = hole.Height;
     }
 
     private void PositionToolbar()
     {
-        Toolbar.SetCompactLayout(Width < 700);
+        Toolbar.SetCompactLayout(OverlayViewSize().Width < 700);
         Toolbar.Visibility = Visibility.Visible;
         Toolbar.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         double toolbarWidth = Toolbar.DesiredSize.Width;
         double toolbarHeight = Toolbar.DesiredSize.Height;
 
-        double maximumLeft = Math.Max(12, Width - toolbarWidth - 12);
+        Size viewSize = OverlayViewSize();
+        double maximumLeft = Math.Max(12, viewSize.Width - toolbarWidth - 12);
         double left = Math.Clamp(_selectionRect.Right - toolbarWidth, 12, maximumLeft);
         double top = _selectionRect.Bottom + 10;
 
-        if (top + toolbarHeight > Height - 12)
+        if (top + toolbarHeight > viewSize.Height - 12)
         {
             top = Math.Max(12, _selectionRect.Top - toolbarHeight - 10);
         }
@@ -824,35 +913,104 @@ public partial class ScreenSelectionWindow : Window
 
     private BitmapSource? GetRenderedCroppedBitmap()
     {
-        if (_selectionRect.Width <= 0 || _selectionRect.Height <= 0)
+        Int32Rect region = SelectionBitmapRegion();
+        if (region.IsEmpty)
             return null;
 
-        int x = (int)Math.Max(0, _selectionRect.X);
-        int y = (int)Math.Max(0, _selectionRect.Y);
-        int w = (int)Math.Min(_selectionRect.Width, _fullScreenBitmap.PixelWidth - x);
-        int h = (int)Math.Min(_selectionRect.Height, _fullScreenBitmap.PixelHeight - y);
-
-        var baseCropped = ScreenCapture.Crop(_fullScreenBitmap, new Int32Rect(x, y, w, h));
+        var baseCropped = ScreenCapture.Crop(_fullScreenBitmap, region);
 
         if (_annotationHistory.Count == 0)
             return baseCropped;
 
-        var rtb = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
+        // Annotations were drawn in overlay DIPs, so compositing them onto the
+        // physical-pixel crop needs both the selection offset and the DIP-to-pixel
+        // scale. Without the scale they would land at the wrong size and position
+        // on any display that is not at 100%.
+        Size viewSize = OverlayViewSize();
+        var rtb = new RenderTargetBitmap(region.Width, region.Height, 96, 96, PixelFormats.Pbgra32);
+        double scaleX = region.Width / Math.Max(_selectionRect.Width, 0.0001);
+        double scaleY = region.Height / Math.Max(_selectionRect.Height, 0.0001);
         var dv = new DrawingVisual();
         using (var dc = dv.RenderOpen())
         {
-            dc.DrawImage(baseCropped, new Rect(0, 0, w, h));
-            dc.PushTransform(new TranslateTransform(-x, -y));
+            dc.DrawImage(baseCropped, new Rect(0, 0, region.Width, region.Height));
+            dc.PushTransform(new ScaleTransform(scaleX, scaleY));
+            dc.PushTransform(new TranslateTransform(-_selectionRect.X, -_selectionRect.Y));
             foreach (var elem in _annotationHistory)
             {
                 var brush = new VisualBrush(elem);
-                dc.DrawRectangle(brush, null, new Rect(0, 0, Width, Height));
+                dc.DrawRectangle(brush, null, new Rect(0, 0, viewSize.Width, viewSize.Height));
             }
+            dc.Pop();
             dc.Pop();
         }
         rtb.Render(dv);
         rtb.Freeze();
         return rtb;
+    }
+
+    /// <summary>
+    /// The current selection as pixel indices of the captured bitmap. All output
+    /// paths (copy, save, pin, OCR, translation) go through here so a scaled
+    /// display cannot make the saved image disagree with the drawn selection.
+    /// </summary>
+    private Int32Rect SelectionBitmapRegion() => CaptureRegionGeometry.ToBitmapRegion(
+        _selectionRect,
+        OverlayViewSize(),
+        _fullScreenBitmap.PixelWidth,
+        _fullScreenBitmap.PixelHeight);
+
+    /// <summary>
+    /// The extent the background bitmap is actually stretched across, which is
+    /// what pointer positions from GetPosition are relative to. ActualWidth is the
+    /// size layout produced; the requested Width is only a fallback for callers
+    /// that run before the first layout pass.
+    /// </summary>
+    private Size OverlayViewSize() => new(
+        ActualWidth > 0 ? ActualWidth : Width,
+        ActualHeight > 0 ? ActualHeight : Height);
+
+    /// <summary>
+    /// Places the overlay over exactly the captured area using physical pixels.
+    /// SetWindowPos takes device pixels, so this is immune to the DIP conversion
+    /// that oversizes the window when Left/Top/Width/Height are assigned the
+    /// virtual-screen metrics directly.
+    /// </summary>
+    private void CoverCapturedArea()
+    {
+        IntPtr handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        bool placed = NativeWin32.SetWindowPos(
+            handle,
+            IntPtr.Zero,
+            (int)Math.Round(_screenBounds.X),
+            (int)Math.Round(_screenBounds.Y),
+            (int)Math.Round(_screenBounds.Width),
+            (int)Math.Round(_screenBounds.Height),
+            NativeWin32.SWP_NOZORDER | NativeWin32.SWP_NOACTIVATE);
+        if (!placed)
+        {
+            return;
+        }
+
+        // SetWindowPos moved the window behind WPF's back, leaving the requested
+        // Width/Height as the oversized physical numbers. A later layout pass
+        // would apply those again and undo the placement, so rewrite them in DIPs.
+        Point origin = DpiHelper.TransformFromPixels(
+            this,
+            new Point(_screenBounds.X, _screenBounds.Y));
+        Point extent = DpiHelper.TransformFromPixels(
+            this,
+            new Point(_screenBounds.Width, _screenBounds.Height));
+
+        Left = origin.X;
+        Top = origin.Y;
+        Width = Math.Abs(extent.X);
+        Height = Math.Abs(extent.Y);
     }
 
     private void OnKeyDown(object sender, KeyEventArgs e)
@@ -865,10 +1023,9 @@ public partial class ScreenSelectionWindow : Window
         {
             OnActionTriggered("Copy");
         }
-        else if (e.Key == Key.C && Magnifier.Visibility == Visibility.Visible)
+        else if (HandleColorShortcut(e.Key, Keyboard.Modifiers))
         {
-            Clipboard.SetText(Magnifier.TxtHexColor.Text);
-            Close();
+            e.Handled = true;
         }
         else if (e.Key == Key.Z && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
         {
@@ -900,5 +1057,25 @@ public partial class ScreenSelectionWindow : Window
                 e.Handled = true;
             }
         }
+    }
+
+    internal MagnifierControl ColorMagnifier => Magnifier;
+
+    internal bool HandleColorShortcut(Key key, ModifierKeys modifiers)
+    {
+        if (key != Key.C
+            || (modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) != ModifierKeys.None
+            || Magnifier.Visibility != Visibility.Visible)
+        {
+            return false;
+        }
+
+        // Matches macOS: Shift+C changes format, plain C copies the value shown,
+        // and neither action closes the capture overlay.
+        if ((modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
+            Magnifier.ToggleDisplayFormat();
+        else
+            CopyCurrentColor();
+        return true;
     }
 }

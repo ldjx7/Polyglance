@@ -327,6 +327,7 @@ final class ScreenSelectionWindowTests: XCTestCase {
         XCTAssertFalse(magnifier.isHidden)
         XCTAssertTrue(magnifier.displayText.contains("#123456"))
         XCTAssertTrue(magnifier.displayText.contains("100, 200"))
+        XCTAssertEqual(magnifier.instructionText, "C 复制色值 · ⇧C 切换 HEX/RGB")
 
         window.selectionView.keyDown(with: characterKeyEvent(
             "c",
@@ -334,6 +335,7 @@ final class ScreenSelectionWindowTests: XCTestCase {
             window: window
         ))
         XCTAssertEqual(pasteboard.string(forType: .string), "#123456")
+        XCTAssertEqual(magnifier.instructionText, "已复制 #123456")
 
         window.selectionView.keyDown(with: characterKeyEvent(
             "C",
@@ -343,6 +345,18 @@ final class ScreenSelectionWindowTests: XCTestCase {
         ))
         XCTAssertEqual(window.selectionView.colorDisplayFormat, .rgb)
         XCTAssertTrue(magnifier.displayText.contains("RGB(18, 52, 86)"))
+
+        pasteboard.clearContents()
+        window.selectionView.keyDown(with: characterKeyEvent(
+            "c",
+            keyCode: 8,
+            window: window
+        ))
+        XCTAssertEqual(
+            pasteboard.string(forType: .string),
+            "RGB(18, 52, 86)",
+            "Copy must follow the displayed format instead of always copying HEX"
+        )
 
         pasteboard.clearContents()
         pasteboard.setString("keep", forType: .string)

@@ -59,6 +59,44 @@ final class PixelSamplerTests: XCTestCase {
         XCTAssertLessThan(frame.maxY, 230)
     }
 
+    func testMagnifierPatchKeepsEdgeSampleInCenterCell() throws {
+        let image = try makeImage(width: 3, height: 3) { x, y in
+            x == 0 && y == 0 ? (0x12, 0x34, 0x56) : (0xEE, 0xEE, 0xEE)
+        }
+        let sampler = try XCTUnwrap(PixelSampler(image: image))
+
+        let patch = try XCTUnwrap(sampler.patch(
+            around: PixelCoordinate(x: 0, y: 0),
+            radius: 2
+        ))
+
+        XCTAssertEqual(patch.width, 5)
+        XCTAssertEqual(patch.height, 5)
+        let bitmap = NSBitmapImageRep(cgImage: patch)
+        let center = try XCTUnwrap(bitmap.colorAt(x: 2, y: 2)?.usingColorSpace(.deviceRGB))
+        XCTAssertEqual(Int((center.redComponent * 255).rounded()), 0x12)
+        XCTAssertEqual(Int((center.greenComponent * 255).rounded()), 0x34)
+        XCTAssertEqual(Int((center.blueComponent * 255).rounded()), 0x56)
+    }
+
+    func testMagnifierShowsSharedShortcutHintAndTransientCopyFeedback() {
+        let magnifier = ScreenshotMagnifierView(frame: CGRect(
+            origin: .zero,
+            size: ScreenshotMagnifierView.preferredSize
+        ))
+
+        XCTAssertEqual(magnifier.instructionText, "C 复制色值 · ⇧C 切换 HEX/RGB")
+        magnifier.showCopyConfirmation("#123456", duration: 0.01)
+        XCTAssertEqual(magnifier.instructionText, "已复制 #123456")
+
+        let restored = expectation(description: "shortcut hint restored")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            XCTAssertEqual(magnifier.instructionText, "C 复制色值 · ⇧C 切换 HEX/RGB")
+            restored.fulfill()
+        }
+        wait(for: [restored], timeout: 1)
+    }
+
     private func makeImage(
         width: Int,
         height: Int,

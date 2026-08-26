@@ -2,10 +2,13 @@ import AppKit
 
 final class ScreenshotMagnifierView: NSView {
     static let preferredSize = CGSize(width: 184, height: 142)
+    static let shortcutHint = "C 复制色值 · ⇧C 切换 HEX/RGB"
 
     private let previewRect = CGRect(x: 8, y: 42, width: 168, height: 92)
     private var patchImage: CGImage?
+    private var feedbackWorkItem: DispatchWorkItem?
     private(set) var displayText = ""
+    private(set) var instructionText = shortcutHint
 
     override var isOpaque: Bool { false }
 
@@ -20,6 +23,10 @@ final class ScreenshotMagnifierView: NSView {
         setAccessibilityLabel("像素放大镜")
     }
 
+    deinit {
+        feedbackWorkItem?.cancel()
+    }
+
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
@@ -32,8 +39,24 @@ final class ScreenshotMagnifierView: NSView {
     ) {
         patchImage = sampler.patch(around: sample.coordinate, radius: 5)
         displayText = "(\(sample.coordinate.x), \(sample.coordinate.y)) px  \(sample.text(format: format))"
-        setAccessibilityValue(displayText)
+        refreshAccessibilityValue()
         needsDisplay = true
+    }
+
+    func showCopyConfirmation(_ copiedValue: String, duration: TimeInterval = 1.2) {
+        feedbackWorkItem?.cancel()
+        instructionText = "已复制 \(copiedValue)"
+        refreshAccessibilityValue()
+        needsDisplay = true
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            instructionText = Self.shortcutHint
+            refreshAccessibilityValue()
+            needsDisplay = true
+        }
+        feedbackWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, duration), execute: workItem)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -58,10 +81,20 @@ final class ScreenshotMagnifierView: NSView {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         displayText.draw(
-            in: CGRect(x: 6, y: 10, width: bounds.width - 12, height: 20),
+            in: CGRect(x: 6, y: 24, width: bounds.width - 12, height: 16),
             withAttributes: [
                 .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold),
                 .foregroundColor: NSColor.white,
+                .paragraphStyle: paragraph,
+            ]
+        )
+        instructionText.draw(
+            in: CGRect(x: 6, y: 7, width: bounds.width - 12, height: 14),
+            withAttributes: [
+                .font: NSFont.systemFont(ofSize: 9, weight: .medium),
+                .foregroundColor: instructionText == Self.shortcutHint
+                    ? NSColor.secondaryLabelColor
+                    : NSColor.systemGreen,
                 .paragraphStyle: paragraph,
             ]
         )
@@ -135,5 +168,9 @@ final class ScreenshotMagnifierView: NSView {
         let outline = NSBezierPath(rect: centerPixel)
         outline.lineWidth = 2
         outline.stroke()
+    }
+
+    private func refreshAccessibilityValue() {
+        setAccessibilityValue("\(displayText), \(instructionText)")
     }
 }

@@ -32,15 +32,15 @@
                 <!-- 当前颜色色块 -->
                 <Border x:Name="ColorPreviewBox" Grid.Column="0" Width="22" Height="22" CornerRadius="4" BorderBrush="#40FFFFFF" BorderThickness="1" Background="#FFFFFF" VerticalAlignment="Center"/>
 
-                <!-- HEX / RGB 文本 -->
+                <!-- 当前格式的色值与像素坐标 -->
                 <StackPanel Grid.Column="1" Margin="4,0,0,0" VerticalAlignment="Center">
-                    <TextBlock x:Name="TxtHexColor" Text="#FFFFFF" Foreground="#FFFFFF" FontWeight="Bold" FontSize="11" FontFamily="Consolas, Segoe UI"/>
-                    <TextBlock x:Name="TxtRgbColor" Text="RGB(255, 255, 255)" Foreground="#94A3B8" FontSize="9" FontFamily="Consolas, Segoe UI"/>
+                    <TextBlock x:Name="TxtColorValue" Text="#FFFFFF" Foreground="#FFFFFF" FontWeight="Bold" FontSize="11" FontFamily="Consolas, Segoe UI"/>
+                    <TextBlock x:Name="TxtCoordinate" Text="(0, 0) px" Foreground="#94A3B8" FontSize="9" FontFamily="Consolas, Segoe UI"/>
                 </StackPanel>
             </Grid>
 
             <!-- 快捷键提示 -->
-            <TextBlock Text="按 C 键复制色值" Foreground="#64748B" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/>
+            <TextBlock x:Name="TxtInstruction" Text="C 复制色值 · ⇧C 切换 HEX/RGB" Foreground="#94A3B8" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/>
         </StackPanel>
     </Border>
 </UserControl>
