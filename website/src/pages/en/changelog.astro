@@ -1,0 +1,105 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import { getReleases } from '../../lib/releases';
+
+const releases = await getReleases();
+
+const formatSize = (bytes: number) => {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+};
+---
+
+<StarlightPage frontmatter={{ title: 'Changelog', description: 'Synced from GitHub Releases' }}>
+  {releases.length === 0 && (
+    <p>Could not load releases. Visit <a href="https://github.com/ldjx7/Polyglance/releases" target="_blank" rel="noopener">GitHub Releases</a>.</p>
+  )}
+
+  {releases.map((r) => (
+    <article class="release">
+      <header class="release-header">
+        <h2 id={r.tag_name}>
+          <a href={r.html_url} target="_blank" rel="noopener">{r.name}</a>
+          {r.prerelease && <span class="badge">Pre-release</span>}
+        </h2>
+        <div class="meta">
+          <code>{r.tag_name}</code>
+          {r.published_at && <time>{r.published_at}</time>}
+        </div>
+      </header>
+      <div class="release-body" set:html={r.body_html} />
+      {r.assets.length > 0 && (
+        <details class="assets">
+          <summary>Assets ({r.assets.length})</summary>
+          <ul>
+            {r.assets.map((a) => (
+              <li>
+                <a href={a.browser_download_url}>{a.name}</a>
+                <span class="size">{formatSize(a.size)}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </article>
+  ))}
+</StarlightPage>
+
+<style>
+  .release {
+    border-bottom: 1px solid var(--sl-color-gray-5);
+    padding-bottom: 2rem;
+    margin-bottom: 2rem;
+  }
+  .release:last-child {
+    border-bottom: none;
+  }
+  .release-header h2 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0;
+  }
+  .badge {
+    font-size: 0.7rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.25rem;
+    background: var(--sl-color-accent-low);
+    color: var(--sl-color-accent-high);
+    font-weight: normal;
+  }
+  .meta {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    color: var(--sl-color-gray-3);
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+  }
+  .release-body :global(h2),
+  .release-body :global(h3) {
+    font-size: 1.2rem;
+    margin-top: 1.2rem;
+  }
+  .release-body :global(img) {
+    max-width: 100%;
+  }
+  .assets summary {
+    cursor: pointer;
+    color: var(--sl-color-text-accent);
+  }
+  .assets ul {
+    list-style: none;
+    padding: 0.5rem 0 0;
+  }
+  .assets li {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.25rem 0;
+    font-size: 0.9rem;
+  }
+  .size {
+    color: var(--sl-color-gray-3);
+  }
+</style>

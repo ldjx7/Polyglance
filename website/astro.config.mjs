@@ -8,6 +8,11 @@ export default defineConfig({
     starlight({
       title: 'Polyglance',
       description: '多语言内容，一眼看懂 —— 跨平台翻译工具',
+      logo: {
+        src: './src/assets/logo.png',
+        alt: 'Polyglance',
+      },
+      favicon: '/favicon-48.png',
       defaultLocale: 'root',
       locales: {
         root: { label: '简体中文', lang: 'zh-CN' },
@@ -32,7 +37,7 @@ export default defineConfig({
             { label: '常见问题', slug: 'guides/faq' },
           ],
         },
-        { label: '更新日志', slug: 'changelog' },
+        { label: '更新日志', link: '/changelog' },
       ],
     }),
   ],
