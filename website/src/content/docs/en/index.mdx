@@ -1,0 +1,34 @@
+---
+title: Polyglance
+description: Polyglot at a glance — a cross-platform translator
+template: splash
+hero:
+  tagline: In-place translation, screenshot OCR, scrolling capture, and screen recording — a free and open-source menubar tool.
+  image:
+    file: ../../../assets/hero.png
+  actions:
+    - text: Download
+      link: /en/download
+      icon: right-arrow
+      variant: primary
+    - text: GitHub
+      link: https://github.com/ldjx7/Polyglance
+      icon: external
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid stagger>
+	<Card title="Zero-config" icon="rocket">
+		Built-in Microsoft and Google free translators. No API key required.
+	</Card>
+	<Card title="All-in-one" icon="magnifier">
+		Screenshot, offline Vision OCR, and translation in one workflow.
+	</Card>
+	<Card title="Scrolling capture" icon="seti:image">
+		Auto-stitched long screenshots and region MP4/GIF recording.
+	</Card>
+	<Card title="Privacy-first" icon="approve-check-circle">
+		Offline OCR, Keychain-stored credentials, no telemetry.
+	</Card>
+</CardGrid>
