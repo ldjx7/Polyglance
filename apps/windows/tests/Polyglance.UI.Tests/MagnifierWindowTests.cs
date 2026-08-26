@@ -25,7 +25,9 @@ public sealed class MagnifierWindowTests
             window.Arrange(new Rect(0, 0, 200, 220));
 
             BitmapSource source = CreateBitmap(3, 3, (x, y) =>
-                x == 0 && y == 0 ? (0x12, 0x34, 0x56) : (0xEE, 0xEE, 0xEE));
+                x == 0 && y == 0
+                    ? ((byte)0x12, (byte)0x34, (byte)0x56)
+                    : ((byte)0xEE, (byte)0xEE, (byte)0xEE));
             magnifier.Update(source, 0, 0);
 
             BitmapSource preview = Assert.IsAssignableFrom<BitmapSource>(magnifier.PreviewSource);
@@ -70,7 +72,9 @@ public sealed class MagnifierWindowTests
         RunInSta(() =>
         {
             BitmapSource source = CreateBitmap(3, 3, (x, y) =>
-                x == 1 && y == 1 ? (0x12, 0x34, 0x56) : (0xEE, 0xEE, 0xEE));
+                x == 1 && y == 1
+                    ? ((byte)0x12, (byte)0x34, (byte)0x56)
+                    : ((byte)0xEE, (byte)0xEE, (byte)0xEE));
             string? copied = null;
             var selection = new ScreenSelectionWindow(
                 source,
