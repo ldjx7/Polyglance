@@ -17,6 +17,7 @@ using Polyglance.Platform.Capture;
 using Polyglance.Platform.Dpi;
 using Polyglance.Platform.Interop;
 using Polyglance.Platform.Ocr;
+using Polyglance.UI.Controls;
 
 namespace Polyglance.UI.Views;
 
