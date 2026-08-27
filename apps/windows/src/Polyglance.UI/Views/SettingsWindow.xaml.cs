@@ -141,39 +141,22 @@ public partial class SettingsWindow : FluentWindow
             if (check.Status == UpdateCheckStatus.UpdateAvailable)
             {
                 UpdateInfo update = check.Update!;
-                TxtUpdateStatus.Text = $"发现新版本 v{update.Version}";
+                BtnCheckUpdate.Content = "正在下载更新...";
+                TxtUpdateStatus.Text = $"发现新版本 v{update.Version}，正在下载更新包 (0%)...";
                 TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
+                PbUpdateProgress.Visibility = Visibility.Visible;
 
-                var result = System.Windows.MessageBox.Show(
-                    $"发现新版本 v{update.Version}！\n\n更新内容:\n{update.ReleaseNotes}\n\n是否立即下载并更新？",
-                    "Polyglance 自动更新",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Information
-                );
-
-                if (result == System.Windows.MessageBoxResult.Yes)
+                var progress = new Progress<int>(percent =>
                 {
-                    BtnCheckUpdate.Content = "正在下载更新...";
-                    TxtUpdateStatus.Text = "正在下载更新包 (0%)...";
-                    PbUpdateProgress.Visibility = Visibility.Visible;
+                    PbUpdateProgress.Value = percent;
+                    TxtUpdateStatus.Text = $"正在下载更新包 ({percent}%)...";
+                });
 
-                    var progress = new Progress<int>(percent =>
-                    {
-                        PbUpdateProgress.Value = percent;
-                        TxtUpdateStatus.Text = $"正在下载更新包 ({percent}%)...";
-                    });
-
-                    bool started = await AppUpdater.DownloadAndApplyUpdateAsync(update.DownloadUrl, progress);
-                    if (!started)
-                    {
-                        TxtUpdateStatus.Text = "更新包下载或替换失败";
-                        TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
-                        System.Windows.MessageBox.Show(
-                            "更新包下载或替换失败，请稍后重试，或从 GitHub Release 手动安装。",
-                            "Polyglance 自动更新",
-                            MessageBoxButton.OK,
-                            MessageBoxImage.Warning);
-                    }
+                bool started = await AppUpdater.DownloadAndApplyUpdateAsync(update.DownloadUrl, progress);
+                if (!started)
+                {
+                    TxtUpdateStatus.Text = "更新包下载或替换失败，请稍后重试";
+                    TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
                 }
             }
             else if (check.Status == UpdateCheckStatus.UpToDate)

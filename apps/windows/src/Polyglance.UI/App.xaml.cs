@@ -347,25 +347,20 @@ public partial class App : Application
             if (check.Status == UpdateCheckStatus.UpdateAvailable)
             {
                 UpdateInfo update = check.Update!;
-                var result = System.Windows.MessageBox.Show(
-                    $"发现新版本 v{update.Version}！\n\n更新内容:\n{update.ReleaseNotes}\n\n是否立即下载并更新？",
-                    "Polyglance 自动更新",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Information
-                );
+                _notifyIcon?.ShowBalloonTip(
+                    5000,
+                    "Polyglance 发现新版本",
+                    $"发现新版本 v{update.Version}，正在后台下载更新...",
+                    ToolTipIcon.Info);
 
-                if (result == System.Windows.MessageBoxResult.Yes)
+                bool started = await AppUpdater.DownloadAndApplyUpdateAsync(update.DownloadUrl);
+                if (!started)
                 {
-                    _notifyIcon?.ShowBalloonTip(4000, "Polyglance", "正在后台下载更新包，完成后将自动重启...", ToolTipIcon.Info);
-                    bool started = await AppUpdater.DownloadAndApplyUpdateAsync(update.DownloadUrl);
-                    if (!started)
-                    {
-                        System.Windows.MessageBox.Show(
-                            "更新包下载或替换失败，请稍后重试，或从 GitHub Release 手动安装。",
-                            "Polyglance 自动更新",
-                            MessageBoxButton.OK,
-                            MessageBoxImage.Warning);
-                    }
+                    _notifyIcon?.ShowBalloonTip(
+                        5000,
+                        "Polyglance 自动更新",
+                        "更新包下载或替换失败，请稍后重试，或从 GitHub Release 手动安装。",
+                        ToolTipIcon.Warning);
                 }
             }
             else if (check.Status == UpdateCheckStatus.UpToDate)
