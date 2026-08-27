@@ -1,5 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <AssemblyName>Polyglance</AssemblyName>
+    <Product>Polyglance</Product>
+    <Title>Polyglance</Title>
+    <AssemblyTitle>Polyglance</AssemblyTitle>
+    <Description>Polyglance - 原生跨平台翻译与截图工具</Description>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>

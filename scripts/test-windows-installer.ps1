@@ -49,7 +49,7 @@ try {
         throw "Installer returned exit code $($installProcess.ExitCode)."
     }
 
-    $installedExecutable = Join-Path $installDir "Polyglance.UI.exe"
+    $installedExecutable = Join-Path $installDir "Polyglance.exe"
     $uninstaller = Join-Path $installDir "unins000.exe"
     $installedLicense = Join-Path $installDir "LICENSE.txt"
     $portableReadme = Join-Path $installDir "README-PORTABLE.txt"

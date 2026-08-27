@@ -315,12 +315,13 @@ public static class AppUpdater
             System.IO.Compression.ZipFile.ExtractToDirectory(tempZip, tempExtractDir);
 
             string currentAppDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\', '/');
-            string currentExe = Process.GetCurrentProcess().MainModule?.FileName ?? Path.Combine(currentAppDir, "Polyglance.UI.exe");
+            string currentExe = Process.GetCurrentProcess().MainModule?.FileName ?? Path.Combine(currentAppDir, "Polyglance.exe");
 
             // Write batch update script
             string batchScript = Path.Combine(Path.GetTempPath(), $"polyglance_updater_{Guid.NewGuid():N}.cmd");
             string scriptContent = $@"@echo off
 timeout /t 1 /nobreak >nul
+taskkill /f /im Polyglance.exe >nul 2>&1
 taskkill /f /im Polyglance.UI.exe >nul 2>&1
 timeout /t 1 /nobreak >nul
 robocopy ""{tempExtractDir}"" ""{currentAppDir}"" /e /is /it /np >nul

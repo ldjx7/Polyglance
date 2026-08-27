@@ -87,7 +87,7 @@ public partial class App : Application
         Icon appIcon;
         try
         {
-            var iconStream = Application.GetResourceStream(new Uri("pack://application:,,,/Polyglance.UI;component/Resources/Polyglance.ico"))?.Stream;
+            var iconStream = Application.GetResourceStream(new Uri("pack://application:,,,/Polyglance;component/Resources/Polyglance.ico"))?.Stream;
             appIcon = iconStream != null ? new Icon(iconStream) : SystemIcons.Application;
         }
         catch

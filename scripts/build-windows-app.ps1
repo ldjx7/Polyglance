@@ -83,5 +83,5 @@ Copy-Item "LICENSE" -Destination "$outDir/LICENSE.txt" -Force
 Copy-Item "apps/windows/README-PORTABLE.txt" -Destination "$outDir/README-PORTABLE.txt" -Force
 
 Write-Host "`n========================================" -ForegroundColor Green
-Write-Host " Build Complete: $outDir\Polyglance.UI.exe " -ForegroundColor Green
+Write-Host " Build Complete: $outDir\Polyglance.exe " -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green

@@ -50,7 +50,7 @@ SolidCompression=yes
 WizardStyle=modern
 Uninstallable=yes
 UninstallDisplayName=Polyglance
-UninstallDisplayIcon={app}\Polyglance.UI.exe
+UninstallDisplayIcon={app}\Polyglance.exe
 AppMutex=Polyglance_SingleInstance_Mutex
 CloseApplications=yes
 RestartApplications=no
@@ -78,9 +78,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#MySourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\Polyglance"; Filename: "{app}\Polyglance.UI.exe"; WorkingDir: "{app}"
+Name: "{group}\Polyglance"; Filename: "{app}\Polyglance.exe"; WorkingDir: "{app}"
 Name: "{group}\Uninstall Polyglance"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Polyglance"; Filename: "{app}\Polyglance.UI.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autodesktop}\Polyglance"; Filename: "{app}\Polyglance.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 ; The application owns this per-user value when launch-at-login is enabled.
 ; Setup does not create it, but uninstall removes a stale entry safely.
@@ -88,4 +88,4 @@ Name: "{autodesktop}\Polyglance"; Filename: "{app}\Polyglance.UI.exe"; WorkingDi
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "Polyglance"; Flags: uninsdeletevalue
 
 [Run]
-Filename: "{app}\Polyglance.UI.exe"; Description: "{cm:LaunchProgram}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Polyglance.exe"; Description: "{cm:LaunchProgram}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent

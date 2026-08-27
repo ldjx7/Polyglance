@@ -26,7 +26,7 @@ $outputDir = if ([IO.Path]::IsPathRooted($OutputDirectory)) {
 $licenseFile = Join-Path $rootDir "LICENSE"
 $setupIconFile = Join-Path $rootDir "apps/windows/src/Polyglance.UI/Resources/Polyglance.ico"
 
-if (-not (Test-Path (Join-Path $sourceDir "Polyglance.UI.exe") -PathType Leaf)) {
+if (-not (Test-Path (Join-Path $sourceDir "Polyglance.exe") -PathType Leaf)) {
     throw "Published Windows application not found in $sourceDir. Run build-windows-app.ps1 first."
 }
 if (-not (Test-Path (Join-Path $sourceDir "polyglance_cabi.dll") -PathType Leaf)) {

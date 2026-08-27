@@ -31,7 +31,7 @@
                      Title="Polyglance"
                      Height="36">
             <ui:TitleBar.Icon>
-                <ui:ImageIcon Source="pack://application:,,,/Polyglance.UI;component/Resources/Polyglance.png"/>
+                <ui:ImageIcon Source="pack://application:,,,/Polyglance;component/Resources/Polyglance.png"/>
             </ui:TitleBar.Icon>
         </ui:TitleBar>
 

@@ -68,7 +68,7 @@
         </Grid.RowDefinitions>
 
         <!-- 顶部标题栏 -->
-        <ui:TitleBar Grid.Row="0" Title="偏好设置" Icon="pack://application:,,,/Polyglance.UI;component/Resources/Polyglance.ico" Height="38"/>
+        <ui:TitleBar Grid.Row="0" Title="偏好设置" Icon="pack://application:,,,/Polyglance;component/Resources/Polyglance.ico" Height="38"/>
 
         <!-- 主体布局：左侧导航 + 右侧内容 -->
         <Grid Grid.Row="1">

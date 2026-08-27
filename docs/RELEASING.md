@@ -5,7 +5,7 @@
 Windows tag 工作流会构建并上传两个 x64 应用包：
 
 - `Polyglance-<版本>-Windows-x64-Setup.exe`：推荐给普通用户。使用 Inno Setup 进行当前用户级安装，不请求管理员权限；默认安装到 `%LOCALAPPDATA%\Programs\Polyglance`，提供英文和简体中文安装界面，创建开始菜单入口并可选创建桌面快捷方式。
-- `Polyglance-<版本>-Windows-x64-Portable.zip`：完整解压后直接运行 `Polyglance.UI.exe`，不创建安装记录和快捷方式。
+- `Polyglance-<版本>-Windows-x64-Portable.zip`：完整解压后直接运行 `Polyglance.exe`，不创建安装记录和快捷方式。
 
 安装版使用固定 `AppId=io.polyglance.windows`，因此后续版本会识别并覆盖现有安装，而不是创建并列的卸载项。安装和卸载开始前如果 Polyglance 仍在托盘运行，安装器会要求先退出应用，避免替换或删除正在使用的文件。
 
