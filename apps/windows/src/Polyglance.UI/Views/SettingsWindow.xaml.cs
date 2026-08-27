@@ -182,24 +182,17 @@ public partial class SettingsWindow : FluentWindow
                 TxtUpdateStatus.SetResourceReference(
                     System.Windows.Controls.TextBlock.ForegroundProperty,
                     "TextFillColorSecondaryBrush");
-                System.Windows.MessageBox.Show("当前已是最新版本！", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             else
             {
                 TxtUpdateStatus.Text = string.IsNullOrWhiteSpace(check.ErrorMessage) ? "检查更新失败" : check.ErrorMessage;
                 TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
-                System.Windows.MessageBox.Show(
-                    check.ErrorMessage,
-                    "检查更新失败",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
             }
         }
         catch (Exception ex)
         {
             TxtUpdateStatus.Text = $"检查更新异常: {ex.Message}";
             TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
-            System.Windows.MessageBox.Show($"检查更新失败: {ex.Message}", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         finally
         {

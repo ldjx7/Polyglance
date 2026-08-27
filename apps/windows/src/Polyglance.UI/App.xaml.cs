@@ -370,20 +370,20 @@ public partial class App : Application
             }
             else if (check.Status == UpdateCheckStatus.UpToDate)
             {
-                System.Windows.MessageBox.Show("当前已是最新版本！", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Information);
+                _notifyIcon?.ShowBalloonTip(4000, "Polyglance", "当前已是最新版本！", ToolTipIcon.Info);
             }
             else
             {
-                System.Windows.MessageBox.Show(
-                    check.ErrorMessage,
-                    "检查更新失败",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
+                _notifyIcon?.ShowBalloonTip(
+                    4000,
+                    "Polyglance 检查更新",
+                    string.IsNullOrWhiteSpace(check.ErrorMessage) ? "检查更新失败" : check.ErrorMessage,
+                    ToolTipIcon.Warning);
             }
         }
         catch (Exception ex)
         {
-            System.Windows.MessageBox.Show($"检查更新失败: {ex.Message}", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Warning);
+            _notifyIcon?.ShowBalloonTip(4000, "Polyglance 检查更新", $"检查更新失败: {ex.Message}", ToolTipIcon.Warning);
         }
     }
 
