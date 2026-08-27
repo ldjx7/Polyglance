@@ -129,7 +129,7 @@ public partial class SettingsWindow : FluentWindow
         BtnCheckUpdate.Content = "检查中...";
         TxtUpdateStatus.Visibility = Visibility.Visible;
         TxtUpdateStatus.Text = "正在连接更新服务器...";
-        TxtUpdateStatus.Foreground = (Brush)FindResource("TextFillColorSecondaryBrush");
+        TxtUpdateStatus.SetResourceReference(TextBlock.ForegroundProperty, "TextFillColorSecondaryBrush");
         PbUpdateProgress.Visibility = Visibility.Collapsed;
         PbUpdateProgress.Value = 0;
 
@@ -177,7 +177,7 @@ public partial class SettingsWindow : FluentWindow
             else if (check.Status == UpdateCheckStatus.UpToDate)
             {
                 TxtUpdateStatus.Text = "当前已是最新版本";
-                TxtUpdateStatus.Foreground = (Brush)FindResource("TextFillColorSecondaryBrush");
+                TxtUpdateStatus.SetResourceReference(TextBlock.ForegroundProperty, "TextFillColorSecondaryBrush");
                 System.Windows.MessageBox.Show("当前已是最新版本！", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             else
