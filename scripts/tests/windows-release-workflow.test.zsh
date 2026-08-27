@@ -97,6 +97,10 @@ require_pattern "$release_workflow" '--draft=false'
 require_pattern "$release_workflow" 'workflow_dispatch:'
 require_pattern "$release_workflow" 'release_tag:'
 require_pattern "$release_workflow" 'RELEASE_TAG:'
+require_pattern "$release_workflow" '$requiredMacAssets'
+require_pattern "$release_workflow" 'appcast.xml'
+require_pattern "$release_workflow" 'Polyglance-$version-macOS.zip'
+require_pattern "$release_workflow" 'Polyglance-$version-macOS.dmg'
 
 native_build_line="$(rg -n --fixed-strings 'build-windows-core.ps1' "$release_workflow" | head -1 | cut -d: -f1)"
 windows_test_line="$(rg -n --fixed-strings 'dotnet test apps/windows/Polyglance.sln' "$release_workflow" | head -1 | cut -d: -f1)"

@@ -137,10 +137,29 @@ jobs:
           ARCHIVE_NAME: ${{ steps.package.outputs.archive }}
           SETUP_NAME: ${{ steps.package.outputs.setup }}
         run: |
+          $version = "${{ steps.version.outputs.number }}"
+          $requiredMacAssets = @(
+            "appcast.xml",
+            "Polyglance-$version-macOS.zip",
+            "Polyglance-$version-macOS.dmg"
+          )
+
           for ($attempt = 1; $attempt -le 60; $attempt++) {
-            gh release view $env:RELEASE_TAG *> $null
-            if ($LASTEXITCODE -eq 0) { break }
-            if ($attempt -eq 60) { throw "The GitHub Release was not created in time." }
+            $releaseJson = gh release view $env:RELEASE_TAG --json assets 2>$null
+            if ($LASTEXITCODE -eq 0) {
+              $assetNames = @(
+                ($releaseJson | ConvertFrom-Json).assets |
+                  ForEach-Object { $_.name }
+              )
+              $missingMacAssets = @(
+                $requiredMacAssets |
+                  Where-Object { $_ -notin $assetNames }
+              )
+              if ($missingMacAssets.Count -eq 0) { break }
+            }
+            if ($attempt -eq 60) {
+              throw "The macOS release assets were not uploaded in time."
+            }
             Start-Sleep -Seconds 10
           }
           gh release upload $env:RELEASE_TAG `
