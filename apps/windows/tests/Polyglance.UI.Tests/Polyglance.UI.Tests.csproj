@@ -25,4 +25,11 @@
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
+
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\..\..\target\release\polyglance_cabi.dll')">
+    <None Include="$(MSBuildThisFileDirectory)..\..\..\..\target\release\polyglance_cabi.dll"
+          Link="polyglance_cabi.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

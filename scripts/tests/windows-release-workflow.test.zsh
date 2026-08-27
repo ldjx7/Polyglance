@@ -63,7 +63,7 @@ require_pattern "$build_app_script" 'README-PORTABLE.txt'
 require_pattern "$build_app_script" 'Stop-Process'
 require_pattern "$build_app_script" 'Polyglance.UI'
 require_pattern "$build_app_script" 'dist/installer'
-require_pattern "$build_app_script" 'Remove-Item $outDir -Recurse -Force'
+require_pattern "$build_app_script" 'Remove-BuildOutputDirectory $outDir'
 require_pattern "$build_app_script" 'IncludeSourceRevisionInInformationalVersion=false'
 
 require_pattern "$recording_toolbar" 'x:Key="RecordingComboBoxStyle"'
@@ -80,6 +80,8 @@ require_pattern "$test_installer_script" 'Refusing to overwrite its uninstall re
 
 require_pattern "$ci_workflow" "build-windows-installer.ps1"
 require_pattern "$ci_workflow" "test-windows-installer.ps1"
+require_pattern "$ci_workflow" "build-windows-core.ps1"
+require_pattern "$ci_workflow" 'target\release'
 
 require_pattern "$release_workflow" 'Polyglance-$version-Windows-x64-Portable.zip'
 require_pattern "$release_workflow" 'Polyglance-$version-Windows-x64-Setup.exe'
@@ -89,5 +91,18 @@ require_pattern "$release_workflow" 'SETUP_NAME:'
 require_pattern "$release_workflow" '$env:SETUP_NAME'
 require_pattern "$release_workflow" '<sparkle:shortVersionString>$version</sparkle:shortVersionString>'
 require_pattern "$release_workflow" '<sparkle:version>$buildVersion</sparkle:version>'
+require_pattern "$release_workflow" "build-windows-core.ps1"
+require_pattern "$release_workflow" 'target\release'
+require_pattern "$release_workflow" '--draft=false'
+require_pattern "$release_workflow" 'workflow_dispatch:'
+require_pattern "$release_workflow" 'release_tag:'
+require_pattern "$release_workflow" 'RELEASE_TAG:'
+
+native_build_line="$(rg -n --fixed-strings 'build-windows-core.ps1' "$release_workflow" | head -1 | cut -d: -f1)"
+windows_test_line="$(rg -n --fixed-strings 'dotnet test apps/windows/Polyglance.sln' "$release_workflow" | head -1 | cut -d: -f1)"
+if (( native_build_line >= windows_test_line )); then
+    print -u2 "The Windows native DLL must be built before the .NET test suite runs."
+    exit 1
+fi
 
 print "Windows release and installer contract passed"

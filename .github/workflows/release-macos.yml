@@ -195,7 +195,7 @@ jobs:
           echo "archive=$archive_name" >> "$GITHUB_OUTPUT"
           echo "dmg=$dmg_name" >> "$GITHUB_OUTPUT"
 
-      - name: Publish the GitHub Release
+      - name: Upload macOS assets to the draft GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -208,7 +208,8 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release edit "$GITHUB_REF_NAME" \
               --title "Polyglance ${{ steps.version.outputs.number }}" \
-              --notes-file "$RELEASE_NOTES"
+              --notes-file "$RELEASE_NOTES" \
+              --draft
             gh release upload "$GITHUB_REF_NAME" \
               "$RELEASE_DIRECTORY/$ARCHIVE_NAME" \
               "$RELEASE_DIRECTORY/$DMG_NAME" \
@@ -221,5 +222,6 @@ jobs:
               "$RELEASE_DIRECTORY/appcast.xml" \
               --verify-tag \
               --notes-file "$RELEASE_NOTES" \
-              --title "Polyglance ${{ steps.version.outputs.number }}"
+              --title "Polyglance ${{ steps.version.outputs.number }}" \
+              --draft
           fi

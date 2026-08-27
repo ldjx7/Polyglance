@@ -57,6 +57,64 @@ public sealed class AppUpdaterTests
     }
 
     [Fact]
+    public async Task MissingLatestWindowsFeedFallsBackToNewestReleaseContainingTheAsset()
+    {
+        var requestedUrls = new List<string>();
+        using var client = CreateClient(request =>
+        {
+            string url = request.RequestUri?.AbsoluteUri ?? "";
+            requestedUrls.Add(url);
+            return url switch
+            {
+                "https://github.com/ldjx7/Polyglance/releases/latest/download/appcast-windows.xml" =>
+                    new HttpResponseMessage(HttpStatusCode.NotFound),
+                "https://api.github.com/repos/ldjx7/Polyglance/releases?per_page=20" =>
+                    Response("""
+                        [
+                          {
+                            "draft": false,
+                            "assets": [
+                              {
+                                "name": "appcast.xml",
+                                "browser_download_url": "https://downloads.example.test/beta.6/appcast.xml"
+                              }
+                            ]
+                          },
+                          {
+                            "draft": false,
+                            "assets": [
+                              {
+                                "name": "appcast-windows.xml",
+                                "browser_download_url": "https://downloads.example.test/beta.5/appcast-windows.xml"
+                              }
+                            ]
+                          }
+                        ]
+                        """),
+                "https://downloads.example.test/beta.5/appcast-windows.xml" =>
+                    Response(Appcast("0.0.4-beta.5", "0.0.4.3")),
+                _ => throw new InvalidOperationException($"Unexpected update request: {url}")
+            };
+        });
+
+        UpdateCheckResult result = await AppUpdater.CheckForUpdatesAsync(
+            "https://github.com/ldjx7/Polyglance/releases/latest/download/appcast-windows.xml",
+            client,
+            "0.0.4-beta.4",
+            new Version(0, 0, 4, 2));
+
+        Assert.Equal(UpdateCheckStatus.UpdateAvailable, result.Status);
+        Assert.Equal("0.0.4-beta.5", result.Update?.Version);
+        Assert.Equal(
+            [
+                "https://github.com/ldjx7/Polyglance/releases/latest/download/appcast-windows.xml",
+                "https://api.github.com/repos/ldjx7/Polyglance/releases?per_page=20",
+                "https://downloads.example.test/beta.5/appcast-windows.xml"
+            ],
+            requestedUrls);
+    }
+
+    [Fact]
     public async Task InvalidXmlIsReportedInsteadOfBeingCalledUpToDate()
     {
         using var client = CreateClient(_ => Response("not xml"));

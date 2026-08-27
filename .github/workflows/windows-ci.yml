@@ -51,6 +51,12 @@ jobs:
       - name: Run Rust tests
         run: cargo test --workspace
 
+      - name: Build the Windows native test dependency
+        shell: pwsh
+        run: |
+          ./scripts/build-windows-core.ps1
+          (Resolve-Path "target\release").Path >> $env:GITHUB_PATH
+
       - name: Run Windows tests
         run: dotnet test apps/windows/Polyglance.sln --configuration Release
 

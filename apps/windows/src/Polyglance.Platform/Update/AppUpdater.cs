@@ -1,9 +1,11 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Xml;
@@ -58,13 +60,10 @@ public static class AppUpdater
 
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, appcastUrl);
-            request.Headers.UserAgent.Add(new ProductInfoHeaderValue("Polyglance", currentSemanticVersion));
-            request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true, NoStore = true };
-
-            using HttpResponseMessage response = await httpClient.SendAsync(request);
-            response.EnsureSuccessStatusCode();
-            string xmlContent = await response.Content.ReadAsStringAsync();
+            string xmlContent = await DownloadAppcastAsync(
+                appcastUrl,
+                httpClient,
+                currentSemanticVersion);
 
             var doc = XDocument.Parse(xmlContent);
             XNamespace sparkleNs = "http://www.andymatuschak.org/xml-namespaces/sparkle";
@@ -145,6 +144,132 @@ public static class AppUpdater
         Status = UpdateCheckStatus.Failed,
         ErrorMessage = message
     };
+
+    private static async Task<string> DownloadAppcastAsync(
+        string appcastUrl,
+        HttpClient httpClient,
+        string currentSemanticVersion)
+    {
+        using HttpResponseMessage response = await SendUpdateRequestAsync(
+            httpClient,
+            appcastUrl,
+            currentSemanticVersion);
+
+        if (response.StatusCode == HttpStatusCode.NotFound
+            && TryCreateGitHubReleaseLookup(appcastUrl, out string? releasesApiUrl, out string? assetName))
+        {
+            string? fallbackUrl = await FindNewestGitHubReleaseAssetAsync(
+                httpClient,
+                releasesApiUrl!,
+                assetName!,
+                currentSemanticVersion);
+            if (!string.IsNullOrWhiteSpace(fallbackUrl))
+            {
+                using HttpResponseMessage fallbackResponse = await SendUpdateRequestAsync(
+                    httpClient,
+                    fallbackUrl,
+                    currentSemanticVersion);
+                fallbackResponse.EnsureSuccessStatusCode();
+                return await fallbackResponse.Content.ReadAsStringAsync();
+            }
+        }
+
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync();
+    }
+
+    private static async Task<HttpResponseMessage> SendUpdateRequestAsync(
+        HttpClient httpClient,
+        string url,
+        string currentSemanticVersion)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.UserAgent.Add(new ProductInfoHeaderValue("Polyglance", currentSemanticVersion));
+        request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true, NoStore = true };
+        return await httpClient.SendAsync(request);
+    }
+
+    private static bool TryCreateGitHubReleaseLookup(
+        string appcastUrl,
+        out string? releasesApiUrl,
+        out string? assetName)
+    {
+        releasesApiUrl = null;
+        assetName = null;
+        if (!Uri.TryCreate(appcastUrl, UriKind.Absolute, out Uri? uri)
+            || !uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || !uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        string[] segments = uri.AbsolutePath
+            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length != 6
+            || !segments[2].Equals("releases", StringComparison.OrdinalIgnoreCase)
+            || !segments[3].Equals("latest", StringComparison.OrdinalIgnoreCase)
+            || !segments[4].Equals("download", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        string owner = Uri.EscapeDataString(segments[0]);
+        string repository = Uri.EscapeDataString(segments[1]);
+        assetName = Uri.UnescapeDataString(segments[5]);
+        releasesApiUrl = $"https://api.github.com/repos/{owner}/{repository}/releases?per_page=20";
+        return !string.IsNullOrWhiteSpace(assetName);
+    }
+
+    private static async Task<string?> FindNewestGitHubReleaseAssetAsync(
+        HttpClient httpClient,
+        string releasesApiUrl,
+        string assetName,
+        string currentSemanticVersion)
+    {
+        using HttpResponseMessage response = await SendUpdateRequestAsync(
+            httpClient,
+            releasesApiUrl,
+            currentSemanticVersion);
+        response.EnsureSuccessStatusCode();
+        string json = await response.Content.ReadAsStringAsync();
+
+        using JsonDocument document = JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+            return null;
+
+        foreach (JsonElement release in document.RootElement.EnumerateArray())
+        {
+            if (release.TryGetProperty("draft", out JsonElement draft)
+                && draft.ValueKind == JsonValueKind.True)
+            {
+                continue;
+            }
+            if (!release.TryGetProperty("assets", out JsonElement assets)
+                || assets.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            foreach (JsonElement asset in assets.EnumerateArray())
+            {
+                if (!asset.TryGetProperty("name", out JsonElement name)
+                    || !string.Equals(name.GetString(), assetName, StringComparison.OrdinalIgnoreCase)
+                    || !asset.TryGetProperty("browser_download_url", out JsonElement downloadUrl))
+                {
+                    continue;
+                }
+
+                string? value = downloadUrl.GetString();
+                if (Uri.TryCreate(value, UriKind.Absolute, out Uri? downloadUri)
+                    && downloadUri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+                {
+                    return downloadUri.AbsoluteUri;
+                }
+            }
+        }
+
+        return null;
+    }
 
     private static string? VersionFromTitle(string title)
     {

@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing version tag whose Windows assets should be rebuilt
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -16,25 +22,29 @@ jobs:
   release:
     runs-on: windows-2025
     timeout-minutes: 45
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
 
     steps:
       - name: Check out the tagged commit
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Require the tag commit to be on main
         shell: pwsh
         run: |
           git fetch --no-tags origin main
-          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          $taggedCommit = git rev-parse HEAD
+          git merge-base --is-ancestor $taggedCommit origin/main
           if ($LASTEXITCODE -ne 0) { throw "The tag commit is not on main." }
 
       - name: Validate version and release notes
         id: version
         shell: pwsh
         run: |
-          $tag = $env:GITHUB_REF_NAME
+          $tag = $env:RELEASE_TAG
           if ($tag -notmatch '^v([0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?)$') {
             throw "Expected a semantic version tag such as v1.2.3."
           }
@@ -57,6 +67,12 @@ jobs:
 
       - name: Run Rust tests
         run: cargo test --workspace
+
+      - name: Build the Windows native test dependency
+        shell: pwsh
+        run: |
+          ./scripts/build-windows-core.ps1
+          (Resolve-Path "target\release").Path >> $env:GITHUB_PATH
 
       - name: Run Windows tests
         run: dotnet test apps/windows/Polyglance.sln --configuration Release
@@ -90,7 +106,7 @@ jobs:
           ./scripts/test-windows-installer.ps1 `
             -InstallerPath (Join-Path $releaseDirectory $setupName)
 
-          $downloadUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME/$archiveName"
+          $downloadUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:RELEASE_TAG/$archiveName"
           $buildVersion = "$numericVersion.${{ github.run_number }}"
           $appcast = @"
           <?xml version="1.0" encoding="utf-8"?>
@@ -122,13 +138,14 @@ jobs:
           SETUP_NAME: ${{ steps.package.outputs.setup }}
         run: |
           for ($attempt = 1; $attempt -le 60; $attempt++) {
-            gh release view $env:GITHUB_REF_NAME *> $null
+            gh release view $env:RELEASE_TAG *> $null
             if ($LASTEXITCODE -eq 0) { break }
             if ($attempt -eq 60) { throw "The GitHub Release was not created in time." }
             Start-Sleep -Seconds 10
           }
-          gh release upload $env:GITHUB_REF_NAME `
+          gh release upload $env:RELEASE_TAG `
             (Join-Path $env:RELEASE_DIRECTORY $env:ARCHIVE_NAME) `
             (Join-Path $env:RELEASE_DIRECTORY $env:SETUP_NAME) `
             (Join-Path $env:RELEASE_DIRECTORY "appcast-windows.xml") `
             --clobber
+          gh release edit $env:RELEASE_TAG --draft=false --latest

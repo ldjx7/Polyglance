@@ -30,6 +30,7 @@ require_pattern "generate_appcast"
 require_pattern "gh release"
 require_pattern 'docs/releases/${GITHUB_REF_NAME}.md'
 require_pattern '--notes-file "$RELEASE_NOTES"'
+require_pattern '--draft'
 require_pattern "macos-15"
 require_pattern "create-macos-dmg.sh"
 require_pattern 'Polyglance-${VERSION}-macOS.dmg'
