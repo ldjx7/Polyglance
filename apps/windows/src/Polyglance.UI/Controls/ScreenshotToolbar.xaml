@@ -68,7 +68,7 @@
     </UserControl.Resources>
 
     <StackPanel Orientation="Vertical">
-        <!-- 二级画笔与调色板工具栏 (展开时显示) -->
+        <!-- 样式选择目前固定为跨端一致的默认值；不在截图内容上再叠一层菜单。 -->
         <Border x:Name="SubToolbarBorder"
                 Background="#FFFFFF"
                 BorderBrush="{StaticResource ToolbarBorderBrush}"
@@ -151,6 +151,12 @@
                     <Button x:Name="BtnMosaic" Style="{StaticResource ToolbarButtonStyle}" ToolTip="马赛克" AutomationProperties.Name="马赛克" Click="OnToolClicked" Tag="Mosaic">
                         <Path Data="M2,2 H8 V8 H2 Z M9,2 H15 V8 H9 Z M16,2 H22 V8 H16 Z M2,9 H8 V15 H2 Z M9,9 H15 V15 H9 Z M16,9 H22 V15 H16 Z M2,16 H8 V22 H2 Z M9,16 H15 V22 H9 Z M16,16 H22 V22 H16 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="14" Height="14" Stretch="Uniform"/>
                     </Button>
+                    <Button x:Name="BtnNumber" Style="{StaticResource ToolbarButtonStyle}" ToolTip="序号" AutomationProperties.Name="序号" Click="OnToolClicked" Tag="Number">
+                        <Grid Width="16" Height="16">
+                            <Ellipse Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.7"/>
+                            <TextBlock Text="1" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                        </Grid>
+                    </Button>
                 </StackPanel>
 
                 <StackPanel x:Name="ActionRow" Orientation="Horizontal" VerticalAlignment="Center">
@@ -159,6 +165,9 @@
                     </Button>
                     <Button x:Name="BtnRedo" Style="{StaticResource ToolbarButtonStyle}" ToolTip="重做" AutomationProperties.Name="重做" Click="OnActionClicked" Tag="Redo" IsEnabled="False">
                         <Path Data="M18.8,11.3 C17.1,9.3 14.5,8 11.5,8 C6.3,8 2,12.3 2,17.5 C2,18.7 2.3,19.9 2.9,21.1 L4.6,20.2 C4.2,19.4 4,18.5 4,17.5 C4,13.4 7.4,10 11.5,10 C14.1,10 16.1,11 17.4,12.6 L14,16 H22 V8 L18.8,11.3 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="14" Height="14" Stretch="Uniform"/>
+                    </Button>
+                    <Button x:Name="BtnFinish" Style="{StaticResource ToolbarButtonStyle}" ToolTip="完成标注" AutomationProperties.Name="完成标注" Click="OnActionClicked" Tag="Finish" Visibility="Collapsed">
+                        <Path Data="M4,12 L9,17 L20,5" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="15" Height="15" Stretch="Uniform"/>
                     </Button>
                     <Button x:Name="BtnOCR" Style="{StaticResource ToolbarButtonStyle}" ToolTip="OCR" AutomationProperties.Name="OCR" Click="OnActionClicked" Tag="OCR">
                         <Grid Width="16" Height="16">

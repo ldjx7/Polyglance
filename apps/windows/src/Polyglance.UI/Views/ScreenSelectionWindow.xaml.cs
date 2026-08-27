@@ -51,7 +51,10 @@ public partial class ScreenSelectionWindow : Window
     private readonly List<UIElement> _annotationHistory = new();
     private readonly List<UIElement> _redoStack = new();
     private Shape? _currentDrawingShape;
+    private Canvas? _currentMosaicStroke;
+    private Point _lastMosaicPoint;
     private Point _drawingStart;
+    private int _nextNumber = 1;
 
     public ScreenSelectionWindow(
         BitmapSource fullScreenBitmap,
@@ -123,9 +126,19 @@ public partial class ScreenSelectionWindow : Window
         // 2. 左键处理
         if (e.LeftButton == MouseButtonState.Pressed)
         {
-            if (_activeTool != "None" && !_selectionRect.IsEmpty && _selectionRect.Contains(pt))
+            if (_activeTool != "None" && !_selectionRect.IsEmpty)
             {
-                // 标注模式：在选区内开始绘制
+                // Resize/expand handles keep priority while a markup tool is active.
+                // The interior remains the drawing surface, so dragging there never
+                // accidentally moves the capture bounds.
+                if (TryBeginSelectionEdit(pt, allowsMove: false))
+                    return;
+
+                if (!_selectionRect.Contains(pt))
+                {
+                    SystemSounds.Beep.Play();
+                    return;
+                }
                 _drawingStart = pt;
                 StartAnnotationDrawing(pt);
                 return;
@@ -140,31 +153,7 @@ public partial class ScreenSelectionWindow : Window
                     return;
                 }
 
-                var target = DetectEditTarget(pt, _selectionRect, handleTolerance: 8);
-                _currentEditTarget = target;
-                _dragStart = pt;
-                _initialSelection = _selectionRect;
-                Toolbar.Visibility = Visibility.Collapsed;
-
-                switch (target)
-                {
-                    case NativeSelectionEditTarget.Move:
-                        _phase = SelectionPhase.Moving;
-                        Cursor = Cursors.SizeAll;
-                        break;
-
-                    case NativeSelectionEditTarget.Expand:
-                        // 选区外部点击：按照 macOS 逻辑，扩大选区至包含当前鼠标点
-                        _phase = SelectionPhase.Expanding;
-                        _selectionRect = ExpandSelectionToward(_initialSelection, pt);
-                        UpdateSelectionDisplay();
-                        break;
-
-                    default:
-                        // 拖拽控制手柄缩放
-                        _phase = SelectionPhase.Resizing;
-                        break;
-                }
+                TryBeginSelectionEdit(pt, allowsMove: true);
                 return;
             }
 
@@ -186,7 +175,7 @@ public partial class ScreenSelectionWindow : Window
     {
         Point pt = e.GetPosition(this);
 
-        if (_currentDrawingShape != null)
+        if (_currentDrawingShape != null || _currentMosaicStroke != null)
         {
             UpdateAnnotationDrawing(pt);
             return;
@@ -285,11 +274,15 @@ public partial class ScreenSelectionWindow : Window
 
     private void OnMouseUp(object sender, MouseButtonEventArgs e)
     {
-        if (_currentDrawingShape != null)
+        if (_currentDrawingShape != null || _currentMosaicStroke != null)
         {
-            _annotationHistory.Add(_currentDrawingShape);
+            UIElement finished = _currentDrawingShape is not null
+                ? _currentDrawingShape
+                : _currentMosaicStroke!;
+            _annotationHistory.Add(finished);
             _redoStack.Clear();
             _currentDrawingShape = null;
+            _currentMosaicStroke = null;
             UpdateUndoRedoButtons();
             return;
         }
@@ -333,7 +326,7 @@ public partial class ScreenSelectionWindow : Window
     {
         if (_activeTool != "None")
         {
-            _activeTool = "None";
+            FinishAnnotationMode();
             Cursor = Cursors.Cross;
             return;
         }
@@ -360,6 +353,7 @@ public partial class ScreenSelectionWindow : Window
         AnnotationCanvas.Children.Clear();
         _annotationHistory.Clear();
         _redoStack.Clear();
+        _nextNumber = 1;
         UpdateMask(Rect.Empty);
         Cursor = Cursors.Cross;
     }
@@ -418,13 +412,18 @@ public partial class ScreenSelectionWindow : Window
 
     private void UpdateHoverCursor(Point pt)
     {
-        if (_activeTool != "None")
+        var target = DetectEditTarget(pt, _selectionRect, handleTolerance: 8);
+        if (_activeTool != "None" && target == NativeSelectionEditTarget.Move)
         {
-            Cursor = Cursors.Pen;
+            Cursor = Cursors.Cross;
             return;
         }
 
-        var target = DetectEditTarget(pt, _selectionRect, handleTolerance: 8);
+        SetCursorForEditTarget(target);
+    }
+
+    private void SetCursorForEditTarget(NativeSelectionEditTarget target)
+    {
         switch (target)
         {
             case NativeSelectionEditTarget.TopLeft:
@@ -451,6 +450,40 @@ public partial class ScreenSelectionWindow : Window
                 Cursor = Cursors.Cross;
                 break;
         }
+    }
+
+    private bool TryBeginSelectionEdit(Point pt, bool allowsMove)
+    {
+        if (_phase != SelectionPhase.Selected || _selectionRect.IsEmpty)
+            return false;
+
+        NativeSelectionEditTarget target = DetectEditTarget(pt, _selectionRect, handleTolerance: 8);
+        if (!allowsMove && target == NativeSelectionEditTarget.Move)
+            return false;
+
+        _currentEditTarget = target;
+        _dragStart = pt;
+        _initialSelection = _selectionRect;
+        Toolbar.Visibility = Visibility.Collapsed;
+
+        switch (target)
+        {
+            case NativeSelectionEditTarget.Move:
+                _phase = SelectionPhase.Moving;
+                Cursor = Cursors.SizeAll;
+                break;
+            case NativeSelectionEditTarget.Expand:
+                _phase = SelectionPhase.Expanding;
+                _selectionRect = ExpandSelectionToward(_initialSelection, pt);
+                UpdateSelectionDisplay();
+                SetCursorForEditTarget(target);
+                break;
+            default:
+                _phase = SelectionPhase.Resizing;
+                SetCursorForEditTarget(target);
+                break;
+        }
+        return true;
     }
 
     private void UpdateSelectionDisplay()
@@ -559,6 +592,26 @@ public partial class ScreenSelectionWindow : Window
     private void OnToolSelected(string tool)
     {
         _activeTool = tool;
+        SetAnnotationMode(tool != "None");
+        Cursor = tool == "None" ? Cursors.Arrow : Cursors.Cross;
+    }
+
+    private void SetAnnotationMode(bool isAnnotating)
+    {
+        Toolbar.SetAnnotationMode(isAnnotating);
+        if (!_selectionRect.IsEmpty)
+        {
+            UpdateSelectionDisplay();
+            PositionToolbar();
+        }
+    }
+
+    private void FinishAnnotationMode()
+    {
+        _activeTool = "None";
+        Toolbar.ClearSelectedTool();
+        SetAnnotationMode(false);
+        Cursor = Cursors.Arrow;
     }
 
     private void UpdateUndoRedoButtons()
@@ -614,18 +667,17 @@ public partial class ScreenSelectionWindow : Window
                 break;
 
             case "Arrow":
-                var arrowLine = new Line
+                var arrowPath = new System.Windows.Shapes.Path
                 {
-                    X1 = pt.X,
-                    Y1 = pt.Y,
-                    X2 = pt.X,
-                    Y2 = pt.Y,
                     Stroke = brush,
                     StrokeThickness = strokeSize,
-                    StrokeEndLineCap = PenLineCap.Round
+                    StrokeStartLineCap = PenLineCap.Round,
+                    StrokeEndLineCap = PenLineCap.Round,
+                    StrokeLineJoin = PenLineJoin.Round,
+                    Data = MakeArrowGeometry(pt, pt, strokeSize)
                 };
-                AnnotationCanvas.Children.Add(arrowLine);
-                _currentDrawingShape = arrowLine;
+                AnnotationCanvas.Children.Add(arrowPath);
+                _currentDrawingShape = arrowPath;
                 break;
 
             case "Text":
@@ -662,22 +714,43 @@ public partial class ScreenSelectionWindow : Window
                         tb.IsReadOnly = true;
                     }
                 };
+                MakeTextMovable(tb);
                 break;
 
             case "Mosaic":
-                var mosaicRect = new Rectangle
+                double mosaicDiameter = Math.Max(18, strokeSize * 5);
+                _currentMosaicStroke = MosaicStrokeBuilder.Begin(
+                    _fullScreenBitmap,
+                    OverlayViewSize(),
+                    pt,
+                    mosaicDiameter);
+                _lastMosaicPoint = pt;
+                AnnotationCanvas.Children.Add(_currentMosaicStroke);
+                break;
+
+            case "Number":
+                var marker = new Border
                 {
-                    Fill = new SolidColorBrush(Color.FromArgb(140, 120, 120, 120)),
-                    Stroke = Brushes.Transparent,
-                    Width = 16,
-                    Height = 16,
-                    RadiusX = 2,
-                    RadiusY = 2
+                    Width = 24,
+                    Height = 24,
+                    CornerRadius = new CornerRadius(12),
+                    Background = brush,
+                    Child = new TextBlock
+                    {
+                        Text = _nextNumber.ToString(),
+                        Foreground = Brushes.White,
+                        FontWeight = FontWeights.Bold,
+                        FontSize = 13,
+                        HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                        VerticalAlignment = System.Windows.VerticalAlignment.Center
+                    }
                 };
-                Canvas.SetLeft(mosaicRect, pt.X - 8);
-                Canvas.SetTop(mosaicRect, pt.Y - 8);
-                AnnotationCanvas.Children.Add(mosaicRect);
-                _annotationHistory.Add(mosaicRect);
+                _nextNumber++;
+                Canvas.SetLeft(marker, pt.X - 12);
+                Canvas.SetTop(marker, pt.Y - 12);
+                AnnotationCanvas.Children.Add(marker);
+                _annotationHistory.Add(marker);
+                _redoStack.Clear();
                 UpdateUndoRedoButtons();
                 break;
         }
@@ -714,27 +787,27 @@ public partial class ScreenSelectionWindow : Window
         {
             polyline.Points.Add(new Point(curX, curY));
         }
-        else if (_currentDrawingShape is Line line)
+        else if (_currentDrawingShape is System.Windows.Shapes.Path path && _activeTool == "Arrow")
         {
-            line.X2 = curX;
-            line.Y2 = curY;
+            path.Data = MakeArrowGeometry(_drawingStart, new Point(curX, curY), path.StrokeThickness);
         }
-        else if (_activeTool == "Mosaic")
+        else if (_currentMosaicStroke is not null && _activeTool == "Mosaic")
         {
-            var mosaicRect = new Rectangle
+            double diameter = Math.Max(18, Toolbar.CurrentStrokeSize * 5);
+            Point current = new(curX, curY);
+            foreach (Point sample in MosaicStrokeBuilder.Interpolate(
+                         _lastMosaicPoint,
+                         current,
+                         Math.Max(2, diameter / 4)))
             {
-                Fill = new SolidColorBrush(Color.FromArgb(140, 120, 120, 120)),
-                Stroke = Brushes.Transparent,
-                Width = 16,
-                Height = 16,
-                RadiusX = 2,
-                RadiusY = 2
-            };
-            Canvas.SetLeft(mosaicRect, curX - 8);
-            Canvas.SetTop(mosaicRect, curY - 8);
-            AnnotationCanvas.Children.Add(mosaicRect);
-            _annotationHistory.Add(mosaicRect);
-            UpdateUndoRedoButtons();
+                MosaicStrokeBuilder.AddStamp(
+                    _currentMosaicStroke,
+                    _fullScreenBitmap,
+                    OverlayViewSize(),
+                    sample,
+                    diameter);
+            }
+            _lastMosaicPoint = current;
         }
     }
 
@@ -765,6 +838,10 @@ public partial class ScreenSelectionWindow : Window
                     AnnotationCanvas.Children.Add(last);
                     UpdateUndoRedoButtons();
                 }
+                break;
+
+            case "Finish":
+                FinishAnnotationMode();
                 break;
 
             case "Copy":
@@ -923,27 +1000,31 @@ public partial class ScreenSelectionWindow : Window
         if (_annotationHistory.Count == 0)
             return baseCropped;
 
-        // Annotations were drawn in overlay DIPs, so compositing them onto the
-        // physical-pixel crop needs both the selection offset and the DIP-to-pixel
-        // scale. Without the scale they would land at the wrong size and position
-        // on any display that is not at 100%.
+        // Render the live annotation canvas to its own transparent bitmap first.
+        // A VisualBrush can lose its live visual when the capture window is closed
+        // immediately after Pin/Copy; materialising the layer here makes every
+        // output path consume stable pixels.
         Size viewSize = OverlayViewSize();
+        AnnotationCanvas.UpdateLayout();
+        int overlayWidth = Math.Max(1, (int)Math.Ceiling(viewSize.Width));
+        int overlayHeight = Math.Max(1, (int)Math.Ceiling(viewSize.Height));
+        var annotationLayer = new RenderTargetBitmap(
+            overlayWidth, overlayHeight, 96, 96, PixelFormats.Pbgra32);
+        annotationLayer.Render(AnnotationCanvas);
+        annotationLayer.Freeze();
+        Int32Rect annotationRegion = CaptureRegionGeometry.ToBitmapRegion(
+            _selectionRect,
+            viewSize,
+            annotationLayer.PixelWidth,
+            annotationLayer.PixelHeight);
+        BitmapSource annotationCrop = ScreenCapture.Crop(annotationLayer, annotationRegion);
+
         var rtb = new RenderTargetBitmap(region.Width, region.Height, 96, 96, PixelFormats.Pbgra32);
-        double scaleX = region.Width / Math.Max(_selectionRect.Width, 0.0001);
-        double scaleY = region.Height / Math.Max(_selectionRect.Height, 0.0001);
         var dv = new DrawingVisual();
         using (var dc = dv.RenderOpen())
         {
             dc.DrawImage(baseCropped, new Rect(0, 0, region.Width, region.Height));
-            dc.PushTransform(new ScaleTransform(scaleX, scaleY));
-            dc.PushTransform(new TranslateTransform(-_selectionRect.X, -_selectionRect.Y));
-            foreach (var elem in _annotationHistory)
-            {
-                var brush = new VisualBrush(elem);
-                dc.DrawRectangle(brush, null, new Rect(0, 0, viewSize.Width, viewSize.Height));
-            }
-            dc.Pop();
-            dc.Pop();
+            dc.DrawImage(annotationCrop, new Rect(0, 0, region.Width, region.Height));
         }
         rtb.Render(dv);
         rtb.Freeze();
@@ -1036,7 +1117,7 @@ public partial class ScreenSelectionWindow : Window
         {
             OnActionTriggered("Redo");
         }
-        else if (_phase == SelectionPhase.Selected && !_selectionRect.IsEmpty)
+        else if (_phase == SelectionPhase.Selected && !_selectionRect.IsEmpty && _activeTool == "None")
         {
             double step = (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift ? 10 : 1;
             double dx = 0, dy = 0;
@@ -1062,6 +1143,70 @@ public partial class ScreenSelectionWindow : Window
 
     internal MagnifierControl ColorMagnifier => Magnifier;
 
+    internal bool AreSelectionHandlesVisible =>
+        SelectionBorder.Visibility == Visibility.Visible &&
+        HandlesCanvas.Visibility == Visibility.Visible;
+
+    internal Rect SelectionRectForTesting => _selectionRect;
+
+    internal int AnnotationCountForTesting => _annotationHistory.Count;
+
+    internal void SetSelectionForTesting(Rect selection)
+    {
+        _selectionRect = selection;
+        _phase = SelectionPhase.Selected;
+        UpdateSelectionDisplay();
+        PositionToolbar();
+    }
+
+    internal void SelectAnnotationToolForTesting(string tool) => OnToolSelected(tool);
+
+    internal void UpdatePointerForTesting(Point point) => UpdateHoverCursor(point);
+
+    internal bool BeginSelectionEditForTesting(Point point) =>
+        TryBeginSelectionEdit(point, allowsMove: false);
+
+    internal void ContinueSelectionEditForTesting(Point point)
+    {
+        switch (_phase)
+        {
+            case SelectionPhase.Resizing:
+                _selectionRect = ApplyResize(_initialSelection, _currentEditTarget, point);
+                break;
+            case SelectionPhase.Expanding:
+                _selectionRect = ExpandSelectionToward(_initialSelection, point);
+                break;
+            case SelectionPhase.Moving:
+                _selectionRect = ApplySharedEdit(_initialSelection, _currentEditTarget, point);
+                break;
+        }
+        UpdateSelectionDisplay();
+    }
+
+    internal void EndSelectionEditForTesting()
+    {
+        _phase = SelectionPhase.Selected;
+        _currentEditTarget = NativeSelectionEditTarget.None;
+        PositionToolbar();
+    }
+
+    internal void AddRectangleAnnotationForTesting(Rect rect, Color color)
+    {
+        var element = new Rectangle
+        {
+            Width = rect.Width,
+            Height = rect.Height,
+            Stroke = new SolidColorBrush(color),
+            StrokeThickness = 4
+        };
+        Canvas.SetLeft(element, rect.X);
+        Canvas.SetTop(element, rect.Y);
+        AnnotationCanvas.Children.Add(element);
+        _annotationHistory.Add(element);
+    }
+
+    internal BitmapSource? RenderedSelectionForTesting() => GetRenderedCroppedBitmap();
+
     internal bool HandleColorShortcut(Key key, ModifierKeys modifiers)
     {
         if (key != Key.C
@@ -1078,5 +1223,71 @@ public partial class ScreenSelectionWindow : Window
         else
             CopyCurrentColor();
         return true;
+    }
+
+    private static Geometry MakeArrowGeometry(Point start, Point end, double strokeSize)
+    {
+        double dx = end.X - start.X;
+        double dy = end.Y - start.Y;
+        double length = Math.Sqrt(dx * dx + dy * dy);
+        if (length < 0.001)
+        {
+            return new LineGeometry(start, end);
+        }
+
+        double angle = Math.Atan2(dy, dx);
+        double headLength = Math.Min(Math.Max(strokeSize * 4, 8), length * 0.5);
+        const double headAngle = Math.PI / 7;
+        Point firstHead = new(
+            end.X - headLength * Math.Cos(angle - headAngle),
+            end.Y - headLength * Math.Sin(angle - headAngle));
+        Point secondHead = new(
+            end.X - headLength * Math.Cos(angle + headAngle),
+            end.Y - headLength * Math.Sin(angle + headAngle));
+        var geometry = new StreamGeometry();
+        using (StreamGeometryContext context = geometry.Open())
+        {
+            context.BeginFigure(start, false, false);
+            context.LineTo(end, true, false);
+            context.BeginFigure(end, false, false);
+            context.LineTo(firstHead, true, false);
+            context.BeginFigure(end, false, false);
+            context.LineTo(secondHead, true, false);
+        }
+        geometry.Freeze();
+        return geometry;
+    }
+
+    private static void MakeTextMovable(System.Windows.Controls.TextBox textBox)
+    {
+        Point dragOffset = default;
+        bool isDragging = false;
+        textBox.PreviewMouseLeftButtonDown += (_, eventArgs) =>
+        {
+            if (!textBox.IsReadOnly)
+                return;
+            Point point = eventArgs.GetPosition(textBox.Parent as IInputElement);
+            dragOffset = new Point(point.X - Canvas.GetLeft(textBox), point.Y - Canvas.GetTop(textBox));
+            isDragging = true;
+            textBox.CaptureMouse();
+            eventArgs.Handled = true;
+        };
+        textBox.PreviewMouseMove += (_, eventArgs) =>
+        {
+            if (!isDragging || eventArgs.LeftButton != MouseButtonState.Pressed)
+                return;
+            Point point = eventArgs.GetPosition(textBox.Parent as IInputElement);
+            Canvas.SetLeft(textBox, Math.Max(0, point.X - dragOffset.X));
+            Canvas.SetTop(textBox, Math.Max(0, point.Y - dragOffset.Y));
+            eventArgs.Handled = true;
+        };
+        textBox.PreviewMouseLeftButtonUp += (_, eventArgs) =>
+        {
+            if (!isDragging)
+                return;
+            isDragging = false;
+            textBox.ReleaseMouseCapture();
+            eventArgs.Handled = true;
+        };
     }
 }

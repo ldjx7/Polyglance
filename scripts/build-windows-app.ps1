@@ -14,6 +14,28 @@ Set-Location $rootDir
 $outDir = "dist/windows"
 $installerOutDir = "dist/installer"
 
+function Remove-BuildOutputDirectory([string]$path) {
+    if (-not (Test-Path $path)) {
+        return
+    }
+
+    # Defender/Explorer can hold a just-created runtime DLL briefly even after
+    # Polyglance itself has exited. Retrying keeps each local build clean without
+    # falling back to stale files from a previous publish.
+    for ($attempt = 1; $attempt -le 20; $attempt++) {
+        try {
+            Remove-Item $path -Recurse -Force -ErrorAction Stop
+            return
+        }
+        catch {
+            if ($attempt -eq 20) {
+                throw "Unable to clear previous build output '$path': $($_.Exception.Message)"
+            }
+            Start-Sleep -Milliseconds 500
+        }
+    }
+}
+
 # Local builds must not leave a running executable locking the publish output.
 foreach ($processName in @("Polyglance.UI", "Polyglance")) {
     Get-Process -Name $processName -ErrorAction SilentlyContinue |
@@ -21,12 +43,8 @@ foreach ($processName in @("Polyglance.UI", "Polyglance")) {
 }
 
 # Keep only artifacts created by this build invocation.
-if (Test-Path $outDir) {
-    Remove-Item $outDir -Recurse -Force
-}
-if (Test-Path $installerOutDir) {
-    Remove-Item $installerOutDir -Recurse -Force
-}
+Remove-BuildOutputDirectory $outDir
+Remove-BuildOutputDirectory $installerOutDir
 New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 
 Write-Host "========================================" -ForegroundColor Cyan

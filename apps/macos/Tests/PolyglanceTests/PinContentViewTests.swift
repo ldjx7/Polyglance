@@ -57,6 +57,73 @@ final class PinContentViewTests: XCTestCase {
         panel.close()
     }
 
+    func testContextMenuEntersColorPickingAndCopiesTheDisplayedPixel() throws {
+        _ = NSApplication.shared
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        let image = makeSolidImage(red: 0x12, green: 0x34, blue: 0x56)
+        let view = PinContentView(image: image, colorPasteboard: pasteboard)
+        let panel = PinPanel(
+            contentRect: CGRect(x: 100, y: 100, width: 200, height: 120),
+            styleMask: [.borderless, .resizable, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isReleasedWhenClosed = false
+        panel.contentView = view
+        panel.orderFront(nil)
+
+        let colorPicker = try XCTUnwrap(
+            view.makeContextMenu().items.first(where: { $0.title == "取色" })
+        )
+        XCTAssertTrue(try sendPinMenuAction(colorPicker))
+        XCTAssertTrue(view.isColorPicking)
+
+        view.updateColorPicking(at: CGPoint(x: 100, y: 60))
+        XCTAssertEqual(view.currentPixelSample?.hex, "#123456")
+        view.keyDown(with: keyEvent(window: panel, modifiers: [], characters: "c"))
+        XCTAssertEqual(pasteboard.string(forType: .string), "#123456")
+
+        let exitPicker = try XCTUnwrap(
+            view.makeContextMenu().items.first(where: { $0.title == "退出取色" })
+        )
+        XCTAssertTrue(try sendPinMenuAction(exitPicker))
+        XCTAssertFalse(view.isColorPicking)
+        panel.close()
+    }
+
+    func testTextAnnotationMakesPinKeyAndCommitsTypedText() throws {
+        _ = NSApplication.shared
+        let image = makeTestImage()
+        let editor = PinAnnotationOverlayView(sourceImage: image)
+        let panel = PinPanel(
+            contentRect: CGRect(x: 100, y: 100, width: 240, height: 160),
+            styleMask: [.borderless, .resizable, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isReleasedWhenClosed = false
+        panel.contentView = editor
+        panel.orderFront(nil)
+
+        editor.beginEditing()
+        editor.selectTool(.text)
+        editor.beginStroke(at: CGPoint(x: 40, y: 80))
+
+        let field = try XCTUnwrap(editor.subviews.compactMap { $0 as? NSTextField }.first)
+        XCTAssertTrue(panel.canBecomeKey)
+        XCTAssertNotNil(field.currentEditor())
+
+        field.stringValue = "贴图文字"
+        XCTAssertTrue(NSApp.sendAction(field.action!, to: field.target, from: field))
+        XCTAssertEqual(editor.elements.count, 1)
+        guard case let .text(origin, text, _) = editor.elements[0] else {
+            return XCTFail("Expected committed text annotation")
+        }
+        XCTAssertEqual(origin, CGPoint(x: 40, y: 80))
+        XCTAssertEqual(text, "贴图文字")
+        panel.close()
+    }
+
     func testAnnotationEditorSupportsEveryDrawingToolUndoRedoAndCompletion() {
         _ = NSApplication.shared
         let image = makeTestImage()
@@ -185,6 +252,35 @@ final class PinContentViewTests: XCTestCase {
         let width = 240
         let height = 160
         let data = Data(repeating: 180, count: width * height * 4)
+        let image = CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: CGDataProvider(data: data as CFData)!,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        )!
+        return NSImage(cgImage: image, size: CGSize(width: width, height: height))
+    }
+
+    private func makeSolidImage(red: UInt8, green: UInt8, blue: UInt8) -> NSImage {
+        let width = 200
+        let height = 120
+        var data = Data(count: width * height * 4)
+        data.withUnsafeMutableBytes { rawBuffer in
+            let bytes = rawBuffer.bindMemory(to: UInt8.self)
+            for offset in stride(from: 0, to: bytes.count, by: 4) {
+                bytes[offset] = red
+                bytes[offset + 1] = green
+                bytes[offset + 2] = blue
+                bytes[offset + 3] = 0xFF
+            }
+        }
         let image = CGImage(
             width: width,
             height: height,

@@ -418,6 +418,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         let dragStart: CGPoint
         let target: CaptureSelectionEditTarget
         let originalAnnotationHistory: ScreenshotAnnotationHistory
+        let preservesAnnotationMode: Bool
         var mode: SelectionEditMode
     }
 
@@ -458,6 +459,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     private var activeSelectionEdit: ActiveSelectionEdit?
     private var didLastClickExpandSelection = false
     private var activeTextOrigin: CGPoint?
+    private var movingText: (index: Int, grabOffset: CGPoint)?
 
     private(set) var activeTextField: NSTextField?
     private(set) var currentPixelSample: PixelSample?
@@ -528,6 +530,10 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     var annotationElements: [ScreenshotAnnotationElement] {
         annotationHistory.elements
     }
+
+    var selectionBorderColor: NSColor { .controlAccentColor }
+
+    var showsSelectionHandles: Bool { confirmedSelection != nil }
 
     init(
         image: CGImage,
@@ -613,12 +619,12 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
                 NSGraphicsContext.restoreGraphicsState()
             }
 
-            (isAnnotating ? NSColor.systemRed : NSColor.controlAccentColor).setStroke()
+            selectionBorderColor.setStroke()
             let border = NSBezierPath(rect: selection.insetBy(dx: 1.0, dy: 1.0))
-            border.lineWidth = isAnnotating ? 2.5 : 2.0
+            border.lineWidth = 2.0
             border.stroke()
 
-            if case .selected = capturePhase {
+            if showsSelectionHandles {
                 drawSelectionHandles(for: selection)
             }
 
@@ -641,7 +647,9 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
                 for: CaptureGeometry.selectionEditTarget(at: point, selection: selection),
                 isDragging: false
             )
-        case .pressed, .dragging, .annotating:
+        case let .annotating(selection):
+            setAnnotationCursor(at: point, selection: selection)
+        case .pressed, .dragging:
             break
         }
     }
@@ -653,8 +661,18 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             return
         }
         if case let .annotating(selection) = capturePhase {
-            guard selection.contains(point) else {
-                NSSound.beep()
+            if beginSelectionEdit(
+                at: point,
+                selection: selection,
+                allowsMove: false,
+                preservesAnnotationMode: true
+            ) {
+                return
+            }
+            guard selection.contains(point) else { return }
+            if let index = textElementIndex(at: point),
+               case let .text(origin, _, _) = annotationHistory.elements[index] {
+                movingText = (index, CGPoint(x: point.x - origin.x, y: point.y - origin.y))
                 return
             }
             if selectedAnnotationTool == .text {
@@ -664,7 +682,8 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             activeAnnotationElement = ScreenshotAnnotationElement(
                 tool: selectedAnnotationTool,
                 start: point,
-                style: annotationStyle
+                style: annotationStyle,
+                number: nextNumberValue
             )
             needsDisplay = true
             return
@@ -685,45 +704,12 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             if suppressesDoubleClickCopy {
                 didLastClickExpandSelection = false
             }
-            if let target = CaptureGeometry.selectionEditTarget(
+            if !beginSelectionEdit(
                 at: point,
-                selection: selection
+                selection: selection,
+                allowsMove: true,
+                preservesAnnotationMode: false
             ) {
-                let mode: SelectionEditMode
-                if let clickTarget = CaptureGeometry.selectionExpansionTarget(
-                    at: point,
-                    selection: selection
-                ) {
-                    mode = .pendingHandleExpansion(clickTarget: clickTarget)
-                } else {
-                    mode = .relativeDrag
-                }
-                activeSelectionEdit = ActiveSelectionEdit(
-                    originalSelection: selection,
-                    dragStart: point,
-                    target: target,
-                    originalAnnotationHistory: annotationHistory,
-                    mode: mode
-                )
-                didLastClickExpandSelection = false
-                toolbar.isHidden = true
-                hideToolbarHelp()
-                setSelectionCursor(for: target, isDragging: true)
-            } else if let target = CaptureGeometry.selectionExpansionTarget(
-                at: point,
-                selection: selection
-            ) {
-                let edit = ActiveSelectionEdit(
-                    originalSelection: selection,
-                    dragStart: point,
-                    target: target,
-                    originalAnnotationHistory: annotationHistory,
-                    mode: .outwardExpansion
-                )
-                activeSelectionEdit = edit
-                didLastClickExpandSelection = true
-                applySelectionEdit(edit, current: point)
-            } else {
                 didLastClickExpandSelection = false
             }
         case .pressed, .dragging, .annotating:
@@ -743,6 +729,19 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
                 self.activeSelectionEdit = activeSelectionEdit
             }
             applySelectionEdit(activeSelectionEdit, current: point)
+            return
+        }
+        if let movingText, case let .annotating(selection) = capturePhase {
+            let origin = clamp(
+                CGPoint(
+                    x: point.x - movingText.grabOffset.x,
+                    y: point.y - movingText.grabOffset.y
+                ),
+                to: selection
+            )
+            if annotationHistory.moveText(at: movingText.index, to: origin) {
+                needsDisplay = true
+            }
             return
         }
         if case let .annotating(selection) = capturePhase,
@@ -783,6 +782,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
                         dragStart: activeSelectionEdit.dragStart,
                         target: clickTarget,
                         originalAnnotationHistory: activeSelectionEdit.originalAnnotationHistory,
+                        preservesAnnotationMode: activeSelectionEdit.preservesAnnotationMode,
                         mode: .outwardExpansion
                     )
                     didLastClickExpandSelection = true
@@ -790,10 +790,17 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             }
             applySelectionEdit(activeSelectionEdit, current: point)
             self.activeSelectionEdit = nil
-            if case let .selected(selection) = capturePhase {
+            if let selection = confirmedSelection {
                 showToolbar(for: selection)
             }
             updateCursor(at: point)
+            needsDisplay = true
+            return
+        }
+
+        if movingText != nil {
+            movingText = nil
+            updateAnnotationControls()
             needsDisplay = true
             return
         }
@@ -1229,11 +1236,62 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             selection = edit.originalSelection
             annotationHistory = edit.originalAnnotationHistory
         }
-        capturePhase = .selected(selection)
+        capturePhase = edit.preservesAnnotationMode ? .annotating(selection) : .selected(selection)
         toolbar.isHidden = true
         hideToolbarHelp()
         setSelectionCursor(for: edit.target, isDragging: true)
         needsDisplay = true
+    }
+
+    @discardableResult
+    private func beginSelectionEdit(
+        at point: CGPoint,
+        selection: CGRect,
+        allowsMove: Bool,
+        preservesAnnotationMode: Bool
+    ) -> Bool {
+        if let target = CaptureGeometry.selectionEditTarget(at: point, selection: selection),
+           allowsMove || target != .move {
+            let mode: SelectionEditMode
+            if let clickTarget = CaptureGeometry.selectionExpansionTarget(
+                at: point,
+                selection: selection
+            ) {
+                mode = .pendingHandleExpansion(clickTarget: clickTarget)
+            } else {
+                mode = .relativeDrag
+            }
+            activeSelectionEdit = ActiveSelectionEdit(
+                originalSelection: selection,
+                dragStart: point,
+                target: target,
+                originalAnnotationHistory: annotationHistory,
+                preservesAnnotationMode: preservesAnnotationMode,
+                mode: mode
+            )
+            didLastClickExpandSelection = false
+            toolbar.isHidden = true
+            hideToolbarHelp()
+            setSelectionCursor(for: target, isDragging: true)
+            return true
+        }
+
+        guard !selection.contains(point),
+              let target = CaptureGeometry.selectionExpansionTarget(at: point, selection: selection) else {
+            return false
+        }
+        let edit = ActiveSelectionEdit(
+            originalSelection: selection,
+            dragStart: point,
+            target: target,
+            originalAnnotationHistory: annotationHistory,
+            preservesAnnotationMode: preservesAnnotationMode,
+            mode: .outwardExpansion
+        )
+        activeSelectionEdit = edit
+        didLastClickExpandSelection = true
+        applySelectionEdit(edit, current: point)
+        return true
     }
 
     private func translatedAnnotationHistory(
@@ -1665,6 +1723,32 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         window?.makeFirstResponder(field)
     }
 
+    private var nextNumberValue: Int {
+        annotationHistory.elements.reduce(0) { partialResult, element in
+            if case let .number(_, value, _) = element {
+                return max(partialResult, value)
+            }
+            return partialResult
+        } + 1
+    }
+
+    private func textElementIndex(at point: CGPoint) -> Int? {
+        annotationHistory.elements.indices.reversed().first { index in
+            guard case let .text(origin, text, style) = annotationHistory.elements[index] else {
+                return false
+            }
+            let size = (text as NSString).size(withAttributes: [
+                .font: NSFont.systemFont(ofSize: style.fontSize, weight: .semibold),
+            ])
+            return CGRect(
+                x: origin.x - 4,
+                y: origin.y - 6,
+                width: max(size.width, 24) + 8,
+                height: max(size.height, style.fontSize) + 12
+            ).contains(point)
+        }
+    }
+
     @objc private func commitTextAnnotation(_ sender: Any?) {
         guard let field = activeTextField,
               let origin = activeTextOrigin else {
@@ -1810,10 +1894,28 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
                 },
                 isDragging: activeSelectionEdit != nil
             )
+        } else if case let .annotating(selection) = capturePhase {
+            if let point {
+                setAnnotationCursor(at: point, selection: selection)
+            } else {
+                NSCursor.crosshair.set()
+            }
         } else if cursorMode == .crosshair {
             NSCursor.crosshair.set()
         } else {
             NSCursor.arrow.set()
+        }
+    }
+
+    private func setAnnotationCursor(at point: CGPoint, selection: CGRect) {
+        if let target = CaptureGeometry.selectionEditTarget(at: point, selection: selection),
+           target != .move {
+            setSelectionCursor(for: target, isDragging: activeSelectionEdit != nil)
+        } else if !selection.contains(point),
+                  let target = CaptureGeometry.selectionExpansionTarget(at: point, selection: selection) {
+            setSelectionCursor(for: target, isDragging: activeSelectionEdit != nil)
+        } else {
+            NSCursor.crosshair.set()
         }
     }
 

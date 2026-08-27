@@ -16,19 +16,34 @@ public partial class OcrSelectionWindow : Window
 {
     private readonly BitmapSource _bitmap;
     private readonly OcrTextDocument _document;
-    private readonly TranslationService _translationService;
-    private readonly AppConfiguration _configuration;
+    private readonly TranslationService? _translationService;
+    private readonly AppConfiguration? _configuration;
     private readonly Rect? _sourceFrame;
     private readonly List<(LayoutTextWord Word, Rectangle Highlight)> _wordHighlights = [];
+    private readonly double _viewScaleX;
+    private readonly double _viewScaleY;
     private Point _dragStart;
+    private Point _windowDragStart;
     private Rect _selection = Rect.Empty;
     private bool _isSelecting;
+    private bool _isMovingWindow;
+    private bool _selectionEnabled = true;
+
+    internal bool IsSelectionEnabled => _selectionEnabled;
+    internal bool AreContextualActionsVisible => ContextualActions.Visibility == Visibility.Visible;
+    internal void ExitSelectionOrClose()
+    {
+        if (_selectionEnabled)
+            SetSelectionEnabled(false);
+        else
+            Close();
+    }
 
     public OcrSelectionWindow(
         BitmapSource bitmap,
         OcrTextDocument document,
-        TranslationService translationService,
-        AppConfiguration configuration,
+        TranslationService? translationService,
+        AppConfiguration? configuration,
         Rect? sourceFrame = null)
     {
         InitializeComponent();
@@ -39,10 +54,25 @@ public partial class OcrSelectionWindow : Window
         _sourceFrame = sourceFrame;
 
         OriginalImage.Source = bitmap;
-        ImageSurface.Width = bitmap.PixelWidth;
-        ImageSurface.Height = bitmap.PixelHeight;
-        WordCanvas.Width = bitmap.PixelWidth;
-        WordCanvas.Height = bitmap.PixelHeight;
+        Rect workArea = SystemParameters.WorkArea;
+        double preferredWidth = sourceFrame.HasValue && sourceFrame.Value.Width > 0
+            ? sourceFrame.Value.Width
+            : bitmap.PixelWidth;
+        double preferredHeight = sourceFrame.HasValue && sourceFrame.Value.Height > 0
+            ? sourceFrame.Value.Height
+            : bitmap.PixelHeight;
+        double fit = Math.Min(1, Math.Min(
+            workArea.Width * 0.9 / Math.Max(1, preferredWidth),
+            workArea.Height * 0.9 / Math.Max(1, preferredHeight)));
+        double displayWidth = Math.Max(240, preferredWidth * fit);
+        double displayHeight = Math.Max(140, preferredHeight * fit);
+        _viewScaleX = displayWidth / bitmap.PixelWidth;
+        _viewScaleY = displayHeight / bitmap.PixelHeight;
+        ImageSurface.Width = displayWidth;
+        ImageSurface.Height = displayHeight;
+        WordCanvas.Width = displayWidth;
+        WordCanvas.Height = displayHeight;
+        BtnTranslate.IsEnabled = translationService is not null && configuration is not null;
         BuildWordHighlights();
     }
 
@@ -74,20 +104,36 @@ public partial class OcrSelectionWindow : Window
     {
         var rectangle = new Rectangle
         {
-            Width = Math.Max(1, word.Width),
-            Height = Math.Max(1, word.Height),
+            Width = Math.Max(1, word.Width * _viewScaleX),
+            Height = Math.Max(1, word.Height * _viewScaleY),
             Fill = Brushes.Transparent,
-            Stroke = new SolidColorBrush(Color.FromArgb(46, 10, 132, 255)),
+            Stroke = Brushes.Transparent,
             StrokeThickness = 0.75
         };
-        Canvas.SetLeft(rectangle, word.X);
-        Canvas.SetTop(rectangle, word.Y);
+        Canvas.SetLeft(rectangle, word.X * _viewScaleX);
+        Canvas.SetTop(rectangle, word.Y * _viewScaleY);
         WordCanvas.Children.Add(rectangle);
         _wordHighlights.Add((word, rectangle));
     }
 
     private void OnSurfaceMouseDown(object sender, MouseButtonEventArgs e)
     {
+        if (e.ClickCount >= 2 && !_selectionEnabled)
+        {
+            Close();
+            e.Handled = true;
+            return;
+        }
+
+        if (!_selectionEnabled || Keyboard.Modifiers.HasFlag(ModifierKeys.Alt))
+        {
+            _isMovingWindow = true;
+            _windowDragStart = e.GetPosition(this);
+            CaptureMouse();
+            e.Handled = true;
+            return;
+        }
+
         _dragStart = e.GetPosition(ImageSurface);
         _selection = new Rect(_dragStart, new Size(0, 0));
         _isSelecting = true;
@@ -98,6 +144,15 @@ public partial class OcrSelectionWindow : Window
 
     private void OnSurfaceMouseMove(object sender, MouseEventArgs e)
     {
+        if (_isMovingWindow && e.LeftButton == MouseButtonState.Pressed)
+        {
+            Point windowPoint = e.GetPosition(this);
+            Left += windowPoint.X - _windowDragStart.X;
+            Top += windowPoint.Y - _windowDragStart.Y;
+            e.Handled = true;
+            return;
+        }
+
         if (!_isSelecting || e.LeftButton != MouseButtonState.Pressed)
         {
             return;
@@ -112,6 +167,14 @@ public partial class OcrSelectionWindow : Window
 
     private void OnSurfaceMouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (_isMovingWindow)
+        {
+            _isMovingWindow = false;
+            ReleaseMouseCapture();
+            e.Handled = true;
+            return;
+        }
+
         if (!_isSelecting)
         {
             return;
@@ -122,8 +185,8 @@ public partial class OcrSelectionWindow : Window
         if (_selection.Width < 3 || _selection.Height < 3)
         {
             Point point = e.GetPosition(ImageSurface);
-            var hit = _wordHighlights.Find(item => WordRect(item.Word).Contains(point));
-            _selection = hit.Word == null ? Rect.Empty : WordRect(hit.Word);
+            var hit = _wordHighlights.Find(item => ViewWordRect(item.Word).Contains(point));
+            _selection = hit.Word == null ? Rect.Empty : ViewWordRect(hit.Word);
         }
         UpdateSelectionDisplay();
     }
@@ -132,6 +195,7 @@ public partial class OcrSelectionWindow : Window
     {
         bool hasSelection = !_selection.IsEmpty && _selection.Width > 0 && _selection.Height > 0;
         SelectionBorder.Visibility = hasSelection ? Visibility.Visible : Visibility.Collapsed;
+        ContextualActions.Visibility = hasSelection ? Visibility.Visible : Visibility.Collapsed;
         if (hasSelection)
         {
             Canvas.SetLeft(SelectionBorder, _selection.X);
@@ -142,31 +206,32 @@ public partial class OcrSelectionWindow : Window
 
         foreach (var (word, highlight) in _wordHighlights)
         {
-            bool selected = hasSelection && _selection.IntersectsWith(WordRect(word));
+            bool selected = hasSelection && _selection.IntersectsWith(ViewWordRect(word));
             highlight.Fill = selected
                 ? new SolidColorBrush(Color.FromArgb(76, 10, 132, 255))
                 : Brushes.Transparent;
-            highlight.Stroke = new SolidColorBrush(Color.FromArgb(
-                selected ? (byte)180 : (byte)46,
-                10,
-                132,
-                255));
+            highlight.Stroke = selected
+                ? new SolidColorBrush(Color.FromArgb(180, 10, 132, 255))
+                : Brushes.Transparent;
         }
-
-        string selectedText = SelectedText();
-        TxtStatus.Text = hasSelection
-            ? $"已选择 {selectedText.Length} 个字符"
-            : "拖动框选要复制或翻译的文字；未选择时操作全部文字";
     }
 
-    private string SelectedText() => _document.SelectedText(new NativeRect(
-        _selection.X,
-        _selection.Y,
-        _selection.Width,
-        _selection.Height));
+    private string SelectedText()
+    {
+        if (_selection.IsEmpty || _selection.Width <= 0 || _selection.Height <= 0)
+            return string.Empty;
+        return _document.SelectedText(new NativeRect(
+            _selection.X / _viewScaleX,
+            _selection.Y / _viewScaleY,
+            _selection.Width / _viewScaleX,
+            _selection.Height / _viewScaleY));
+    }
 
-    private static Rect WordRect(LayoutTextWord word) =>
-        new(word.X, word.Y, word.Width, word.Height);
+    private Rect ViewWordRect(LayoutTextWord word) => new(
+        word.X * _viewScaleX,
+        word.Y * _viewScaleY,
+        word.Width * _viewScaleX,
+        word.Height * _viewScaleY);
 
     private void OnCopyAllClick(object sender, RoutedEventArgs e) => CopyText(_document.FullText);
 
@@ -182,6 +247,8 @@ public partial class OcrSelectionWindow : Window
 
     private async void OnTranslateClick(object sender, RoutedEventArgs e)
     {
+        if (_translationService is null || _configuration is null)
+            return;
         string sourceText = SelectedText();
         if (string.IsNullOrWhiteSpace(sourceText))
         {
@@ -190,7 +257,6 @@ public partial class OcrSelectionWindow : Window
         }
 
         BtnTranslate.IsEnabled = false;
-        TxtStatus.Text = "正在翻译…";
         try
         {
             var result = await _translationService.TranslateAsync(
@@ -211,12 +277,10 @@ public partial class OcrSelectionWindow : Window
             }
             resultWindow.Show();
             resultWindow.Activate();
-            TxtStatus.Text = "翻译完成，可继续选择其他文字";
         }
         catch (Exception error)
         {
             MessageBox.Show($"OCR 翻译失败：{error.Message}", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Warning);
-            TxtStatus.Text = "翻译失败，请检查翻译服务设置后重试";
         }
         finally
         {
@@ -226,15 +290,68 @@ public partial class OcrSelectionWindow : Window
 
     private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
 
+    private void OnToggleSelectionModeClick(object sender, RoutedEventArgs e)
+    {
+        SetSelectionEnabled(!_selectionEnabled);
+    }
+
+    private void SetSelectionEnabled(bool enabled)
+    {
+        _selectionEnabled = enabled;
+        SelectionModeMenuItem.Header = enabled ? "退出文字选择" : "选择文字";
+        if (!enabled)
+        {
+            _selection = Rect.Empty;
+            UpdateSelectionDisplay();
+        }
+        Cursor = enabled ? Cursors.IBeam : Cursors.Arrow;
+    }
+
+    private void OnAnnotationClick(object sender, RoutedEventArgs e)
+    {
+        if (Owner is PinWindow ownerPin)
+        {
+            Close();
+            ownerPin.ToggleAnnotationEditing();
+            return;
+        }
+
+        var pin = new PinWindow(_bitmap, _translationService, _configuration)
+        {
+            Left = Left,
+            Top = Top
+        };
+        pin.Show();
+        pin.ToggleAnnotationEditing();
+        Close();
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        // OCR selection temporarily replaces its source pin at the same screen
+        // location; returning restores that pin instead of leaving a second,
+        // unrelated document window behind.
+        if (Owner is Window owner)
+        {
+            owner.Show();
+            owner.Activate();
+        }
+        base.OnClosed(e);
+    }
+
     private void OnKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape)
         {
-            Close();
+            ExitSelectionOrClose();
         }
         else if (e.Key == Key.C && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
         {
             CopyText(SelectedText());
+        }
+        else if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Shift)
+        {
+            CopyText(_document.FullText);
         }
     }
 }

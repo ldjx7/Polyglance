@@ -9,6 +9,7 @@ enum ScreenshotAnnotationTool: Int, CaseIterable, Hashable {
     case arrow
     case text
     case mosaic
+    case number
 
     var title: String {
         switch self {
@@ -24,6 +25,8 @@ enum ScreenshotAnnotationTool: Int, CaseIterable, Hashable {
             return "文字"
         case .mosaic:
             return "马赛克"
+        case .number:
+            return "序号"
         }
     }
 
@@ -41,6 +44,8 @@ enum ScreenshotAnnotationTool: Int, CaseIterable, Hashable {
             return "t.square"
         case .mosaic:
             return "square.grid.3x3.fill"
+        case .number:
+            return "1.circle"
         }
     }
 }
@@ -72,11 +77,13 @@ enum ScreenshotAnnotationElement: Equatable {
     case arrow(start: CGPoint, end: CGPoint, style: ScreenshotAnnotationStyle)
     case text(origin: CGPoint, text: String, style: ScreenshotAnnotationStyle)
     case mosaic(points: [CGPoint], style: ScreenshotAnnotationStyle)
+    case number(origin: CGPoint, value: Int, style: ScreenshotAnnotationStyle)
 
     init(
         tool: ScreenshotAnnotationTool,
         start: CGPoint,
-        style: ScreenshotAnnotationStyle = .default
+        style: ScreenshotAnnotationStyle = .default,
+        number: Int = 1
     ) {
         switch tool {
         case .freehand:
@@ -91,6 +98,8 @@ enum ScreenshotAnnotationElement: Equatable {
             self = .text(origin: start, text: "", style: style)
         case .mosaic:
             self = .mosaic(points: [start], style: style)
+        case .number:
+            self = .number(origin: start, value: max(1, number), style: style)
         }
     }
 
@@ -108,6 +117,8 @@ enum ScreenshotAnnotationElement: Equatable {
             return .text
         case .mosaic:
             return .mosaic
+        case .number:
+            return .number
         }
     }
 
@@ -118,7 +129,8 @@ enum ScreenshotAnnotationElement: Equatable {
              let .ellipse(_, _, style),
              let .arrow(_, _, style),
              let .text(_, _, style),
-             let .mosaic(_, style):
+             let .mosaic(_, style),
+             let .number(_, _, style):
             return style
         }
     }
@@ -134,6 +146,8 @@ enum ScreenshotAnnotationElement: Equatable {
         case let .mosaic(points, _):
             return points.last
         case let .text(origin, _, _):
+            return origin
+        case let .number(origin, _, _):
             return origin
         }
     }
@@ -156,6 +170,8 @@ enum ScreenshotAnnotationElement: Equatable {
             var points = existingPoints
             points.append(point)
             return .mosaic(points: points, style: style)
+        case let .number(_, value, style):
+            return .number(origin: point, value: value, style: style)
         }
     }
 
@@ -175,6 +191,8 @@ enum ScreenshotAnnotationElement: Equatable {
             return .text(origin: transform(origin), text: text, style: style)
         case let .mosaic(points, style):
             return .mosaic(points: points.map(transform), style: style)
+        case let .number(origin, value, style):
+            return .number(origin: transform(origin), value: value, style: style)
         }
     }
 
@@ -186,7 +204,7 @@ enum ScreenshotAnnotationElement: Equatable {
             return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case let .mosaic(points, _):
             return points.count > 1
-        case .rectangle, .ellipse, .arrow:
+        case .rectangle, .ellipse, .arrow, .number:
             return true
         }
     }
@@ -225,6 +243,14 @@ struct ScreenshotAnnotationHistory {
     mutating func removeAll() {
         elements.removeAll()
         redoStack.removeAll()
+    }
+
+    mutating func moveText(at index: Int, to origin: CGPoint) -> Bool {
+        guard elements.indices.contains(index), case let .text(_, text, style) = elements[index] else {
+            return false
+        }
+        elements[index] = .text(origin: origin, text: text, style: style)
+        return true
     }
 
     func transformed(
@@ -315,6 +341,14 @@ enum ScreenshotAnnotationRenderer {
                     scale: lineWidthScale,
                     in: context
                 )
+            case let .number(origin, value, _):
+                drawNumber(
+                    value,
+                    at: pointTransform(origin),
+                    color: style.color,
+                    diameter: max(18, lineWidth * 6),
+                    in: context
+                )
             case .mosaic:
                 break
             }
@@ -345,6 +379,40 @@ enum ScreenshotAnnotationRenderer {
         context.saveGState()
         context.textMatrix = .identity
         context.textPosition = origin
+        CTLineDraw(line, context)
+        context.restoreGState()
+    }
+
+    private static func drawNumber(
+        _ value: Int,
+        at origin: CGPoint,
+        color: NSColor,
+        diameter: CGFloat,
+        in context: CGContext
+    ) {
+        let rect = CGRect(
+            x: origin.x - diameter / 2,
+            y: origin.y - diameter / 2,
+            width: diameter,
+            height: diameter
+        )
+        context.saveGState()
+        context.setFillColor(color.cgColor)
+        context.fillEllipse(in: rect)
+        let text = NSAttributedString(
+            string: String(value),
+            attributes: [
+                .font: NSFont.systemFont(ofSize: max(10, diameter * 0.55), weight: .bold),
+                .foregroundColor: NSColor.white,
+            ]
+        )
+        let line = CTLineCreateWithAttributedString(text)
+        let bounds = CTLineGetBoundsWithOptions(line, .useOpticalBounds)
+        context.textMatrix = .identity
+        context.textPosition = CGPoint(
+            x: origin.x - bounds.width / 2 - bounds.minX,
+            y: origin.y - bounds.height / 2 - bounds.minY
+        )
         CTLineDraw(line, context)
         context.restoreGState()
     }

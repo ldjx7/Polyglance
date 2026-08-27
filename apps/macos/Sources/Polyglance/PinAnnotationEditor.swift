@@ -12,6 +12,7 @@ final class PinAnnotationOverlayView: NSView {
     private var toolButtons: [ScreenshotAnnotationTool: NSButton] = [:]
     private var textField: NSTextField?
     private var textOrigin: CGPoint?
+    private var movingText: (index: Int, grabOffset: CGPoint)?
     private weak var toolbarParentWindow: NSWindow?
 
     private(set) var isEditing = false
@@ -32,6 +33,10 @@ final class PinAnnotationOverlayView: NSView {
     }
 
     override var acceptsFirstResponder: Bool { true }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: isEditing ? .crosshair : .arrow)
+    }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow !== window, let toolbarPanel, let toolbarParentWindow {
@@ -78,7 +83,10 @@ final class PinAnnotationOverlayView: NSView {
     func beginEditing() {
         guard !isEditing else { return }
         isEditing = true
+        window?.invalidateCursorRects(for: self)
         toolbar.isHidden = false
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
         window?.makeFirstResponder(self)
         updateToolbarState()
         onEditingChanged?(true)
@@ -93,6 +101,7 @@ final class PinAnnotationOverlayView: NSView {
         commitTextIfNeeded()
         activeElement = nil
         isEditing = false
+        window?.invalidateCursorRects(for: self)
         toolbar.isHidden = true
         toolbarPanel?.orderOut(nil)
         onEditingChanged?(false)
@@ -105,6 +114,8 @@ final class PinAnnotationOverlayView: NSView {
 
     func selectTool(_ tool: ScreenshotAnnotationTool) {
         activeTool = tool
+        window?.invalidateCursorRects(for: self)
+        NSCursor.crosshair.set()
         updateToolbarState()
     }
 
@@ -114,7 +125,12 @@ final class PinAnnotationOverlayView: NSView {
             beginTextInput(at: point)
             return
         }
-        activeElement = ScreenshotAnnotationElement(tool: activeTool, start: point, style: style)
+        activeElement = ScreenshotAnnotationElement(
+            tool: activeTool,
+            start: point,
+            style: style,
+            number: nextNumberValue
+        )
         needsDisplay = true
     }
 
@@ -155,14 +171,36 @@ final class PinAnnotationOverlayView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        beginStroke(at: convert(event.locationInWindow, from: nil))
+        let point = convert(event.locationInWindow, from: nil)
+        if let index = textElementIndex(at: point),
+           case let .text(origin, _, _) = history.elements[index] {
+            movingText = (index, CGPoint(x: point.x - origin.x, y: point.y - origin.y))
+            return
+        }
+        beginStroke(at: point)
     }
 
     override func mouseDragged(with event: NSEvent) {
-        continueStroke(to: convert(event.locationInWindow, from: nil))
+        let point = convert(event.locationInWindow, from: nil)
+        if let movingText {
+            let origin = CGPoint(
+                x: min(max(point.x - movingText.grabOffset.x, 0), max(0, bounds.width - 8)),
+                y: min(max(point.y - movingText.grabOffset.y, 0), max(0, bounds.height - 8))
+            )
+            if history.moveText(at: movingText.index, to: origin) {
+                needsDisplay = true
+            }
+            return
+        }
+        continueStroke(to: point)
     }
 
     override func mouseUp(with event: NSEvent) {
+        if movingText != nil {
+            movingText = nil
+            updateToolbarState()
+            return
+        }
         endStroke(at: convert(event.locationInWindow, from: nil))
     }
 
@@ -191,6 +229,32 @@ final class PinAnnotationOverlayView: NSView {
     private var sourceCGImage: CGImage? {
         var rect = CGRect(origin: .zero, size: sourceImage.size)
         return sourceImage.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+    }
+
+    private var nextNumberValue: Int {
+        history.elements.reduce(0) { partialResult, element in
+            if case let .number(_, value, _) = element {
+                return max(partialResult, value)
+            }
+            return partialResult
+        } + 1
+    }
+
+    private func textElementIndex(at point: CGPoint) -> Int? {
+        history.elements.indices.reversed().first { index in
+            guard case let .text(origin, text, style) = history.elements[index] else {
+                return false
+            }
+            let size = (text as NSString).size(withAttributes: [
+                .font: NSFont.systemFont(ofSize: style.fontSize, weight: .semibold),
+            ])
+            return CGRect(
+                x: origin.x - 4,
+                y: origin.y - 6,
+                width: max(size.width, 24) + 8,
+                height: max(size.height, style.fontSize) + 12
+            ).contains(point)
+        }
     }
 
     private func configureToolbar() {
@@ -312,6 +376,8 @@ final class PinAnnotationOverlayView: NSView {
         textOrigin = point
         textField = field
         addSubview(field)
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
         window?.makeFirstResponder(field)
     }
 

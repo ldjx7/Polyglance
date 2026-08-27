@@ -18,7 +18,11 @@ require_pattern "--preserve-permissions"
 require_pattern "tccutil reset"
 require_pattern "Accessibility"
 require_pattern "ScreenCapture"
+require_pattern "Microphone"
 require_pattern "CFBundleIdentifier"
+require_pattern "lsregister"
+require_pattern "Polyglance Open Source Signing"
+require_pattern "Persistent signing identity could not be used; falling back to an ad-hoc development signature."
 require_pattern "pgrep -f"
 require_pattern "Polyglance.app"
 require_pattern "Polyglance.icns"
@@ -32,6 +36,11 @@ require_pattern 'certificate leaf = H'
 require_pattern "--requirements"
 require_pattern "codesign --verify --deep --strict"
 require_pattern 'codesign --verify --strict -R "=$codesign_requirement_expression"'
+
+if rg --quiet --fixed-strings -- 'tccutil reset "$permission_service" "$bundle_identifier" || true' "$build_script"; then
+    print -u2 "The build script must not report a failed TCC reset as successful"
+    exit 1
+fi
 
 if rg --quiet '(^|[[:space:]])open[[:space:]]' "$build_script"; then
     print -u2 "The build script must not launch the app automatically"

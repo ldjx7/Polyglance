@@ -14,9 +14,20 @@ public partial class ScreenshotToolbar : UserControl
 
     private Button? _selectedToolButton;
     private bool _isCompactLayout;
+    private bool _isAnnotationMode;
 
     public double CurrentStrokeSize { get; private set; } = 4;
     public Color CurrentColor { get; private set; } = Color.FromRgb(0xEF, 0x44, 0x44);
+    internal bool AreScreenshotActionsVisible =>
+        BtnOCR.Visibility == Visibility.Visible &&
+        BtnTranslate.Visibility == Visibility.Visible &&
+        BtnLongScreenshot.Visibility == Visibility.Visible &&
+        BtnScreenRecording.Visibility == Visibility.Visible &&
+        BtnPin.Visibility == Visibility.Visible &&
+        BtnSave.Visibility == Visibility.Visible &&
+        BtnCancel.Visibility == Visibility.Visible &&
+        BtnCopy.Visibility == Visibility.Visible;
+    internal bool IsFinishActionVisible => BtnFinish.Visibility == Visibility.Visible;
 
     public ScreenshotToolbar()
     {
@@ -43,7 +54,10 @@ public partial class ScreenshotToolbar : UserControl
                 _selectedToolButton = btn;
                 btn.Foreground = (System.Windows.Media.Brush)FindResource("ToolbarActiveBrush");
                 btn.Background = (System.Windows.Media.Brush)FindResource("ToolbarActiveBackgroundBrush");
-                SubToolbarBorder.Visibility = Visibility.Visible;
+                // The macOS toolbar keeps its markup controls in a single compact
+                // row. Keeping this collapsed also prevents a second bar from
+                // covering the captured content on small selections.
+                SubToolbarBorder.Visibility = Visibility.Collapsed;
                 ToolSelected?.Invoke(tool);
             }
         }
@@ -87,6 +101,51 @@ public partial class ScreenshotToolbar : UserControl
     {
         BtnUndo.IsEnabled = canUndo;
         BtnRedo.IsEnabled = canRedo;
+    }
+
+    public void SetAnnotationMode(bool enabled)
+    {
+        _isAnnotationMode = enabled;
+        // Selecting a markup tool must not reshape the screenshot toolbar. This
+        // mirrors macOS: the active tool is highlighted in place and every
+        // screenshot action stays at the same position.
+        SetScreenshotActionVisibility(Visibility.Visible);
+        BtnFinish.Visibility = Visibility.Collapsed;
+        if (!enabled)
+        {
+            SubToolbarBorder.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    public void SetPinAnnotationMode(bool enabled)
+    {
+        _isAnnotationMode = enabled;
+        BtnFinish.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+        SetScreenshotActionVisibility(enabled ? Visibility.Collapsed : Visibility.Visible);
+        if (!enabled)
+            SubToolbarBorder.Visibility = Visibility.Collapsed;
+    }
+
+    private void SetScreenshotActionVisibility(Visibility visibility)
+    {
+        BtnOCR.Visibility = visibility;
+        BtnTranslate.Visibility = visibility;
+        BtnLongScreenshot.Visibility = visibility;
+        BtnScreenRecording.Visibility = visibility;
+        BtnPin.Visibility = visibility;
+        BtnSave.Visibility = visibility;
+        BtnCancel.Visibility = visibility;
+        BtnCopy.Visibility = visibility;
+    }
+
+    public void ClearSelectedTool()
+    {
+        if (_selectedToolButton is not null)
+        {
+            ClearSelectedAppearance(_selectedToolButton);
+            _selectedToolButton = null;
+        }
+        SubToolbarBorder.Visibility = Visibility.Collapsed;
     }
 
     public void SetCompactLayout(bool compact)

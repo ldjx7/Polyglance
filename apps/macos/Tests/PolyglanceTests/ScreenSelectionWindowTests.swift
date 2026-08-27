@@ -189,6 +189,77 @@ final class ScreenSelectionWindowTests: XCTestCase {
         XCTAssertEqual(window.selectionView.annotationElements.count, 1)
     }
 
+    func testAnnotationModeKeepsAccentSelectionBorderAndResizeHandles() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let window = ScreenSelectionWindow(image: try makeImage(width: 400, height: 300), screen: screen)
+        window.orderFront(nil)
+        dragSelection(in: window, from: CGPoint(x: 20, y: 20), to: CGPoint(x: 220, y: 120))
+
+        try button(titled: "矩形", in: toolbar(in: window)).performClick(nil)
+
+        XCTAssertTrue(window.selectionView.selectionBorderColor.isEqual(NSColor.controlAccentColor))
+        XCTAssertTrue(window.selectionView.showsSelectionHandles)
+    }
+
+    func testAnnotationModePrioritizesSelectionEdgeResizeOverDrawing() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let window = ScreenSelectionWindow(image: try makeImage(width: 400, height: 300), screen: screen)
+        window.orderFront(nil)
+        dragSelection(in: window, from: CGPoint(x: 20, y: 20), to: CGPoint(x: 220, y: 120))
+        try button(titled: "矩形", in: toolbar(in: window)).performClick(nil)
+        dragSelection(in: window, from: CGPoint(x: 40, y: 40), to: CGPoint(x: 120, y: 90))
+
+        dragSelection(in: window, from: CGPoint(x: 220, y: 70), to: CGPoint(x: 270, y: 70))
+
+        XCTAssertEqual(
+            window.selectionView.capturePhase,
+            .annotating(CGRect(x: 20, y: 20, width: 250, height: 100))
+        )
+        XCTAssertEqual(window.selectionView.annotationElements.count, 1)
+        let rectangle = try rectangleEndpoints(in: window.selectionView)
+        XCTAssertEqual(rectangle.start, CGPoint(x: 40, y: 40))
+        XCTAssertEqual(rectangle.end, CGPoint(x: 120, y: 90))
+    }
+
+    func testPinActionUsesTheCompositedImageWithAnnotations() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let window = ScreenSelectionWindow(image: try makeImage(width: 400, height: 300), screen: screen)
+        var pinnedImage: NSImage?
+        window.onAction = { action in
+            guard case let .pin(result) = action else { return }
+            pinnedImage = result.image
+        }
+        window.orderFront(nil)
+        dragSelection(in: window, from: CGPoint(x: 20, y: 20), to: CGPoint(x: 220, y: 120))
+        let captureToolbar = try toolbar(in: window)
+        try button(titled: "矩形", in: captureToolbar).performClick(nil)
+        dragSelection(in: window, from: CGPoint(x: 40, y: 40), to: CGPoint(x: 120, y: 90))
+        XCTAssertEqual(window.selectionView.annotationElements.count, 1)
+
+        try button(titled: "贴图", in: captureToolbar).performClick(nil)
+
+        let output = try XCTUnwrap(pinnedImage)
+        let representation = try XCTUnwrap(NSBitmapImageRep(data: output.tiffRepresentation!))
+        var containsRedAnnotationPixel = false
+        for y in 0..<representation.pixelsHigh where !containsRedAnnotationPixel {
+            for x in 0..<representation.pixelsWide {
+                guard let color = representation.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else {
+                    continue
+                }
+                if color.redComponent > 0.7,
+                   color.redComponent - color.greenComponent > 0.25,
+                   color.redComponent - color.blueComponent > 0.25 {
+                    containsRedAnnotationPixel = true
+                    break
+                }
+            }
+        }
+        XCTAssertTrue(containsRedAnnotationPixel, "Pinned output must contain the committed annotation layer")
+    }
+
     func testAnnotationButtonsUseUniformTintWithoutToggleDrawingOverride() throws {
         _ = NSApplication.shared
         let screen = try XCTUnwrap(NSScreen.main)

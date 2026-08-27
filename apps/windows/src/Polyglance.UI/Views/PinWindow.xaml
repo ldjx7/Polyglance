@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:controls="clr-namespace:Polyglance.UI.Controls"
         mc:Ignorable="d"
         WindowStyle="None"
         AllowsTransparency="True"
@@ -11,20 +12,33 @@
         ShowInTaskbar="False"
         SizeToContent="WidthAndHeight"
         MouseDown="OnMouseDown"
+        MouseMove="OnMouseMove"
+        MouseUp="OnMouseUp"
         MouseWheel="OnMouseWheel"
-        MouseDoubleClick="OnMouseDoubleClick">
+        MouseDoubleClick="OnMouseDoubleClick"
+        KeyDown="OnKeyDown"
+        Focusable="True">
     <Border x:Name="ContainerBorder" Margin="8" Background="#FFFFFF" BorderBrush="#20000000" BorderThickness="1" CornerRadius="4">
         <Border.Effect>
             <DropShadowEffect x:Name="Shadow" BlurRadius="12" Direction="270" ShadowDepth="3" Opacity="0.3"/>
         </Border.Effect>
-        <Grid>
-            <Image x:Name="PinImage" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
-        </Grid>
+        <StackPanel>
+            <Grid x:Name="PinSurface">
+                <Image x:Name="PinImage" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+                <Canvas x:Name="AnnotationCanvas" ClipToBounds="True"/>
+            </Grid>
+            <controls:ScreenshotToolbar x:Name="AnnotationToolbar"
+                                        Visibility="Collapsed"
+                                        HorizontalAlignment="Center"
+                                        Margin="0,8,0,0"/>
+        </StackPanel>
         <Border.ContextMenu>
             <ContextMenu>
+                <MenuItem x:Name="AnnotationMenuItem" Header="标注" Click="OnAnnotationClick"/>
                 <MenuItem Header="复制图片 (Copy)" Click="OnCopyClick"/>
                 <MenuItem Header="保存图片 (Save)..." Click="OnSaveClick"/>
                 <Separator/>
+                <MenuItem x:Name="ColorPickerMenuItem" Header="取色" Click="OnColorPickerClick"/>
                 <MenuItem x:Name="OcrMenuItem" Header="OCR 文字选择" Click="OnOcrClick"/>
                 <MenuItem x:Name="TranslateMenuItem" Header="截图翻译" Click="OnTranslateClick"/>
                 <Separator/>

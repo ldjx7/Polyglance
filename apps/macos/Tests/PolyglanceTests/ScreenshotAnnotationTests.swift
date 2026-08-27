@@ -3,10 +3,14 @@ import XCTest
 @testable import Polyglance
 
 final class ScreenshotAnnotationTests: XCTestCase {
+    func testNumberToolUsesTheSameNumberedCircleGlyphAsWindows() {
+        XCTAssertEqual(ScreenshotAnnotationTool.number.symbolName, "1.circle")
+    }
+
     func testToolCatalogContainsEveryFirstBatchDrawingTool() {
         XCTAssertEqual(
             Set(ScreenshotAnnotationTool.allCases),
-            Set([.freehand, .rectangle, .ellipse, .arrow, .text, .mosaic])
+            Set([.freehand, .rectangle, .ellipse, .arrow, .text, .mosaic, .number])
         )
         XCTAssertEqual(ScreenshotAnnotationTool.text.symbolName, "t.square")
     }
@@ -118,6 +122,26 @@ final class ScreenshotAnnotationTests: XCTestCase {
             points: [CGPoint(x: 10, y: 10), CGPoint(x: 10.5, y: 11)],
             style: .default
         ).isMeaningful)
+    }
+
+    func testNumberAnnotationHasStableValueAndTextCanMoveInHistory() {
+        let style = ScreenshotAnnotationStyle.default
+        let number = ScreenshotAnnotationElement(
+            tool: .number,
+            start: CGPoint(x: 16, y: 24),
+            style: style,
+            number: 3
+        )
+        XCTAssertEqual(number, .number(origin: CGPoint(x: 16, y: 24), value: 3, style: style))
+
+        var history = ScreenshotAnnotationHistory()
+        history.append(.text(origin: CGPoint(x: 4, y: 8), text: "Move me", style: style))
+        XCTAssertTrue(history.moveText(at: 0, to: CGPoint(x: 30, y: 40)))
+        XCTAssertEqual(history.elements.first, .text(
+            origin: CGPoint(x: 30, y: 40),
+            text: "Move me",
+            style: style
+        ))
     }
 
     func testComposerDrawsEveryElementAtRetinaPixelCoordinates() throws {

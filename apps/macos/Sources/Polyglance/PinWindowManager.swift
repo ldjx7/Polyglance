@@ -209,7 +209,7 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
         isLocked: Bool,
         isAlwaysOnTop: Bool
     ) -> NSPanel {
-        let panel = NSPanel(
+        let panel = PinPanel(
             contentRect: frame,
             styleMask: [.borderless, .resizable, .nonactivatingPanel],
             backing: .buffered,
@@ -746,6 +746,11 @@ struct PinWindowActions {
 }
 
 @MainActor
+final class PinPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
 final class PinContentView: NSView {
     typealias CopyImage = @MainActor (NSImage) throws -> Void
     typealias SaveImage = @MainActor (NSImage) throws -> Bool
@@ -757,14 +762,21 @@ final class PinContentView: NSView {
     private let saveImage: SaveImage
     private let presentError: PresentError
     private let actions: PinWindowActions
+    private let colorPasteboard: NSPasteboard
     private let closeButton: NSButton
+    private let colorMagnifierView: ScreenshotMagnifierView
     let annotationEditor: PinAnnotationOverlayView
     private var trackingAreaReference: NSTrackingArea?
     private var dragStartMouseLocation: CGPoint?
     private var dragStartWindowOrigin: CGPoint?
     private var restoreResizableWhenUnlocked = true
+    private var colorSampler: PixelSampler?
+    private var colorDisplayFormat: ScreenshotColorDisplayFormat = .hex
     private(set) var isLocked: Bool
     private(set) var isAlwaysOnTop: Bool
+    private(set) var isColorPicking = false
+    private(set) var currentPixelSample: PixelSample?
+    private(set) var magnifierPanel: NSPanel?
 
     init(
         image: NSImage,
@@ -772,6 +784,7 @@ final class PinContentView: NSView {
         copyImage: @escaping CopyImage = { try ImagePasteboard.write($0) },
         saveImage: @escaping SaveImage = { try ScreenshotFileSaver().save($0) },
         presentError: @escaping PresentError = PinContentView.presentOperationError,
+        colorPasteboard: NSPasteboard = .general,
         isLocked: Bool = false,
         isAlwaysOnTop: Bool = true,
         actions: PinWindowActions? = nil
@@ -781,6 +794,7 @@ final class PinContentView: NSView {
         self.saveImage = saveImage
         self.presentError = presentError
         self.actions = actions ?? PinWindowActions()
+        self.colorPasteboard = colorPasteboard
         self.isLocked = isLocked
         self.isAlwaysOnTop = isAlwaysOnTop
         let proposedInitialSize = initialSize ?? image.size
@@ -792,6 +806,10 @@ final class PinContentView: NSView {
             target: nil,
             action: nil
         )
+        colorMagnifierView = ScreenshotMagnifierView(frame: CGRect(
+            origin: .zero,
+            size: ScreenshotMagnifierView.preferredSize
+        ))
         annotationEditor = PinAnnotationOverlayView(sourceImage: image)
         super.init(frame: CGRect(origin: .zero, size: image.size))
         wantsLayer = true
@@ -808,11 +826,20 @@ final class PinContentView: NSView {
         closeButton.isHidden = true
         addSubview(closeButton)
         addSubview(annotationEditor)
+        configureColorMagnifier()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow !== window, let magnifierPanel, let window {
+            window.removeChildWindow(magnifierPanel)
+            magnifierPanel.orderOut(nil)
+        }
+        super.viewWillMove(toWindow: newWindow)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
@@ -832,6 +859,27 @@ final class PinContentView: NSView {
         window.contentMaxSize = sizeLimits.maximum
         applyAlwaysOnTopState()
         applyLockState()
+        if isColorPicking {
+            attachMagnifierPanelIfNeeded()
+        }
+    }
+
+    private func configureColorMagnifier() {
+        let panel = NSPanel(
+            contentRect: CGRect(origin: .zero, size: ScreenshotMagnifierView.preferredSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.hidesOnDeactivate = false
+        panel.ignoresMouseEvents = true
+        panel.isReleasedWhenClosed = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.contentView = colorMagnifierView
+        magnifierPanel = panel
     }
 
     override func layout() {
@@ -859,7 +907,7 @@ final class PinContentView: NSView {
         }
         let trackingArea = NSTrackingArea(
             rect: bounds,
-            options: [.activeAlways, .mouseEnteredAndExited],
+            options: [.activeAlways, .mouseEnteredAndExited, .mouseMoved, .inVisibleRect],
             owner: self,
             userInfo: nil
         )
@@ -868,15 +916,28 @@ final class PinContentView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        closeButton.isHidden = false
+        closeButton.isHidden = isColorPicking
     }
 
     override func mouseExited(with event: NSEvent) {
         closeButton.isHidden = true
+        hideColorMagnifier()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard isColorPicking else {
+            return
+        }
+        updateColorPicking(at: convert(event.locationInWindow, from: nil))
     }
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        if isColorPicking {
+            clearDragState()
+            updateColorPicking(at: convert(event.locationInWindow, from: nil))
+            return
+        }
         if event.clickCount >= 2 {
             clearDragState()
             closePin()
@@ -892,6 +953,7 @@ final class PinContentView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         guard let window,
+              !isColorPicking,
               !isLocked,
               let dragStartMouseLocation,
               let dragStartWindowOrigin else {
@@ -923,6 +985,23 @@ final class PinContentView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if isColorPicking {
+            if event.keyCode == 53 {
+                finishColorPicking()
+                return
+            }
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if event.charactersIgnoringModifiers?.lowercased() == "c",
+               modifiers.intersection([.command, .control, .option]).isEmpty {
+                if modifiers.contains(.shift) {
+                    colorDisplayFormat.toggle()
+                    refreshColorMagnifier()
+                } else {
+                    copyCurrentColor()
+                }
+                return
+            }
+        }
         if event.characters == " " {
             toggleAnnotationEditing()
             return
@@ -991,7 +1070,109 @@ final class PinContentView: NSView {
         )
     }
 
+    func updateColorPicking(at point: CGPoint) {
+        guard isColorPicking,
+              bounds.contains(point),
+              let colorSampler,
+              let sample = colorSampler.sample(atViewPoint: point, viewSize: bounds.size) else {
+            hideColorMagnifier()
+            return
+        }
+        currentPixelSample = sample
+        colorMagnifierView.update(
+            sampler: colorSampler,
+            sample: sample,
+            format: colorDisplayFormat
+        )
+        positionColorMagnifier(near: point)
+    }
+
+    private func beginColorPicking() {
+        annotationEditor.finishEditing()
+        let composedImage = annotationEditor.compositedImage()
+        var proposedRect = CGRect(origin: .zero, size: composedImage.size)
+        guard let image = composedImage.cgImage(
+            forProposedRect: &proposedRect,
+            context: nil,
+            hints: nil
+        ), let sampler = PixelSampler(image: image) else {
+            NSSound.beep()
+            return
+        }
+        colorSampler = sampler
+        colorDisplayFormat = .hex
+        currentPixelSample = nil
+        isColorPicking = true
+        closeButton.isHidden = true
+        window?.makeKey()
+        window?.makeFirstResponder(self)
+        NSCursor.crosshair.set()
+        attachMagnifierPanelIfNeeded()
+    }
+
+    private func finishColorPicking() {
+        isColorPicking = false
+        colorSampler = nil
+        currentPixelSample = nil
+        hideColorMagnifier()
+        NSCursor.arrow.set()
+    }
+
+    private func refreshColorMagnifier() {
+        guard let colorSampler, let currentPixelSample else { return }
+        colorMagnifierView.update(
+            sampler: colorSampler,
+            sample: currentPixelSample,
+            format: colorDisplayFormat
+        )
+    }
+
+    private func copyCurrentColor() {
+        guard let currentPixelSample else {
+            NSSound.beep()
+            return
+        }
+        let copied = currentPixelSample.text(format: colorDisplayFormat)
+        colorPasteboard.clearContents()
+        guard colorPasteboard.setString(copied, forType: .string) else {
+            NSSound.beep()
+            return
+        }
+        colorMagnifierView.showCopyConfirmation(copied)
+    }
+
+    private func attachMagnifierPanelIfNeeded() {
+        guard let window, let magnifierPanel else { return }
+        if !(window.childWindows?.contains(magnifierPanel) ?? false) {
+            window.addChildWindow(magnifierPanel, ordered: .above)
+        }
+        magnifierPanel.level = window.level
+    }
+
+    private func positionColorMagnifier(near point: CGPoint) {
+        guard let window, let magnifierPanel else { return }
+        attachMagnifierPanelIfNeeded()
+        let windowPoint = convert(point, to: nil)
+        let screenPoint = window.convertPoint(toScreen: windowPoint)
+        let visibleFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? window.frame
+        let frame = ScreenshotMagnifierView.positionedFrame(
+            near: screenPoint,
+            in: visibleFrame
+        )
+        magnifierPanel.setFrame(frame, display: true)
+        colorMagnifierView.frame = CGRect(origin: .zero, size: frame.size)
+        colorMagnifierView.isHidden = false
+        magnifierPanel.orderFrontRegardless()
+    }
+
+    private func hideColorMagnifier() {
+        currentPixelSample = nil
+        colorMagnifierView.isHidden = true
+        magnifierPanel?.orderOut(nil)
+    }
+
     @objc private func closePin() {
+        finishColorPicking()
         if let close = actions.close {
             close()
         } else {
@@ -1000,6 +1181,7 @@ final class PinContentView: NSView {
     }
 
     @objc private func destroyPin() {
+        finishColorPicking()
         if let destroy = actions.destroy {
             destroy()
         } else {
@@ -1155,6 +1337,14 @@ final class PinContentView: NSView {
             modifiers: []
         )
         menu.addItem(annotationItem)
+
+        let colorPickerItem = menuItem(
+            title: isColorPicking ? "退出取色" : "取色",
+            action: #selector(toggleColorPicking),
+            symbol: "eyedropper"
+        )
+        colorPickerItem.state = isColorPicking ? .on : .off
+        menu.addItem(colorPickerItem)
         menu.addItem(.separator())
 
         let lockItem = menuItem(
@@ -1284,7 +1474,14 @@ final class PinContentView: NSView {
     }
 
     @objc private func toggleAnnotationEditing() {
+        if isColorPicking {
+            finishColorPicking()
+        }
         annotationEditor.toggleEditing()
+    }
+
+    @objc private func toggleColorPicking() {
+        isColorPicking ? finishColorPicking() : beginColorPicking()
     }
 
     private func menuItem(

@@ -44,6 +44,9 @@ else
     app_bundle="$distribution_root/Polyglance.app"
 fi
 app_executable="$app_bundle/Contents/MacOS/Polyglance"
+launch_services_register="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+persistent_signing_identity="Polyglance Open Source Signing"
+persistent_signing_certificate_file="$repository_root/config/macos-signing-certificate-sha1.txt"
 
 function stop_packaged_app() {
     local running_processes
@@ -80,9 +83,23 @@ function reset_development_permissions() {
         exit 1
     fi
 
-    local permission_service
+    if [[ ! -x "$launch_services_register" ]]; then
+        print -u2 "LaunchServices registration tool was not found; permissions were not reset."
+        exit 1
+    fi
+    "$launch_services_register" -f "$app_bundle"
+
+    local permission_service reset_output
     for permission_service in Accessibility ScreenCapture Microphone; do
-        /usr/bin/tccutil reset "$permission_service" "$bundle_identifier" || true
+        if ! reset_output="$(/usr/bin/tccutil reset "$permission_service" "$bundle_identifier" 2>&1)"; then
+            if [[ "$reset_output" == *"No such bundle identifier"* ]]; then
+                print "No existing $permission_service permission was recorded for $bundle_identifier"
+                continue
+            fi
+            print -u2 "Unable to reset $permission_service permission for $bundle_identifier: $reset_output"
+            exit 1
+        fi
+        print "$reset_output"
     done
 
     print "Cleared Accessibility, Screen Recording, and Microphone permissions for $bundle_identifier"
@@ -156,11 +173,33 @@ if [[ -n "${POLYGLANCE_APPCAST_URL:-}" ]]; then
     /usr/libexec/PlistBuddy -c "Add :SUVerifyUpdateBeforeExtraction bool true" "$info_plist"
 fi
 
-codesign_identity="${CODESIGN_IDENTITY:--}"
+codesign_identity="${CODESIGN_IDENTITY:-}"
+codesign_certificate_sha1="${CODESIGN_CERTIFICATE_SHA1:-}"
+uses_automatically_selected_identity=false
+if [[ -z "$codesign_identity" ]]; then
+    if [[ ! -f "$persistent_signing_certificate_file" ]]; then
+        print -u2 "Persistent signing certificate fingerprint file was not found: $persistent_signing_certificate_file"
+        exit 1
+    fi
+    persistent_signing_certificate_sha1="$(tr -d '\n' < "$persistent_signing_certificate_file")"
+    installed_persistent_certificate_sha1="$(security find-certificate \
+        -c "$persistent_signing_identity" \
+        -Z 2>/dev/null \
+        | awk '/SHA-1 hash:/ { print $3; exit }')"
+    if [[ "$installed_persistent_certificate_sha1" == "$persistent_signing_certificate_sha1" ]]; then
+        codesign_identity="$persistent_signing_identity"
+        codesign_certificate_sha1="$persistent_signing_certificate_sha1"
+        uses_automatically_selected_identity=true
+        print "Using the persistent $persistent_signing_identity identity for this build."
+    else
+        codesign_identity="-"
+        print "Persistent signing identity is unavailable; using an ad-hoc development signature."
+    fi
+fi
 if [[ "$codesign_identity" == "-" ]]; then
     codesign --force --deep --sign - "$app_bundle"
+    codesign --verify --deep --strict --verbose=2 "$app_bundle"
 else
-    codesign_certificate_sha1="${CODESIGN_CERTIFICATE_SHA1:-}"
     if [[ ! "$codesign_certificate_sha1" =~ '^[A-Fa-f0-9]{40}$' ]]; then
         print -u2 "CODESIGN_CERTIFICATE_SHA1 must be the persistent signing certificate SHA-1."
         exit 1
@@ -202,12 +241,29 @@ else
 
     # Sign nested code first with its own synthesized requirements, then
     # re-sign only the outer app with the stable TCC identity requirement.
-    codesign --deep "${codesign_arguments[@]}" "$app_bundle"
-    codesign "${codesign_arguments[@]}" \
+    signing_failed=false
+    if ! codesign --deep "${codesign_arguments[@]}" "$app_bundle"; then
+        signing_failed=true
+    elif ! codesign "${codesign_arguments[@]}" \
         --requirements "=$codesign_requirement" \
-        "$app_bundle"
-    codesign --verify --deep --strict --verbose=2 "$app_bundle"
-    codesign --verify --strict -R "=$codesign_requirement_expression" "$app_bundle"
+        "$app_bundle"; then
+        signing_failed=true
+    elif ! codesign --verify --deep --strict --verbose=2 "$app_bundle"; then
+        signing_failed=true
+    elif ! codesign --verify --strict -R "=$codesign_requirement_expression" "$app_bundle"; then
+        signing_failed=true
+    fi
+
+    if "$signing_failed"; then
+        if "$uses_automatically_selected_identity"; then
+            print -u2 "Persistent signing identity could not be used; falling back to an ad-hoc development signature."
+            codesign --force --deep --sign - "$app_bundle"
+            codesign --verify --deep --strict --verbose=2 "$app_bundle"
+        else
+            print -u2 "The selected code-signing identity could not sign this build."
+            exit 1
+        fi
+    fi
 fi
 
 if $should_reset_permissions; then

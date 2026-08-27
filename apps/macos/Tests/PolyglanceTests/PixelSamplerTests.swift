@@ -79,7 +79,8 @@ final class PixelSamplerTests: XCTestCase {
         XCTAssertEqual(Int((center.blueComponent * 255).rounded()), 0x56)
     }
 
-    func testMagnifierShowsSharedShortcutHintAndTransientCopyFeedback() {
+    @MainActor
+    func testMagnifierShowsSharedShortcutHintAndTransientCopyFeedback() async {
         let magnifier = ScreenshotMagnifierView(frame: CGRect(
             origin: .zero,
             size: ScreenshotMagnifierView.preferredSize
@@ -94,7 +95,7 @@ final class PixelSamplerTests: XCTestCase {
             XCTAssertEqual(magnifier.instructionText, "C 复制色值 · ⇧C 切换 HEX/RGB")
             restored.fulfill()
         }
-        wait(for: [restored], timeout: 1)
+        await fulfillment(of: [restored], timeout: 1)
     }
 
     private func makeImage(
