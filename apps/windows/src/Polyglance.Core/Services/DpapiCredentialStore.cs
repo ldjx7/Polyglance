@@ -23,6 +23,9 @@ public sealed class DpapiCredentialStore : ICredentialStore
 
     public string? Load()
     {
+        if (!OperatingSystem.IsWindows())
+            throw new PlatformNotSupportedException("DPAPI credential storage is only available on Windows.");
+
         if (!File.Exists(_filePath))
             return null;
 
@@ -36,6 +39,9 @@ public sealed class DpapiCredentialStore : ICredentialStore
 
     public void Save(string value)
     {
+        if (!OperatingSystem.IsWindows())
+            throw new PlatformNotSupportedException("DPAPI credential storage is only available on Windows.");
+
         ArgumentNullException.ThrowIfNull(value);
         string? directory = Path.GetDirectoryName(_filePath);
         if (!string.IsNullOrEmpty(directory))
