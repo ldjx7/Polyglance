@@ -127,6 +127,11 @@ public partial class SettingsWindow : FluentWindow
     {
         BtnCheckUpdate.IsEnabled = false;
         BtnCheckUpdate.Content = "检查中...";
+        TxtUpdateStatus.Visibility = Visibility.Visible;
+        TxtUpdateStatus.Text = "正在连接更新服务器...";
+        TxtUpdateStatus.Foreground = (Brush)FindResource("TextFillColorSecondaryBrush");
+        PbUpdateProgress.Visibility = Visibility.Collapsed;
+        PbUpdateProgress.Value = 0;
 
         try
         {
@@ -134,6 +139,9 @@ public partial class SettingsWindow : FluentWindow
             if (check.Status == UpdateCheckStatus.UpdateAvailable)
             {
                 UpdateInfo update = check.Update!;
+                TxtUpdateStatus.Text = $"发现新版本 v{update.Version}";
+                TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
+
                 var result = System.Windows.MessageBox.Show(
                     $"发现新版本 v{update.Version}！\n\n更新内容:\n{update.ReleaseNotes}\n\n是否立即下载并更新？",
                     "Polyglance 自动更新",
@@ -144,9 +152,20 @@ public partial class SettingsWindow : FluentWindow
                 if (result == System.Windows.MessageBoxResult.Yes)
                 {
                     BtnCheckUpdate.Content = "正在下载更新...";
-                    bool started = await AppUpdater.DownloadAndApplyUpdateAsync(update.DownloadUrl);
+                    TxtUpdateStatus.Text = "正在下载更新包 (0%)...";
+                    PbUpdateProgress.Visibility = Visibility.Visible;
+
+                    var progress = new Progress<int>(percent =>
+                    {
+                        PbUpdateProgress.Value = percent;
+                        TxtUpdateStatus.Text = $"正在下载更新包 ({percent}%)...";
+                    });
+
+                    bool started = await AppUpdater.DownloadAndApplyUpdateAsync(update.DownloadUrl, progress);
                     if (!started)
                     {
+                        TxtUpdateStatus.Text = "更新包下载或替换失败";
+                        TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
                         System.Windows.MessageBox.Show(
                             "更新包下载或替换失败，请稍后重试，或从 GitHub Release 手动安装。",
                             "Polyglance 自动更新",
@@ -157,10 +176,14 @@ public partial class SettingsWindow : FluentWindow
             }
             else if (check.Status == UpdateCheckStatus.UpToDate)
             {
+                TxtUpdateStatus.Text = "当前已是最新版本";
+                TxtUpdateStatus.Foreground = (Brush)FindResource("TextFillColorSecondaryBrush");
                 System.Windows.MessageBox.Show("当前已是最新版本！", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             else
             {
+                TxtUpdateStatus.Text = string.IsNullOrWhiteSpace(check.ErrorMessage) ? "检查更新失败" : check.ErrorMessage;
+                TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
                 System.Windows.MessageBox.Show(
                     check.ErrorMessage,
                     "检查更新失败",
@@ -170,6 +193,8 @@ public partial class SettingsWindow : FluentWindow
         }
         catch (Exception ex)
         {
+            TxtUpdateStatus.Text = $"检查更新异常: {ex.Message}";
+            TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
             System.Windows.MessageBox.Show($"检查更新失败: {ex.Message}", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         finally

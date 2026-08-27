@@ -1,0 +1,404 @@
+---
+interface Props {
+  title: string;
+  description?: string;
+  lang?: 'zh-CN' | 'en';
+}
+
+const {
+  title,
+  description = 'Polyglance — 原生跨平台翻译与屏幕效率工具',
+  lang = 'zh-CN'
+} = Astro.props;
+
+const isEn = lang === 'en';
+---
+
+<!DOCTYPE html>
+<html lang={lang} data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{title} — Polyglance</title>
+  <meta name="description" content={description} />
+  <link rel="icon" type="image/png" href="/favicon-48.png" />
+
+  <script is:inline>
+    (function() {
+      const stored = localStorage.getItem('polyglance-theme') || localStorage.getItem('starlight-theme');
+      const theme = stored || 'light';
+      document.documentElement.setAttribute('data-theme', theme);
+      if (!stored) {
+        localStorage.setItem('polyglance-theme', 'light');
+      }
+    })();
+  </script>
+
+  <style is:global>
+    :root {
+      --font-stack: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --font-code: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    }
+
+    :root[data-theme='light'] {
+      --bg: #ffffff;
+      --bg-subtle: #f5f5f7;
+      --bg-card: #ffffff;
+      --bg-card-hover: #fafafa;
+      --bg-nav: rgba(255, 255, 255, 0.85);
+      
+      --text-1: #1d1d1f;
+      --text-2: #515154;
+      --text-3: #86868b;
+      
+      --border-subtle: rgba(0, 0, 0, 0.08);
+      --border-strong: rgba(0, 0, 0, 0.16);
+      
+      --btn-main-bg: #000000;
+      --btn-main-text: #ffffff;
+      --btn-main-hover: #2d2d2f;
+      
+      --btn-sec-bg: #f5f5f7;
+      --btn-sec-text: #1d1d1f;
+      --btn-sec-border: rgba(0, 0, 0, 0.08);
+      --btn-sec-hover: #e8e8ed;
+
+      --accent: #0066cc;
+      --accent-light: rgba(0, 102, 204, 0.08);
+      
+      --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
+      --shadow-float: 0 20px 40px -10px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
+      --shadow-btn: 0 1px 2px rgba(0, 0, 0, 0.1);
+
+      --kbd-bg: #f5f5f7;
+      --kbd-border: rgba(0, 0, 0, 0.12);
+      --kbd-text: #1d1d1f;
+    }
+
+    :root[data-theme='dark'] {
+      --bg: #000000;
+      --bg-subtle: #121212;
+      --bg-card: #161618;
+      --bg-card-hover: #1c1c1f;
+      --bg-nav: rgba(0, 0, 0, 0.85);
+      
+      --text-1: #f5f5f7;
+      --text-2: #a1a1a6;
+      --text-3: #6e6e73;
+      
+      --border-subtle: rgba(255, 255, 255, 0.1);
+      --border-strong: rgba(255, 255, 255, 0.2);
+      
+      --btn-main-bg: #ffffff;
+      --btn-main-text: #000000;
+      --btn-main-hover: #e5e5e5;
+      
+      --btn-sec-bg: #1c1c1e;
+      --btn-sec-text: #f5f5f7;
+      --btn-sec-border: rgba(255, 255, 255, 0.12);
+      --btn-sec-hover: #2c2c2e;
+
+      --accent: #2997ff;
+      --accent-light: rgba(41, 151, 255, 0.12);
+      
+      --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.6);
+      --shadow-float: 0 25px 60px -10px rgba(0, 0, 0, 0.9);
+      --shadow-btn: 0 1px 2px rgba(0, 0, 0, 0.5);
+
+      --kbd-bg: #2c2c2e;
+      --kbd-border: rgba(255, 255, 255, 0.15);
+      --kbd-text: #f5f5f7;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-stack);
+      background-color: var(--bg);
+      color: var(--text-1);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      transition: background-color 0.3s ease, color 0.3s ease;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    .container {
+      width: 100%;
+      max-width: 1020px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    main {
+      flex: 1;
+      padding: 3.5rem 0 6rem;
+    }
+
+    /* Navbar */
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--bg-nav);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .nav-inner {
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .nav-left {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .nav-logo {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+    }
+
+    .nav-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .nav-menu {
+      display: flex;
+      align-items: center;
+      gap: 1.75rem;
+      list-style: none;
+    }
+
+    @media (max-width: 800px) {
+      .nav-menu { display: none; }
+    }
+
+    .nav-link {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-2);
+      transition: color 0.2s;
+    }
+
+    .nav-link:hover, .nav-link.active {
+      color: var(--text-1);
+    }
+
+    .nav-right {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .btn-icon {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-1);
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-icon:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-strong);
+    }
+
+    .btn-nav-cta {
+      background: var(--btn-main-bg);
+      color: var(--btn-main-text) !important;
+      font-size: 0.82rem;
+      font-weight: 600;
+      padding: 0.45rem 0.95rem;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+
+    .btn-nav-cta:hover {
+      background: var(--btn-main-hover);
+    }
+
+    /* Page Header */
+    .page-header {
+      margin-bottom: 2.5rem;
+    }
+
+    .page-title {
+      font-size: clamp(2rem, 4vw, 2.5rem);
+      font-weight: 800;
+      letter-spacing: -0.035em;
+      margin-bottom: 0.5rem;
+      color: var(--text-1);
+    }
+
+    .page-desc {
+      font-size: 1.05rem;
+      color: var(--text-2);
+    }
+
+    /* Common Card & Tables */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 1.75rem;
+      box-shadow: var(--shadow-card);
+      margin-bottom: 1.5rem;
+    }
+
+    .card-title {
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      color: var(--text-1);
+    }
+
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+
+    table.data-table th, table.data-table td {
+      padding: 0.9rem 1.2rem;
+      border-bottom: 1px solid var(--border-subtle);
+      text-align: left;
+    }
+
+    table.data-table th {
+      font-weight: 700;
+      color: var(--text-1);
+      background: var(--bg-subtle);
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.15rem 0.45rem;
+      font-size: 0.8rem;
+      font-family: var(--font-code);
+      font-weight: 600;
+      color: var(--kbd-text);
+      background: var(--kbd-bg);
+      border: 1px solid var(--kbd-border);
+      border-radius: 5px;
+      margin: 0 0.2rem;
+    }
+
+    /* Footer */
+    .footer {
+      border-top: 1px solid var(--border-subtle);
+      padding: 2.5rem 0;
+      color: var(--text-3);
+      font-size: 0.85rem;
+    }
+
+    .footer-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+    }
+  </style>
+</head>
+<body>
+  <!-- Navbar -->
+  <header class="nav">
+    <div class="container nav-inner">
+      <div class="nav-left">
+        <a href={isEn ? "/en" : "/"} style="display:flex; align-items:center; gap:0.6rem;">
+          <img src="/favicon-48.png" alt="Polyglance" class="nav-logo" />
+          <span class="nav-title">Polyglance</span>
+        </a>
+      </div>
+
+      <ul class="nav-menu">
+        <li><a href={isEn ? "/en" : "/"} class="nav-link">{isEn ? "Home" : "首页"}</a></li>
+        <li><a href={isEn ? "/en/download" : "/download"} class="nav-link">{isEn ? "Download" : "下载"}</a></li>
+        <li><a href={isEn ? "/en/guides/shortcuts" : "/guides/shortcuts"} class="nav-link">{isEn ? "Shortcuts" : "快捷键"}</a></li>
+        <li><a href={isEn ? "/en/guides/install" : "/guides/install"} class="nav-link">{isEn ? "Install Guide" : "安装指南"}</a></li>
+        <li><a href={isEn ? "/en/changelog" : "/changelog"} class="nav-link">{isEn ? "Changelog" : "更新日志"}</a></li>
+        <li><a href={isEn ? "/en/guides/faq" : "/guides/faq"} class="nav-link">{isEn ? "FAQ" : "常见问题"}</a></li>
+      </ul>
+
+      <div class="nav-right">
+        <a href={isEn ? "/" : "/en"} class="nav-link" style="font-weight:700; font-size:0.82rem;">{isEn ? "中文" : "EN"}</a>
+        <button id="themeBtn" class="btn-icon" aria-label="Toggle Theme">
+          <svg id="themeIconSun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+          <svg id="themeIconMoon" style="display:none;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+        </button>
+        <a href={isEn ? "/en/download" : "/download"} class="btn-nav-cta">{isEn ? "Download" : "下载客户端"}</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="container">
+      <slot />
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div>
+        <strong>Polyglance</strong> — {isEn ? "Native Desktop Translation & Screen Tool" : "原生跨平台翻译与屏幕效率工具"}
+      </div>
+      <div>
+        <a href="https://github.com/ldjx7/Polyglance" target="_blank" rel="noopener" style="margin-right: 1.5rem;">GitHub</a>
+        <a href={isEn ? "/en/guides/install" : "/guides/install"} style="margin-right: 1.5rem;">{isEn ? "Install" : "安装指南"}</a>
+        <a href={isEn ? "/en/guides/shortcuts" : "/guides/shortcuts"} style="margin-right: 1.5rem;">{isEn ? "Shortcuts" : "快捷键"}</a>
+        <a href={isEn ? "/en/changelog" : "/changelog"}>{isEn ? "Changelog" : "更新日志"}</a>
+      </div>
+    </div>
+  </footer>
+
+  <script is:inline>
+    const themeBtn = document.getElementById('themeBtn');
+    const sunIcon = document.getElementById('themeIconSun');
+    const moonIcon = document.getElementById('themeIconMoon');
+
+    function syncThemeUI(theme) {
+      if (sunIcon && moonIcon) {
+        sunIcon.style.display = theme === 'dark' ? 'none' : 'block';
+        moonIcon.style.display = theme === 'dark' ? 'block' : 'none';
+      }
+    }
+
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+    syncThemeUI(currentTheme);
+
+    if (themeBtn) {
+      themeBtn.addEventListener('click', () => {
+        const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('polyglance-theme', theme);
+        localStorage.setItem('starlight-theme', theme);
+        syncThemeUI(theme);
+      });
+    }
+  </script>
+</body>
+</html>

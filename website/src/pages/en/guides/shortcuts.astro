@@ -1,0 +1,115 @@
+---
+import PageLayout from '../../../layouts/PageLayout.astro';
+---
+
+<PageLayout title="Keyboard Shortcuts" description="Default global shortcut bindings in Polyglance" lang="en">
+  <div class="page-header">
+    <h1 class="page-title">Keyboard Shortcuts</h1>
+    <p class="page-desc">All global shortcuts can be customized in Preferences.</p>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">Translation</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Action</th>
+          <th>macOS Default</th>
+          <th>Windows Default</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>In-place Translate</strong> (Floating popover)</td>
+          <td><kbd>⌥ Option</kbd> + <kbd>D</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>D</kbd></td>
+        </tr>
+        <tr>
+          <td><strong>Inspect Selection Only</strong></td>
+          <td><kbd>⌥ Option</kbd> + <kbd>⇧ Shift</kbd> + <kbd>D</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd></td>
+        </tr>
+        <tr>
+          <td><strong>Open Main Translator Window</strong></td>
+          <td><kbd>⌥ Option</kbd> + <kbd>T</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>T</kbd></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">Capture, Record & Pin</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Action</th>
+          <th>macOS Default</th>
+          <th>Windows Default</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>High-DPI Region Screenshot & OCR</strong></td>
+          <td><kbd>⌥ Option</kbd> + <kbd>1</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>A</kbd></td>
+        </tr>
+        <tr>
+          <td><strong>Pin Clipboard Image</strong> (Float on screen)</td>
+          <td><kbd>⌥ Option</kbd> + <kbd>2</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>V</kbd></td>
+        </tr>
+        <tr>
+          <td><strong>Scrolling Long Screenshot</strong></td>
+          <td><kbd>⌥ Option</kbd> + <kbd>3</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>S</kbd></td>
+        </tr>
+        <tr>
+          <td><strong>Region Screen Recording (MP4/GIF)</strong></td>
+          <td><kbd>⌥ Option</kbd> + <kbd>4</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>R</kbd></td>
+        </tr>
+        <tr>
+          <td><strong>Restore Recently Closed Pin</strong></td>
+          <td><kbd>⌥ Option</kbd> + <kbd>5</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>Z</kbd></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">In-Session Capture Actions</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Action</th>
+          <th>Shortcut</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Pixel Color Picker</strong></td>
+          <td><kbd>C</kbd></td>
+          <td>Copy current loupe crosshair pixel color</td>
+        </tr>
+        <tr>
+          <td><strong>Toggle Color Format</strong></td>
+          <td><kbd>⇧ Shift</kbd> + <kbd>C</kbd></td>
+          <td>Switch between HEX and RGB formats</td>
+        </tr>
+        <tr>
+          <td><strong>Copy OCR Text</strong></td>
+          <td><kbd>⌘ Cmd</kbd> / <kbd>Ctrl</kbd> + <kbd>C</kbd></td>
+          <td>Copy highlighted recognized text in region</td>
+        </tr>
+        <tr>
+          <td><strong>Dismiss / Exit</strong></td>
+          <td><kbd>Esc</kbd></td>
+          <td>Close active overlay or window</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</PageLayout>

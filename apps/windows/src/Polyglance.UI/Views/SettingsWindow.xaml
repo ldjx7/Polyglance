@@ -438,7 +438,7 @@
                             <!-- 检查版本更新 -->
                             <ui:Card Margin="0,0,0,12" Padding="16,14">
                                 <StackPanel>
-                                    <Grid Margin="0,0,0,12">
+                                    <Grid Margin="0,0,0,8">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
@@ -449,6 +449,9 @@
                                         </StackPanel>
                                         <ui:Button x:Name="BtnCheckUpdate" Grid.Column="1" Appearance="Secondary" Content="立即检查更新" Padding="14,6" Click="OnCheckUpdateClick"/>
                                     </Grid>
+
+                                    <TextBlock x:Name="TxtUpdateStatus" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,6" Visibility="Collapsed"/>
+                                    <ProgressBar x:Name="PbUpdateProgress" Height="4" Margin="0,0,0,10" Minimum="0" Maximum="100" Value="0" Visibility="Collapsed"/>
 
                                     <ui:ToggleSwitch x:Name="ChkAutoCheckUpdates" Content="启动应用时自动在后台静默检查更新" IsChecked="True"/>
                                 </StackPanel>

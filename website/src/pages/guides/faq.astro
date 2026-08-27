@@ -1,0 +1,38 @@
+---
+import PageLayout from '../../layouts/PageLayout.astro';
+---
+
+<PageLayout title="常见问题" description="关于 Polyglance 的常见疑问与技术细节解答" lang="zh-CN">
+  <div class="page-header">
+    <h1 class="page-title">常见问题 (FAQ)</h1>
+    <p class="page-desc">关于功能、隐私、API 与更新的详细解答。</p>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">1. 真的完全不需要配置 API Key 吗？</h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7;">
+      是的。Polyglance 默认内置了免费的 Microsoft 与 Google 翻译通道，开箱即用，无需申请任何凭据。如果您希望使用具备深度推理能力的大语言模型（如 DeepSeek、OpenAI、Claude 等），可以在“偏好设置 → AI 翻译”中自由填入您自己的 API Key 与 Base URL。
+    </p>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">2. 离线 OCR 识别是如何工作的？安全吗？</h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7;">
+      在 macOS 上，Polyglance 深度调用系统底层的 <strong>Apple Vision 框架</strong>；在 Windows 上调用原生的 <strong>Windows Media OCR 引擎</strong>。整个文字识别与排版分析过程 100% 在您的本地 CPU/GPU 内存中完成，软件不会上传任何屏幕截图到网络。
+    </p>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">3. 如何配置开机自启动？</h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7;">
+      在 Polyglance 的主界面或菜单栏图标上右键选择“偏好设置”，勾选“开机自动启动”即可。
+    </p>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">4. 遇到快捷键冲突怎么办？</h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7;">
+      所有功能快捷键均可在“偏好设置 → 快捷键”中录制更改为您习惯的组合按键。
+    </p>
+  </div>
+</PageLayout>

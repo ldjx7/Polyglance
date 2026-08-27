@@ -25,15 +25,25 @@ export default defineConfig({
         baseUrl: 'https://github.com/ldjx7/Polyglance/edit/main/website/',
       },
       lastUpdated: true,
+      head: [
+        {
+          tag: 'script',
+          content: `
+            if (typeof localStorage !== 'undefined' && !localStorage.getItem('starlight-theme')) {
+              localStorage.setItem('starlight-theme', 'light');
+              document.documentElement.dataset.theme = 'light';
+            }
+          `,
+        },
+      ],
       customCss: ['./src/styles/custom.css'],
       sidebar: [
-        { label: '首页', slug: 'index' },
-        { label: '下载', slug: 'download' },
+        { label: '快速下载', slug: 'download' },
         {
           label: '使用指南',
           items: [
-            { label: '安装', slug: 'guides/install' },
-            { label: '快捷键', slug: 'guides/shortcuts' },
+            { label: '安装说明', slug: 'guides/install' },
+            { label: '快捷键列表', slug: 'guides/shortcuts' },
             { label: '常见问题', slug: 'guides/faq' },
           ],
         },

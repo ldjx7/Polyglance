@@ -1,5 +1,5 @@
 ---
-import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import PageLayout from '../../layouts/PageLayout.astro';
 import { getReleases } from '../../lib/releases';
 
 const releases = await getReleases();
@@ -11,32 +11,43 @@ const formatSize = (bytes: number) => {
 };
 ---
 
-<StarlightPage frontmatter={{ title: 'Changelog', description: 'Synced from GitHub Releases' }}>
+<PageLayout title="Changelog" description="Release history and release assets for Polyglance" lang="en">
+  <div class="page-header">
+    <h1 class="page-title">Changelog</h1>
+    <p class="page-desc">Synced automatically from GitHub Releases.</p>
+  </div>
+
   {releases.length === 0 && (
-    <p>Could not load releases. Visit <a href="https://github.com/ldjx7/Polyglance/releases" target="_blank" rel="noopener">GitHub Releases</a>.</p>
+    <div class="card">
+      <p style="color:var(--text-2);">Unable to fetch release details. Please visit <a href="https://github.com/ldjx7/Polyglance/releases" target="_blank" rel="noopener" style="color:var(--accent); text-decoration:underline;">GitHub Releases</a> directly.</p>
+    </div>
   )}
 
   {releases.map((r) => (
-    <article class="release">
-      <header class="release-header">
-        <h2 id={r.tag_name}>
-          <a href={r.html_url} target="_blank" rel="noopener">{r.name}</a>
-          {r.prerelease && <span class="badge">Pre-release</span>}
-        </h2>
-        <div class="meta">
-          <code>{r.tag_name}</code>
-          {r.published_at && <time>{r.published_at}</time>}
+    <article class="release-item">
+      <div class="release-head">
+        <div style="display:flex; align-items:center; gap:0.75rem;">
+          <h2 class="release-version" id={r.tag_name}>
+            <a href={r.html_url} target="_blank" rel="noopener">{r.name}</a>
+          </h2>
+          {r.prerelease && <span class="badge-pre">Pre-release</span>}
         </div>
-      </header>
-      <div class="release-body" set:html={r.body_html} />
+        <div class="release-meta">
+          <span class="tag-code">{r.tag_name}</span>
+          {r.published_at && <time class="release-time">{r.published_at}</time>}
+        </div>
+      </div>
+
+      <div class="release-markdown" set:html={r.body_html} />
+
       {r.assets.length > 0 && (
-        <details class="assets">
-          <summary>Assets ({r.assets.length})</summary>
-          <ul>
+        <details class="release-assets">
+          <summary>Download Assets ({r.assets.length})</summary>
+          <ul class="asset-list">
             {r.assets.map((a) => (
-              <li>
-                <a href={a.browser_download_url}>{a.name}</a>
-                <span class="size">{formatSize(a.size)}</span>
+              <li class="asset-item">
+                <a href={a.browser_download_url} class="asset-link">{a.name}</a>
+                <span class="asset-size">{formatSize(a.size)}</span>
               </li>
             ))}
           </ul>
@@ -44,62 +55,124 @@ const formatSize = (bytes: number) => {
       )}
     </article>
   ))}
-</StarlightPage>
+</PageLayout>
 
 <style>
-  .release {
-    border-bottom: 1px solid var(--sl-color-gray-5);
-    padding-bottom: 2rem;
+  .release-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: 14px;
+    padding: 2rem;
+    box-shadow: var(--shadow-card);
     margin-bottom: 2rem;
   }
-  .release:last-child {
-    border-bottom: none;
-  }
-  .release-header h2 {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 0;
-  }
-  .badge {
-    font-size: 0.7rem;
-    padding: 0.2rem 0.5rem;
-    border-radius: 0.25rem;
-    background: var(--sl-color-accent-low);
-    color: var(--sl-color-accent-high);
-    font-weight: normal;
-  }
-  .meta {
-    display: flex;
-    gap: 1rem;
-    align-items: center;
-    color: var(--sl-color-gray-3);
-    font-size: 0.9rem;
-    margin-bottom: 1rem;
-  }
-  .release-body :global(h2),
-  .release-body :global(h3) {
-    font-size: 1.2rem;
-    margin-top: 1.2rem;
-  }
-  .release-body :global(img) {
-    max-width: 100%;
-  }
-  .assets summary {
-    cursor: pointer;
-    color: var(--sl-color-text-accent);
-  }
-  .assets ul {
-    list-style: none;
-    padding: 0.5rem 0 0;
-  }
-  .assets li {
+
+  .release-head {
     display: flex;
     justify-content: space-between;
-    padding: 0.25rem 0;
-    font-size: 0.9rem;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-subtle);
   }
-  .size {
-    color: var(--sl-color-gray-3);
+
+  .release-version {
+    font-size: 1.35rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text-1);
+  }
+
+  .release-version a:hover {
+    color: var(--accent);
+  }
+
+  .badge-pre {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 9999px;
+    background: var(--accent-light);
+    color: var(--accent);
+  }
+
+  .release-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.85rem;
+    color: var(--text-3);
+  }
+
+  .tag-code {
+    font-family: var(--font-code);
+    font-size: 0.8rem;
+    background: var(--bg-subtle);
+    padding: 0.15rem 0.45rem;
+    border-radius: 4px;
+    border: 1px solid var(--border-subtle);
+    color: var(--text-2);
+  }
+
+  .release-markdown {
+    color: var(--text-2);
+    font-size: 0.95rem;
+    line-height: 1.65;
+    margin-bottom: 1.5rem;
+  }
+
+  .release-markdown :global(h2), .release-markdown :global(h3) {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-1);
+    margin: 1.25rem 0 0.5rem;
+  }
+
+  .release-markdown :global(ul) {
+    padding-left: 1.5rem;
+    margin: 0.5rem 0 1rem;
+  }
+
+  .release-markdown :global(li) {
+    margin-bottom: 0.35rem;
+  }
+
+  .release-assets {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+  }
+
+  .release-assets summary {
+    cursor: pointer;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-1);
+  }
+
+  .asset-list {
+    list-style: none;
+    margin-top: 0.75rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .asset-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.4rem 0;
+    font-size: 0.85rem;
+  }
+
+  .asset-link {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+
+  .asset-size {
+    color: var(--text-3);
   }
 </style>

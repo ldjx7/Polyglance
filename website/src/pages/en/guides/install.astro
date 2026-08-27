@@ -1,0 +1,56 @@
+---
+import PageLayout from '../../../layouts/PageLayout.astro';
+---
+
+<PageLayout title="Installation Guide" description="Step-by-step installation and permission setup for Polyglance on macOS and Windows" lang="en">
+  <div class="page-header">
+    <h1 class="page-title">Installation Guide</h1>
+    <p class="page-desc">Quickly configure permissions and start using Polyglance.</p>
+  </div>
+
+  <!-- macOS Card -->
+  <div class="card">
+    <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:1rem;">
+      <svg style="width:20px; height:20px; fill:currentColor;" viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.37c.62-.75 1.04-1.8 1.01-2.87-.96.04-2.12.64-2.8 1.44-.59.68-1.11 1.76-.97 2.8 1.07.08 2.14-.54 2.76-1.37z"/></svg>
+      <h2 class="card-title" style="margin-bottom:0;">macOS Setup & Permissions</h2>
+    </div>
+
+    <div style="font-size:0.95rem; color:var(--text-2); line-height:1.7;">
+      <h3 style="font-size:1.05rem; color:var(--text-1); margin:1rem 0 0.5rem;">1. Installation</h3>
+      <p>Download the latest <code>.dmg</code> from the <a href="/en/download" style="color:var(--accent); text-decoration:underline;">Download page</a> and drag <strong>Polyglance</strong> into your Applications folder.</p>
+
+      <h3 style="font-size:1.05rem; color:var(--text-1); margin:1.25rem 0 0.5rem;">2. If prompted "Damaged and cannot be opened"</h3>
+      <p>As an open-source project without Apple Developer notarization, macOS Gatekeeper might block execution. Open your <strong>Terminal</strong> and run:</p>
+      
+      <div style="background:var(--bg-subtle); border:1px solid var(--border-subtle); border-radius:8px; padding:0.85rem 1.1rem; margin:0.75rem 0; font-family:var(--font-code); font-size:0.88rem; color:var(--text-1);">
+        <code>xattr -cr /Applications/Polyglance.app</code>
+      </div>
+
+      <h3 style="font-size:1.05rem; color:var(--text-1); margin:1.25rem 0 0.5rem;">3. Required Permissions</h3>
+      <p>In <em>System Settings → Privacy & Security</em>, grant the following permissions:</p>
+      <ul style="padding-left:1.5rem; margin-top:0.5rem;">
+        <li><strong>Accessibility</strong>: For global hotkeys and text selection inspection.</li>
+        <li><strong>Screen Recording</strong>: For OCR scanning, scrolling capture, and video recording.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Windows Card -->
+  <div class="card">
+    <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:1rem;">
+      <svg style="width:20px; height:20px; fill:currentColor;" viewBox="0 0 24 24"><path d="M0 0h11.377v11.377H0zm12.623 0H24v11.377H12.623zM0 12.623h11.377V24H0zm12.623 0H24V24H12.623z"/></svg>
+      <h2 class="card-title" style="margin-bottom:0;">Windows Setup</h2>
+    </div>
+
+    <div style="font-size:0.95rem; color:var(--text-2); line-height:1.7;">
+      <h3 style="font-size:1.05rem; color:var(--text-1); margin:1rem 0 0.5rem;">1. Installer (Recommended)</h3>
+      <p>Run <code>Windows-x64-Setup.exe</code>. It configures startup shortcuts and enables seamless auto-updates.</p>
+
+      <h3 style="font-size:1.05rem; color:var(--text-1); margin:1.25rem 0 0.5rem;">2. Portable Archive</h3>
+      <p>Extract <code>Windows-x64-Portable.zip</code> and run <code>Polyglance.UI.exe</code> directly.</p>
+
+      <h3 style="font-size:1.05rem; color:var(--text-1); margin:1.25rem 0 0.5rem;">3. SmartScreen Note</h3>
+      <p>If Windows SmartScreen prompts, click <strong>"More info" → "Run anyway"</strong>.</p>
+    </div>
+  </div>
+</PageLayout>

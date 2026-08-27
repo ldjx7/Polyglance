@@ -1,0 +1,38 @@
+---
+import PageLayout from '../../../layouts/PageLayout.astro';
+---
+
+<PageLayout title="FAQ" description="Frequently Asked Questions about Polyglance" lang="en">
+  <div class="page-header">
+    <h1 class="page-title">Frequently Asked Questions</h1>
+    <p class="page-desc">Answers to common questions about features, privacy, and updates.</p>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">1. Is an API Key really not required?</h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7;">
+      Yes. Polyglance includes free Microsoft and Google translation endpoints out-of-the-box. If you prefer LLMs such as DeepSeek, OpenAI, or Claude, you can configure your custom API Key and Base URL in Settings.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">2. How does offline OCR work? Is it private?</h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7;">
+      On macOS, Polyglance calls Apple Vision framework. On Windows, it uses Windows Media OCR. OCR runs 100% locally on your machine without network uploads.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">3. How to enable launch on startup?</h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7;">
+      Right-click the menubar/tray icon, open Preferences, and toggle "Launch at Login".
+    </p>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">4. How to resolve shortcut conflicts?</h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7;">
+      You can re-record and customize every global shortcut in Preferences → Shortcuts.
+    </p>
+  </div>
+</PageLayout>

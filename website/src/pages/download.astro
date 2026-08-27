@@ -1,0 +1,172 @@
+---
+import PageLayout from '../layouts/PageLayout.astro';
+---
+
+<PageLayout title="下载客户端" description="下载适用于 macOS 与 Windows 的 Polyglance 最新安装包" lang="zh-CN">
+  <div class="page-header">
+    <h1 class="page-title">下载 Polyglance</h1>
+    <p class="page-desc">跨平台、免费开源、原生低资源占用。</p>
+  </div>
+
+  <div class="download-cards-grid">
+    <!-- macOS Card -->
+    <div class="card platform-card">
+      <div class="platform-header">
+        <svg style="width:26px; height:26px; fill:currentColor;" viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.37c.62-.75 1.04-1.8 1.01-2.87-.96.04-2.12.64-2.8 1.44-.59.68-1.11 1.76-.97 2.8 1.07.08 2.14-.54 2.76-1.37z"/></svg>
+        <div>
+          <h2 class="platform-title">macOS</h2>
+          <span class="platform-sub">支持 Apple Silicon (M1~M4) 与 Intel，要求 macOS 13.0+</span>
+        </div>
+      </div>
+
+      <div class="file-group">
+        <a href="https://github.com/ldjx7/Polyglance/releases/latest" target="_blank" rel="noopener" class="file-action-btn">
+          <div>
+            <strong>Polyglance macOS (.dmg)</strong>
+            <span class="file-meta">推荐：标准磁盘镜像，拖拽安装，内置 Sparkle 自动更新</span>
+          </div>
+          <span class="btn-action-label">下载 DMG →</span>
+        </a>
+
+        <a href="https://github.com/ldjx7/Polyglance/releases/latest" target="_blank" rel="noopener" class="file-action-btn">
+          <div>
+            <strong>Polyglance macOS (.zip)</strong>
+            <span class="file-meta">免挂载压缩包，解压后拖入“应用程序”目录</span>
+          </div>
+          <span class="btn-action-label">下载 ZIP →</span>
+        </a>
+      </div>
+
+      <div class="install-tip">
+        <strong>提示“已损坏，无法打开”？</strong>在终端执行：<code style="font-family:var(--font-code); background:var(--bg-card); padding:0.1rem 0.35rem; border-radius:4px; border:1px solid var(--border-subtle);">xattr -cr /Applications/Polyglance.app</code>
+      </div>
+    </div>
+
+    <!-- Windows Card -->
+    <div class="card platform-card">
+      <div class="platform-header">
+        <svg style="width:26px; height:26px; fill:currentColor;" viewBox="0 0 24 24"><path d="M0 0h11.377v11.377H0zm12.623 0H24v11.377H12.623zM0 12.623h11.377V24H0zm12.623 0H24V24H12.623z"/></svg>
+        <div>
+          <h2 class="platform-title">Windows</h2>
+          <span class="platform-sub">支持 Windows 10 (1809+) 与 Windows 11 64位</span>
+        </div>
+      </div>
+
+      <div class="file-group">
+        <a href="https://github.com/ldjx7/Polyglance/releases/latest" target="_blank" rel="noopener" class="file-action-btn">
+          <div>
+            <strong>Windows-x64-Setup.exe</strong>
+            <span class="file-meta">推荐：当前用户安装包，支持快捷方式与无缝检查更新</span>
+          </div>
+          <span class="btn-action-label">下载 EXE →</span>
+        </a>
+
+        <a href="https://github.com/ldjx7/Polyglance/releases/latest" target="_blank" rel="noopener" class="file-action-btn">
+          <div>
+            <strong>Windows-x64-Portable.zip</strong>
+            <span class="file-meta">绿色便携版，解压至任意目录双击运行</span>
+          </div>
+          <span class="btn-action-label">下载 ZIP →</span>
+        </a>
+      </div>
+
+      <div class="install-tip">
+        <strong>首次启动提示：</strong>若 SmartScreen 拦截，点击<strong>“更多信息” → “仍要运行”</strong>。
+      </div>
+    </div>
+  </div>
+</PageLayout>
+
+<style>
+  .download-cards-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.75rem;
+    margin-top: 1.5rem;
+  }
+
+  @media (max-width: 768px) {
+    .download-cards-grid { grid-template-columns: 1fr; }
+  }
+
+  .platform-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 2.25rem;
+  }
+
+  .platform-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .platform-title {
+    font-size: 1.4rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text-1);
+    line-height: 1.2;
+    margin-bottom: 0.25rem;
+  }
+
+  .platform-sub {
+    font-size: 0.82rem;
+    color: var(--text-3);
+  }
+
+  .file-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    margin-bottom: 2rem;
+  }
+
+  .file-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.1rem 1.25rem;
+    border-radius: 10px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-subtle);
+    transition: all 0.2s;
+  }
+
+  .file-action-btn:hover {
+    border-color: var(--border-strong);
+    background: var(--bg-card-hover);
+    transform: translateY(-1px);
+  }
+
+  .file-action-btn strong {
+    display: block;
+    font-size: 0.95rem;
+    color: var(--text-1);
+    margin-bottom: 0.2rem;
+  }
+
+  .file-meta {
+    font-size: 0.78rem;
+    color: var(--text-3);
+  }
+
+  .btn-action-label {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--accent);
+    white-space: nowrap;
+    margin-left: 1rem;
+  }
+
+  .install-tip {
+    font-size: 0.8rem;
+    color: var(--text-2);
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-subtle);
+  }
+</style>

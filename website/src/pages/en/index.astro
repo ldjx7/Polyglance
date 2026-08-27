@@ -1,0 +1,1250 @@
+---
+import { getReleases } from '../../lib/releases';
+
+const releases = await getReleases();
+const latestRelease = releases[0] || { tag_name: 'v0.0.4', name: 'v0.0.4' };
+---
+
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Polyglance — Polyglot at a Glance | Native Desktop Translation & Screen Tool</title>
+  <meta name="description" content="The native menubar companion for in-place text translation, offline OCR, scrolling screenshots, and screen recording on macOS and Windows." />
+  <link rel="icon" type="image/png" href="/favicon-48.png" />
+
+  <script is:inline>
+    (function() {
+      const stored = localStorage.getItem('polyglance-theme') || localStorage.getItem('starlight-theme');
+      const theme = stored || 'light';
+      document.documentElement.setAttribute('data-theme', theme);
+      if (!stored) {
+        localStorage.setItem('polyglance-theme', 'light');
+      }
+    })();
+  </script>
+
+  <style is:global>
+    :root {
+      --font-stack: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      --font-code: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    }
+
+    :root[data-theme='light'] {
+      --bg: #ffffff;
+      --bg-subtle: #f5f5f7;
+      --bg-card: #ffffff;
+      --bg-card-hover: #fafafa;
+      --bg-nav: rgba(255, 255, 255, 0.85);
+      
+      --text-1: #1d1d1f;
+      --text-2: #515154;
+      --text-3: #86868b;
+      
+      --border-subtle: rgba(0, 0, 0, 0.08);
+      --border-strong: rgba(0, 0, 0, 0.16);
+      
+      --btn-main-bg: #000000;
+      --btn-main-text: #ffffff;
+      --btn-main-hover: #2d2d2f;
+      
+      --btn-sec-bg: #f5f5f7;
+      --btn-sec-text: #1d1d1f;
+      --btn-sec-border: rgba(0, 0, 0, 0.08);
+      --btn-sec-hover: #e8e8ed;
+
+      --accent: #0066cc;
+      --accent-light: rgba(0, 102, 204, 0.08);
+      
+      --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
+      --shadow-float: 0 20px 40px -10px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
+      --shadow-btn: 0 1px 2px rgba(0, 0, 0, 0.1);
+
+      --kbd-bg: #f5f5f7;
+      --kbd-border: rgba(0, 0, 0, 0.12);
+      --kbd-text: #1d1d1f;
+    }
+
+    :root[data-theme='dark'] {
+      --bg: #000000;
+      --bg-subtle: #121212;
+      --bg-card: #161618;
+      --bg-card-hover: #1c1c1f;
+      --bg-nav: rgba(0, 0, 0, 0.85);
+      
+      --text-1: #f5f5f7;
+      --text-2: #a1a1a6;
+      --text-3: #6e6e73;
+      
+      --border-subtle: rgba(255, 255, 255, 0.1);
+      --border-strong: rgba(255, 255, 255, 0.2);
+      
+      --btn-main-bg: #ffffff;
+      --btn-main-text: #000000;
+      --btn-main-hover: #e5e5e5;
+      
+      --btn-sec-bg: #1c1c1e;
+      --btn-sec-text: #f5f5f7;
+      --btn-sec-border: rgba(255, 255, 255, 0.12);
+      --btn-sec-hover: #2c2c2e;
+
+      --accent: #2997ff;
+      --accent-light: rgba(41, 151, 255, 0.12);
+      
+      --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.6);
+      --shadow-float: 0 25px 60px -10px rgba(0, 0, 0, 0.9);
+      --shadow-btn: 0 1px 2px rgba(0, 0, 0, 0.5);
+
+      --kbd-bg: #2c2c2e;
+      --kbd-border: rgba(255, 255, 255, 0.15);
+      --kbd-text: #f5f5f7;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-stack);
+      background-color: var(--bg);
+      color: var(--text-1);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    .container {
+      width: 100%;
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--bg-nav);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .nav-inner {
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .nav-left {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .nav-logo {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+    }
+
+    .nav-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .nav-version {
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0.12rem 0.45rem;
+      border-radius: 9999px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-2);
+    }
+
+    .nav-menu {
+      display: flex;
+      align-items: center;
+      gap: 1.75rem;
+      list-style: none;
+    }
+
+    @media (max-width: 800px) {
+      .nav-menu { display: none; }
+    }
+
+    .nav-link {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-2);
+      transition: color 0.2s;
+    }
+
+    .nav-link:hover {
+      color: var(--text-1);
+    }
+
+    .nav-right {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .btn-icon {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-1);
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-icon:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-strong);
+    }
+
+    .btn-nav-cta {
+      background: var(--btn-main-bg);
+      color: var(--btn-main-text) !important;
+      font-size: 0.82rem;
+      font-weight: 600;
+      padding: 0.45rem 0.95rem;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+
+    .btn-nav-cta:hover {
+      background: var(--btn-main-hover);
+    }
+
+    .hero {
+      padding: 5rem 0 3.5rem;
+      text-align: center;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.3rem 0.85rem;
+      border-radius: 9999px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-2);
+      font-size: 0.8rem;
+      font-weight: 500;
+      margin-bottom: 1.75rem;
+      transition: all 0.2s;
+    }
+
+    .hero-badge:hover {
+      border-color: var(--border-strong);
+      color: var(--text-1);
+    }
+
+    .hero-title {
+      font-size: clamp(2.75rem, 6.5vw, 4.5rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.08;
+      margin-bottom: 1.25rem;
+      color: var(--text-1);
+    }
+
+    .hero-subtitle {
+      font-size: clamp(1.15rem, 2.2vw, 1.35rem);
+      color: var(--text-2);
+      max-width: 640px;
+      margin: 0 auto 2.5rem;
+      line-height: 1.6;
+      font-weight: 400;
+    }
+
+    .hero-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 3.5rem;
+    }
+
+    .btn-download {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.85rem;
+      padding: 0.85rem 1.6rem;
+      border-radius: 12px;
+      text-align: left;
+      transition: all 0.2s;
+    }
+
+    .btn-download-primary {
+      background: var(--btn-main-bg);
+      color: var(--btn-main-text) !important;
+      box-shadow: var(--shadow-btn);
+    }
+
+    .btn-download-primary:hover {
+      background: var(--btn-main-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-download-secondary {
+      background: var(--btn-sec-bg);
+      color: var(--btn-sec-text) !important;
+      border: 1px solid var(--btn-sec-border);
+    }
+
+    .btn-download-secondary:hover {
+      background: var(--btn-sec-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-download-icon {
+      width: 22px;
+      height: 22px;
+      fill: currentColor;
+    }
+
+    .btn-download-text-top {
+      font-size: 0.95rem;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .btn-download-text-bot {
+      font-size: 0.72rem;
+      opacity: 0.75;
+      font-weight: 400;
+    }
+
+    .showcase {
+      margin-bottom: 6rem;
+    }
+
+    .app-showcase-grid {
+      display: grid;
+      grid-template-columns: 1.3fr 0.7fr;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 860px) {
+      .app-showcase-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .real-translator-win {
+      background: var(--bg-card);
+      border: 1px solid var(--border-strong);
+      border-radius: 14px;
+      box-shadow: var(--shadow-float);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .real-win-topbar {
+      height: 42px;
+      background: var(--bg-subtle);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1rem;
+    }
+
+    .real-win-dots {
+      display: flex;
+      gap: 6px;
+      width: 48px;
+    }
+
+    .real-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .d-red { background: #ff5f56; }
+    .d-yellow { background: #ffbd2e; }
+    .d-green { background: #27c93f; }
+
+    .lang-capsule {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      padding: 0.2rem 0.65rem;
+      border-radius: 9999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-1);
+    }
+
+    .topbar-right-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .provider-pill {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-2);
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      padding: 0.15rem 0.5rem;
+      border-radius: 6px;
+    }
+
+    .pin-icon-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-3);
+    }
+
+    .real-win-body {
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .source-box {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+    }
+
+    .source-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-3);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+
+    .source-content {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text-1);
+      line-height: 1.45;
+    }
+
+    .target-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      position: relative;
+    }
+
+    .target-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+
+    .target-content {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text-1);
+      line-height: 1.45;
+    }
+
+    .target-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--border-subtle);
+      font-size: 0.75rem;
+      color: var(--text-3);
+    }
+
+    .real-companion-col {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .real-magnifier-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 1.5rem;
+      box-shadow: var(--shadow-card);
+    }
+
+    .magnifier-grid-view {
+      height: 90px;
+      background: var(--bg-subtle);
+      border-radius: 8px;
+      margin: 0.75rem 0;
+      border: 1px solid var(--border-subtle);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .crosshair-h {
+      position: absolute;
+      width: 100%;
+      height: 1px;
+      background: rgba(0, 102, 204, 0.4);
+    }
+
+    .crosshair-v {
+      position: absolute;
+      height: 100%;
+      width: 1px;
+      background: rgba(0, 102, 204, 0.4);
+    }
+
+    .crosshair-center {
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--accent);
+      border-radius: 3px;
+      z-index: 2;
+    }
+
+    .magnifier-footer-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.78rem;
+    }
+
+    .real-action-toolbar {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 1.25rem 1.5rem;
+      box-shadow: var(--shadow-card);
+    }
+
+    .action-icons-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .action-icon-pill {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--text-2);
+    }
+
+    .icon-box-mini {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-1);
+    }
+
+    .features {
+      padding: 4rem 0 6rem;
+    }
+
+    .section-header {
+      margin-bottom: 3.5rem;
+    }
+
+    .section-label {
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      margin-bottom: 0.6rem;
+      display: block;
+    }
+
+    .section-title {
+      font-size: clamp(2rem, 4vw, 2.75rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      color: var(--text-1);
+    }
+
+    .bento-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 860px) {
+      .bento-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .bento-card-large {
+      grid-column: span 2;
+    }
+
+    @media (max-width: 860px) {
+      .bento-card-large {
+        grid-column: span 1;
+      }
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 2rem;
+      box-shadow: var(--shadow-card);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.2s ease;
+    }
+
+    .card:hover {
+      border-color: var(--border-strong);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-float);
+    }
+
+    .card-icon-wrap {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.25rem;
+      color: var(--text-1);
+    }
+
+    .card-icon {
+      width: 20px;
+      height: 20px;
+      stroke: currentColor;
+    }
+
+    .card-h3 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.6rem;
+      color: var(--text-1);
+    }
+
+    .card-p {
+      font-size: 0.92rem;
+      color: var(--text-2);
+      line-height: 1.6;
+    }
+
+    .card-tags {
+      display: flex;
+      gap: 0.4rem;
+      margin-top: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .tag {
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.2rem 0.55rem;
+      border-radius: 6px;
+      background: var(--bg-subtle);
+      color: var(--text-2);
+      border: 1px solid var(--border-subtle);
+    }
+
+    kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.12rem 0.4rem;
+      font-size: 0.78rem;
+      font-family: var(--font-code);
+      font-weight: 600;
+      color: var(--kbd-text);
+      background: var(--kbd-bg);
+      border: 1px solid var(--kbd-border);
+      border-radius: 4px;
+      margin: 0 0.15rem;
+    }
+
+    .compare-section {
+      padding: 2rem 0 6rem;
+    }
+
+    .compare-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      box-shadow: var(--shadow-card);
+      overflow-x: auto;
+    }
+
+    .compare-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.92rem;
+    }
+
+    .compare-table th, .compare-table td {
+      padding: 1.15rem 1.4rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .compare-table th {
+      font-weight: 700;
+      color: var(--text-1);
+      background: var(--bg-subtle);
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .highlight-cell {
+      background: var(--accent-light);
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    .faq-section {
+      padding: 2rem 0 6rem;
+    }
+
+    .faq-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 768px) {
+      .faq-grid { grid-template-columns: 1fr; }
+    }
+
+    .faq-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 1.75rem;
+      box-shadow: var(--shadow-card);
+    }
+
+    .faq-h4 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-1);
+      margin-bottom: 0.5rem;
+    }
+
+    .faq-p {
+      font-size: 0.9rem;
+      color: var(--text-2);
+      line-height: 1.6;
+    }
+
+    .cta-banner {
+      background: var(--btn-main-bg);
+      color: var(--btn-main-text);
+      border-radius: 20px;
+      padding: 4.5rem 2rem;
+      text-align: center;
+      margin-bottom: 6rem;
+      box-shadow: var(--shadow-float);
+    }
+
+    .cta-title {
+      font-size: clamp(2rem, 4vw, 2.75rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 1rem;
+    }
+
+    .cta-desc {
+      font-size: 1.1rem;
+      opacity: 0.8;
+      max-width: 540px;
+      margin: 0 auto 2.25rem;
+    }
+
+    .btn-cta-invert {
+      background: var(--btn-main-text);
+      color: var(--btn-main-bg) !important;
+      font-weight: 700;
+      padding: 0.85rem 2.2rem;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      display: inline-block;
+      transition: all 0.2s;
+    }
+
+    .btn-cta-invert:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+    }
+
+    .footer {
+      border-top: 1px solid var(--border-subtle);
+      padding: 2.5rem 0;
+      color: var(--text-3);
+      font-size: 0.85rem;
+    }
+
+    .footer-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+    }
+  </style>
+</head>
+<body>
+  <!-- Navbar -->
+  <header class="nav">
+    <div class="container nav-inner">
+      <div class="nav-left">
+        <a href="/en" style="display:flex; align-items:center; gap:0.6rem;">
+          <img src="/favicon-48.png" alt="Polyglance" class="nav-logo" />
+          <span class="nav-title">Polyglance</span>
+        </a>
+        <span class="nav-version">{latestRelease.tag_name}</span>
+      </div>
+
+      <ul class="nav-menu">
+        <li><a href="#features" class="nav-link">Features</a></li>
+        <li><a href="#compare" class="nav-link">Comparison</a></li>
+        <li><a href="/en/guides/shortcuts" class="nav-link">Shortcuts</a></li>
+        <li><a href="/en/changelog" class="nav-link">Changelog</a></li>
+        <li><a href="#faq" class="nav-link">FAQ</a></li>
+      </ul>
+
+      <div class="nav-right">
+        <a href="/" class="nav-link" style="font-weight:700; font-size:0.82rem;">中文</a>
+        <button id="themeBtn" class="btn-icon" aria-label="Toggle theme">
+          <svg id="themeIconSun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+          <svg id="themeIconMoon" style="display:none;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+        </button>
+        <a href="/en/download" class="btn-nav-cta">Download</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <main>
+    <section class="hero container">
+      <div class="hero-badge">
+        <span>Free &amp; Open Source · Zero-Config API · Native</span>
+      </div>
+
+      <h1 class="hero-title">
+        Polyglot at a Glance
+      </h1>
+
+      <p class="hero-subtitle">
+        In-place translation, offline Vision OCR, scrolling captures, and screen recording — native in your menubar.
+      </p>
+
+      <div class="hero-buttons">
+        <a href="https://github.com/ldjx7/Polyglance/releases/latest" class="btn-download btn-download-primary" target="_blank" rel="noopener">
+          <svg class="btn-download-icon" viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.37c.62-.75 1.04-1.8 1.01-2.87-.96.04-2.12.64-2.8 1.44-.59.68-1.11 1.76-.97 2.8 1.07.08 2.14-.54 2.76-1.37z"/></svg>
+          <div>
+            <div class="btn-download-text-top">Download for macOS</div>
+            <div class="btn-download-text-bot">Apple Silicon / Intel (DMG)</div>
+          </div>
+        </a>
+
+        <a href="https://github.com/ldjx7/Polyglance/releases/latest" class="btn-download btn-download-secondary" target="_blank" rel="noopener">
+          <svg class="btn-download-icon" viewBox="0 0 24 24"><path d="M0 0h11.377v11.377H0zm12.623 0H24v11.377H12.623zM0 12.623h11.377V24H0zm12.623 0H24V24H12.623z"/></svg>
+          <div>
+            <div class="btn-download-text-top">Download for Windows</div>
+            <div class="btn-download-text-bot">Windows 10/11 x64 (Setup / Portable)</div>
+          </div>
+        </a>
+      </div>
+    </section>
+
+    <!-- Accurate Real App UI Showcase -->
+    <section class="showcase container">
+      <div class="app-showcase-grid">
+        <!-- 1:1 Accurate Polyglance Translation Floating Window -->
+        <div class="real-translator-win">
+          <div class="real-win-topbar">
+            <div class="real-win-dots">
+              <span class="real-dot d-red"></span>
+              <span class="real-dot d-yellow"></span>
+              <span class="real-dot d-green"></span>
+            </div>
+
+            <div class="lang-capsule">
+              <span>Auto (EN)</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 16l-4-4 4-4M17 8l4 4-4 4M3 12h18"/></svg>
+              <span style="color:var(--accent);">Simplified Chinese</span>
+            </div>
+
+            <div class="topbar-right-controls">
+              <span class="provider-pill">Microsoft Free</span>
+              <div class="pin-icon-btn" title="Pin to Desktop">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 0-2H8a1 1 0 0 0 0 2h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>
+              </div>
+            </div>
+          </div>
+
+          <div class="real-win-body">
+            <div class="source-box">
+              <div class="source-header">
+                <span>Selection Input (<kbd>⌥</kbd>+<kbd>D</kbd>)</span>
+                <span>65 chars</span>
+              </div>
+              <div class="source-content">
+                "Simplicity is the prerequisite for reliability and maintainability."
+              </div>
+            </div>
+
+            <div class="target-box">
+              <div class="target-header">
+                <span>Streaming Translation</span>
+                <span>Auto Synced 📋</span>
+              </div>
+              <div class="target-content">
+                “简单性是软件可靠性与可维护性的首要前提。”
+              </div>
+              <div class="target-footer">
+                <span>Provider: Microsoft Free</span>
+                <span>Latency: 18ms</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Companion Column: Loupe & Screenshot Toolbar -->
+        <div class="real-companion-col">
+          <div class="real-magnifier-card">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <strong style="font-size:0.85rem; color:var(--text-1);">Pixel Magnifier</strong>
+              <span style="font-family:var(--font-code); font-size:0.75rem; color:var(--text-3);">(1280, 720) px</span>
+            </div>
+
+            <div class="magnifier-grid-view">
+              <div class="crosshair-h"></div>
+              <div class="crosshair-v"></div>
+              <div class="crosshair-center"></div>
+            </div>
+
+            <div class="magnifier-footer-bar">
+              <div>
+                <strong style="font-family:var(--font-code); font-size:0.95rem; color:var(--accent);">#0066CC</strong>
+                <span style="font-size:0.75rem; color:var(--text-3); margin-left:0.35rem;">RGB(0, 102, 204)</span>
+              </div>
+              <span style="font-size:0.72rem; color:var(--text-2);">Press <kbd>C</kbd> to copy</span>
+            </div>
+          </div>
+
+          <div class="real-action-toolbar">
+            <div style="display:flex; justify-content:space-between; font-size:0.82rem; font-weight:700;">
+              <span>Capture &amp; OCR Action Bar</span>
+              <span style="font-size:0.72rem; color:var(--text-3);">⌥+1 Trigger</span>
+            </div>
+
+            <div class="action-icons-row">
+              <div class="action-icon-pill">
+                <div class="icon-box-mini">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+                </div>
+                <span>OCR</span>
+              </div>
+
+              <div class="action-icon-pill">
+                <div class="icon-box-mini">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>
+                </div>
+                <span>Translate</span>
+              </div>
+
+              <div class="action-icon-pill">
+                <div class="icon-box-mini">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/></svg>
+                </div>
+                <span>Scroll</span>
+              </div>
+
+              <div class="action-icon-pill">
+                <div class="icon-box-mini">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="#ff4d4f"/></svg>
+                </div>
+                <span>Record</span>
+              </div>
+
+              <div class="action-icon-pill">
+                <div class="icon-box-mini">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 0-2H8a1 1 0 0 0 0 2h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>
+                </div>
+                <span>Pin</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bento Grid Features -->
+    <section id="features" class="features container">
+      <div class="section-header">
+        <span class="section-label">Core Capabilities</span>
+        <h2 class="section-title">Built for Speed and Flow</h2>
+      </div>
+
+      <div class="bento-grid">
+        <div class="card bento-card-large">
+          <div>
+            <div class="card-icon-wrap">
+              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>
+            </div>
+            <h3 class="card-h3">Zero-Config Instant Translation</h3>
+            <p class="card-p">Built-in free Microsoft &amp; Google endpoints. Select text in any window and trigger streaming translations without window switches or API setup.</p>
+          </div>
+          <div class="card-tags">
+            <span class="tag">Zero Setup</span>
+            <span class="tag">Streaming Response</span>
+            <span class="tag">Custom LLM Support (DeepSeek/OpenAI)</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div>
+            <div class="card-icon-wrap">
+              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
+            </div>
+            <h3 class="card-h3">Native Offline OCR</h3>
+            <p class="card-p">Runs on-device via Apple Vision &amp; Windows Media OCR. Screenshots stay strictly private.</p>
+          </div>
+          <div class="card-tags">
+            <span class="tag">100% On-Device</span>
+            <span class="tag">Layout Aware</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div>
+            <div class="card-icon-wrap">
+              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            </div>
+            <h3 class="card-h3">Scrolling Capture</h3>
+            <p class="card-p">Seamless auto-stitching for vertical documents or chat histories with high-DPI resolution.</p>
+          </div>
+          <div class="card-tags">
+            <span class="tag">Auto Stitch</span>
+            <span class="tag">High DPI</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div>
+            <div class="card-icon-wrap">
+              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg>
+            </div>
+            <h3 class="card-h3">Region Screen Recording</h3>
+            <p class="card-p">Record custom windows to crisp MP4 or lightweight GIF animations with internal audio capture.</p>
+          </div>
+          <div class="card-tags">
+            <span class="tag">MP4 &amp; GIF</span>
+            <span class="tag">Audio Loopback</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div>
+            <div class="card-icon-wrap">
+              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            </div>
+            <h3 class="card-h3">Color Loupe &amp; Pinning</h3>
+            <p class="card-p">Zoom in to inspect pixel colors and copy HEX / RGB with <kbd>C</kbd>. Pin reference images floating on your screen.</p>
+          </div>
+          <div class="card-tags">
+            <span class="tag">Magnifier</span>
+            <span class="tag">Desktop Pinning</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Comparison Section -->
+    <section id="compare" class="compare-section container">
+      <div class="section-header">
+        <span class="section-label">Comparison</span>
+        <h2 class="section-title">Why Choose Polyglance?</h2>
+      </div>
+
+      <div class="compare-box">
+        <table class="compare-table">
+          <thead>
+            <tr>
+              <th>Features</th>
+              <th class="highlight-cell">Polyglance</th>
+              <th>Traditional Translators</th>
+              <th>Standard Snipping Tools</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Setup</strong></td>
+              <td class="highlight-cell">Zero-config, built-in free endpoints</td>
+              <td>Manual API registration &amp; keys</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td><strong>OCR Privacy</strong></td>
+              <td class="highlight-cell">100% On-Device native algorithms</td>
+              <td>Uploads images to third-party cloud</td>
+              <td>Often cloud-based</td>
+            </tr>
+            <tr>
+              <td><strong>All-in-One</strong></td>
+              <td class="highlight-cell">Translate + OCR + Scroll + Record + Pin</td>
+              <td>Translate only</td>
+              <td>Screenshots only</td>
+            </tr>
+            <tr>
+              <td><strong>Memory Footprint</strong></td>
+              <td class="highlight-cell">Native speed (&lt; 30MB RAM)</td>
+              <td>Heavy Electron apps (200MB+)</td>
+              <td>Varied</td>
+            </tr>
+            <tr>
+              <td><strong>Cost</strong></td>
+              <td class="highlight-cell">100% Free &amp; Open Source</td>
+              <td>Subscription / character limits</td>
+              <td>Paid license tiers</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section id="faq" class="faq-section container">
+      <div class="section-header">
+        <span class="section-label">FAQ</span>
+        <h2 class="section-title">Frequently Asked Questions</h2>
+      </div>
+
+      <div class="faq-grid">
+        <div class="faq-card">
+          <h4 class="faq-h4">Is an API key really not required?</h4>
+          <p class="faq-p">Yes. Polyglance includes free Microsoft and Google endpoints out of the box. You can also configure DeepSeek, OpenAI, or Claude if you prefer LLM-based translations.</p>
+        </div>
+
+        <div class="faq-card">
+          <h4 class="faq-h4">Is my screen content secure?</h4>
+          <p class="faq-p">Completely. OCR processing runs entirely locally on macOS Apple Vision and Windows Media OCR. Zero telemetry or network tracking.</p>
+        </div>
+
+        <div class="faq-card">
+          <h4 class="faq-h4">Prompted "Damaged and cannot be opened" on macOS?</h4>
+          <p class="faq-p">As an open-source project without Apple notarization, Gatekeeper might block it. Open <strong>Terminal</strong> and run: <code style="font-family:var(--font-code); font-size:0.82rem; background:var(--bg-subtle); padding:0.15rem 0.35rem; border-radius:4px; border:1px solid var(--border-subtle); color:var(--text-1);">xattr -cr /Applications/Polyglance.app</code>.</p>
+        </div>
+
+        <div class="faq-card">
+          <h4 class="faq-h4">Does it support auto-updates?</h4>
+          <p class="faq-p">Yes. macOS integrates Sparkle updates, and Windows includes an automatic update checker.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="container">
+      <div class="cta-banner">
+        <h2 class="cta-title">Experience the Next-Gen Screen Companion</h2>
+        <p class="cta-desc">Free, open-source, and native. Make cross-language workflows seamless.</p>
+        <a href="/en/download" class="btn-cta-invert">Download Polyglance Free</a>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div>
+        <strong>Polyglance</strong> — Native Desktop Screen &amp; Translation Companion
+      </div>
+      <div>
+        <a href="https://github.com/ldjx7/Polyglance" target="_blank" rel="noopener" style="margin-right: 1.5rem;">GitHub</a>
+        <a href="/en/guides/install" style="margin-right: 1.5rem;">Install Guide</a>
+        <a href="/en/guides/shortcuts" style="margin-right: 1.5rem;">Shortcuts</a>
+        <a href="/en/changelog">Changelog</a>
+      </div>
+    </div>
+  </footer>
+
+  <script is:inline>
+    const themeBtn = document.getElementById('themeBtn');
+    const sunIcon = document.getElementById('themeIconSun');
+    const moonIcon = document.getElementById('themeIconMoon');
+
+    function syncThemeUI(theme) {
+      if (sunIcon && moonIcon) {
+        sunIcon.style.display = theme === 'dark' ? 'none' : 'block';
+        moonIcon.style.display = theme === 'dark' ? 'block' : 'none';
+      }
+    }
+
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+    syncThemeUI(currentTheme);
+
+    if (themeBtn) {
+      themeBtn.addEventListener('click', () => {
+        const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('polyglance-theme', theme);
+        localStorage.setItem('starlight-theme', theme);
+        syncThemeUI(theme);
+      });
+    }
+  </script>
+</body>
+</html>

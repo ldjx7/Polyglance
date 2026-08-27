@@ -339,6 +339,8 @@ public partial class App : Application
     public async void TriggerCheckUpdate()
     {
         var config = LoadConfigurationOrDefault();
+        _notifyIcon?.ShowBalloonTip(2500, "Polyglance", "正在检查更新，请稍候...", ToolTipIcon.Info);
+
         try
         {
             UpdateCheckResult check = await AppUpdater.CheckForUpdatesAsync(config.AppcastUrl);
@@ -354,6 +356,7 @@ public partial class App : Application
 
                 if (result == System.Windows.MessageBoxResult.Yes)
                 {
+                    _notifyIcon?.ShowBalloonTip(4000, "Polyglance", "正在后台下载更新包，完成后将自动重启...", ToolTipIcon.Info);
                     bool started = await AppUpdater.DownloadAndApplyUpdateAsync(update.DownloadUrl);
                     if (!started)
                     {
