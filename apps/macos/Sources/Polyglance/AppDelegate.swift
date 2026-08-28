@@ -100,6 +100,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKeyManager.onScreenTranslation = { [weak self] in
             self?.captureScreenTranslation()
         }
+        hotKeyManager.onOpenTranslator = { [weak self] in
+            self?.showTranslator()
+        }
         do {
             shortcutConfiguration = shortcutStore.load()
             try hotKeyManager.register(shortcutConfiguration)

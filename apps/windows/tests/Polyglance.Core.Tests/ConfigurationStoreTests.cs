@@ -70,6 +70,75 @@ public sealed class ConfigurationStoreTests : IDisposable
     }
 
     [Fact]
+    public void NewConfigurationUsesTheLowConflictCrossPlatformShortcutDefaults()
+    {
+        var configuration = new AppConfiguration();
+
+        Assert.Equal("Ctrl+Shift+D1", configuration.HotkeyScreenshotPin);
+        Assert.Equal("Ctrl+Shift+D2", configuration.HotkeyPinClipboardImage);
+        Assert.Equal("Ctrl+Shift+D3", configuration.HotkeySelectedText);
+        Assert.Equal("Ctrl+Shift+D4", configuration.HotkeyScreenTranslate);
+        Assert.Equal(string.Empty, configuration.HotkeyLongScreenshot);
+        Assert.Equal(string.Empty, configuration.HotkeyScreenRecording);
+        Assert.Equal(string.Empty, configuration.HotkeyRestoreMostRecentPin);
+        Assert.Equal(string.Empty, configuration.HotkeyMainTranslator);
+    }
+
+    [Fact]
+    public void LoadMigratesTheCompleteLegacyDefaultShortcutSet()
+    {
+        var store = CreateStore(new InMemoryCredentialStore());
+        Directory.CreateDirectory(_directory);
+        File.WriteAllText(
+            Path.Combine(_directory, "config.json"),
+            """
+            {
+              "hotkey_screenshot_pin":"Alt+A",
+              "hotkey_screen_translate":"Alt+W",
+              "hotkey_main_translator":"Alt+T",
+              "hotkey_selected_text":"Alt+D",
+              "hotkey_long_screenshot":"Alt+S"
+            }
+            """);
+
+        AppConfiguration configuration = store.Load();
+
+        Assert.Equal("Ctrl+Shift+D1", configuration.HotkeyScreenshotPin);
+        Assert.Equal("Ctrl+Shift+D2", configuration.HotkeyPinClipboardImage);
+        Assert.Equal("Ctrl+Shift+D3", configuration.HotkeySelectedText);
+        Assert.Equal("Ctrl+Shift+D4", configuration.HotkeyScreenTranslate);
+        Assert.Equal(string.Empty, configuration.HotkeyLongScreenshot);
+        Assert.Equal(string.Empty, configuration.HotkeyMainTranslator);
+    }
+
+    [Fact]
+    public void LoadDoesNotOverwriteAUserCustomizedLegacyShortcutSet()
+    {
+        var store = CreateStore(new InMemoryCredentialStore());
+        Directory.CreateDirectory(_directory);
+        File.WriteAllText(
+            Path.Combine(_directory, "config.json"),
+            """
+            {
+              "hotkey_screenshot_pin":"Ctrl+F8",
+              "hotkey_screen_translate":"Alt+W",
+              "hotkey_main_translator":"Alt+T",
+              "hotkey_selected_text":"Alt+D",
+              "hotkey_long_screenshot":"Alt+S"
+            }
+            """);
+
+        AppConfiguration configuration = store.Load();
+
+        Assert.Equal("Ctrl+F8", configuration.HotkeyScreenshotPin);
+        Assert.Equal("Alt+W", configuration.HotkeyScreenTranslate);
+        Assert.Equal("Alt+D", configuration.HotkeySelectedText);
+        Assert.Equal(string.Empty, configuration.HotkeyPinClipboardImage);
+        Assert.Equal(string.Empty, configuration.HotkeyScreenRecording);
+        Assert.Equal(string.Empty, configuration.HotkeyRestoreMostRecentPin);
+    }
+
+    [Fact]
     public void SaveSurfacesCredentialFailures()
     {
         var store = CreateStore(new ThrowingCredentialStore());

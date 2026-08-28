@@ -10,6 +10,7 @@ on:
       - "Cargo.lock"
       - "scripts/build-windows-*.ps1"
       - "scripts/test-windows-installer.ps1"
+      - "scripts/test-windows-portable-update.ps1"
       - ".github/workflows/windows-ci.yml"
   pull_request:
     paths:
@@ -19,6 +20,7 @@ on:
       - "Cargo.lock"
       - "scripts/build-windows-*.ps1"
       - "scripts/test-windows-installer.ps1"
+      - "scripts/test-windows-portable-update.ps1"
       - ".github/workflows/windows-ci.yml"
 
 permissions:
@@ -70,6 +72,15 @@ jobs:
           ./scripts/build-windows-installer.ps1 `
             -Version "0.0.0-ci" `
             -BuildNumber "${{ github.run_number }}"
+
+      - name: Build and test the portable update archive
+        shell: pwsh
+        run: |
+          ./scripts/build-windows-portable-update.ps1 `
+            -SourceDirectory "dist/windows" `
+            -DestinationPath "dist/installer/Polyglance-0.0.0-ci-Windows-x64-Portable.zip"
+          ./scripts/test-windows-portable-update.ps1 `
+            -ArchivePath "dist/installer/Polyglance-0.0.0-ci-Windows-x64-Portable.zip"
 
       - name: Test Windows install and uninstall
         shell: pwsh

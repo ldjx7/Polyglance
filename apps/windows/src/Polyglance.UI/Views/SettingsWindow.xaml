@@ -280,6 +280,20 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Text="贴出剪贴板图片 (Pin Clipboard)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock Text="将剪贴板中的图片作为置顶贴图显示" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <controls:ShortcutRecorderControl x:Name="RecHotkeyPinClipboardImage" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
+                                </Grid>
+                            </ui:Card>
+
+                            <ui:Card Margin="0,0,0,8" Padding="16,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
                                         <TextBlock Text="智能屏幕原位翻译 (In-Place Translation)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                         <TextBlock Text="框选屏幕并在原图坐标上直接覆盖呈现译文" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
                                     </StackPanel>
@@ -326,6 +340,34 @@
                                         <TextBlock Text="触发 Rust 驱动的超长网页与文档滚动截图拼接" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
                                     </StackPanel>
                                     <controls:ShortcutRecorderControl x:Name="RecHotkeyLongScreenshot" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
+                                </Grid>
+                            </ui:Card>
+
+                            <ui:Card Margin="0,0,0,8" Padding="16,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Text="区域录屏 (Screen Recording)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock Text="框选区域并进入录屏工具栏" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <controls:ShortcutRecorderControl x:Name="RecHotkeyScreenRecording" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
+                                </Grid>
+                            </ui:Card>
+
+                            <ui:Card Margin="0,0,0,8" Padding="16,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Text="恢复最近贴图 (Restore Pin)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock Text="恢复最近一次保存到贴图历史的图片" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <controls:ShortcutRecorderControl x:Name="RecHotkeyRestoreMostRecentPin" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
                                 </Grid>
                             </ui:Card>
 

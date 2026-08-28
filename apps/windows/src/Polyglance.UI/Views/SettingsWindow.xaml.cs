@@ -87,10 +87,13 @@ public partial class SettingsWindow : FluentWindow
         ChkAiStreaming.IsChecked = _config.AiStreamingEnabled;
 
         RecHotkeyScreenshotPin.Hotkey = _config.HotkeyScreenshotPin;
-        RecHotkeyScreenTranslate.Hotkey = _config.HotkeyScreenTranslate;
-        RecHotkeyMainTranslator.Hotkey = _config.HotkeyMainTranslator;
+        RecHotkeyPinClipboardImage.Hotkey = _config.HotkeyPinClipboardImage;
         RecHotkeySelectedText.Hotkey = _config.HotkeySelectedText;
+        RecHotkeyScreenTranslate.Hotkey = _config.HotkeyScreenTranslate;
         RecHotkeyLongScreenshot.Hotkey = _config.HotkeyLongScreenshot;
+        RecHotkeyScreenRecording.Hotkey = _config.HotkeyScreenRecording;
+        RecHotkeyRestoreMostRecentPin.Hotkey = _config.HotkeyRestoreMostRecentPin;
+        RecHotkeyMainTranslator.Hotkey = _config.HotkeyMainTranslator;
 
         ChkAutoCheckUpdates.IsChecked = _config.AutoCheckUpdates;
 
@@ -107,11 +110,14 @@ public partial class SettingsWindow : FluentWindow
 
     private void OnResetShortcutsClick(object sender, RoutedEventArgs e)
     {
-        RecHotkeyScreenshotPin.Hotkey = "Alt+A";
-        RecHotkeyScreenTranslate.Hotkey = "Alt+W";
-        RecHotkeyMainTranslator.Hotkey = "Alt+T";
-        RecHotkeySelectedText.Hotkey = "Alt+D";
-        RecHotkeyLongScreenshot.Hotkey = "Alt+S";
+        RecHotkeyScreenshotPin.Hotkey = GlobalShortcutDefaults.Screenshot;
+        RecHotkeyPinClipboardImage.Hotkey = GlobalShortcutDefaults.PinClipboardImage;
+        RecHotkeySelectedText.Hotkey = GlobalShortcutDefaults.SelectedText;
+        RecHotkeyScreenTranslate.Hotkey = GlobalShortcutDefaults.ScreenTranslate;
+        RecHotkeyLongScreenshot.Hotkey = GlobalShortcutDefaults.LongScreenshot;
+        RecHotkeyScreenRecording.Hotkey = GlobalShortcutDefaults.ScreenRecording;
+        RecHotkeyRestoreMostRecentPin.Hotkey = GlobalShortcutDefaults.RestoreMostRecentPin;
+        RecHotkeyMainTranslator.Hotkey = GlobalShortcutDefaults.MainTranslator;
         ShowStatus("快捷键已恢复默认");
     }
 
@@ -202,10 +208,13 @@ public partial class SettingsWindow : FluentWindow
         _config.AiStreamingEnabled = ChkAiStreaming.IsChecked == true;
 
         _config.HotkeyScreenshotPin = RecHotkeyScreenshotPin.Hotkey;
-        _config.HotkeyScreenTranslate = RecHotkeyScreenTranslate.Hotkey;
-        _config.HotkeyMainTranslator = RecHotkeyMainTranslator.Hotkey;
+        _config.HotkeyPinClipboardImage = RecHotkeyPinClipboardImage.Hotkey;
         _config.HotkeySelectedText = RecHotkeySelectedText.Hotkey;
+        _config.HotkeyScreenTranslate = RecHotkeyScreenTranslate.Hotkey;
         _config.HotkeyLongScreenshot = RecHotkeyLongScreenshot.Hotkey;
+        _config.HotkeyScreenRecording = RecHotkeyScreenRecording.Hotkey;
+        _config.HotkeyRestoreMostRecentPin = RecHotkeyRestoreMostRecentPin.Hotkey;
+        _config.HotkeyMainTranslator = RecHotkeyMainTranslator.Hotkey;
 
         _config.AutoCheckUpdates = ChkAutoCheckUpdates.IsChecked == true;
 

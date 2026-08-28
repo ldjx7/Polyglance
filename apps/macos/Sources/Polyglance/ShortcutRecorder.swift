@@ -3,7 +3,7 @@ import PolyglanceKit
 import SwiftUI
 
 struct ShortcutRecorder: NSViewRepresentable {
-    @Binding var shortcut: RecordedShortcut
+    @Binding var shortcut: RecordedShortcut?
 
     func makeNSView(context: Context) -> ShortcutRecorderButton {
         let button = ShortcutRecorderButton()
@@ -19,7 +19,7 @@ struct ShortcutRecorder: NSViewRepresentable {
 }
 
 final class ShortcutRecorderButton: NSButton {
-    var shortcut = RecordedShortcut(keyCode: 0, modifiers: []) {
+    var shortcut: RecordedShortcut? {
         didSet {
             if !isRecording {
                 title = ShortcutFormatter.string(for: shortcut)
@@ -27,7 +27,7 @@ final class ShortcutRecorderButton: NSButton {
             }
         }
     }
-    var onChange: ((RecordedShortcut) -> Void)?
+    var onChange: ((RecordedShortcut?) -> Void)?
 
     private var isRecording = false
 
@@ -59,6 +59,10 @@ final class ShortcutRecorderButton: NSButton {
             finishRecording(with: nil)
             return
         }
+        if event.keyCode == 51 || event.keyCode == 117 {
+            clearShortcut()
+            return
+        }
 
         let modifiers = ShortcutModifiers(event.modifierFlags)
         guard !modifiers.intersection(.primary).isEmpty else {
@@ -86,13 +90,23 @@ final class ShortcutRecorderButton: NSButton {
 
     private func finishRecording(with recordedShortcut: RecordedShortcut?) {
         isRecording = false
-        if let recordedShortcut {
-            shortcut = recordedShortcut
-            onChange?(recordedShortcut)
-        } else {
+        guard let recordedShortcut else {
             title = ShortcutFormatter.string(for: shortcut)
             setAccessibilityValue(title)
+            window?.makeFirstResponder(nil)
+            return
         }
+        shortcut = recordedShortcut
+        onChange?(recordedShortcut)
+        window?.makeFirstResponder(nil)
+    }
+
+    private func clearShortcut() {
+        isRecording = false
+        shortcut = nil
+        onChange?(nil)
+        title = ShortcutFormatter.string(for: nil)
+        setAccessibilityValue(title)
         window?.makeFirstResponder(nil)
     }
 }
@@ -110,13 +124,16 @@ private extension ShortcutModifiers {
 }
 
 enum ShortcutFormatter {
-    static func string(for shortcut: RecordedShortcut) -> String {
+    static func string(for shortcut: RecordedShortcut?) -> String {
+        guard let shortcut else {
+            return "未设置"
+        }
         var result = ""
         if shortcut.modifiers.contains(.control) { result += "⌃" }
         if shortcut.modifiers.contains(.option) { result += "⌥" }
         if shortcut.modifiers.contains(.shift) { result += "⇧" }
         if shortcut.modifiers.contains(.command) { result += "⌘" }
-        result += keyNames[shortcut.keyCode] ?? "Key (shortcut.keyCode)"
+        result += keyNames[shortcut.keyCode] ?? "Key \(shortcut.keyCode)"
         return result
     }
 

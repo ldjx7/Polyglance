@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.IO;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,6 +12,7 @@ using Polyglance.Core.Services;
 using Polyglance.Platform.Capture;
 using Polyglance.Platform.HotKey;
 using Polyglance.Platform.Interop;
+using Polyglance.Platform.Pin;
 using Polyglance.Platform.Text;
 using Polyglance.Platform.Update;
 using Polyglance.UI.Views;
@@ -164,10 +166,13 @@ public partial class App : Application
         var config = LoadConfigurationOrDefault();
 
         RegisterSingleHotKey(config.HotkeyScreenshotPin, TriggerScreenshot);
-        RegisterSingleHotKey(config.HotkeyScreenTranslate, TriggerScreenTranslate);
-        RegisterSingleHotKey(config.HotkeyMainTranslator, ShowMainWindow);
+        RegisterSingleHotKey(config.HotkeyPinClipboardImage, PinClipboardImage);
         RegisterSingleHotKey(config.HotkeySelectedText, TriggerSelectedTextTranslate);
+        RegisterSingleHotKey(config.HotkeyScreenTranslate, TriggerScreenTranslate);
         RegisterSingleHotKey(config.HotkeyLongScreenshot, TriggerLongScreenshot);
+        RegisterSingleHotKey(config.HotkeyScreenRecording, TriggerScreenRecording);
+        RegisterSingleHotKey(config.HotkeyRestoreMostRecentPin, RestoreMostRecentPin);
+        RegisterSingleHotKey(config.HotkeyMainTranslator, ShowMainWindow);
     }
 
     private void RegisterSingleHotKey(string hotkeyStr, Action action)
@@ -291,6 +296,36 @@ public partial class App : Application
             {
                 System.Windows.MessageBox.Show("剪贴板中没有图片。", "贴图", MessageBoxButton.OK, MessageBoxImage.Information);
             }
+        });
+    }
+
+    public void RestoreMostRecentPin()
+    {
+        Dispatcher.Invoke(() =>
+        {
+            string? recentPath = PinHistoryManager.GetRecentPins().FirstOrDefault()?.FilePath;
+            if (string.IsNullOrWhiteSpace(recentPath) || !File.Exists(recentPath))
+            {
+                System.Windows.MessageBox.Show(
+                    "没有可恢复的贴图。",
+                    "恢复贴图",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            var bitmap = new System.Windows.Media.Imaging.BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            bitmap.UriSource = new Uri(recentPath, UriKind.Absolute);
+            bitmap.EndInit();
+            bitmap.Freeze();
+
+            var pin = new PinWindow(
+                bitmap,
+                _translationService!,
+                LoadConfigurationOrDefault());
+            pin.Show();
         });
     }
 

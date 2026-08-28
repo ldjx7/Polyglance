@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using Polyglance.Platform.Update;
@@ -152,6 +153,52 @@ public sealed class AppUpdaterTests
         Assert.Contains("Polyglance", capturedUserAgent, StringComparison.Ordinal);
         Assert.True(capturedNoCache);
         Assert.True(capturedNoStore);
+    }
+
+    [Fact]
+    public void UpdatePackagePrefersTheRenamedExecutableAtTheArchiveRoot()
+    {
+        string directory = Path.Combine(
+            Path.GetTempPath(),
+            $"Polyglance.UpdateLayout.{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            File.WriteAllText(Path.Combine(directory, "Polyglance.exe"), "new launcher");
+            File.WriteAllText(Path.Combine(directory, "Polyglance.dll"), "new assembly");
+
+            UpdatePackageLayout layout = AppUpdater.ResolveUpdatePackageLayout(directory);
+
+            Assert.Equal(directory, layout.SourceDirectory);
+            Assert.Equal("Polyglance.exe", layout.ExecutableName);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void CurrentUpdaterStartsRenamedLauncherAndRemovesLegacyEntryFiles()
+    {
+        string script = AppUpdater.CreateUpdateScript(
+            tempZip: @"C:\Temp\update.zip",
+            extractedAppDirectory: @"C:\Temp\extracted",
+            currentAppDirectory: @"C:\Users\test\AppData\Local\Programs\Polyglance",
+            currentExecutablePath: @"C:\Users\test\AppData\Local\Programs\Polyglance\Polyglance.UI.exe",
+            updatedExecutableName: "Polyglance.exe");
+
+        Assert.Contains(
+            "start \"\" \"C:\\Users\\test\\AppData\\Local\\Programs\\Polyglance\\Polyglance.exe\"",
+            script,
+            StringComparison.Ordinal);
+        string successPath = script[..script.IndexOf(":update_failed", StringComparison.Ordinal)];
+        Assert.DoesNotContain(
+            "start \"\" \"C:\\Users\\test\\AppData\\Local\\Programs\\Polyglance\\Polyglance.UI.exe\"",
+            successPath,
+            StringComparison.Ordinal);
+        Assert.Contains("del /f /q \"C:\\Users\\test\\AppData\\Local\\Programs\\Polyglance\\Polyglance.UI.exe\"", script);
+        Assert.Contains("if errorlevel 8 goto update_failed", script, StringComparison.Ordinal);
     }
 
     [Theory]

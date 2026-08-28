@@ -63,25 +63,65 @@ public sealed class AppConfiguration
     public bool AiStreamingEnabled { get; set; } = true;
 
     [JsonPropertyName("hotkey_screenshot_pin")]
-    public string HotkeyScreenshotPin { get; set; } = "Alt+A";
+    public string HotkeyScreenshotPin { get; set; } = GlobalShortcutDefaults.Screenshot;
+
+    [JsonPropertyName("hotkey_pin_clipboard_image")]
+    public string HotkeyPinClipboardImage { get; set; } = GlobalShortcutDefaults.PinClipboardImage;
 
     [JsonPropertyName("hotkey_screen_translate")]
-    public string HotkeyScreenTranslate { get; set; } = "Alt+W";
+    public string HotkeyScreenTranslate { get; set; } = GlobalShortcutDefaults.ScreenTranslate;
 
     [JsonPropertyName("hotkey_main_translator")]
-    public string HotkeyMainTranslator { get; set; } = "Alt+T";
+    public string HotkeyMainTranslator { get; set; } = GlobalShortcutDefaults.MainTranslator;
 
     [JsonPropertyName("hotkey_selected_text")]
-    public string HotkeySelectedText { get; set; } = "Alt+D";
+    public string HotkeySelectedText { get; set; } = GlobalShortcutDefaults.SelectedText;
 
     [JsonPropertyName("hotkey_long_screenshot")]
-    public string HotkeyLongScreenshot { get; set; } = "Alt+S";
+    public string HotkeyLongScreenshot { get; set; } = GlobalShortcutDefaults.LongScreenshot;
+
+    [JsonPropertyName("hotkey_screen_recording")]
+    public string HotkeyScreenRecording { get; set; } = GlobalShortcutDefaults.ScreenRecording;
+
+    [JsonPropertyName("hotkey_restore_most_recent_pin")]
+    public string HotkeyRestoreMostRecentPin { get; set; } = GlobalShortcutDefaults.RestoreMostRecentPin;
 
     [JsonPropertyName("auto_check_updates")]
     public bool AutoCheckUpdates { get; set; } = true;
 
     [JsonPropertyName("appcast_url")]
     public string AppcastUrl { get; set; } = "https://github.com/ldjx7/Polyglance/releases/latest/download/appcast-windows.xml";
+}
+
+public static class GlobalShortcutDefaults
+{
+    public const string Screenshot = "Ctrl+Shift+D1";
+    public const string PinClipboardImage = "Ctrl+Shift+D2";
+    public const string SelectedText = "Ctrl+Shift+D3";
+    public const string ScreenTranslate = "Ctrl+Shift+D4";
+    public const string LongScreenshot = "";
+    public const string ScreenRecording = "";
+    public const string RestoreMostRecentPin = "";
+    public const string MainTranslator = "";
+
+    public static bool IsCompleteLegacyDefaultSet(AppConfiguration configuration) =>
+        configuration.HotkeyScreenshotPin == "Alt+A"
+        && configuration.HotkeyScreenTranslate == "Alt+W"
+        && configuration.HotkeyMainTranslator == "Alt+T"
+        && configuration.HotkeySelectedText == "Alt+D"
+        && configuration.HotkeyLongScreenshot == "Alt+S";
+
+    public static void ApplyRecommendedDefaults(AppConfiguration configuration)
+    {
+        configuration.HotkeyScreenshotPin = Screenshot;
+        configuration.HotkeyPinClipboardImage = PinClipboardImage;
+        configuration.HotkeySelectedText = SelectedText;
+        configuration.HotkeyScreenTranslate = ScreenTranslate;
+        configuration.HotkeyLongScreenshot = LongScreenshot;
+        configuration.HotkeyScreenRecording = ScreenRecording;
+        configuration.HotkeyRestoreMostRecentPin = RestoreMostRecentPin;
+        configuration.HotkeyMainTranslator = MainTranslator;
+    }
 }
 
 public sealed class TranslationResult

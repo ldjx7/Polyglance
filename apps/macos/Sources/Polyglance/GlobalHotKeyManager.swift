@@ -12,6 +12,7 @@ final class GlobalHotKeyManager {
     var onScreenRecording: (() -> Void)?
     var onRestoreMostRecentPin: (() -> Void)?
     var onScreenTranslation: (() -> Void)?
+    var onOpenTranslator: (() -> Void)?
 
     private var eventHandler: EventHandlerRef?
     private var hotKeys: [EventHotKeyRef] = []
@@ -52,7 +53,10 @@ final class GlobalHotKeyManager {
     private func registerAll(_ configuration: GlobalShortcutConfiguration) throws {
         try installEventHandler()
         for action in GlobalShortcutAction.allCases {
-            try registerHotKey(configuration[action], action: action)
+            guard let shortcut = configuration[action] else {
+                continue
+            }
+            try registerHotKey(shortcut, action: action)
         }
     }
 
@@ -143,6 +147,8 @@ final class GlobalHotKeyManager {
             onRestoreMostRecentPin?()
         case .screenTranslation:
             onScreenTranslation?()
+        case .openTranslator:
+            onOpenTranslator?()
         }
     }
 

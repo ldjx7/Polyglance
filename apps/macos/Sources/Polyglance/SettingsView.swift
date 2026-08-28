@@ -336,6 +336,7 @@ struct SettingsView: View {
         case .screenRecording: return "record.circle"
         case .restoreMostRecentPin: return "arrow.uturn.backward"
         case .screenTranslation: return "text.viewfinder"
+        case .openTranslator: return "character.cursor.ibeam"
         }
     }
 

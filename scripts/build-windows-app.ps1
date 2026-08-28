@@ -66,6 +66,9 @@ dotnet publish apps/windows/src/Polyglance.UI/Polyglance.UI.csproj `
     -p:InformationalVersion=$Version `
     -p:IncludeSourceRevisionInInformationalVersion=false `
     -o $outDir
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$outDir/Polyglance.exe" -PathType Leaf)) {
+    throw "Windows application publish did not create $outDir/Polyglance.exe."
+}
 
 # 3. Copy Rust DLL to output directory
 $dllSource = "target/release/polyglance_cabi.dll"

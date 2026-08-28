@@ -35,6 +35,7 @@ public enum GlobalShortcutAction: String, Codable, CaseIterable, Sendable {
     case screenRecording
     case restoreMostRecentPin
     case screenTranslation
+    case openTranslator
 
     public var title: String {
         switch self {
@@ -54,6 +55,8 @@ public enum GlobalShortcutAction: String, Codable, CaseIterable, Sendable {
             return "恢复最近关闭的贴图"
         case .screenTranslation:
             return "截屏翻译"
+        case .openTranslator:
+            return "打开主翻译窗口"
         }
     }
 
@@ -67,29 +70,32 @@ public enum GlobalShortcutAction: String, Codable, CaseIterable, Sendable {
         case .screenRecording: return 6
         case .restoreMostRecentPin: return 7
         case .screenTranslation: return 8
+        case .openTranslator: return 9
         }
     }
 }
 
 public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
-    public var translateSelection: RecordedShortcut
-    public var captureSelection: RecordedShortcut
-    public var screenshotAndPin: RecordedShortcut
-    public var pinClipboardImage: RecordedShortcut
-    public var longScreenshot: RecordedShortcut
-    public var screenRecording: RecordedShortcut
-    public var restoreMostRecentPin: RecordedShortcut
-    public var screenTranslation: RecordedShortcut
+    public var translateSelection: RecordedShortcut?
+    public var captureSelection: RecordedShortcut?
+    public var screenshotAndPin: RecordedShortcut?
+    public var pinClipboardImage: RecordedShortcut?
+    public var longScreenshot: RecordedShortcut?
+    public var screenRecording: RecordedShortcut?
+    public var restoreMostRecentPin: RecordedShortcut?
+    public var screenTranslation: RecordedShortcut?
+    public var openTranslator: RecordedShortcut?
 
     public init(
-        translateSelection: RecordedShortcut,
-        captureSelection: RecordedShortcut,
-        screenshotAndPin: RecordedShortcut,
-        pinClipboardImage: RecordedShortcut,
-        longScreenshot: RecordedShortcut,
-        screenRecording: RecordedShortcut,
-        restoreMostRecentPin: RecordedShortcut,
-        screenTranslation: RecordedShortcut
+        translateSelection: RecordedShortcut?,
+        captureSelection: RecordedShortcut?,
+        screenshotAndPin: RecordedShortcut?,
+        pinClipboardImage: RecordedShortcut?,
+        longScreenshot: RecordedShortcut?,
+        screenRecording: RecordedShortcut?,
+        restoreMostRecentPin: RecordedShortcut?,
+        screenTranslation: RecordedShortcut?,
+        openTranslator: RecordedShortcut? = nil
     ) {
         self.translateSelection = translateSelection
         self.captureSelection = captureSelection
@@ -99,9 +105,22 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
         self.screenRecording = screenRecording
         self.restoreMostRecentPin = restoreMostRecentPin
         self.screenTranslation = screenTranslation
+        self.openTranslator = openTranslator
     }
 
     public static let `default` = GlobalShortcutConfiguration(
+        translateSelection: RecordedShortcut(keyCode: 20, modifiers: [.control, .shift]),
+        captureSelection: nil,
+        screenshotAndPin: RecordedShortcut(keyCode: 18, modifiers: [.control, .shift]),
+        pinClipboardImage: RecordedShortcut(keyCode: 19, modifiers: [.control, .shift]),
+        longScreenshot: nil,
+        screenRecording: nil,
+        restoreMostRecentPin: nil,
+        screenTranslation: RecordedShortcut(keyCode: 21, modifiers: [.control, .shift]),
+        openTranslator: nil
+    )
+
+    public static let legacyDefault = GlobalShortcutConfiguration(
         translateSelection: RecordedShortcut(keyCode: 2, modifiers: [.option]),
         captureSelection: RecordedShortcut(keyCode: 2, modifiers: [.option, .shift]),
         screenshotAndPin: RecordedShortcut(keyCode: 18, modifiers: [.option]),
@@ -109,10 +128,11 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
         longScreenshot: RecordedShortcut(keyCode: 20, modifiers: [.option]),
         screenRecording: RecordedShortcut(keyCode: 21, modifiers: [.option]),
         restoreMostRecentPin: RecordedShortcut(keyCode: 23, modifiers: [.option]),
-        screenTranslation: RecordedShortcut(keyCode: 22, modifiers: [.option])
+        screenTranslation: RecordedShortcut(keyCode: 22, modifiers: [.option]),
+        openTranslator: nil
     )
 
-    public subscript(action: GlobalShortcutAction) -> RecordedShortcut {
+    public subscript(action: GlobalShortcutAction) -> RecordedShortcut? {
         get {
             switch action {
             case .translateSelection: return translateSelection
@@ -123,6 +143,7 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
             case .screenRecording: return screenRecording
             case .restoreMostRecentPin: return restoreMostRecentPin
             case .screenTranslation: return screenTranslation
+            case .openTranslator: return openTranslator
             }
         }
         set {
@@ -135,12 +156,13 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
             case .screenRecording: screenRecording = newValue
             case .restoreMostRecentPin: restoreMostRecentPin = newValue
             case .screenTranslation: screenTranslation = newValue
+            case .openTranslator: openTranslator = newValue
             }
         }
     }
 
     public var allShortcuts: [RecordedShortcut] {
-        GlobalShortcutAction.allCases.map { self[$0] }
+        GlobalShortcutAction.allCases.compactMap { self[$0] }
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -152,36 +174,31 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
         case screenRecording
         case restoreMostRecentPin
         case screenTranslation
+        case openTranslator
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        translateSelection = try container.decode(RecordedShortcut.self, forKey: .translateSelection)
-        captureSelection = try container.decode(RecordedShortcut.self, forKey: .captureSelection)
-        screenshotAndPin = try container.decode(RecordedShortcut.self, forKey: .screenshotAndPin)
-        pinClipboardImage = try container.decode(RecordedShortcut.self, forKey: .pinClipboardImage)
-        longScreenshot = try container.decodeIfPresent(
-            RecordedShortcut.self,
-            forKey: .longScreenshot
-        ) ?? Self.default.longScreenshot
-        screenRecording = try container.decodeIfPresent(
-            RecordedShortcut.self,
-            forKey: .screenRecording
-        ) ?? Self.default.screenRecording
+        translateSelection = try container.decodeIfPresent(RecordedShortcut.self, forKey: .translateSelection)
+        captureSelection = try container.decodeIfPresent(RecordedShortcut.self, forKey: .captureSelection)
+        screenshotAndPin = try container.decodeIfPresent(RecordedShortcut.self, forKey: .screenshotAndPin)
+        pinClipboardImage = try container.decodeIfPresent(RecordedShortcut.self, forKey: .pinClipboardImage)
+        longScreenshot = try container.decodeIfPresent(RecordedShortcut.self, forKey: .longScreenshot)
+        screenRecording = try container.decodeIfPresent(RecordedShortcut.self, forKey: .screenRecording)
         restoreMostRecentPin = try container.decodeIfPresent(
             RecordedShortcut.self,
             forKey: .restoreMostRecentPin
-        ) ?? Self.default.restoreMostRecentPin
-        screenTranslation = try container.decodeIfPresent(
-            RecordedShortcut.self,
-            forKey: .screenTranslation
-        ) ?? Self.default.screenTranslation
+        )
+        screenTranslation = try container.decodeIfPresent(RecordedShortcut.self, forKey: .screenTranslation)
+        openTranslator = try container.decodeIfPresent(RecordedShortcut.self, forKey: .openTranslator)
     }
 
     public func validate() throws {
         var owners: [RecordedShortcut: GlobalShortcutAction] = [:]
         for action in GlobalShortcutAction.allCases {
-            let shortcut = self[action]
+            guard let shortcut = self[action] else {
+                continue
+            }
             guard shortcut.keyCode <= 127 else {
                 throw GlobalShortcutValidationError.invalidKey(action)
             }
@@ -236,6 +253,11 @@ public final class GlobalShortcutConfigurationStore: @unchecked Sendable {
               ),
               (try? configuration.validate()) != nil else {
             return .default
+        }
+        if configuration == .legacyDefault {
+            let migrated = GlobalShortcutConfiguration.default
+            defaults.set(try? JSONEncoder().encode(migrated), forKey: Self.storageKey)
+            return migrated
         }
         return configuration
     }

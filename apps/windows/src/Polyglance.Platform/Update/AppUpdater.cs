@@ -37,6 +37,8 @@ public sealed class UpdateCheckResult
     public string ErrorMessage { get; init; } = "";
 }
 
+internal sealed record UpdatePackageLayout(string SourceDirectory, string ExecutableName);
+
 public static class AppUpdater
 {
     private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(15) };
@@ -313,23 +315,19 @@ public static class AppUpdater
 
             // Extract update
             System.IO.Compression.ZipFile.ExtractToDirectory(tempZip, tempExtractDir);
+            UpdatePackageLayout packageLayout = ResolveUpdatePackageLayout(tempExtractDir);
 
             string currentAppDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\', '/');
             string currentExe = Process.GetCurrentProcess().MainModule?.FileName ?? Path.Combine(currentAppDir, "Polyglance.exe");
 
             // Write batch update script
             string batchScript = Path.Combine(Path.GetTempPath(), $"polyglance_updater_{Guid.NewGuid():N}.cmd");
-            string scriptContent = $@"@echo off
-timeout /t 1 /nobreak >nul
-taskkill /f /im Polyglance.exe >nul 2>&1
-taskkill /f /im Polyglance.UI.exe >nul 2>&1
-timeout /t 1 /nobreak >nul
-robocopy ""{tempExtractDir}"" ""{currentAppDir}"" /e /is /it /np >nul
-start """" ""{currentExe}""
-del /f /q ""{tempZip}"" >nul 2>&1
-rd /s /q ""{tempExtractDir}"" >nul 2>&1
-(goto) 2>nul & del ""%~f0""
-";
+            string scriptContent = CreateUpdateScript(
+                tempZip,
+                packageLayout.SourceDirectory,
+                currentAppDir,
+                currentExe,
+                packageLayout.ExecutableName);
             File.WriteAllText(batchScript, scriptContent, System.Text.Encoding.Default);
 
             Process.Start(new ProcessStartInfo
@@ -348,5 +346,79 @@ rd /s /q ""{tempExtractDir}"" >nul 2>&1
             Debug.WriteLine($"Failed to apply update: {ex.Message}");
             return false;
         }
+    }
+
+    internal static UpdatePackageLayout ResolveUpdatePackageLayout(string extractedRoot)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(extractedRoot);
+
+        UpdatePackageLayout? direct = TryResolveUpdatePackageLayout(extractedRoot);
+        if (direct != null)
+            return direct;
+
+        string[] directories = Directory.GetDirectories(extractedRoot);
+        if (directories.Length == 1)
+        {
+            UpdatePackageLayout? nested = TryResolveUpdatePackageLayout(directories[0]);
+            if (nested != null)
+                return nested;
+        }
+
+        throw new InvalidDataException("更新包无效：未找到 Polyglance 应用入口。");
+    }
+
+    private static UpdatePackageLayout? TryResolveUpdatePackageLayout(string directory)
+    {
+        foreach (string executableName in new[] { "Polyglance.exe", "Polyglance.UI.exe" })
+        {
+            string executablePath = Path.Combine(directory, executableName);
+            string assemblyName = Path.GetFileNameWithoutExtension(executableName) + ".dll";
+            if (File.Exists(executablePath) && File.Exists(Path.Combine(directory, assemblyName)))
+                return new UpdatePackageLayout(directory, executableName);
+        }
+
+        return null;
+    }
+
+    internal static string CreateUpdateScript(
+        string tempZip,
+        string extractedAppDirectory,
+        string currentAppDirectory,
+        string currentExecutablePath,
+        string updatedExecutableName)
+    {
+        string updatedExecutablePath = Path.Combine(currentAppDirectory, updatedExecutableName);
+        string legacyCleanup = updatedExecutableName.Equals("Polyglance.exe", StringComparison.OrdinalIgnoreCase)
+            ? string.Join(
+                Environment.NewLine,
+                new[]
+                {
+                    "Polyglance.UI.exe",
+                    "Polyglance.UI.dll",
+                    "Polyglance.UI.deps.json",
+                    "Polyglance.UI.runtimeconfig.json",
+                    "Polyglance.UI.pdb"
+                }.Select(fileName => $"del /f /q \"{Path.Combine(currentAppDirectory, fileName)}\" >nul 2>&1"))
+            : "";
+
+        return $@"@echo off
+timeout /t 1 /nobreak >nul
+taskkill /f /im Polyglance.exe >nul 2>&1
+taskkill /f /im Polyglance.UI.exe >nul 2>&1
+timeout /t 1 /nobreak >nul
+robocopy ""{extractedAppDirectory}"" ""{currentAppDirectory}"" /e /is /it /np >nul
+if errorlevel 8 goto update_failed
+{legacyCleanup}
+start """" ""{updatedExecutablePath}""
+goto cleanup
+
+:update_failed
+start """" ""{currentExecutablePath}""
+
+:cleanup
+del /f /q ""{tempZip}"" >nul 2>&1
+rd /s /q ""{extractedAppDirectory}"" >nul 2>&1
+(goto) 2>nul & del ""%~f0""
+";
     }
 }

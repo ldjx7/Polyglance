@@ -43,10 +43,12 @@ public sealed class ConfigurationStore
     {
         try
         {
-            AppConfiguration configuration = File.Exists(_filePath)
-                ? JsonSerializer.Deserialize<AppConfiguration>(File.ReadAllText(_filePath))
-                    ?? new AppConfiguration()
-                : new AppConfiguration();
+            bool hasStoredConfiguration = File.Exists(_filePath);
+            string? storedJson = hasStoredConfiguration ? File.ReadAllText(_filePath) : null;
+            JsonObject? storedObject = storedJson == null ? null : JsonNode.Parse(storedJson)?.AsObject();
+            AppConfiguration configuration = storedJson == null
+                ? new AppConfiguration()
+                : JsonSerializer.Deserialize<AppConfiguration>(storedJson) ?? new AppConfiguration();
 
             string legacyPlaintextKey = configuration.ApiKey.Trim();
             if (legacyPlaintextKey.Length > 0)
@@ -64,6 +66,24 @@ public sealed class ConfigurationStore
             {
                 configuration.AppcastUrl = CurrentWindowsAppcastUrl;
                 WriteConfiguration(configuration);
+            }
+
+            if (GlobalShortcutDefaults.IsCompleteLegacyDefaultSet(configuration))
+            {
+                GlobalShortcutDefaults.ApplyRecommendedDefaults(configuration);
+                WriteConfiguration(configuration);
+            }
+            else if (hasStoredConfiguration && storedObject != null)
+            {
+                // New optional actions must not become active merely because an
+                // existing user upgrades. Only the complete legacy default set
+                // is migrated; customized configurations retain their choices.
+                if (!storedObject.ContainsKey("hotkey_pin_clipboard_image"))
+                    configuration.HotkeyPinClipboardImage = "";
+                if (!storedObject.ContainsKey("hotkey_screen_recording"))
+                    configuration.HotkeyScreenRecording = "";
+                if (!storedObject.ContainsKey("hotkey_restore_most_recent_pin"))
+                    configuration.HotkeyRestoreMostRecentPin = "";
             }
 
             return configuration;

@@ -97,7 +97,10 @@ jobs:
           $releaseDirectory = Join-Path $env:RUNNER_TEMP "polyglance-windows-release"
           New-Item -ItemType Directory -Path $releaseDirectory -Force | Out-Null
           $archivePath = Join-Path $releaseDirectory $archiveName
-          Compress-Archive -Path "dist/windows/*" -DestinationPath $archivePath -CompressionLevel Optimal
+          ./scripts/build-windows-portable-update.ps1 `
+            -SourceDirectory "dist/windows" `
+            -DestinationPath $archivePath
+          ./scripts/test-windows-portable-update.ps1 -ArchivePath $archivePath
 
           ./scripts/build-windows-installer.ps1 `
             -Version $version `

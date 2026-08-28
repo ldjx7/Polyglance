@@ -7,9 +7,27 @@ final class GlobalShortcutConfigurationTests: XCTestCase {
         let configuration = GlobalShortcutConfiguration.default
 
         XCTAssertNoThrow(try configuration.validate())
-        XCTAssertEqual(Set(configuration.allShortcuts).count, GlobalShortcutAction.allCases.count)
-        XCTAssertEqual(configuration.restoreMostRecentPin.keyCode, 23)
-        XCTAssertEqual(configuration.restoreMostRecentPin.modifiers, [.option])
+        XCTAssertEqual(Set(configuration.allShortcuts).count, 4)
+        XCTAssertEqual(
+            configuration.screenshotAndPin,
+            RecordedShortcut(keyCode: 18, modifiers: [.control, .shift])
+        )
+        XCTAssertEqual(
+            configuration.pinClipboardImage,
+            RecordedShortcut(keyCode: 19, modifiers: [.control, .shift])
+        )
+        XCTAssertEqual(
+            configuration.translateSelection,
+            RecordedShortcut(keyCode: 20, modifiers: [.control, .shift])
+        )
+        XCTAssertEqual(
+            configuration.screenTranslation,
+            RecordedShortcut(keyCode: 21, modifiers: [.control, .shift])
+        )
+        XCTAssertNil(configuration.longScreenshot)
+        XCTAssertNil(configuration.screenRecording)
+        XCTAssertNil(configuration.restoreMostRecentPin)
+        XCTAssertNil(configuration.openTranslator)
     }
 
     func testDuplicateShortcutIsRejected() {
@@ -78,6 +96,15 @@ final class GlobalShortcutConfigurationTests: XCTestCase {
         XCTAssertNoThrow(try configuration.validate())
     }
 
+    func testUnassignedShortcutsAreAllowedAndIgnoredDuringDuplicateValidation() {
+        var configuration = GlobalShortcutConfiguration.default
+        configuration[.captureSelection] = nil
+        configuration[.longScreenshot] = nil
+
+        XCTAssertNoThrow(try configuration.validate())
+        XCTAssertEqual(configuration.allShortcuts.count, 4)
+    }
+
     func testStoreRoundTripsCustomConfiguration() throws {
         let suiteName = "GlobalShortcutConfigurationTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -133,12 +160,46 @@ final class GlobalShortcutConfigurationTests: XCTestCase {
 
         let configuration = GlobalShortcutConfigurationStore(defaults: defaults).load()
 
-        XCTAssertEqual(configuration.translateSelection.keyCode, 2)
+        XCTAssertEqual(configuration.translateSelection?.keyCode, 2)
         XCTAssertEqual(configuration.longScreenshot, GlobalShortcutConfiguration.default.longScreenshot)
         XCTAssertEqual(configuration.screenRecording, GlobalShortcutConfiguration.default.screenRecording)
         XCTAssertEqual(
             configuration.restoreMostRecentPin,
             GlobalShortcutConfiguration.default.restoreMostRecentPin
         )
+    }
+
+    func testStoreMigratesTheCompleteLegacyDefaultShortcutSet() throws {
+        let suiteName = "GlobalShortcutConfigurationTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let legacy = GlobalShortcutConfiguration.legacyDefault
+        defaults.set(
+            try JSONEncoder().encode(legacy),
+            forKey: GlobalShortcutConfigurationStore.storageKey
+        )
+
+        let configuration = GlobalShortcutConfigurationStore(defaults: defaults).load()
+
+        XCTAssertEqual(configuration, .default)
+    }
+
+    func testStoreDoesNotOverwriteCustomizedLegacyShortcuts() throws {
+        let suiteName = "GlobalShortcutConfigurationTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var customized = GlobalShortcutConfiguration.legacyDefault
+        customized[.screenshotAndPin] = RecordedShortcut(
+            keyCode: 100,
+            modifiers: [.control, .shift]
+        )
+        defaults.set(
+            try JSONEncoder().encode(customized),
+            forKey: GlobalShortcutConfigurationStore.storageKey
+        )
+
+        let configuration = GlobalShortcutConfigurationStore(defaults: defaults).load()
+
+        XCTAssertEqual(configuration, customized)
     }
 }

@@ -11,7 +11,7 @@ public partial class ShortcutRecorderControl : UserControl
 {
     public static readonly DependencyProperty HotkeyProperty = DependencyProperty.Register(
         nameof(Hotkey), typeof(string), typeof(ShortcutRecorderControl),
-        new PropertyMetadata("Alt+A", (d, e) => ((ShortcutRecorderControl)d).UpdateDisplayText()));
+        new PropertyMetadata("", (d, e) => ((ShortcutRecorderControl)d).UpdateDisplayText()));
 
     public string Hotkey
     {
@@ -38,7 +38,7 @@ public partial class ShortcutRecorderControl : UserControl
         }
         else
         {
-            TxtHotkey.Text = string.IsNullOrWhiteSpace(Hotkey) ? "无" : Hotkey.Replace("+", " + ");
+            TxtHotkey.Text = FormatHotkeyForDisplay(Hotkey);
             TxtHotkey.Foreground = (System.Windows.Media.Brush)FindResource("TextFillColorPrimaryBrush");
             ContainerBorder.BorderBrush = new SolidColorBrush(Color.FromRgb(229, 231, 235));
             ContainerBorder.Background = new SolidColorBrush(Color.FromRgb(243, 244, 246));
@@ -86,6 +86,16 @@ public partial class ShortcutRecorderControl : UserControl
             return;
         }
 
+        if (key == Key.Back || key == Key.Delete)
+        {
+            Hotkey = "";
+            _isRecording = false;
+            Keyboard.ClearFocus();
+            UpdateDisplayText();
+            e.Handled = true;
+            return;
+        }
+
         var sb = new StringBuilder();
         if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
             sb.Append("Ctrl+");
@@ -103,5 +113,22 @@ public partial class ShortcutRecorderControl : UserControl
         Keyboard.ClearFocus();
         UpdateDisplayText();
         e.Handled = true;
+    }
+
+    internal static string FormatHotkeyForDisplay(string? hotkey)
+    {
+        if (string.IsNullOrWhiteSpace(hotkey))
+            return "未设置";
+
+        string[] parts = hotkey.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length > 0
+            && parts[^1].Length == 2
+            && parts[^1][0] == 'D'
+            && char.IsDigit(parts[^1][1]))
+        {
+            parts[^1] = parts[^1][1].ToString();
+        }
+
+        return string.Join(" + ", parts);
     }
 }
