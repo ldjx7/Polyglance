@@ -3,6 +3,7 @@ import { marked } from 'marked';
 export interface ReleaseAsset {
   name: string;
   size: number;
+  download_count: number;
   browser_download_url: string;
 }
 
@@ -15,6 +16,10 @@ export interface Release {
   html_url: string;
   prerelease: boolean;
   assets: ReleaseAsset[];
+}
+
+export function getTotalDownloads(releases: Release[]): number {
+  return releases.reduce((sum, r) => sum + (r.assets || []).reduce((aSum, a) => aSum + (a.download_count || 0), 0), 0);
 }
 
 export async function getReleases(owner = 'ldjx7', repo = 'Polyglance'): Promise<Release[]> {
@@ -44,6 +49,7 @@ export async function getReleases(owner = 'ldjx7', repo = 'Polyglance'): Promise
         assets: (r.assets || []).map((a: any) => ({
           name: a.name,
           size: a.size,
+          download_count: a.download_count || 0,
           browser_download_url: a.browser_download_url,
         })),
       }))

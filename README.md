@@ -1,5 +1,9 @@
 # Polyglance
 
+[![GitHub Releases](https://img.shields.io/github/v/release/ldjx7/Polyglance?color=10b981&label=Release)](https://github.com/ldjx7/Polyglance/releases)
+[![Total Downloads](https://img.shields.io/github/downloads/ldjx7/Polyglance/total.svg?style=flat&color=10b981&label=Downloads)](https://github.com/ldjx7/Polyglance/releases)
+[![License](https://img.shields.io/github/license/ldjx7/Polyglance?color=blue)](LICENSE)
+
 ![Polyglance Logo](apps/macos/Resources/PolyglanceIcon.png)
 
 一个以 Rust 为共享内核、使用平台原生技术实现桌面体验的跨平台翻译工具。
@@ -8,14 +12,13 @@
 
 ## 当前状态
 
-macOS 第一条可运行纵向切片已经实现：
+macOS 与 Windows 原生客户端均已实现：
 
 - Rust 翻译内核，默认使用免 Key 的 Microsoft 免费翻译，并支持 Google 免费翻译、构建内置的免费 AI 翻译及自定义 OpenAI-compatible AI
-- UniFFI Swift 绑定
-- SwiftUI/AppKit 菜单栏和悬浮翻译窗口
-- 默认 `Option+D` 取词并翻译、`Option+Shift+D` 仅取词；全局快捷键可在设置中修改
-- Accessibility 直接读取选区，失败时自动模拟复制并恢复剪贴板
-- 默认 `Option+1` 打开高分辨率截图工具、`Option+2` 贴出剪贴板图片、`Option+3` 长截图、`Option+4` 区域录屏、`Option+5` 恢复最近关闭的贴图
+- UniFFI Swift 绑定与 .NET C# P/Invoke 跨平台运行时
+- 默认 `Ctrl+Shift+3` 取词并翻译；全局快捷键可在设置中修改
+- Accessibility / UI Automation 直接读取选区，失败时自动模拟复制并恢复剪贴板
+- 默认 `Ctrl+Shift+1` 打开高分辨率截图工具、`Ctrl+Shift+2` 贴出剪贴板图片、`Ctrl+Shift+4` 截屏翻译；长截图、录屏等可选功能支持在设置中自定义按键
 - 框选后使用纯系统图标工具栏，悬浮时只显示简短动作名称；支持画笔/矩形/椭圆/箭头/文字/自由涂抹马赛克、撤销重做、复制、保存、置顶、OCR 和 OCR 翻译
 - 截图阶段提供 Retina 放大镜、像素坐标及 HEX/RGB 取色；`C` 复制颜色，`Shift+C` 切换格式
 - 选区支持八向编辑、框外点击扩展和按输出像素的键盘微调
