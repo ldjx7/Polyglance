@@ -1,31 +1,27 @@
 ---
 import PageLayout from '../../layouts/PageLayout.astro';
-import { getReleases, getTotalDownloads } from '../../lib/releases';
+import { getReleases } from '../../lib/releases';
 
 const releases = await getReleases();
-let latestTag = releases[0]?.tag_name || 'v0.0.4-beta.10';
-const totalDownloads = getTotalDownloads(releases) || 140;
+let latestTag = releases[0]?.tag_name || 'v0.0.4-beta.11';
 
-let macDmgUrl = `https://github.com/ldjx7/Polyglance/releases/download/${latestTag}/Polyglance-0.0.4-beta.10-macOS.dmg`;
-let macZipUrl = `https://github.com/ldjx7/Polyglance/releases/download/${latestTag}/Polyglance-0.0.4-beta.10-macOS.zip`;
-let winSetupUrl = `https://github.com/ldjx7/Polyglance/releases/download/${latestTag}/Polyglance-0.0.4-beta.10-Windows-x64-Setup.exe`;
-let winZipUrl = `https://github.com/ldjx7/Polyglance/releases/download/${latestTag}/Polyglance-0.0.4-beta.10-Windows-x64-Portable.zip`;
-
-if (releases[0]?.assets) {
-  for (const asset of releases[0].assets) {
-    if (asset.name.endsWith('.dmg')) macDmgUrl = asset.browser_download_url;
-    else if (asset.name.includes('macOS') && asset.name.endsWith('.zip')) macZipUrl = asset.browser_download_url;
-    else if (asset.name.endsWith('.exe')) winSetupUrl = asset.browser_download_url;
-    else if (asset.name.includes('Windows') && asset.name.endsWith('.zip')) winZipUrl = asset.browser_download_url;
-  }
-}
+let macDmgUrl = '/api/download?target=mac-dmg';
+let macZipUrl = '/api/download?target=mac-zip';
+let winSetupUrl = '/api/download?target=win-setup';
+let winZipUrl = '/api/download?target=win-zip';
 ---
 
 <PageLayout title="Download" description="Download the latest direct installer for Polyglance on macOS and Windows" lang="en">
   <div class="page-header">
-    <div class="version-tag-pill">
-      <span class="pulse-dot"></span>
-      <span>Latest Release <strong id="latest-tag-label">{latestTag}</strong></span>
+    <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem;">
+      <div class="version-tag-pill">
+        <span class="pulse-dot"></span>
+        <span>Latest Release <strong id="latest-tag-label">{latestTag}</strong></span>
+      </div>
+      <div class="version-tag-pill">
+        <svg style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        <span>Site Downloads <strong id="site-downloads-count">0</strong></span>
+      </div>
     </div>
     <h1 class="page-title">Download Polyglance</h1>
     <p class="page-desc">Native, lightweight, and open source.</p>
@@ -130,50 +126,17 @@ if (releases[0]?.assets) {
 </PageLayout>
 
 <script>
-  // Client-side real-time direct asset link updater and OS detection
-  async function refreshData() {
+  // Client-side realtime download counter and OS detection
+  async function refreshStats() {
     try {
-      const res = await fetch('https://api.github.com/repos/ldjx7/Polyglance/releases?per_page=30');
+      const res = await fetch('/api/stats');
       if (!res.ok) return;
-      const releases = await res.json();
-      if (!Array.isArray(releases) || releases.length === 0) return;
-
-      let total = 0;
-      for (const rel of releases) {
-        for (const a of rel.assets || []) {
-          const lower = (a.name || '').toLowerCase();
-          if (lower.endsWith('.dmg') || lower.endsWith('.exe') || (lower.endsWith('.zip') && !lower.includes('notarization'))) {
-            total += a.download_count || 0;
-          }
-        }
+      const data = await res.json();
+      const countEl = document.getElementById('site-downloads-count');
+      if (countEl && typeof data.total === 'number') {
+        countEl.textContent = data.total.toLocaleString();
       }
-      const countEl = document.getElementById('total-downloads-count');
-      if (countEl && total > 0) {
-        countEl.textContent = total.toLocaleString();
-      }
-
-      const release = releases[0];
-      const tagLabel = document.getElementById('latest-tag-label');
-      if (tagLabel && release.tag_name) tagLabel.textContent = release.tag_name;
-
-      for (const asset of release.assets || []) {
-        if (asset.name.endsWith('.dmg')) {
-          const el = document.getElementById('link-mac-dmg');
-          if (el) el.setAttribute('href', asset.browser_download_url);
-        } else if (asset.name.includes('macOS') && asset.name.endsWith('.zip')) {
-          const el = document.getElementById('link-mac-zip');
-          if (el) el.setAttribute('href', asset.browser_download_url);
-        } else if (asset.name.endsWith('.exe')) {
-          const el = document.getElementById('link-win-setup');
-          if (el) el.setAttribute('href', asset.browser_download_url);
-        } else if (asset.name.includes('Windows') && asset.name.endsWith('.zip')) {
-          const el = document.getElementById('link-win-zip');
-          if (el) el.setAttribute('href', asset.browser_download_url);
-        }
-      }
-    } catch {
-      // Keep static URLs
-    }
+    } catch {}
   }
 
   function detectOS() {
@@ -193,7 +156,7 @@ if (releases[0]?.assets) {
   }
 
   detectOS();
-  refreshData();
+  refreshStats();
 </script>
 
 <style>

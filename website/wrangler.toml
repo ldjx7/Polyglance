@@ -1,0 +1,7 @@
+name = "polyglance"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "dist"
+
+[[kv_namespaces]]
+binding = "POLYGLANCE_STATS"
+id = "eda4b111044147eab0964c335b3b9d45"
