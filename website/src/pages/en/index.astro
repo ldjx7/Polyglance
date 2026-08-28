@@ -899,7 +899,7 @@ const totalDownloads = getTotalDownloads(releases) || 140;
   <main>
     <section class="hero container">
       <div class="hero-badge">
-        <span>Free &amp; Open Source · Zero-Config API · Native</span>
+        <span>Free &amp; Open Source · Native · <strong id="hero-site-downloads">1</strong> Site Downloads</span>
       </div>
 
       <h1 class="hero-title">
@@ -1300,6 +1300,16 @@ const totalDownloads = getTotalDownloads(releases) || 140;
         winBtn.classList.remove('btn-download-secondary');
         winBtn.classList.add('btn-download-primary');
       }
+
+      fetch('/api/stats')
+        .then(r => r.json())
+        .then(data => {
+          const el = document.getElementById('hero-site-downloads');
+          if (el && typeof data.total === 'number') {
+            el.textContent = data.total.toLocaleString();
+          }
+        })
+        .catch(() => {});
     })();
   </script>
 </body>
