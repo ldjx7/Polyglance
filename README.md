@@ -1,7 +1,6 @@
 # Polyglance
 
 [![GitHub Releases](https://img.shields.io/github/v/release/ldjx7/Polyglance?color=10b981&label=Release)](https://github.com/ldjx7/Polyglance/releases)
-[![Total Downloads](https://img.shields.io/github/downloads/ldjx7/Polyglance/total.svg?style=flat&color=10b981&label=Downloads)](https://github.com/ldjx7/Polyglance/releases)
 [![License](https://img.shields.io/github/license/ldjx7/Polyglance?color=blue)](LICENSE)
 
 ![Polyglance Logo](apps/macos/Resources/PolyglanceIcon.png)

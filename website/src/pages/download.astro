@@ -23,15 +23,9 @@ if (releases[0]?.assets) {
 
 <PageLayout title="下载客户端" description="下载适用于 macOS 与 Windows 的 Polyglance 最新直接安装包" lang="zh-CN">
   <div class="page-header">
-    <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem;">
-      <div class="version-tag-pill">
-        <span class="pulse-dot"></span>
-        <span>最新版本 <strong id="latest-tag-label">{latestTag}</strong></span>
-      </div>
-      <div class="version-tag-pill">
-        <svg style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-        <span>全网累计下载 <strong id="total-downloads-count">{totalDownloads}</strong> 次</span>
-      </div>
+    <div class="version-tag-pill">
+      <span class="pulse-dot"></span>
+      <span>最新版本 <strong id="latest-tag-label">{latestTag}</strong></span>
     </div>
     <h1 class="page-title">下载 Polyglance</h1>
     <p class="page-desc">原生体验、轻量高效、免费开源。</p>
