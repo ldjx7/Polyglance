@@ -563,18 +563,36 @@ const totalDownloads = getTotalDownloads(releases) || 140;
       align-items: center;
       justify-content: space-between;
       margin-top: 0.75rem;
-      padding-top: 0.75rem;
-      border-top: 1px solid var(--border-subtle);
     }
 
     .action-icon-pill {
-      display: inline-flex;
+      display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 0.3rem;
-      font-size: 0.7rem;
-      font-weight: 600;
+      gap: 0.35rem;
+      font-size: 0.72rem;
       color: var(--text-2);
+    }
+
+    .key-badge-pair {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      vertical-align: middle;
+    }
+
+    .key-os-icon {
+      width: 12px;
+      height: 12px;
+      fill: currentColor;
+      opacity: 0.75;
+      flex-shrink: 0;
+    }
+
+    .key-badge-sep {
+      margin: 0 0.15rem;
+      opacity: 0.35;
+      font-size: 0.72rem;
     }
 
     .icon-box-mini {
@@ -947,7 +965,20 @@ const totalDownloads = getTotalDownloads(releases) || 140;
             <!-- Source Text Box -->
             <div class="source-box">
               <div class="source-header">
-                <span>划词选区输入 (<kbd>macOS ⌃⇧3</kbd> · <kbd>Windows Ctrl+Shift+3</kbd>)</span>
+                <span style="display:inline-flex; align-items:center; gap:0.25rem; flex-wrap:wrap;">
+                  <span>划词选区输入</span>
+                  <span style="color:var(--text-3); font-size:0.75rem;">(</span>
+                  <span class="key-badge-pair">
+                    <svg class="key-os-icon" viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.37c.62-.75 1.04-1.8 1.01-2.87-.96.04-2.12.64-2.8 1.44-.59.68-1.11 1.76-.97 2.8 1.07.08 2.14-.54 2.76-1.37z"/></svg>
+                    <kbd>⌃⇧3</kbd>
+                  </span>
+                  <span class="key-badge-sep">/</span>
+                  <span class="key-badge-pair">
+                    <svg class="key-os-icon" viewBox="0 0 24 24"><path d="M0 0h11.377v11.377H0zm12.623 0H24v11.377H12.623zM0 12.623h11.377V24H0zm12.623 0H24V24H12.623z"/></svg>
+                    <kbd>Ctrl+Shift+3</kbd>
+                  </span>
+                  <span style="color:var(--text-3); font-size:0.75rem;">)</span>
+                </span>
                 <span>65 字符</span>
               </div>
               <div class="source-content">
@@ -998,9 +1029,19 @@ const totalDownloads = getTotalDownloads(releases) || 140;
 
           <!-- Action Toolbar Mock -->
           <div class="real-action-toolbar">
-            <div style="display:flex; justify-content:space-between; font-size:0.82rem; font-weight:700;">
-              <span>截屏与 OCR 选区动作栏</span>
-              <span style="font-size:0.72rem; color:var(--text-3);">macOS ⌃⇧1 · Windows Ctrl+Shift+1 触发</span>
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.82rem; font-weight:700;">
+              <span>截屏与 OCR 动作栏</span>
+              <div style="display:inline-flex; align-items:center; gap:0.25rem;">
+                <span class="key-badge-pair">
+                  <svg class="key-os-icon" viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.37c.62-.75 1.04-1.8 1.01-2.87-.96.04-2.12.64-2.8 1.44-.59.68-1.11 1.76-.97 2.8 1.07.08 2.14-.54 2.76-1.37z"/></svg>
+                  <kbd>⌃⇧1</kbd>
+                </span>
+                <span class="key-badge-sep">/</span>
+                <span class="key-badge-pair">
+                  <svg class="key-os-icon" viewBox="0 0 24 24"><path d="M0 0h11.377v11.377H0zm12.623 0H24v11.377H12.623zM0 12.623h11.377V24H0zm12.623 0H24V24H12.623z"/></svg>
+                  <kbd>Ctrl+Shift+1</kbd>
+                </span>
+              </div>
             </div>
 
             <div class="action-icons-row">
