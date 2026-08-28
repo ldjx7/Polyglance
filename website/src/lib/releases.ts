@@ -18,8 +18,24 @@ export interface Release {
   assets: ReleaseAsset[];
 }
 
+export function isInstallerAsset(name: string): boolean {
+  const lower = name.toLowerCase();
+  return (
+    lower.endsWith('.dmg') ||
+    lower.endsWith('.exe') ||
+    (lower.endsWith('.zip') && !lower.includes('notarization'))
+  );
+}
+
 export function getTotalDownloads(releases: Release[]): number {
-  return releases.reduce((sum, r) => sum + (r.assets || []).reduce((aSum, a) => aSum + (a.download_count || 0), 0), 0);
+  return releases.reduce((sum, r) => {
+    return sum + (r.assets || []).reduce((aSum, a) => {
+      if (isInstallerAsset(a.name)) {
+        return aSum + (a.download_count || 0);
+      }
+      return aSum;
+    }, 0);
+  }, 0);
 }
 
 export async function getReleases(owner = 'ldjx7', repo = 'Polyglance'): Promise<Release[]> {

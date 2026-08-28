@@ -30,7 +30,7 @@ if (releases[0]?.assets) {
       </div>
       <div class="version-tag-pill">
         <svg style="width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-        <span>全网累计下载 <strong id="total-downloads-count">{totalDownloads}+</strong> 次</span>
+        <span>全网累计下载 <strong id="total-downloads-count">{totalDownloads}</strong> 次</span>
       </div>
     </div>
     <h1 class="page-title">下载 Polyglance</h1>
@@ -147,12 +147,15 @@ if (releases[0]?.assets) {
       let total = 0;
       for (const rel of releases) {
         for (const a of rel.assets || []) {
-          total += a.download_count || 0;
+          const lower = (a.name || '').toLowerCase();
+          if (lower.endsWith('.dmg') || lower.endsWith('.exe') || (lower.endsWith('.zip') && !lower.includes('notarization'))) {
+            total += a.download_count || 0;
+          }
         }
       }
       const countEl = document.getElementById('total-downloads-count');
       if (countEl && total > 0) {
-        countEl.textContent = total.toLocaleString() + '+';
+        countEl.textContent = total.toLocaleString();
       }
 
       const release = releases[0];
