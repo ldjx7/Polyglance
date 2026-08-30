@@ -74,7 +74,11 @@ enum ScreenRecordingAudioMixdown {
             ".\(sourceURL.deletingPathExtension().lastPathComponent)-mixed-\(UUID().uuidString).mp4"
         )
         defer { try? fileManager.removeItem(at: mixedURL) }
-        try await exporter.export(to: mixedURL, as: .mp4)
+        if #available(macOS 15, *) {
+            try await exporter.export(to: mixedURL, as: .mp4)
+        } else {
+            try await exportUsingLegacySession(exporter, to: mixedURL)
+        }
         _ = try fileManager.replaceItemAt(
             sourceURL,
             withItemAt: mixedURL,
@@ -83,11 +87,40 @@ enum ScreenRecordingAudioMixdown {
         )
         return sourceURL
     }
+
+    /// macOS 14 has no throwing `export(to:as:)`, so the deprecated
+    /// completion-handler export is bridged by hand. The session is a
+    /// non-Sendable class used from exactly one task, which the compiler cannot
+    /// prove across the escaping handler.
+    private static func exportUsingLegacySession(
+        _ exporter: AVAssetExportSession,
+        to destinationURL: URL
+    ) async throws {
+        exporter.outputURL = destinationURL
+        exporter.outputFileType = .mp4
+
+        nonisolated(unsafe) let session = exporter
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            session.exportAsynchronously {
+                continuation.resume()
+            }
+        }
+
+        switch session.status {
+        case .completed:
+            return
+        case .cancelled:
+            throw CancellationError()
+        default:
+            throw session.error ?? ScreenRecordingAudioMixdownError.exportFailed
+        }
+    }
 }
 
 enum ScreenRecordingAudioMixdownError: LocalizedError {
     case trackCreationFailed(String)
     case exporterUnavailable
+    case exportFailed
 
     var errorDescription: String? {
         switch self {
@@ -95,6 +128,8 @@ enum ScreenRecordingAudioMixdownError: LocalizedError {
             return "无法创建录屏\(kind)混合轨道"
         case .exporterUnavailable:
             return "系统无法创建录屏音频混合器"
+        case .exportFailed:
+            return "录屏音频混合导出失败"
         }
     }
 }
