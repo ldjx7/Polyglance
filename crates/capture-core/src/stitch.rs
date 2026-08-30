@@ -185,13 +185,24 @@ impl Stitcher {
         }
 
         let previous = self.previous_frame.as_ref().expect("a previous frame");
-        let offset = estimated_offset(
+        let offset = match estimated_offset(
             &self.configuration,
             self.direction,
             previous,
             &frame,
             self.predicted_offset,
-        )?;
+        ) {
+            Ok(offset) => offset,
+            Err(error) => {
+                // The rejected frame is dropped, so the next comparison spans a
+                // longer interval than this one did. Keeping the prediction
+                // would aim the search at a distance that is already stale and
+                // bias it towards a too-small match; decay it towards zero so
+                // the window is visited outward from a neutral guess instead.
+                self.predicted_offset /= 2;
+                return Err(error);
+            }
+        };
         self.previous_frame = Some(frame);
         if offset == 0 {
             return Ok(self.result(Disposition::Unchanged, false, false));
@@ -530,11 +541,13 @@ fn cropped_bytes(frame: &PixelFrame, width: usize, height: usize) -> Vec<u8> {
 }
 
 /// Scrolling is continuous, so the previous offset predicts the next one and
-/// candidates are visited outward from that prediction. The search still
-/// examines the whole window unless it finds an exact match, because a merely
-/// plausible offset would silently drop the rows between it and the true one.
+/// candidates are visited outward from that prediction. The search always
+/// examines the whole window: stopping at the first candidate that happens to
+/// match would silently drop the rows between it and the true offset, and a
+/// fast scroll makes that near-certain because the prediction then trails far
+/// behind the real distance.
 ///
-/// Ordering also decides ties: whichever candidate is nearest the prediction is
+/// Ordering only decides ties: whichever candidate is nearest the prediction is
 /// kept. With no history the prediction is zero, which reproduces the original
 /// "smallest shift wins" behaviour.
 fn estimated_offset(
@@ -565,13 +578,47 @@ fn estimated_offset(
         return Err(StitchError::NoReliableVerticalOverlap);
     }
 
-    let mut best: Option<(i64, f64)> = None;
-    for offset in candidate_offsets(maximum_offset, predicted_offset) {
-        let score = mismatch_score(direction, previous, current, offset);
-        // Nothing can beat an exact match, so the remaining window is pointless.
-        if score <= 0.0 {
-            return Ok(offset);
+    // Every candidate is screened cheaply, then only the most promising ones
+    // are scored in full. Screening the whole window is what keeps a fast
+    // scroll from being matched at some nearer lookalike distance; scoring only
+    // the shortlist in full is what keeps that exhaustive screen affordable at
+    // the frame rate the session captures on.
+    let candidates = candidate_offsets(maximum_offset, predicted_offset);
+    let mut screened: Vec<(i64, f64)> = candidates
+        .iter()
+        .map(|offset| {
+            (
+                *offset,
+                mismatch_score(direction, previous, current, *offset, SCREENING_SAMPLES),
+            )
+        })
+        .collect();
+    // `candidates` is already ordered by distance from the prediction, and a
+    // stable sort keeps that as the tie-break among equal scores.
+    screened.sort_by(|left, right| left.1.partial_cmp(&right.1).expect("scores are never NaN"));
+
+    let mut shortlist: Vec<i64> = screened
+        .iter()
+        .take(SHORTLIST_LENGTH)
+        .map(|(offset, _)| *offset)
+        .collect();
+    // The shortlist can be filled entirely by the winner's own basin, which
+    // would leave the ambiguity check with nothing to compare against, so the
+    // best alignment outside that basin is always scored too.
+    let leader = screened[0].0;
+    if let Some((rival, _)) = screened
+        .iter()
+        .find(|(offset, _)| (offset - leader).abs() > AMBIGUITY_GUARD)
+    {
+        if !shortlist.contains(rival) {
+            shortlist.push(*rival);
         }
+    }
+
+    let mut scores: Vec<(i64, f64)> = Vec::with_capacity(shortlist.len());
+    let mut best: Option<(i64, f64)> = None;
+    for offset in shortlist {
+        let score = mismatch_score(direction, previous, current, offset, FULL_SAMPLES);
         let is_better = match best {
             Some((_, best_score)) => score < best_score - 0.000_001,
             None => true,
@@ -579,12 +626,52 @@ fn estimated_offset(
         if is_better {
             best = Some((offset, score));
         }
+        scores.push((offset, score));
     }
-    match best {
-        Some((offset, score)) if score <= configuration.match_threshold => Ok(offset),
-        _ => Err(StitchError::NoReliableVerticalOverlap),
+
+    let Some((best_offset, best_score)) = best else {
+        return Err(StitchError::NoReliableVerticalOverlap);
+    };
+    if best_score > configuration.match_threshold {
+        return Err(StitchError::NoReliableVerticalOverlap);
     }
+
+    // A single low score is not proof of alignment. Repetitive content — list
+    // rows, ruled backgrounds, text of even weight — scores almost as well at
+    // the wrong distance, and accepting one of those splices the frame where it
+    // does not belong, which is what surfaces as duplicated content after a
+    // fast scroll. Require the winner to stand clear of every rival outside its
+    // own basin; when nothing separates them, skip the frame instead of
+    // guessing.
+    //
+    // An exact match is exempt: rivals that also match exactly mean the content
+    // truly repeats, so every candidate splices seamlessly and the one nearest
+    // the prediction is as good as any.
+    if best_score > 0.0 {
+        let rival = scores
+            .iter()
+            .filter(|(offset, _)| (offset - best_offset).abs() > AMBIGUITY_GUARD)
+            .map(|(_, score)| *score)
+            .fold(f64::INFINITY, f64::min);
+        if rival.is_finite() && rival < best_score * AMBIGUITY_RATIO {
+            return Err(StitchError::NoReliableVerticalOverlap);
+        }
+    }
+    Ok(best_offset)
 }
+
+/// Offsets this close to the winner belong to the same match, not to a rival
+/// alignment, so they never count as competition.
+const AMBIGUITY_GUARD: i64 = 8;
+/// How much worse the nearest rival alignment must be before the winner counts
+/// as unambiguous.
+const AMBIGUITY_RATIO: f64 = 1.8;
+/// Samples per axis when screening the whole search window.
+const SCREENING_SAMPLES: usize = 24;
+/// Samples per axis when scoring a shortlisted candidate.
+const FULL_SAMPLES: usize = 96;
+/// How many screened candidates are rescored at full density.
+const SHORTLIST_LENGTH: usize = 24;
 
 /// Every non-zero offset within the window, nearest to the prediction first.
 /// Equal distances put the larger offset first so a zero prediction reproduces
@@ -606,11 +693,12 @@ fn mismatch_score(
     previous: &PixelFrame,
     current: &PixelFrame,
     offset: i64,
+    samples_per_axis: usize,
 ) -> f64 {
     if direction == Direction::Vertical {
-        return global_mismatch_score(direction, previous, current, offset);
+        return global_mismatch_score(direction, previous, current, offset, samples_per_axis);
     }
-    let Some(sampling) = Sampling::new(direction, previous, offset) else {
+    let Some(sampling) = Sampling::new(direction, previous, offset, samples_per_axis) else {
         return 1.0;
     };
     let mut slice_scores = Vec::new();
@@ -646,8 +734,9 @@ fn global_mismatch_score(
     previous: &PixelFrame,
     current: &PixelFrame,
     offset: i64,
+    samples_per_axis: usize,
 ) -> f64 {
-    let Some(sampling) = Sampling::new(direction, previous, offset) else {
+    let Some(sampling) = Sampling::new(direction, previous, offset, samples_per_axis) else {
         return 1.0;
     };
     let mut difference = 0u64;
@@ -711,7 +800,12 @@ struct Sampling {
 }
 
 impl Sampling {
-    fn new(direction: Direction, previous: &PixelFrame, offset: i64) -> Option<Self> {
+    fn new(
+        direction: Direction,
+        previous: &PixelFrame,
+        offset: i64,
+        samples_per_axis: usize,
+    ) -> Option<Self> {
         let distance = offset.unsigned_abs() as usize;
         let overlap_width = previous
             .width
@@ -747,8 +841,8 @@ impl Sampling {
             vertical_inset,
             sampled_width,
             sampled_height,
-            column_stride: (sampled_width / 96).max(1),
-            row_stride: (sampled_height / 96).max(1),
+            column_stride: (sampled_width / samples_per_axis.max(1)).max(1),
+            row_stride: (sampled_height / samples_per_axis.max(1)).max(1),
         })
     }
 }
@@ -1191,6 +1285,78 @@ mod placement_tests {
         let result = stitcher.append(noise(width, height, 170), width as u32, height as u32);
 
         assert_eq!(result, Err(StitchError::NoReliableVerticalOverlap));
+    }
+
+    /// A page whose only texture is a thin marker row every 40 pixels over a
+    /// near-uniform background: many alignments look almost right, and a slight
+    /// shift in background brightness keeps any of them from being exact.
+    fn faint_rules(width: usize, height: usize, first_row: usize, background: u8) -> Vec<u8> {
+        let mut bytes = vec![0u8; width * height * 4];
+        for row in 0..height {
+            let value: u8 = if (first_row + row) % 40 == 0 {
+                210
+            } else {
+                background
+            };
+            for column in 0..width {
+                let index = (row * width + column) * 4;
+                bytes[index] = value;
+                bytes[index + 1] = value;
+                bytes[index + 2] = value;
+                bytes[index + 3] = 255;
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn an_alignment_with_an_equally_good_rival_is_skipped_rather_than_guessed() {
+        let width = 4;
+        let height = 200;
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        stitcher
+            .append(
+                faint_rules(width, height, 0, 255),
+                width as u32,
+                height as u32,
+            )
+            .unwrap();
+        // 37 rows of scroll scores no better than 77, -3 and every other shift
+        // that lands the marker rows back on each other.
+        let result = stitcher.append(
+            faint_rules(width, height, 37, 254),
+            width as u32,
+            height as u32,
+        );
+
+        assert_eq!(result, Err(StitchError::NoReliableVerticalOverlap));
+    }
+
+    #[test]
+    fn a_large_scroll_is_not_matched_at_a_nearer_lookalike_offset() {
+        let width = 4;
+        let height = 200;
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        stitcher
+            .append(noise(width, height, 0), width as u32, height as u32)
+            .unwrap();
+        // A short scroll teaches the search to predict +5, then the user flicks
+        // the page. The true offset is far from that prediction, so a search
+        // that stopped at the first plausible candidate would splice here.
+        stitcher
+            .append(noise(width, height, 5), width as u32, height as u32)
+            .unwrap();
+        let result = stitcher
+            .append(noise(width, height, 130), width as u32, height as u32)
+            .unwrap();
+
+        assert_eq!(
+            result.disposition,
+            Disposition::Appended {
+                direction: Direction::Vertical,
+                offset: 125
+            }
+        );
     }
 
     /// A list-like page whose rows repeat every 10 pixels: shifting by any
