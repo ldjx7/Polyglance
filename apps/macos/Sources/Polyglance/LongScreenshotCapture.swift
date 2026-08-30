@@ -63,23 +63,80 @@ final class ScreenCaptureKitLongScreenshotCapturer: LongScreenshotFrameCapturing
         region: LongScreenshotCaptureRegion,
         excludesCurrentApplication: Bool
     ) async throws -> CGImage {
-        let content: SCShareableContent
+        let content = try await shareableContent()
+        guard let display = content.displays.first(where: { $0.displayID == region.displayID }) else {
+            // The cached snapshot may predate a display change, so a miss is
+            // retried once against freshly enumerated content.
+            invalidateShareableContent()
+            let refreshed = try await shareableContent()
+            guard let display = refreshed.displays.first(where: {
+                $0.displayID == region.displayID
+            }) else {
+                throw LongScreenshotCaptureError.displayUnavailable
+            }
+            return try await captureImage(
+                display: display,
+                content: refreshed,
+                region: region,
+                excludesCurrentApplication: excludesCurrentApplication
+            )
+        }
+        return try await captureImage(
+            display: display,
+            content: content,
+            region: region,
+            excludesCurrentApplication: excludesCurrentApplication
+        )
+    }
+
+    /// Enumerating shareable content costs tens of milliseconds and is repeated
+    /// for every frame of a session. That latency lands between the scroll and
+    /// the capture, which widens the distance the page travels per frame and
+    /// pushes the stitcher towards its search limit. The window list barely
+    /// changes during a capture, so a short-lived cache is enough.
+    private static let shareableContentLifetime: TimeInterval = 1.0
+    private static var cachedShareableContent: (content: SCShareableContent, capturedAt: Date)?
+
+    private static func shareableContent() async throws -> SCShareableContent {
+        if let cached = cachedShareableContent,
+           Date().timeIntervalSince(cached.capturedAt) < shareableContentLifetime {
+            return cached.content
+        }
         do {
-            content = try await SCShareableContent.excludingDesktopWindows(
+            let content = try await SCShareableContent.excludingDesktopWindows(
                 false,
                 onScreenWindowsOnly: true
             )
+            cachedShareableContent = (content, Date())
+            return content
         } catch {
+            cachedShareableContent = nil
             throw LongScreenshotCaptureError.captureFailed(error.localizedDescription)
         }
-        guard let display = content.displays.first(where: { $0.displayID == region.displayID }) else {
-            throw LongScreenshotCaptureError.displayUnavailable
-        }
+    }
 
+    private static func invalidateShareableContent() {
+        cachedShareableContent = nil
+    }
+
+    private static func captureImage(
+        display: SCDisplay,
+        content: SCShareableContent,
+        region: LongScreenshotCaptureRegion,
+        excludesCurrentApplication: Bool
+    ) async throws -> CGImage {
         let excludedApplications: [SCRunningApplication]
-        if excludesCurrentApplication, let bundleIdentifier = Bundle.main.bundleIdentifier {
-            excludedApplications = content.applications.filter {
-                $0.bundleIdentifier == bundleIdentifier
+        if excludesCurrentApplication {
+            // Matching on the bundle identifier alone silently excludes nothing
+            // when there is no bundle — an unbundled or test run — and the
+            // selection border then lands in every frame. The process id always
+            // identifies this application.
+            let processIdentifier = ProcessInfo.processInfo.processIdentifier
+            let bundleIdentifier = Bundle.main.bundleIdentifier
+            excludedApplications = content.applications.filter { application in
+                application.processID == processIdentifier
+                    || (bundleIdentifier != nil
+                        && application.bundleIdentifier == bundleIdentifier)
             }
         } else {
             excludedApplications = []
@@ -103,6 +160,7 @@ final class ScreenCaptureKitLongScreenshotCapturer: LongScreenshotFrameCapturing
                 configuration: configuration
             )
         } catch {
+            invalidateShareableContent()
             throw LongScreenshotCaptureError.captureFailed(error.localizedDescription)
         }
     }

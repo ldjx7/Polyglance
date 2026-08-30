@@ -207,6 +207,10 @@ final class LongScreenshotPreviewPanel: NSPanel {
             defer: false
         )
         level = .screenSaver
+        // Belt and braces with the capturer's application exclusion: these panels
+        // sit directly over the captured region, so they must never be part of
+        // a screen capture.
+        sharingType = .none
         isFloatingPanel = true
         hidesOnDeactivate = false
         isOpaque = false
@@ -306,6 +310,10 @@ final class LongScreenshotControlPanel: NSPanel {
             defer: false
         )
         level = .screenSaver
+        // Belt and braces with the capturer's application exclusion: these panels
+        // sit directly over the captured region, so they must never be part of
+        // a screen capture.
+        sharingType = .none
         isFloatingPanel = true
         hidesOnDeactivate = false
         isOpaque = false
@@ -356,11 +364,21 @@ final class LongScreenshotRegionOverlayView: NSView {
     private var dragTarget: DragTarget?
     private var dragStartScreenPoint: CGPoint?
     private var dragStartFrame: CGRect?
+    private var skippedFrameHintExpiry: Date?
+    private var skippedFrameHintTimer: Timer?
 
     var onRegionChanged: ((CGRect) -> Void)?
     var isRegionVisible: Bool { !isHidden && state != .cancelled && state != .failed }
     var allowsRegionEditing: Bool { state == .ready }
+    var isShowingSkippedFrameHint: Bool {
+        guard let skippedFrameHintExpiry else { return false }
+        return skippedFrameHintExpiry > Date()
+    }
+
     var borderColor: NSColor {
+        if isShowingSkippedFrameHint, state == .capturing {
+            return .systemYellow
+        }
         switch state {
         case .ready:
             return .systemBlue
@@ -372,6 +390,24 @@ final class LongScreenshotRegionOverlayView: NSView {
             return .systemGreen
         case .cancelled, .failed:
             return .clear
+        }
+    }
+
+    /// A frame the stitcher could not place is dropped silently, which looks
+    /// identical to a frame that was captured. Flash the border so the user
+    /// knows the page moved too far and can scroll more slowly instead of
+    /// discovering the gap in the finished image.
+    func flagSkippedFrame() {
+        skippedFrameHintExpiry = Date().addingTimeInterval(0.6)
+        needsDisplay = true
+        skippedFrameHintTimer?.invalidate()
+        skippedFrameHintTimer = Timer.scheduledTimer(
+            withTimeInterval: 0.65,
+            repeats: false
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.needsDisplay = true
+            }
         }
     }
 
@@ -554,6 +590,10 @@ final class LongScreenshotRegionOverlayPanel: NSPanel {
             defer: false
         )
         level = .screenSaver
+        // Belt and braces with the capturer's application exclusion: these panels
+        // sit directly over the captured region, so they must never be part of
+        // a screen capture.
+        sharingType = .none
         isFloatingPanel = true
         hidesOnDeactivate = false
         isOpaque = false

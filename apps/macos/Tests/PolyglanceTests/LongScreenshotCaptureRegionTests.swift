@@ -13,9 +13,25 @@ final class LongScreenshotCaptureRegionTests: XCTestCase {
 
         XCTAssertEqual(region.displayID, 42)
         XCTAssertEqual(region.globalRect, CGRect(x: 100, y: 250, width: 350, height: 200))
-        XCTAssertEqual(region.sourceRect, CGRect(x: 0, y: 550, width: 350, height: 200))
-        XCTAssertEqual(region.pixelWidth, 700)
-        XCTAssertEqual(region.pixelHeight, 400)
+        // The captured rectangle sits one chrome guard inside the selection so
+        // the overlay's border and handles cannot be part of a frame.
+        XCTAssertEqual(region.sourceRect, CGRect(x: 4, y: 554, width: 342, height: 192))
+        XCTAssertEqual(region.pixelWidth, 684)
+        XCTAssertEqual(region.pixelHeight, 384)
+    }
+
+    func testTheChromeGuardNeverInvertsASmallSelection() throws {
+        let region = try XCTUnwrap(LongScreenshotCaptureRegion.make(
+            displayID: 1,
+            screenFrame: CGRect(x: 0, y: 0, width: 1_000, height: 800),
+            selection: CGRect(x: 10, y: 10, width: 8, height: 8),
+            backingScaleFactor: 2
+        ))
+
+        XCTAssertEqual(region.sourceRect.width, 4)
+        XCTAssertEqual(region.sourceRect.height, 4)
+        XCTAssertEqual(region.pixelWidth, 8)
+        XCTAssertEqual(region.pixelHeight, 8)
     }
 
     func testEmptyOrInvalidSelectionsAreRejected() {

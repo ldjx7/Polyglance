@@ -38,6 +38,15 @@ enum LongScreenshotDirection: Int, CaseIterable, Equatable, Sendable {
 }
 
 struct LongScreenshotCaptureRegion: Equatable, Sendable {
+    /// The selection overlay draws a 3pt border and 8pt handles on the outer
+    /// edge of the selection, so those pixels belong to the chrome and not to
+    /// the page. ScreenCaptureKit is asked to exclude this application, but
+    /// that exclusion is not guaranteed on every path (an unbundled build has
+    /// no bundle identifier to match on), and a border baked into every frame
+    /// is both ugly and constant texture the stitcher has to work around.
+    /// Capturing just inside the chrome removes the failure mode entirely.
+    static let overlayChromeGuard: CGFloat = 4
+
     let displayID: CGDirectDisplayID
     let sourceRect: CGRect
     let globalRect: CGRect
@@ -62,12 +71,22 @@ struct LongScreenshotCaptureRegion: Equatable, Sendable {
               clippedSelection.height > 0 else {
             return nil
         }
+        // A selection barely larger than the chrome would inset to nothing, so
+        // the guard shrinks rather than inverting the rectangle.
+        let guardInset = min(
+            overlayChromeGuard,
+            min(clippedSelection.width, clippedSelection.height) / 4
+        )
+        let capturedSelection = clippedSelection.insetBy(dx: guardInset, dy: guardInset)
+        guard capturedSelection.width > 0, capturedSelection.height > 0 else {
+            return nil
+        }
 
         let sourceRect = CGRect(
-            x: clippedSelection.minX - screenFrame.minX,
-            y: screenFrame.maxY - clippedSelection.maxY,
-            width: clippedSelection.width,
-            height: clippedSelection.height
+            x: capturedSelection.minX - screenFrame.minX,
+            y: screenFrame.maxY - capturedSelection.maxY,
+            width: capturedSelection.width,
+            height: capturedSelection.height
         )
         let pixelWidth = Int((sourceRect.width * backingScaleFactor).rounded())
         let pixelHeight = Int((sourceRect.height * backingScaleFactor).rounded())
