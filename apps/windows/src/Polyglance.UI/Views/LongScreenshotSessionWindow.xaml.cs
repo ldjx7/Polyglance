@@ -38,6 +38,8 @@ public partial class LongScreenshotSessionWindow : Window
     private IntPtr _scrollTarget = IntPtr.Zero;
     private bool _isCapturingFrame;
     private uint _lastPreviewFrameCount;
+    private int _captureGuardPixels = CaptureOverlayGuardPixels;
+    private int _consecutiveSkippedFrames;
 
     public LongScreenshotSessionWindow(
         BitmapSource fullScreenBitmap,
@@ -55,7 +57,14 @@ public partial class LongScreenshotSessionWindow : Window
         SourceInitialized += (_, _) =>
         {
             IntPtr handle = new WindowInteropHelper(this).Handle;
-            _ = NativeWin32.SetWindowDisplayAffinity(handle, NativeWin32.WDA_EXCLUDEFROMCAPTURE);
+            bool excluded = NativeWin32.SetWindowDisplayAffinity(handle, NativeWin32.WDA_EXCLUDEFROMCAPTURE);
+            // Older builds and some remote sessions reject the affinity, which
+            // leaves the guard inset as the only thing keeping the selection
+            // chrome out of every frame. Widen it there rather than silently
+            // relying on an exclusion that was refused.
+            _captureGuardPixels = excluded
+                ? CaptureOverlayGuardPixels
+                : CaptureOverlayGuardPixels * 2;
         };
 
         Left = screenBounds.X;
@@ -209,13 +218,15 @@ public partial class LongScreenshotSessionWindow : Window
             Int32Rect selectionRegion = SelectionPhysicalRegion();
             Int32Rect region = ScreenCapture.InsetOverlayBorder(
                 selectionRegion,
-                CaptureOverlayGuardPixels);
+                _captureGuardPixels);
             var frame = ScreenCapture.CaptureRegion(region, showCursor: false);
             byte[] rgba = ScreenCapture.GetRgbaBytes(frame);
             var result = _stitcher.AppendFrame(rgba, (uint)frame.PixelWidth, (uint)frame.PixelHeight);
+            _consecutiveSkippedFrames = 0;
             if (result.FrameCount != _lastPreviewFrameCount)
             {
                 _lastPreviewFrameCount = result.FrameCount;
+                TxtStatus.Text = "滚动页面以继续捕获";
                 UpdatePreview();
             }
             if (result.LimitReached != 0)
@@ -227,7 +238,15 @@ public partial class LongScreenshotSessionWindow : Window
         catch (Exception error)
         {
             // A frame without reliable overlap is recoverable while the user is
-            // stationary or an animation is running. Keep the session alive.
+            // stationary or an animation is running. Keep the session alive,
+            // but say so once it starts happening repeatedly: that means the
+            // page is moving further per frame than the stitcher can match, and
+            // only the user can slow it down.
+            _consecutiveSkippedFrames++;
+            if (_consecutiveSkippedFrames >= 3)
+            {
+                TxtStatus.Text = "滚动过快，部分画面已跳过，请放慢";
+            }
             System.Diagnostics.Debug.WriteLine($"Long screenshot frame skipped: {error.Message}");
         }
         finally
