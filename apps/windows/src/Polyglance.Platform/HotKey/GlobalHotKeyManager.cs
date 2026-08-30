@@ -22,6 +22,14 @@ public sealed class GlobalHotKeyManager : IDisposable
 
     public int Register(uint modifiers, uint key, Action callback)
     {
+        // A disposed manager has already removed its message hook, so anything
+        // registered through it would be claimed from every other application
+        // and then never delivered anywhere.
+        if (_disposed)
+        {
+            return -1;
+        }
+
         int id = ++_currentId;
         bool success = NativeWin32.RegisterHotKey(_hWnd, id, modifiers | NativeWin32.MOD_NOREPEAT, key);
         if (success)

@@ -165,44 +165,48 @@ public partial class App : Application
 
         var config = LoadConfigurationOrDefault();
 
-        RegisterSingleHotKey(config.HotkeyScreenshotPin, TriggerScreenshot);
-        RegisterSingleHotKey(config.HotkeyPinClipboardImage, PinClipboardImage);
-        RegisterSingleHotKey(config.HotkeySelectedText, TriggerSelectedTextTranslate);
-        RegisterSingleHotKey(config.HotkeyScreenTranslate, TriggerScreenTranslate);
-        RegisterSingleHotKey(config.HotkeyLongScreenshot, TriggerLongScreenshot);
-        RegisterSingleHotKey(config.HotkeyScreenRecording, TriggerScreenRecording);
-        RegisterSingleHotKey(config.HotkeyRestoreMostRecentPin, RestoreMostRecentPin);
-        RegisterSingleHotKey(config.HotkeyMainTranslator, ShowMainWindow);
+        var failures = new List<string>();
+        RegisterSingleHotKey("截图贴图", config.HotkeyScreenshotPin, TriggerScreenshot, failures);
+        RegisterSingleHotKey("剪贴板贴图", config.HotkeyPinClipboardImage, PinClipboardImage, failures);
+        RegisterSingleHotKey("划词翻译", config.HotkeySelectedText, TriggerSelectedTextTranslate, failures);
+        RegisterSingleHotKey("截图翻译", config.HotkeyScreenTranslate, TriggerScreenTranslate, failures);
+        RegisterSingleHotKey("长截图", config.HotkeyLongScreenshot, TriggerLongScreenshot, failures);
+        RegisterSingleHotKey("屏幕录制", config.HotkeyScreenRecording, TriggerScreenRecording, failures);
+        RegisterSingleHotKey("恢复最近贴图", config.HotkeyRestoreMostRecentPin, RestoreMostRecentPin, failures);
+        RegisterSingleHotKey("主窗口", config.HotkeyMainTranslator, ShowMainWindow, failures);
+
+        // A shortcut that Windows refuses is the single most confusing failure
+        // here: the settings dialog saved it, the box shows it, and nothing
+        // happens when it is pressed. Say which ones did not take.
+        if (failures.Count > 0 && _notifyIcon != null)
+        {
+            _notifyIcon.ShowBalloonTip(
+                5000,
+                "快捷键未生效",
+                string.Join("\n", failures),
+                ToolTipIcon.Warning);
+        }
     }
 
-    private void RegisterSingleHotKey(string hotkeyStr, Action action)
+    private void RegisterSingleHotKey(
+        string label,
+        string hotkeyStr,
+        Action action,
+        List<string> failures)
     {
+        // An unassigned shortcut is a deliberate choice, not a failure.
         if (string.IsNullOrWhiteSpace(hotkeyStr) || _hotKeyManager == null) return;
 
-        uint modifiers = 0;
-        uint key = 0;
-
-        string[] parts = hotkeyStr.Split('+');
-        foreach (var p in parts)
+        if (!ShortcutDefinition.TryParse(hotkeyStr, out ShortcutDefinition? definition, out string? error)
+            || definition == null)
         {
-            string part = p.Trim();
-            if (part.Equals("Ctrl", StringComparison.OrdinalIgnoreCase))
-                modifiers |= NativeWin32.MOD_CONTROL;
-            else if (part.Equals("Alt", StringComparison.OrdinalIgnoreCase))
-                modifiers |= NativeWin32.MOD_ALT;
-            else if (part.Equals("Shift", StringComparison.OrdinalIgnoreCase))
-                modifiers |= NativeWin32.MOD_SHIFT;
-            else if (part.Equals("Win", StringComparison.OrdinalIgnoreCase))
-                modifiers |= NativeWin32.MOD_WIN;
-            else if (Enum.TryParse<Keys>(part, true, out var parsedKey))
-            {
-                key = (uint)parsedKey;
-            }
+            failures.Add($"{label}（{hotkeyStr}）：{error}");
+            return;
         }
 
-        if (key != 0)
+        if (_hotKeyManager.Register(definition.Modifiers, definition.VirtualKey, action) < 0)
         {
-            _hotKeyManager.Register(modifiers, key, action);
+            failures.Add($"{label}（{hotkeyStr}）：已被其他程序占用");
         }
     }
 

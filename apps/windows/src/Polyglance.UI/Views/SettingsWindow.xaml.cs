@@ -6,8 +6,10 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using Polyglance.Core.Models;
 using Polyglance.Core.Services;
+using Polyglance.Platform.HotKey;
 using Polyglance.Platform.Startup;
 using Polyglance.Platform.Update;
+using Polyglance.UI.Controls;
 using Wpf.Ui.Controls;
 
 namespace Polyglance.UI.Views;
@@ -190,8 +192,70 @@ public partial class SettingsWindow : FluentWindow
         }
     }
 
+    /// <summary>
+    /// Rejects shortcuts Windows would refuse before they are written to disk.
+    /// Saving one and finding out later that it does nothing is the hardest
+    /// version of this to diagnose.
+    /// </summary>
+    private bool ValidateShortcuts()
+    {
+        (string Label, string Value)[] shortcuts =
+        {
+            ("截图贴图", RecHotkeyScreenshotPin.Hotkey),
+            ("剪贴板贴图", RecHotkeyPinClipboardImage.Hotkey),
+            ("划词翻译", RecHotkeySelectedText.Hotkey),
+            ("截图翻译", RecHotkeyScreenTranslate.Hotkey),
+            ("长截图", RecHotkeyLongScreenshot.Hotkey),
+            ("屏幕录制", RecHotkeyScreenRecording.Hotkey),
+            ("恢复最近贴图", RecHotkeyRestoreMostRecentPin.Hotkey),
+            ("主窗口", RecHotkeyMainTranslator.Hotkey),
+        };
+
+        var problems = new List<string>();
+        var assigned = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach ((string label, string value) in shortcuts)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            if (!ShortcutDefinition.TryParse(value, out _, out string? error))
+            {
+                problems.Add($"{label}：{error}");
+                continue;
+            }
+
+            if (assigned.TryGetValue(value, out string? owner))
+            {
+                problems.Add($"{label} 与 {owner} 都使用了 {ShortcutRecorderControl.FormatHotkeyForDisplay(value)}");
+                continue;
+            }
+
+            assigned[value] = label;
+        }
+
+        if (problems.Count == 0)
+        {
+            return true;
+        }
+
+        System.Windows.MessageBox.Show(
+            string.Join("\n", problems),
+            "快捷键无法使用",
+            MessageBoxButton.OK,
+            MessageBoxImage.Warning);
+        return false;
+    }
+
     private void OnSaveClick(object sender, RoutedEventArgs e)
     {
+        if (!ValidateShortcuts())
+        {
+            return;
+        }
+
         if (CmbProvider.SelectedItem is ComboBoxItem item && item.Tag is string provider)
         {
             _config.Provider = provider;

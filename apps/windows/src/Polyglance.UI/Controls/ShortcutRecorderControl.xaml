@@ -8,8 +8,8 @@
              Height="32"
              MinWidth="110"
              PreviewKeyDown="OnPreviewKeyDown"
-             GotFocus="OnGotFocus"
-             LostFocus="OnLostFocus">
+             GotKeyboardFocus="OnGotKeyboardFocus"
+             LostKeyboardFocus="OnLostKeyboardFocus">
     <Border x:Name="ContainerBorder"
             Background="#F8FAFC"
             BorderBrush="#E2E8F0"
