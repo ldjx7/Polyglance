@@ -10,7 +10,7 @@ let packageDirectory = URL(fileURLWithPath: #filePath)
 let package = Package(
     name: "Polyglance",
     platforms: [
-        .macOS(.v15),
+        .macOS(.v14),
     ],
     products: [
         .executable(name: "Polyglance", targets: ["Polyglance"]),

@@ -14,7 +14,7 @@ cleanup() {
 trap cleanup EXIT
 
 cd "$repository_root"
-MACOSX_DEPLOYMENT_TARGET=15.0 cargo build --release -p translator-uniffi -p uniffi-bindgen
+MACOSX_DEPLOYMENT_TARGET=14.0 cargo build --release -p translator-uniffi -p uniffi-bindgen
 cargo run --release -p uniffi-bindgen -- \
     generate \
     --library "$repository_root/target/release/libtranslator_uniffi.dylib" \

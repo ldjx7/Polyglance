@@ -8,7 +8,7 @@ editUrl: false
   <div class="download-card">
     <div>
       <h3> macOS</h3>
-      <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 1.25rem;">支持 Apple Silicon (M1/M2/M3/M4) 与 Intel 架构，需 macOS 13.0 或更高版本。</p>
+      <p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 1.25rem;">支持 Apple Silicon (M1/M2/M3/M4) 与 Intel 架构，需 macOS 14.0 或更高版本。</p>
       <ul class="download-file-list">
         <li class="download-file-item">
           <div>
