@@ -93,7 +93,9 @@ final class OpenAIStreamingTranslationTests: XCTestCase {
         )
         XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
         XCTAssertEqual(object["text"] as? String, "Hello")
-        XCTAssertEqual(object["target"] as? String, "zh-CN")
+        // The shared request builder canonicalizes Worker language aliases to
+        // the lowercase wire format accepted by the public translation API.
+        XCTAssertEqual(object["target"] as? String, "zh-cn")
         XCTAssertEqual(object["source"] as? String, "en")
         XCTAssertEqual(object["stream"] as? Bool, true)
         XCTAssertNil(object["model"])
