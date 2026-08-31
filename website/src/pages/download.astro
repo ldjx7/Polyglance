@@ -155,8 +155,20 @@ let winZipUrl = '/api/download?target=win-zip';
     }
   }
 
+  async function syncLatestRelease() {
+    try {
+      const res = await fetch('https://api.github.com/repos/ldjx7/Polyglance/releases/latest');
+      if (!res.ok) return;
+      const release = await res.json();
+      if (!release || !release.tag_name) return;
+      const tagLabel = document.getElementById('latest-tag-label');
+      if (tagLabel) tagLabel.textContent = release.tag_name;
+    } catch {}
+  }
+
   detectOS();
   refreshStats();
+  syncLatestRelease();
 </script>
 
 <style>

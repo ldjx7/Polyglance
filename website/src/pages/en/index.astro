@@ -1310,6 +1310,18 @@ const totalDownloads = getTotalDownloads(releases) || 140;
           }
         })
         .catch(() => {});
+
+      // Dynamically fetch latest release from GitHub to ensure realtime tag display
+      fetch('https://api.github.com/repos/ldjx7/Polyglance/releases/latest')
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.tag_name) {
+            document.querySelectorAll('.nav-version').forEach(el => {
+              el.textContent = data.tag_name;
+            });
+          }
+        })
+        .catch(() => {});
     })();
   </script>
 </body>
