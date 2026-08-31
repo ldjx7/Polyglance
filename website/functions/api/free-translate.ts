@@ -33,11 +33,11 @@ const MAX_OUTPUT_TOKENS = 8_192;
 // enough room for the JSON envelope without accepting arbitrarily large bodies.
 const MAX_REQUEST_BYTES = 96 * 1024;
 const CHARACTER_UNIT_SIZE = 4_000;
-const MINUTE_REQUEST_LIMIT = 5;
-const DAILY_REQUEST_LIMIT = 20;
-const DAILY_CHARACTER_UNIT_LIMIT = 25;
-const GLOBAL_DAILY_REQUEST_LIMIT = 45;
-const GLOBAL_DAILY_CHARACTER_UNIT_LIMIT = 100;
+const MINUTE_REQUEST_LIMIT = 30;
+const DAILY_REQUEST_LIMIT = 500;
+const DAILY_CHARACTER_UNIT_LIMIT = 500;
+const GLOBAL_DAILY_REQUEST_LIMIT = 50_000;
+const GLOBAL_DAILY_CHARACTER_UNIT_LIMIT = 200_000;
 
 /**
  * The only language codes accepted from a client.
@@ -73,6 +73,23 @@ const LANGUAGES: Record<string, string> = {
 
 const AUTO_SOURCE = 'auto';
 
+/**
+ * Codes the two desktop platforms emit for the same language.
+ *
+ * macOS sends `zh-CN`; Windows ships `zh-Hans` and `en-US`. Microsoft and
+ * Google accept all of them, so this endpoint has to as well, or the free
+ * service would work on one platform and return 400 on the other. Every alias
+ * still resolves through `LANGUAGES`, so none of this widens the surface that
+ * reaches the prompt.
+ */
+const LANGUAGE_ALIASES: Record<string, string> = {
+  zh: 'zh-cn',
+  'zh-hans': 'zh-cn',
+  'zh-chs': 'zh-cn',
+  'zh-hant': 'zh-tw',
+  'zh-cht': 'zh-tw',
+};
+
 export type TranslationEnvironment = Env;
 
 export interface TranslateBody {
@@ -96,6 +113,21 @@ function json(
       ...Object.fromEntries(new Headers(additionalHeaders)),
     },
   });
+}
+
+/**
+ * Shaped like an OpenAI error on purpose.
+ *
+ * The Rust and Swift clients already read `error.message`; a flat
+ * `{ error: "..." }` would make a quota rejection surface as a bare
+ * `429 Too Many Requests` with no hint about what to do next.
+ */
+function failure(
+  message: string,
+  status: number,
+  additionalHeaders: HeadersInit = {},
+): Response {
+  return json({ error: { message } }, status, additionalHeaders);
 }
 
 function clientIp(request: Request): string {
@@ -193,7 +225,13 @@ async function consumeQuota(
 
 function languageName(code: unknown): string | null {
   if (typeof code !== 'string') return null;
-  return LANGUAGES[code.trim().toLowerCase()] ?? null;
+  const normalized = code.trim().toLowerCase();
+  const canonical = LANGUAGE_ALIASES[normalized] ?? normalized;
+  const exact = LANGUAGES[canonical];
+  if (exact) return exact;
+  // `en-US`, `fr-CA` and friends fall back to the primary subtag, which is
+  // still an allow-list lookup rather than a pass-through.
+  return LANGUAGES[canonical.split('-')[0]] ?? null;
 }
 
 function unicodeCharacterCount(value: string): number {
@@ -391,22 +429,22 @@ export async function handleTranslationRequest(
   fetcher: typeof fetch = fetch,
 ): Promise<Response> {
   if (!env.OPENROUTER_API_KEY) {
-    return json({ error: 'Free AI translation is not configured' }, 503);
+    return failure('Free AI translation is not configured', 503);
   }
 
   const contentType = request.headers.get('Content-Type') || '';
   if (!contentType.toLowerCase().includes('application/json')) {
-    return json({ error: 'Expected a JSON body' }, 415);
+    return failure('Expected a JSON body', 415);
   }
 
   const decoded = await readBoundedJson(request);
   if (!decoded.ok) {
-    return json({ error: decoded.message }, decoded.status);
+    return failure(decoded.message, decoded.status);
   }
 
   const body = parseTranslateBody(decoded.value);
   if (!body) {
-    return json({ error: 'Expected { text, target, source?, stream? }' }, 400);
+    return failure('Expected { text, target, source?, stream? }', 400);
   }
 
   const quota = await consumeQuota(
@@ -415,8 +453,8 @@ export async function handleTranslationRequest(
     unicodeCharacterCount(body.text),
   );
   if (!quota.allowed) {
-    return json(
-      { error: quota.message },
+    return failure(
+      quota.message,
       quota.status,
       quota.status === 429 ? { 'Retry-After': '60' } : {},
     );
@@ -451,7 +489,7 @@ export async function handleTranslationRequest(
       message: 'free AI upstream request failed',
       error: error instanceof Error ? error.name : 'unknown',
     }));
-    return json({ error: 'Upstream request failed' }, 502);
+    return failure('Upstream request failed', 502);
   }
 
   if (!upstream.ok || !upstream.body) {
@@ -460,7 +498,7 @@ export async function handleTranslationRequest(
       message: 'free AI upstream rejected request',
       status: upstream.status,
     }));
-    return json({ error: 'Upstream rejected the request' }, 502);
+    return failure('Upstream rejected the request', 502);
   }
 
   if (body.stream) {
@@ -475,7 +513,7 @@ export async function handleTranslationRequest(
   }
 
   const reshaped = reshapeNonStreaming(await upstream.json().catch(() => null));
-  return reshaped ?? json({ error: 'Upstream returned an unusable response' }, 502);
+  return reshaped ?? failure('Upstream returned an unusable response', 502);
 }
 
 export const onRequestPost: PagesFunction<TranslationEnvironment> = async (context) => {
@@ -484,7 +522,7 @@ export const onRequestPost: PagesFunction<TranslationEnvironment> = async (conte
 
 export const onRequest: PagesFunction<TranslationEnvironment> = async (context) => {
   if (context.request.method !== 'POST') {
-    return json({ error: 'Method not allowed' }, 405);
+    return failure('Method not allowed', 405);
   }
   return onRequestPost(context);
 };
