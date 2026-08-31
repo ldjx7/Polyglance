@@ -148,7 +148,7 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 case .freeAI:
                     if BundledFreeAIConfiguration() == nil {
-                        Text("当前构建没有注入免费 AI 服务配置，暂不可用。")
+                        Text("当前配置的免费 AI 服务地址不可用。")
                             .font(.caption)
                             .foregroundStyle(.orange)
                     } else {

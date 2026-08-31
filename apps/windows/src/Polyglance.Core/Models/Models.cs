@@ -91,6 +91,15 @@ public sealed class AppConfiguration
 
     [JsonPropertyName("appcast_url")]
     public string AppcastUrl { get; set; } = "https://github.com/ldjx7/Polyglance/releases/latest/download/appcast-windows.xml";
+
+    [JsonPropertyName("default_recording_format")]
+    public string DefaultRecordingFormat { get; set; } = "MP4";
+
+    [JsonPropertyName("default_recording_fps")]
+    public int DefaultRecordingFps { get; set; } = 30;
+
+    [JsonPropertyName("default_recording_delay_seconds")]
+    public int DefaultRecordingDelaySeconds { get; set; }
 }
 
 public static class GlobalShortcutDefaults

@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Reflection;
@@ -13,6 +14,7 @@ using Polyglance.Platform.Capture;
 using Polyglance.Platform.HotKey;
 using Polyglance.Platform.Interop;
 using Polyglance.Platform.Pin;
+using Polyglance.Platform.Startup;
 using Polyglance.Platform.Text;
 using Polyglance.Platform.Update;
 using Polyglance.UI.Views;
@@ -48,6 +50,7 @@ public partial class App : Application
         {
             _configStore = new ConfigurationStore();
             _translationService = new TranslationService();
+            RefreshStartupRegistration();
         }
         catch (Exception ex)
         {
@@ -66,6 +69,24 @@ public partial class App : Application
         if (config.AutoCheckUpdates)
         {
             _ = CheckBackgroundUpdateAsync(config.AppcastUrl);
+        }
+    }
+
+    private static void RefreshStartupRegistration()
+    {
+        try
+        {
+            string executablePath = Environment.ProcessPath
+                ?? Process.GetCurrentProcess().MainModule?.FileName
+                ?? throw new InvalidOperationException("无法确定 Polyglance 可执行文件路径。");
+            var startupRegistration = new StartupRegistrationManager(
+                new RegistryStartupValueStore(),
+                executablePath);
+            startupRegistration.RefreshRegistration();
+        }
+        catch (Exception error)
+        {
+            Debug.WriteLine($"Unable to refresh startup registration: {error}");
         }
     }
 

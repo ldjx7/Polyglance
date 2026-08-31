@@ -6,6 +6,7 @@
 
 use translator_core::{TranslationRequest, TranslationResult};
 
+use crate::free_ai::{FreeAiConfig, FreeAiProvider};
 use crate::google::{GoogleConfig, GoogleProvider};
 use crate::microsoft::{MicrosoftConfig, MicrosoftProvider};
 use crate::openai::{OpenAiCompatibleConfig, OpenAiCompatibleProvider, ProviderError};
@@ -16,17 +17,14 @@ pub const FREE_AI: &str = "free-ai";
 pub const FREEAI: &str = "freeai";
 pub const OPENAI_COMPATIBLE: &str = "openai-compatible";
 pub const OPENAICOMPATIBLE: &str = "openaicompatible";
-pub const DEFAULT_FREE_AI_KEY: &str = match option_env!("POLYGLANCE_FREE_AI_API_KEY") {
-    Some(value) => value,
-    None => "",
-};
-pub const DEFAULT_FREE_AI_ENDPOINT: &str = "https://openrouter.ai/api/v1";
-pub const DEFAULT_FREE_AI_MODEL: &str = "openrouter/auto";
+
+pub use crate::free_ai::DEFAULT_FREE_AI_ENDPOINT;
 
 /// A resolved service, ready to translate.
 pub enum Selection {
     Google(GoogleConfig),
     Microsoft(MicrosoftConfig),
+    FreeAi(FreeAiConfig),
     OpenAiCompatible(OpenAiCompatibleConfig),
 }
 
@@ -57,52 +55,38 @@ pub fn select(
             }?;
             Ok(Selection::Microsoft(config))
         }
-        FREE_AI | FREEAI | OPENAI_COMPATIBLE | OPENAICOMPATIBLE => {
-            let is_free_ai = provider == FREE_AI || provider == FREEAI;
-            let (ep, key, mdl) = if is_free_ai {
-                (
-                    if endpoint.trim().is_empty() {
-                        DEFAULT_FREE_AI_ENDPOINT.to_string()
-                    } else {
-                        endpoint
-                    },
-                    if api_key.trim().is_empty() {
-                        DEFAULT_FREE_AI_KEY.to_string()
-                    } else {
-                        api_key
-                    },
-                    if model.trim().is_empty() {
-                        DEFAULT_FREE_AI_MODEL.to_string()
-                    } else {
-                        model
-                    },
-                )
+        // The bundled service takes no credential and no model: it is the
+        // project's own Worker, which owns both. An ignored `model` here is not
+        // an oversight; letting a client choose one is exactly what made the
+        // previous design billable by anyone holding the binary.
+        FREE_AI | FREEAI => {
+            let config = if endpoint.trim().is_empty() {
+                FreeAiConfig::default_endpoint()
             } else {
-                if api_key.trim().is_empty() {
-                    return Err(ProviderError::InvalidConfig(
-                        "未配置 API Key，请在偏好设置中填写 OpenAI / DeepSeek / SiliconFlow 等兼容 API Key".to_string(),
-                    ));
-                }
-                (
-                    if endpoint.trim().is_empty() {
-                        "https://api.openai.com/v1".to_string()
-                    } else {
-                        endpoint
-                    },
-                    api_key,
-                    if model.trim().is_empty() {
-                        "gpt-4o-mini".to_string()
-                    } else {
-                        model
-                    },
-                )
-            };
-
-            let mut config = OpenAiCompatibleConfig::new(ep, key, mdl)?;
-            if is_free_ai {
-                config = config.denying_data_collection();
+                FreeAiConfig::new(endpoint)
+            }?;
+            Ok(Selection::FreeAi(config))
+        }
+        OPENAI_COMPATIBLE | OPENAICOMPATIBLE => {
+            if api_key.trim().is_empty() {
+                return Err(ProviderError::InvalidConfig(
+                    "未配置 API Key，请在偏好设置中填写 OpenAI / DeepSeek / SiliconFlow 等兼容 API Key"
+                        .to_string(),
+                ));
             }
-            Ok(Selection::OpenAiCompatible(config))
+            let endpoint = if endpoint.trim().is_empty() {
+                "https://api.openai.com/v1".to_owned()
+            } else {
+                endpoint
+            };
+            let model = if model.trim().is_empty() {
+                "gpt-4o-mini".to_owned()
+            } else {
+                model
+            };
+            Ok(Selection::OpenAiCompatible(OpenAiCompatibleConfig::new(
+                endpoint, api_key, model,
+            )?))
         }
         _ => Err(ProviderError::InvalidConfig(format!(
             "unknown translation provider: {provider}"
@@ -117,6 +101,7 @@ pub async fn translate(
     match selection {
         Selection::Google(config) => GoogleProvider::new(config)?.translate(request).await,
         Selection::Microsoft(config) => MicrosoftProvider::new(config)?.translate(request).await,
+        Selection::FreeAi(config) => FreeAiProvider::new(config)?.translate(request).await,
         Selection::OpenAiCompatible(config) => {
             OpenAiCompatibleProvider::new(config)?
                 .translate(request)
@@ -131,7 +116,7 @@ mod tests {
 
     #[test]
     fn every_shipped_provider_name_resolves() {
-        for provider in [GOOGLE, MICROSOFT] {
+        for provider in [GOOGLE, MICROSOFT, FREE_AI] {
             assert!(
                 select(provider, String::new(), String::new(), String::new()).is_ok(),
                 "{provider} must resolve without an endpoint"
@@ -168,29 +153,37 @@ mod tests {
     }
 
     #[test]
-    fn only_the_bundled_free_service_denies_data_collection() {
-        let free = select(
-            FREE_AI,
-            "https://openrouter.ai/api/v1".to_owned(),
-            "key".to_owned(),
-            "model".to_owned(),
-        )
-        .expect("free-ai resolves");
-        let custom = select(
+    fn the_bundled_free_service_never_reaches_the_openai_path() {
+        let selection = select(FREE_AI, String::new(), String::new(), "gpt-4o".to_owned())
+            .expect("free-ai resolves without credentials");
+
+        assert!(
+            matches!(selection, Selection::FreeAi(_)),
+            "a client-supplied model must not push the free service onto the OpenAI path"
+        );
+    }
+
+    #[test]
+    fn the_bundled_free_service_defaults_to_the_project_endpoint() {
+        let selection =
+            select(FREE_AI, String::new(), String::new(), String::new()).expect("free-ai resolves");
+
+        let Selection::FreeAi(config) = selection else {
+            panic!("expected a free AI selection")
+        };
+        assert_eq!(config.endpoint().as_str(), DEFAULT_FREE_AI_ENDPOINT);
+        assert_eq!(config.endpoint().scheme(), "https");
+    }
+
+    #[test]
+    fn a_custom_ai_service_still_demands_a_key() {
+        let error = select(
             OPENAI_COMPATIBLE,
             "https://api.openai.com/v1".to_owned(),
-            "key".to_owned(),
-            "model".to_owned(),
-        )
-        .expect("custom AI resolves");
+            String::new(),
+            "gpt-4.1-mini".to_owned(),
+        );
 
-        let Selection::OpenAiCompatible(free) = free else {
-            panic!("expected an OpenAI-compatible selection")
-        };
-        let Selection::OpenAiCompatible(custom) = custom else {
-            panic!("expected an OpenAI-compatible selection")
-        };
-        assert!(free.denies_data_collection());
-        assert!(!custom.denies_data_collection());
+        assert!(matches!(error, Err(ProviderError::InvalidConfig(_))));
     }
 }

@@ -140,19 +140,18 @@ if [[ -n "${APP_BUILD_NUMBER:-}" ]]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $APP_BUILD_NUMBER" "$info_plist"
 fi
 
-free_ai_api_key="${POLYGLANCE_FREE_AI_API_KEY:-}"
-free_ai_endpoint="${POLYGLANCE_FREE_AI_ENDPOINT:-https://openrouter.ai/api/v1}"
-free_ai_model="${POLYGLANCE_FREE_AI_MODEL:-openrouter/auto}"
+# Only the endpoint is injected. The upstream credential and the model live in
+# the Cloudflare Worker behind it; writing either into an open-source bundle
+# would leak a billable key and let any reader name a paid model.
+free_ai_endpoint="${POLYGLANCE_FREE_AI_ENDPOINT:-https://polyglance.ldjx7.dpdns.org/api/free-translate}"
+if [[ "$free_ai_endpoint" != https://* ]]; then
+    print -u2 "POLYGLANCE_FREE_AI_ENDPOINT must use HTTPS."
+    exit 1
+fi
 
-/usr/libexec/PlistBuddy \
-    -c "Add :PolyglanceFreeAIAPIKey string $free_ai_api_key" \
-    "$info_plist" || /usr/libexec/PlistBuddy -c "Set :PolyglanceFreeAIAPIKey $free_ai_api_key" "$info_plist"
 /usr/libexec/PlistBuddy \
     -c "Add :PolyglanceFreeAIEndpoint string $free_ai_endpoint" \
     "$info_plist" || /usr/libexec/PlistBuddy -c "Set :PolyglanceFreeAIEndpoint $free_ai_endpoint" "$info_plist"
-/usr/libexec/PlistBuddy \
-    -c "Add :PolyglanceFreeAIModel string $free_ai_model" \
-    "$info_plist" || /usr/libexec/PlistBuddy -c "Set :PolyglanceFreeAIModel $free_ai_model" "$info_plist"
 print "Configured the bundled free AI translation service."
 
 if [[ -n "${POLYGLANCE_APPCAST_URL:-}" ]]; then

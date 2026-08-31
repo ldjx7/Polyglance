@@ -1,6 +1,9 @@
 name = "polyglance"
-compatibility_date = "2024-01-01"
+compatibility_date = "2026-08-31"
 pages_build_output_dir = "dist"
+
+[observability]
+enabled = true
 
 [[kv_namespaces]]
 binding = "POLYGLANCE_STATS"

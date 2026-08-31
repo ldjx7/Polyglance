@@ -231,8 +231,14 @@ public partial class ScreenSelectionWindow : Window
             Magnifier.Visibility = Visibility.Visible;
 
         Size viewSize = OverlayViewSize();
-        Canvas.SetLeft(Magnifier, Math.Min(viewSize.Width - Magnifier.Width - 12, pt.X + 16));
-        Canvas.SetTop(Magnifier, Math.Min(viewSize.Height - Magnifier.Height - 12, pt.Y + 16));
+        // Clamping only the far edge pushed the panel off-screen at the left and
+        // top, where the flipped position goes negative.
+        Canvas.SetLeft(
+            Magnifier,
+            Math.Max(12, Math.Min(viewSize.Width - Magnifier.Width - 12, pt.X + 16)));
+        Canvas.SetTop(
+            Magnifier,
+            Math.Max(12, Math.Min(viewSize.Height - Magnifier.Height - 12, pt.Y + 16)));
 
         var (pixelX, pixelY) = CaptureRegionGeometry.ToBitmapPoint(
             pt,
@@ -889,7 +895,7 @@ public partial class ScreenSelectionWindow : Window
                 break;
 
             case "ScreenRecording":
-                var recordWin = new ScreenRecordingWindow(_screenBounds, _selectionRect);
+                var recordWin = new ScreenRecordingWindow(_screenBounds, _selectionRect, _config);
                 recordWin.Show();
                 Close();
                 break;

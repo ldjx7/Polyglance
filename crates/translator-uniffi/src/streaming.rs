@@ -40,6 +40,20 @@ pub fn stream_chat_completions_url(endpoint: String) -> String {
 }
 
 #[uniffi::export]
+pub fn stream_free_translate_url(endpoint: String) -> String {
+    streaming::free_translate_url(&endpoint)
+}
+
+#[uniffi::export]
+pub fn stream_free_translate_request_body(
+    text: String,
+    source_language: Option<String>,
+    target_language: String,
+) -> String {
+    streaming::free_translate_request_body(&text, source_language.as_deref(), &target_language)
+}
+
+#[uniffi::export]
 pub fn stream_request_body(
     model: String,
     text: String,

@@ -37,6 +37,16 @@ public partial class MagnifierControl : UserControl
 
     public string InstructionText => TxtInstruction.Text;
 
+    internal string ColorValueText => TxtColorValue.Text;
+
+    internal string CoordinateLabelText => TxtCoordinate.Text;
+
+    internal double ColorValueWidth => MeasuredWidth(TxtColorValue);
+
+    internal double CoordinateWidth => MeasuredWidth(TxtCoordinate);
+
+    internal bool InstructionWraps => TxtInstruction.TextWrapping != TextWrapping.NoWrap;
+
     public TimeSpan CopyFeedbackDuration { get; set; } = TimeSpan.FromSeconds(1.2);
 
     /// <summary>
@@ -148,5 +158,15 @@ public partial class MagnifierControl : UserControl
         _copyFeedbackTimer.Stop();
         TxtInstruction.Text = ShortcutHint;
         TxtInstruction.Foreground = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8));
+    }
+
+    /// <summary>
+    /// The width the text wants, independent of the slot it was given, so a
+    /// test can tell "fits" from "was clipped to fit".
+    /// </summary>
+    private static double MeasuredWidth(TextBlock label)
+    {
+        label.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        return label.DesiredSize.Width;
     }
 }

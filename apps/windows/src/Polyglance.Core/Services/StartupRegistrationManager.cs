@@ -36,6 +36,28 @@ public sealed class StartupRegistrationManager
         StartupCommand,
         StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Preserves an existing startup preference when an update changes the
+    /// installation directory or replaces the legacy Polyglance.UI.exe name.
+    /// Unknown commands are never adopted or overwritten.
+    /// </summary>
+    public bool RefreshRegistration()
+    {
+        string? registeredCommand = _store.Read(ValueName);
+        if (string.Equals(registeredCommand, StartupCommand, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!IsRecognizedPolyglanceCommand(registeredCommand))
+        {
+            return false;
+        }
+
+        _store.Write(ValueName, StartupCommand);
+        return true;
+    }
+
     public void SetEnabled(bool enabled)
     {
         if (enabled)
@@ -46,5 +68,35 @@ public sealed class StartupRegistrationManager
         {
             _store.Delete(ValueName);
         }
+    }
+
+    private static bool IsRecognizedPolyglanceCommand(string? command)
+    {
+        string trimmed = command?.Trim() ?? string.Empty;
+        if (trimmed.Length < 3 || trimmed[0] != '"')
+        {
+            return false;
+        }
+
+        int closingQuote = trimmed.IndexOf('"', 1);
+        if (closingQuote <= 1)
+        {
+            return false;
+        }
+
+        string arguments = trimmed[(closingQuote + 1)..].Trim();
+        if (arguments.Length > 0
+            && !arguments.Equals("--autostart", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        string executablePath = trimmed[1..closingQuote];
+        int separator = Math.Max(
+            executablePath.LastIndexOf('\\'),
+            executablePath.LastIndexOf('/'));
+        string executableName = executablePath[(separator + 1)..];
+        return executableName.Equals("Polyglance.exe", StringComparison.OrdinalIgnoreCase)
+            || executableName.Equals("Polyglance.UI.exe", StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -38,13 +38,14 @@ GitHub Actions 在推送 `vX.Y.Z` 格式的 tag 时启动，并先验证该 tag 
 必须配置：
 
 - `SPARKLE_PRIVATE_KEY`：本地 `.secrets/sparkle-private-key` 的完整内容。
-- `FREE_AI_OPENROUTER_API_KEY`：仅供发布构建“免费 AI 翻译”使用的受限 OpenRouter Key。必须设置单独额度与模型限制，不能使用管理或高额度 Key。
 - `MACOS_SIGNING_P12`：`.secrets/Polyglance-Code-Signing.p12` 的 Base64 内容。
 - `MACOS_SIGNING_P12_PASSWORD`：导出 P12 时设置的密码。
 - `MACOS_SIGNING_IDENTITY`：固定为 `Polyglance Open Source Signing`。
 - `MACOS_KEYCHAIN_PASSWORD`：CI 临时钥匙串使用的随机密码。
 
 自签名私钥不得提交到 Git、打印到日志或放入 Release。证书的公开 SHA-1 固定在 `config/macos-signing-certificate-sha1.txt`；CI 会拒绝任何不匹配的 P12，避免误用新证书导致更新后 TCC 权限失效。
+
+内置“免费 AI 翻译”的 OpenRouter Key 不再进入桌面客户端或 GitHub Release 构建。它只保存在 Cloudflare Pages 项目 `polyglance` 的 `OPENROUTER_API_KEY` Secret 中，由同域名下的 `/api/free-translate` Pages Function 使用。
 
 以下 Apple 凭据完全可选，当前项目默认不配置。只有维护者日后决定加入 Apple Developer Program 并提供 Developer ID 签名/公证时才需要：
 

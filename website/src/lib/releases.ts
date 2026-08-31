@@ -18,6 +18,60 @@ export interface Release {
   assets: ReleaseAsset[];
 }
 
+interface GitHubReleaseAsset {
+  name: string;
+  size: number;
+  download_count?: number;
+  browser_download_url: string;
+}
+
+interface GitHubRelease {
+  tag_name: string;
+  name?: string;
+  body?: string;
+  published_at?: string;
+  html_url: string;
+  prerelease: boolean;
+  assets?: GitHubReleaseAsset[];
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseAsset(value: unknown): GitHubReleaseAsset | null {
+  if (!isObject(value)) return null;
+  const { name, size, download_count: downloadCount, browser_download_url: downloadUrl } = value;
+  if (typeof name !== 'string' || typeof size !== 'number' || typeof downloadUrl !== 'string') {
+    return null;
+  }
+  return {
+    name,
+    size,
+    download_count: typeof downloadCount === 'number' ? downloadCount : 0,
+    browser_download_url: downloadUrl,
+  };
+}
+
+function parseRelease(value: unknown): GitHubRelease | null {
+  if (!isObject(value)) return null;
+  const { tag_name: tag, html_url: htmlUrl, prerelease } = value;
+  if (typeof tag !== 'string' || typeof htmlUrl !== 'string' || typeof prerelease !== 'boolean') {
+    return null;
+  }
+  return {
+    tag_name: tag,
+    name: typeof value.name === 'string' ? value.name : undefined,
+    body: typeof value.body === 'string' ? value.body : undefined,
+    published_at: typeof value.published_at === 'string' ? value.published_at : undefined,
+    html_url: htmlUrl,
+    prerelease,
+    assets: Array.isArray(value.assets)
+      ? value.assets.flatMap((asset) => parseAsset(asset) ?? [])
+      : [],
+  };
+}
+
 export function isInstallerAsset(name: string): boolean {
   const lower = name.toLowerCase();
   return (
@@ -52,9 +106,14 @@ export async function getReleases(owner = 'ldjx7', repo = 'Polyglance'): Promise
       return [];
     }
 
-    const data = await res.json();
+    const raw: unknown = await res.json();
+    if (!Array.isArray(raw)) {
+      console.warn('GitHub API returned an invalid release list');
+      return [];
+    }
+    const data = raw.flatMap((release) => parseRelease(release) ?? []);
     return Promise.all(
-      data.map(async (r: any) => ({
+      data.map(async (r) => ({
         tag_name: r.tag_name,
         name: r.name || r.tag_name,
         body: r.body || '',
@@ -62,7 +121,7 @@ export async function getReleases(owner = 'ldjx7', repo = 'Polyglance'): Promise
         published_at: r.published_at ? new Date(r.published_at).toLocaleDateString('zh-CN') : '',
         html_url: r.html_url,
         prerelease: r.prerelease,
-        assets: (r.assets || []).map((a: any) => ({
+        assets: (r.assets || []).map((a) => ({
           name: a.name,
           size: a.size,
           download_count: a.download_count || 0,

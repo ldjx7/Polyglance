@@ -79,8 +79,9 @@ jobs:
 
       - name: Build the Windows application
         shell: pwsh
-        env:
-          POLYGLANCE_FREE_AI_API_KEY: ${{ secrets.FREE_AI_OPENROUTER_API_KEY }}
+        # No API key: the bundled service calls our own Worker, which holds the
+        # upstream credential and pins the model. The Rust kernel picks up the
+        # default endpoint.
         run: |
           ./scripts/build-windows-app.ps1 `
             -Version "${{ steps.version.outputs.number }}" `

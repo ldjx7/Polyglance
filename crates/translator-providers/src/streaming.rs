@@ -63,6 +63,39 @@ pub fn chat_completions_url(endpoint: &str) -> String {
     format!("{trimmed}/chat/completions")
 }
 
+/// The bundled free service is not OpenAI-shaped, so its path is appended
+/// rather than `/chat/completions`.
+pub fn free_translate_url(endpoint: &str) -> String {
+    let trimmed = endpoint.trim_end_matches('/');
+    if trimmed.ends_with("/api/free-translate") {
+        return trimmed.to_owned();
+    }
+    if trimmed.ends_with("/api") {
+        return format!("{trimmed}/free-translate");
+    }
+    format!("{trimmed}/api/free-translate")
+}
+
+/// Content and languages only.
+///
+/// No model, no sampling controls and no prompt: the Worker owns all three,
+/// and accepting them from a client is what would make the endpoint abusable.
+pub fn free_translate_request_body(
+    text: &str,
+    source_language: Option<&str>,
+    target_language: &str,
+) -> String {
+    let mut body = json!({
+        "text": text,
+        "target": crate::free_ai::worker_language_code(target_language),
+        "stream": true,
+    });
+    if let Some(source) = source_language {
+        body["source"] = json!(crate::free_ai::worker_language_code(source));
+    }
+    body.to_string()
+}
+
 pub fn streaming_request_body(
     model: &str,
     text: &str,
@@ -199,6 +232,57 @@ mod tests {
             chat_completions_url("https://api.openai.com/v1/chat/completions"),
             "https://api.openai.com/v1/chat/completions"
         );
+    }
+
+    #[test]
+    fn the_free_translate_path_is_appended_only_once() {
+        assert_eq!(
+            free_translate_url("https://polyglance.example"),
+            "https://polyglance.example/api/free-translate"
+        );
+        assert_eq!(
+            free_translate_url("https://polyglance.example/"),
+            "https://polyglance.example/api/free-translate"
+        );
+        assert_eq!(
+            free_translate_url("https://polyglance.example/api"),
+            "https://polyglance.example/api/free-translate"
+        );
+        assert_eq!(
+            free_translate_url("https://polyglance.example/api/free-translate"),
+            "https://polyglance.example/api/free-translate"
+        );
+    }
+
+    #[test]
+    fn the_free_translate_body_omits_the_model_and_the_prompt() {
+        let body = free_translate_request_body("hi", Some("en"), "zh-CN");
+        let value: Value = serde_json::from_str(&body).unwrap();
+
+        assert_eq!(value["text"], json!("hi"));
+        assert_eq!(value["target"], json!("zh-cn"));
+        assert_eq!(value["source"], json!("en"));
+        assert_eq!(value["stream"], json!(true));
+        assert!(value.get("model").is_none());
+        assert!(value.get("messages").is_none());
+        assert!(value.get("temperature").is_none());
+    }
+
+    #[test]
+    fn the_free_translate_body_normalizes_chinese_language_aliases() {
+        let body = free_translate_request_body("你好", Some("zh-Hant"), "zh-Hans");
+        let value: Value = serde_json::from_str(&body).unwrap();
+
+        assert_eq!(value["target"], json!("zh-cn"));
+        assert_eq!(value["source"], json!("zh-tw"));
+    }
+
+    #[test]
+    fn the_free_translate_body_leaves_the_source_to_the_server_when_unknown() {
+        let value: Value =
+            serde_json::from_str(&free_translate_request_body("hi", None, "ja")).unwrap();
+
+        assert!(value.get("source").is_none());
     }
 
     #[test]

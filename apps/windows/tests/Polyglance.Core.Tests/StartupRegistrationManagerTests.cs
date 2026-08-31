@@ -30,6 +30,33 @@ public sealed class StartupRegistrationManagerTests
         Assert.True(manager.IsEnabled);
     }
 
+    [Theory]
+    [InlineData("\"C:\\Old\\Polyglance.exe\" --autostart")]
+    [InlineData("\"D:\\Portable\\Polyglance.UI.exe\" --autostart")]
+    public void RefreshRegistrationMigratesRecognizedPreviousInstallations(string previousCommand)
+    {
+        var store = new StubStartupValueStore { Value = previousCommand };
+        var manager = new StartupRegistrationManager(store, @"C:\Apps\Polyglance.exe");
+
+        Assert.True(manager.RefreshRegistration());
+        Assert.Equal(manager.StartupCommand, store.Value);
+        Assert.Equal(StartupRegistrationManager.ValueName, store.LastWrittenName);
+    }
+
+    [Theory]
+    [InlineData("\"C:\\Tools\\Other.exe\" --autostart")]
+    [InlineData("\"C:\\Old\\Polyglance.exe\" --unexpected")]
+    [InlineData("not a command")]
+    public void RefreshRegistrationDoesNotAdoptUnrelatedOrMalformedCommands(string command)
+    {
+        var store = new StubStartupValueStore { Value = command };
+        var manager = new StartupRegistrationManager(store, @"C:\Apps\Polyglance.exe");
+
+        Assert.False(manager.RefreshRegistration());
+        Assert.Equal(command, store.Value);
+        Assert.Null(store.LastWrittenName);
+    }
+
     [Fact]
     public void EnablingWritesCurrentUserStartupValue()
     {

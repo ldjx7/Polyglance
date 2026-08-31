@@ -70,6 +70,41 @@ public sealed class ConfigurationStoreTests : IDisposable
     }
 
     [Fact]
+    public void SaveAndLoadPreservesEveryUserFacingJsonSetting()
+    {
+        var credentials = new InMemoryCredentialStore();
+        var store = CreateStore(credentials);
+        var expected = new AppConfiguration
+        {
+            Provider = "free-ai",
+            Endpoint = "https://example.test/translate",
+            ApiKey = "protected-key",
+            Model = "model-name",
+            SourceLanguage = "en",
+            TargetLanguage = "ja",
+            AiStreamingEnabled = false,
+            HotkeyScreenshotPin = "Ctrl+F1",
+            HotkeyPinClipboardImage = "Ctrl+F2",
+            HotkeyScreenTranslate = "Ctrl+F3",
+            HotkeyMainTranslator = "Ctrl+F4",
+            HotkeySelectedText = "Ctrl+F5",
+            HotkeyLongScreenshot = "Ctrl+F6",
+            HotkeyScreenRecording = "Ctrl+F7",
+            HotkeyRestoreMostRecentPin = "Ctrl+F8",
+            AutoCheckUpdates = false,
+            AppcastUrl = "https://example.test/appcast.xml",
+            DefaultRecordingFormat = "GIF",
+            DefaultRecordingFps = 15,
+            DefaultRecordingDelaySeconds = 5,
+        };
+
+        store.Save(expected);
+        AppConfiguration actual = store.Load();
+
+        Assert.Equivalent(expected, actual, strict: true);
+    }
+
+    [Fact]
     public void NewConfigurationUsesTheLowConflictCrossPlatformShortcutDefaults()
     {
         var configuration = new AppConfiguration();

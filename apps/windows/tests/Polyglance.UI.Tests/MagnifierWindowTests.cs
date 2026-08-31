@@ -39,6 +39,37 @@ public sealed class MagnifierWindowTests
     }
 
     [Fact]
+    public void ColourAndCoordinateEachGetTheirOwnUntruncatedLine()
+    {
+        RunInSta(() =>
+        {
+            var magnifier = new MagnifierControl();
+            var window = new Window { Content = magnifier };
+            window.Measure(new Size(300, 320));
+            window.Arrange(new Rect(0, 0, 300, 320));
+
+            // The widest readout the panel has to hold.
+            BitmapSource source = CreateBitmap(1, 1, (_, _) => (0xFF, 0xFF, 0xFF));
+            magnifier.Update(source, 0, 0);
+            magnifier.ToggleDisplayFormat();
+
+            Assert.Equal("RGB(255, 255, 255)", magnifier.ColorValueText);
+            Assert.Equal("(0, 0) px", magnifier.CoordinateLabelText);
+
+            // Each line must fit the panel's inner width on its own; sharing one
+            // line is what clipped the value.
+            double available = magnifier.Width - 16;
+            Assert.True(
+                magnifier.ColorValueWidth <= available,
+                $"colour line {magnifier.ColorValueWidth} exceeds {available}");
+            Assert.True(
+                magnifier.CoordinateWidth <= available,
+                $"coordinate line {magnifier.CoordinateWidth} exceeds {available}");
+            Assert.True(magnifier.InstructionWraps);
+        });
+    }
+
+    [Fact]
     public void WindowHostedMagnifierShowsAndRestoresCopyConfirmation()
     {
         RunInSta(() =>

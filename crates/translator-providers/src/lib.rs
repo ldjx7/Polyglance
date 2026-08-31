@@ -7,6 +7,7 @@ use std::sync::{Arc, OnceLock};
 use crate::openai::ProviderError;
 
 pub mod dispatch;
+pub mod free_ai;
 pub mod google;
 pub mod microsoft;
 pub mod openai;

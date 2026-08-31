@@ -40,9 +40,11 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
             guard let bundledFreeAIConfiguration else {
                 throw ClientError.freeAIUnavailable
             }
+            // The Worker owns the credential and the model. Neither is shipped
+            // in an open-source bundle, so neither is sent.
             endpoint = bundledFreeAIConfiguration.endpoint
-            apiKey = bundledFreeAIConfiguration.apiKey
-            model = bundledFreeAIConfiguration.model
+            apiKey = ""
+            model = ""
             region = nil
         case .openAICompatible:
             guard !configuration.apiKey.isEmpty else {
@@ -121,10 +123,7 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
                             throw ClientError.freeAIUnavailable
                         }
                         streamingConfiguration = try OpenAIStreamingConfiguration(
-                            endpoint: bundledFreeAIConfiguration.endpoint,
-                            apiKey: bundledFreeAIConfiguration.apiKey,
-                            model: bundledFreeAIConfiguration.model,
-                            denyDataCollection: true
+                            freeTranslateEndpoint: bundledFreeAIConfiguration.endpoint
                         )
                     } else {
                         guard !configuration.apiKey.isEmpty else {
@@ -255,7 +254,7 @@ private enum ClientError: LocalizedError {
         case .missingAPIKey:
             return "请先在设置中填写 API Key"
         case .freeAIUnavailable:
-            return "当前构建没有配置免费 AI 翻译服务"
+            return "免费 AI 翻译服务地址无效"
         case .invalidInput:
             return "输入内容或语言设置无效"
         case .invalidConfiguration:

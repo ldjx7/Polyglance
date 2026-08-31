@@ -417,9 +417,8 @@
                                         <TextBlock Text="录制结束后导出的默认视频或动图格式" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
                                     </StackPanel>
                                     <ComboBox x:Name="CmbDefaultRecordFormat" Grid.Column="1" Width="160" Height="32" VerticalContentAlignment="Center" Padding="10,0,24,0" FontSize="12.5" SelectedIndex="0">
-                                        <ComboBoxItem Content="MP4 视频"/>
-                                        <ComboBoxItem Content="GIF 动图"/>
-                                        <ComboBoxItem Content="WebM"/>
+                                        <ComboBoxItem Content="MP4 视频" Tag="MP4"/>
+                                        <ComboBoxItem Content="GIF 动图" Tag="GIF"/>
                                     </ComboBox>
                                 </Grid>
                             </ui:Card>
@@ -435,9 +434,9 @@
                                         <TextBlock Text="更高帧率画面更流畅，文件体积相应增加" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
                                     </StackPanel>
                                     <ComboBox x:Name="CmbDefaultRecordFps" Grid.Column="1" Width="160" Height="32" VerticalContentAlignment="Center" Padding="10,0,24,0" FontSize="12.5" SelectedIndex="0">
-                                        <ComboBoxItem Content="60 FPS"/>
-                                        <ComboBoxItem Content="30 FPS"/>
-                                        <ComboBoxItem Content="15 FPS"/>
+                                        <ComboBoxItem Content="60 FPS" Tag="60"/>
+                                        <ComboBoxItem Content="30 FPS" Tag="30"/>
+                                        <ComboBoxItem Content="15 FPS" Tag="15"/>
                                     </ComboBox>
                                 </Grid>
                             </ui:Card>
@@ -453,10 +452,10 @@
                                         <TextBlock Text="点击开始录制后预留的准备延时" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
                                     </StackPanel>
                                     <ComboBox x:Name="CmbDefaultRecordDelay" Grid.Column="1" Width="160" Height="32" VerticalContentAlignment="Center" Padding="10,0,24,0" FontSize="12.5" SelectedIndex="0">
-                                        <ComboBoxItem Content="无延时"/>
-                                        <ComboBoxItem Content="3 秒"/>
-                                        <ComboBoxItem Content="5 秒"/>
-                                        <ComboBoxItem Content="10 秒"/>
+                                        <ComboBoxItem Content="无延时" Tag="0"/>
+                                        <ComboBoxItem Content="3 秒" Tag="3"/>
+                                        <ComboBoxItem Content="5 秒" Tag="5"/>
+                                        <ComboBoxItem Content="10 秒" Tag="10"/>
                                     </ComboBox>
                                 </Grid>
                             </ui:Card>

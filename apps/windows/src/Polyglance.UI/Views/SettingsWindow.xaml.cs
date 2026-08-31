@@ -98,10 +98,16 @@ public partial class SettingsWindow : FluentWindow
         RecHotkeyMainTranslator.Hotkey = _config.HotkeyMainTranslator;
 
         ChkAutoCheckUpdates.IsChecked = _config.AutoCheckUpdates;
+        SelectComboBoxItemByTag(CmbDefaultRecordFormat, _config.DefaultRecordingFormat, "MP4");
+        SelectComboBoxItemByTag(CmbDefaultRecordFps, _config.DefaultRecordingFps.ToString(), "30");
+        SelectComboBoxItemByTag(
+            CmbDefaultRecordDelay,
+            _config.DefaultRecordingDelaySeconds.ToString(),
+            "0");
 
         try
         {
-            ChkLaunchAtLogin.IsChecked = _startupRegistration.IsEnabled;
+            ChkLaunchAtLogin.IsChecked = _startupRegistration.RefreshRegistration();
         }
         catch (Exception error)
         {
@@ -109,6 +115,32 @@ public partial class SettingsWindow : FluentWindow
             Loaded += (_, _) => ShowStatus($"无法读取开机自启状态：{error.Message}", isError: true);
         }
     }
+
+    private static void SelectComboBoxItemByTag(
+        System.Windows.Controls.ComboBox comboBox,
+        string value,
+        string fallback)
+    {
+        ComboBoxItem? fallbackItem = null;
+        foreach (ComboBoxItem item in comboBox.Items)
+        {
+            string tag = item.Tag?.ToString() ?? string.Empty;
+            if (tag.Equals(fallback, StringComparison.OrdinalIgnoreCase))
+            {
+                fallbackItem = item;
+            }
+            if (tag.Equals(value, StringComparison.OrdinalIgnoreCase))
+            {
+                comboBox.SelectedItem = item;
+                return;
+            }
+        }
+
+        comboBox.SelectedItem = fallbackItem ?? comboBox.Items[0];
+    }
+
+    private static string SelectedTag(System.Windows.Controls.ComboBox comboBox, string fallback) =>
+        (comboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? fallback;
 
     private void OnResetShortcutsClick(object sender, RoutedEventArgs e)
     {
@@ -281,11 +313,22 @@ public partial class SettingsWindow : FluentWindow
         _config.HotkeyMainTranslator = RecHotkeyMainTranslator.Hotkey;
 
         _config.AutoCheckUpdates = ChkAutoCheckUpdates.IsChecked == true;
+        _config.DefaultRecordingFormat = SelectedTag(CmbDefaultRecordFormat, "MP4");
+        _config.DefaultRecordingFps = int.TryParse(
+            SelectedTag(CmbDefaultRecordFps, "30"),
+            out int recordingFps)
+            ? recordingFps
+            : 30;
+        _config.DefaultRecordingDelaySeconds = int.TryParse(
+            SelectedTag(CmbDefaultRecordDelay, "0"),
+            out int recordingDelay)
+            ? recordingDelay
+            : 0;
 
         bool previousLaunchAtLoginEnabled;
         try
         {
-            previousLaunchAtLoginEnabled = _startupRegistration.IsEnabled;
+            previousLaunchAtLoginEnabled = _startupRegistration.RefreshRegistration();
         }
         catch (Exception error)
         {

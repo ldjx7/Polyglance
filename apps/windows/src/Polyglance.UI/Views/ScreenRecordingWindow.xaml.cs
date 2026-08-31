@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using Polyglance.Core.Models;
 using Polyglance.Platform.Capture;
 using Polyglance.Platform.Recording;
 
@@ -33,14 +34,21 @@ public partial class ScreenRecordingWindow : Window
     private Int32Rect _physicalRecordingRegion;
     private int _consecutiveCaptureFailures;
 
-    public ScreenRecordingWindow(Rect recordingRect)
-        : this(new Rect(0, 0, SystemParameters.PrimaryScreenWidth, SystemParameters.PrimaryScreenHeight), recordingRect)
+    public ScreenRecordingWindow(Rect recordingRect, AppConfiguration? configuration = null)
+        : this(
+            new Rect(0, 0, SystemParameters.PrimaryScreenWidth, SystemParameters.PrimaryScreenHeight),
+            recordingRect,
+            configuration)
     {
     }
 
-    public ScreenRecordingWindow(Rect screenBounds, Rect recordingRect)
+    public ScreenRecordingWindow(
+        Rect screenBounds,
+        Rect recordingRect,
+        AppConfiguration? configuration = null)
     {
         InitializeComponent();
+        ApplyRecordingDefaults(configuration);
         _screenBounds = screenBounds;
         _recordingRect = recordingRect;
         OverlayCanvas.Children.Remove(ControlToolbar);
@@ -92,6 +100,44 @@ public partial class ScreenRecordingWindow : Window
         _frameTimer.Tick += OnFrameTimerTick;
     }
 
+    private void ApplyRecordingDefaults(AppConfiguration? configuration)
+    {
+        if (configuration == null)
+        {
+            return;
+        }
+
+        SelectByContent(CmbFormat, configuration.DefaultRecordingFormat, "MP4");
+        SelectByContent(CmbFps, $"{configuration.DefaultRecordingFps} FPS", "30 FPS");
+        string delay = configuration.DefaultRecordingDelaySeconds <= 0
+            ? "无延时"
+            : $"{configuration.DefaultRecordingDelaySeconds}秒";
+        SelectByContent(CmbDelay, delay, "无延时");
+    }
+
+    private static void SelectByContent(
+        System.Windows.Controls.ComboBox comboBox,
+        string value,
+        string fallback)
+    {
+        ComboBoxItem? fallbackItem = null;
+        foreach (ComboBoxItem item in comboBox.Items)
+        {
+            string content = item.Content?.ToString() ?? string.Empty;
+            if (content.Equals(fallback, StringComparison.OrdinalIgnoreCase))
+            {
+                fallbackItem = item;
+            }
+            if (content.Equals(value, StringComparison.OrdinalIgnoreCase))
+            {
+                comboBox.SelectedItem = item;
+                return;
+            }
+        }
+
+        comboBox.SelectedItem = fallbackItem ?? comboBox.Items[0];
+    }
+
     private void PositionToolbar()
     {
         ControlToolbar.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
@@ -113,10 +159,31 @@ public partial class ScreenRecordingWindow : Window
         _toolbarWindow.Top = _screenBounds.Y + top;
     }
 
-    private void OnStartClick(object sender, RoutedEventArgs e)
+    private async void OnStartClick(object sender, RoutedEventArgs e)
     {
         try
         {
+            int delaySeconds = CmbDelay.SelectedIndex switch
+            {
+                1 => 3,
+                2 => 5,
+                3 => 10,
+                _ => 0,
+            };
+            if (delaySeconds > 0)
+            {
+                BtnStart.IsEnabled = false;
+                for (int remaining = delaySeconds; remaining > 0; remaining--)
+                {
+                    TxtStatus.Text = $"{remaining} 秒后录制";
+                    await Task.Delay(TimeSpan.FromSeconds(1));
+                    if (!IsLoaded)
+                    {
+                        return;
+                    }
+                }
+            }
+
             var formatText = ((ComboBoxItem)CmbFormat.SelectedItem)?.Content?.ToString();
             var container = ScreenRecordingContainerParser.Parse(formatText);
             _mediaOptions = ScreenRecordingMediaOptions.Create(
@@ -192,6 +259,9 @@ public partial class ScreenRecordingWindow : Window
         catch (Exception error)
         {
             _isRecording = false;
+            BtnStart.IsEnabled = true;
+            BtnStart.Opacity = 1.0;
+            TxtStatus.Text = "待录制";
             MessageBox.Show(
                 $"无法开始录屏：{error.Message}",
                 "Polyglance",

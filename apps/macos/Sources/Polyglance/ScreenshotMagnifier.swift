@@ -1,14 +1,36 @@
 import AppKit
 
 final class ScreenshotMagnifierView: NSView {
-    static let preferredSize = CGSize(width: 184, height: 142)
+    /// Tall enough to give the coordinate, the colour and the hint a line each.
+    /// A single line had to hold both the coordinate and an `RGB(255, 255, 255)`
+    /// value, which overflowed the panel and was clipped mid-value.
+    static let preferredSize = CGSize(width: 196, height: 176)
     static let shortcutHint = "C 复制色值 · ⇧C 切换 HEX/RGB"
 
-    private let previewRect = CGRect(x: 8, y: 42, width: 168, height: 92)
+    private static let swatchSide: CGFloat = 13
+    private static let swatchTextSpacing: CGFloat = 6
+    private static let colorFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+    private static let coordinateFont = NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .medium)
+    private static let hintFont = NSFont.systemFont(ofSize: 9, weight: .medium)
+
+    private let previewRect = CGRect(x: 8, y: 68, width: 180, height: 100)
+    private let colorRowRect = CGRect(x: 8, y: 45, width: 180, height: 16)
+    private let coordinateRect = CGRect(x: 8, y: 26, width: 180, height: 15)
+    private let hintRect = CGRect(x: 6, y: 8, width: 184, height: 13)
+
     private var patchImage: CGImage?
     private var feedbackWorkItem: DispatchWorkItem?
-    private(set) var displayText = ""
+    private var sampleColor: NSColor?
+    private(set) var colorText = ""
+    private(set) var coordinateText = ""
     private(set) var instructionText = shortcutHint
+
+    /// The whole readout on one string, newline separated. Also what the
+    /// accessibility value reports.
+    var displayText: String {
+        guard !coordinateText.isEmpty || !colorText.isEmpty else { return "" }
+        return "\(coordinateText)\n\(colorText)"
+    }
 
     override var isOpaque: Bool { false }
 
@@ -38,7 +60,14 @@ final class ScreenshotMagnifierView: NSView {
         format: ScreenshotColorDisplayFormat
     ) {
         patchImage = sampler.patch(around: sample.coordinate, radius: 5)
-        displayText = "(\(sample.coordinate.x), \(sample.coordinate.y)) px  \(sample.text(format: format))"
+        coordinateText = "(\(sample.coordinate.x), \(sample.coordinate.y)) px"
+        colorText = sample.text(format: format)
+        sampleColor = NSColor(
+            srgbRed: CGFloat(sample.red) / 255,
+            green: CGFloat(sample.green) / 255,
+            blue: CGFloat(sample.blue) / 255,
+            alpha: 1
+        )
         refreshAccessibilityValue()
         needsDisplay = true
     }
@@ -78,25 +107,72 @@ final class ScreenshotMagnifierView: NSView {
         }
 
         drawGridAndCrosshair()
+        drawColorRow()
+
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
-        displayText.draw(
-            in: CGRect(x: 6, y: 24, width: bounds.width - 12, height: 16),
+        paragraph.lineBreakMode = .byTruncatingTail
+        coordinateText.draw(
+            in: coordinateRect,
             withAttributes: [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold),
-                .foregroundColor: NSColor.white,
+                .font: Self.coordinateFont,
+                .foregroundColor: NSColor.white.withAlphaComponent(0.72),
                 .paragraphStyle: paragraph,
             ]
         )
         instructionText.draw(
-            in: CGRect(x: 6, y: 7, width: bounds.width - 12, height: 14),
+            in: hintRect,
             withAttributes: [
-                .font: NSFont.systemFont(ofSize: 9, weight: .medium),
+                .font: Self.hintFont,
                 .foregroundColor: instructionText == Self.shortcutHint
-                    ? NSColor.secondaryLabelColor
+                    ? NSColor.white.withAlphaComponent(0.55)
                     : NSColor.systemGreen,
                 .paragraphStyle: paragraph,
             ]
+        )
+    }
+
+    /// The swatch and the colour value are centred as one unit, so the value
+    /// keeps its own line and can use the full panel width.
+    private func drawColorRow() {
+        guard !colorText.isEmpty else { return }
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: Self.colorFont,
+            .foregroundColor: NSColor.white,
+        ]
+        let textSize = (colorText as NSString).size(withAttributes: attributes)
+        let available = colorRowRect.width - Self.swatchSide - Self.swatchTextSpacing
+        let textWidth = min(textSize.width, available)
+        let groupWidth = Self.swatchSide + Self.swatchTextSpacing + textWidth
+        let originX = colorRowRect.minX + max(0, (colorRowRect.width - groupWidth) / 2)
+
+        let swatch = CGRect(
+            x: originX,
+            y: colorRowRect.midY - Self.swatchSide / 2,
+            width: Self.swatchSide,
+            height: Self.swatchSide
+        )
+        let swatchPath = NSBezierPath(roundedRect: swatch, xRadius: 3, yRadius: 3)
+        (sampleColor ?? NSColor.black).setFill()
+        swatchPath.fill()
+        NSColor.white.withAlphaComponent(0.45).setStroke()
+        swatchPath.lineWidth = 1
+        swatchPath.stroke()
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .left
+        paragraph.lineBreakMode = .byTruncatingTail
+        var textAttributes = attributes
+        textAttributes[.paragraphStyle] = paragraph
+        colorText.draw(
+            in: CGRect(
+                x: swatch.maxX + Self.swatchTextSpacing,
+                y: colorRowRect.midY - textSize.height / 2,
+                width: textWidth,
+                height: textSize.height
+            ),
+            withAttributes: textAttributes
         )
     }
 
@@ -171,6 +247,6 @@ final class ScreenshotMagnifierView: NSView {
     }
 
     private func refreshAccessibilityValue() {
-        setAccessibilityValue("\(displayText), \(instructionText)")
+        setAccessibilityValue("\(coordinateText), \(colorText), \(instructionText)")
     }
 }

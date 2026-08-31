@@ -127,29 +127,32 @@ final class AppConfigurationStoreTests: XCTestCase {
         }
     }
 
-    func testBundledFreeAIConfigurationRequiresBuildOrEnvironmentInjectionAndHTTPS() {
-        XCTAssertNil(BundledFreeAIConfiguration(infoDictionary: [:], environment: [:]))
-        let environmentConfiguration = BundledFreeAIConfiguration(
-            infoDictionary: [:],
-            environment: ["POLYGLANCE_FREE_AI_API_KEY": "environment-secret"]
-        )
-        XCTAssertEqual(environmentConfiguration?.apiKey, "environment-secret")
-        XCTAssertEqual(environmentConfiguration?.endpoint, BundledFreeAIConfiguration.defaultEndpoint)
-        XCTAssertEqual(environmentConfiguration?.model, BundledFreeAIConfiguration.defaultModel)
-        XCTAssertNil(BundledFreeAIConfiguration(infoDictionary: [
-            "PolyglanceFreeAIAPIKey": "build-secret",
-            "PolyglanceFreeAIEndpoint": "http://openrouter.ai/api/v1",
-        ], environment: [:]))
+    /// The bundled service must work out of the box without any injected
+    /// secret, because no secret belongs in an open-source bundle.
+    func testBundledFreeAIConfigurationShipsWithoutACredential() {
+        let plain = BundledFreeAIConfiguration(infoDictionary: [:], environment: [:])
 
-        let configuration = BundledFreeAIConfiguration(infoDictionary: [
-            "PolyglanceFreeAIAPIKey": "build-secret",
-            "PolyglanceFreeAIEndpoint": "https://openrouter.ai/api/v1",
-            "PolyglanceFreeAIModel": "openrouter/free",
+        XCTAssertNotNil(plain)
+        XCTAssertEqual(plain?.endpoint, BundledFreeAIConfiguration.defaultEndpoint)
+        XCTAssertTrue(BundledFreeAIConfiguration.defaultEndpoint.hasPrefix("https://"))
+    }
+
+    func testBundledFreeAIConfigurationHonoursAnHTTPSOverrideAndRefusesHTTP() {
+        let overridden = BundledFreeAIConfiguration(infoDictionary: [
+            "PolyglanceFreeAIEndpoint": "https://staging.example/api/free-translate",
         ], environment: [:])
+        let environmentOverride = BundledFreeAIConfiguration(
+            infoDictionary: [:],
+            environment: [
+                "POLYGLANCE_FREE_AI_ENDPOINT": "https://env.example/api/free-translate"
+            ]
+        )
 
-        XCTAssertEqual(configuration?.apiKey, "build-secret")
-        XCTAssertEqual(configuration?.endpoint, "https://openrouter.ai/api/v1")
-        XCTAssertEqual(configuration?.model, "openrouter/free")
+        XCTAssertEqual(overridden?.endpoint, "https://staging.example/api/free-translate")
+        XCTAssertEqual(environmentOverride?.endpoint, "https://env.example/api/free-translate")
+        XCTAssertNil(BundledFreeAIConfiguration(infoDictionary: [
+            "PolyglanceFreeAIEndpoint": "http://insecure.example/api/free-translate",
+        ], environment: [:]))
     }
 
 }

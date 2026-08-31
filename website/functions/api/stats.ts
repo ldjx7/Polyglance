@@ -1,7 +1,3 @@
-interface Env {
-  POLYGLANCE_STATS?: KVNamespace;
-}
-
 export const onRequest: PagesFunction<Env> = async (context) => {
   let total = 0;
   let macos = 0;

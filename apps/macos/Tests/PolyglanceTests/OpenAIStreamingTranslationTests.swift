@@ -4,7 +4,7 @@ import PolyglanceKit
 
 final class OpenAIStreamingTranslationTests: XCTestCase {
     func testEmissionPolicyPublishesFirstUpdateThrottlesIntermediateUpdatesAndAlwaysPublishesFinal() {
-        var policy = TranslationStreamEmissionPolicy(minimumInterval: .milliseconds(40))
+        let policy = TranslationStreamEmissionPolicy(minimumInterval: .milliseconds(40))
 
         XCTAssertTrue(policy.shouldEmit(at: .zero, isFinal: false))
         XCTAssertFalse(policy.shouldEmit(at: .milliseconds(10), isFinal: false))
@@ -69,5 +69,53 @@ final class OpenAIStreamingTranslationTests: XCTestCase {
             model: "test-model",
             denyDataCollection: false
         ))
+    }
+
+    /// The whole point of the bundled endpoint: a captured request reveals the
+    /// text being translated and nothing that could be reused to spend money.
+    func testFreeTranslateRequestCarriesNeitherModelNorPromptNorCredential() throws {
+        let configuration = try OpenAIStreamingConfiguration(
+            freeTranslateEndpoint: "https://polyglance.example/api/free-translate"
+        )
+        let request = try configuration.makeRequest(AppTranslationRequest(
+            text: "Hello",
+            sourceLanguage: "en",
+            targetLanguage: "zh-CN"
+        ))
+        let body = try XCTUnwrap(request.httpBody)
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: body) as? [String: Any]
+        )
+
+        XCTAssertEqual(
+            request.url?.absoluteString,
+            "https://polyglance.example/api/free-translate"
+        )
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+        XCTAssertEqual(object["text"] as? String, "Hello")
+        XCTAssertEqual(object["target"] as? String, "zh-CN")
+        XCTAssertEqual(object["source"] as? String, "en")
+        XCTAssertEqual(object["stream"] as? Bool, true)
+        XCTAssertNil(object["model"])
+        XCTAssertNil(object["messages"])
+        XCTAssertNil(object["temperature"])
+        XCTAssertTrue(configuration.model.isEmpty)
+    }
+
+    func testFreeTranslateConfigurationRejectsInsecureEndpoint() {
+        XCTAssertThrowsError(try OpenAIStreamingConfiguration(
+            freeTranslateEndpoint: "http://polyglance.example/api/free-translate"
+        ))
+    }
+
+    func testStreamingHTTPFailuresUseActionableLocalizedMessages() {
+        XCTAssertEqual(
+            OpenAIStreamingError.httpStatus(429).errorDescription,
+            "翻译请求过于频繁，请稍后再试"
+        )
+        XCTAssertEqual(
+            OpenAIStreamingError.httpStatus(503).errorDescription,
+            "翻译服务暂时不可用，请稍后再试"
+        )
     }
 }

@@ -59,41 +59,30 @@ protocol CredentialStoring: Sendable {
     func save(_ value: String, for slot: CredentialSlot) throws
 }
 
+/// The bundled free AI service.
+///
+/// There is deliberately no API key and no model here. Both live in the
+/// Cloudflare Worker behind `endpoint`: shipping either of them inside an
+/// open-source binary hands every reader a billable credential and the ability
+/// to name an expensive model. The client sends text and languages; the Worker
+/// decides everything else.
 struct BundledFreeAIConfiguration: Equatable, Sendable {
-    static let defaultEndpoint = "https://openrouter.ai/api/v1"
-    static let defaultModel = "openrouter/auto"
-    static let defaultApiKey = ""
+    static let defaultEndpoint = "https://polyglance.ldjx7.dpdns.org/api/free-translate"
 
     let endpoint: String
-    let apiKey: String
-    let model: String
 
     init?(
         infoDictionary: [String: Any] = Bundle.main.infoDictionary ?? [:],
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) {
-        let apiKey = ((infoDictionary["PolyglanceFreeAIAPIKey"] as? String)
-            ?? environment["POLYGLANCE_FREE_AI_API_KEY"]
-            ?? Self.defaultApiKey)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !apiKey.isEmpty else {
-            return nil
-        }
         let endpoint = ((infoDictionary["PolyglanceFreeAIEndpoint"] as? String)
+            ?? environment["POLYGLANCE_FREE_AI_ENDPOINT"]
             ?? Self.defaultEndpoint)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: endpoint), url.scheme?.lowercased() == "https" else {
             return nil
         }
-        let model = ((infoDictionary["PolyglanceFreeAIModel"] as? String)
-            ?? Self.defaultModel)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !model.isEmpty else {
-            return nil
-        }
         self.endpoint = endpoint
-        self.apiKey = apiKey
-        self.model = model
     }
 }
 

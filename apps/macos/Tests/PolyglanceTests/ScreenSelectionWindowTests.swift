@@ -398,6 +398,10 @@ final class ScreenSelectionWindowTests: XCTestCase {
         XCTAssertFalse(magnifier.isHidden)
         XCTAssertTrue(magnifier.displayText.contains("#123456"))
         XCTAssertTrue(magnifier.displayText.contains("100, 200"))
+        // The coordinate and the colour each own a line: together they overflow
+        // the panel and the value was clipped mid-way.
+        XCTAssertEqual(magnifier.coordinateText, "(100, 200) px")
+        XCTAssertEqual(magnifier.colorText, "#123456")
         XCTAssertEqual(magnifier.instructionText, "C 复制色值 · ⇧C 切换 HEX/RGB")
 
         window.selectionView.keyDown(with: characterKeyEvent(
@@ -416,6 +420,9 @@ final class ScreenSelectionWindowTests: XCTestCase {
         ))
         XCTAssertEqual(window.selectionView.colorDisplayFormat, .rgb)
         XCTAssertTrue(magnifier.displayText.contains("RGB(18, 52, 86)"))
+        // The longest value the panel has to hold, and the reason the readout
+        // no longer shares a line with the coordinate.
+        XCTAssertEqual(magnifier.colorText, "RGB(18, 52, 86)")
 
         pasteboard.clearContents()
         window.selectionView.keyDown(with: characterKeyEvent(

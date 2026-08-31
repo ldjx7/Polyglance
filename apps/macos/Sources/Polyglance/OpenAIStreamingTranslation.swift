@@ -45,13 +45,22 @@ enum OpenAIStreamParser {
     }
 }
 
+/// How the request is shaped on the wire.
+///
+/// The bundled free service is deliberately not OpenAI-shaped. It accepts
+/// content and languages and nothing else, so a reverse-engineered client can
+/// neither name a model nor rewrite the prompt.
+enum StreamingRequestShape: Sendable {
+    case chatCompletions(model: String, denyDataCollection: Bool)
+    case freeTranslate
+}
+
 struct OpenAIStreamingConfiguration: Sendable {
     private static let maximumResponseCharacters = 2_000_000
 
     let endpoint: URL
     let apiKey: String
-    let model: String
-    let denyDataCollection: Bool
+    let shape: StreamingRequestShape
 
     init(
         endpoint: String,
@@ -69,29 +78,65 @@ struct OpenAIStreamingConfiguration: Sendable {
         }
         self.endpoint = url
         self.apiKey = trimmedKey
-        self.model = trimmedModel
-        self.denyDataCollection = denyDataCollection
+        self.shape = .chatCompletions(
+            model: trimmedModel,
+            denyDataCollection: denyDataCollection
+        )
+    }
+
+    /// The bundled service needs no credential and no model, because the Worker
+    /// it talks to owns both.
+    init(freeTranslateEndpoint: String) throws {
+        guard let url = URL(
+            string: freeTranslateEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        ), url.scheme?.lowercased() == "https" else {
+            throw OpenAIStreamingError.invalidConfiguration
+        }
+        self.endpoint = url
+        self.apiKey = ""
+        self.shape = .freeTranslate
+    }
+
+    /// Empty for the bundled service, which names its own model server-side.
+    var model: String {
+        guard case let .chatCompletions(model, _) = shape else { return "" }
+        return model
     }
 
     func makeRequest(_ request: AppTranslationRequest) throws -> URLRequest {
-        guard let url = URL(string: streamChatCompletionsUrl(endpoint: endpoint.absoluteString)) else {
-            throw OpenAIStreamingError.invalidConfiguration
-        }
-        var urlRequest = URLRequest(url: url)
-        urlRequest.httpMethod = "POST"
-        urlRequest.timeoutInterval = 60
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        urlRequest.httpBody = Data(
-            streamRequestBody(
+        let url: URL?
+        let body: String
+        switch shape {
+        case let .chatCompletions(model, denyDataCollection):
+            url = URL(string: streamChatCompletionsUrl(endpoint: endpoint.absoluteString))
+            body = streamRequestBody(
                 model: model,
                 text: request.text,
                 sourceLanguage: request.sourceLanguage,
                 targetLanguage: request.targetLanguage,
                 denyDataCollection: denyDataCollection
-            ).utf8
-        )
+            )
+        case .freeTranslate:
+            url = URL(string: streamFreeTranslateUrl(endpoint: endpoint.absoluteString))
+            body = streamFreeTranslateRequestBody(
+                text: request.text,
+                sourceLanguage: request.sourceLanguage,
+                targetLanguage: request.targetLanguage
+            )
+        }
+        guard let url else {
+            throw OpenAIStreamingError.invalidConfiguration
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.timeoutInterval = 60
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        if !apiKey.isEmpty {
+            urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        urlRequest.httpBody = Data(body.utf8)
         return urlRequest
     }
 
@@ -158,7 +203,7 @@ final class OpenAIStreamingTranslationService: @unchecked Sendable {
     }
 }
 
-private enum OpenAIStreamingError: LocalizedError {
+enum OpenAIStreamingError: LocalizedError {
     case invalidConfiguration
     case invalidResponse
     case provider(String)
@@ -174,9 +219,16 @@ private enum OpenAIStreamingError: LocalizedError {
         case let .provider(message):
             "翻译服务暂时不可用：\(message)"
         case let .httpStatus(status):
-            status == 401 || status == 403
-                ? "免费 AI 翻译服务认证失败"
-                : "翻译服务返回 HTTP \(status)"
+            switch status {
+            case 401, 403:
+                "翻译服务认证失败"
+            case 429:
+                "翻译请求过于频繁，请稍后再试"
+            case 503:
+                "翻译服务暂时不可用，请稍后再试"
+            default:
+                "翻译服务返回 HTTP \(status)"
+            }
         case .responseTooLarge:
             "翻译结果过大，已停止接收"
         }

@@ -58,7 +58,7 @@ dist/Polyglance.app
 1. 新安装默认使用 Google 免费翻译，不需要 API Key。
 2. 如需 Google 翻译，在“设置 → 翻译服务”中选择“Google 免费翻译”，无需 API Key。它使用 Google 的旧版免费接口，可能受网络、限流和接口变更影响。
 3. Microsoft 免费翻译同样无需 API Key，使用 Microsoft Edge 的免费翻译接口，可能受网络、限流和接口变更影响。
-4. 正式发布构建可提供“免费 AI 翻译”，用户无需填写 Key；服务凭据同样只在构建阶段注入。该选项不会在配置缺失时静默改用其他服务。
+4. 正式发布构建可提供“免费 AI 翻译”，用户无需填写 Key，应用内也不内置任何 Key（凭据由项目自有的 Cloudflare Worker 持有）。该选项不会在配置缺失时静默改用其他服务。
 5. 如需 DeepSeek、OpenAI 或其他兼容服务，主动选择“自定义 AI”，再填写 endpoint、API Key 和模型。
 6. 点击“请求权限”，在系统设置中允许辅助功能权限。
 7. 点击“请求屏幕权限”，在系统设置中允许屏幕录制权限，然后重启应用。
@@ -66,29 +66,38 @@ dist/Polyglance.app
 
 Google、Microsoft、自定义 AI 和免费 AI 都是第三方联网服务，不应传输敏感内容。只有自定义 AI 的用户 Key 存放在 macOS Keychain；内置服务不会要求用户填写凭据。应用不会在翻译失败后静默切换提供商。
 
-## 构建内置免费 AI 翻译
+## 内置免费 AI 翻译
 
-本地或 CI 构建可通过环境变量注入 OpenRouter 免费模型配置，不在源码中硬编码：
+内置免费 AI 翻译调用项目自有的 Cloudflare Worker（`website/functions/api/free-translate.ts`），默认地址 `https://polyglance.ldjx7.dpdns.org/api/free-translate`。
+
+客户端**不携带 API Key，也不指定模型**。请求体只有待翻译文本、目标语言、可选的源语言和流式开关；Worker 在服务端持有 OpenRouter Key、固定模型与固定 system prompt。
+
+当前免费额度限制为：单次最多 20,000 个 Unicode 字符；同一匿名来源每分钟最多 5 次、每天最多 20 次且最多消耗 25 个字符单元（每开始 4,000 字符计一个单元）；所有来源合计每天最多 45 次、100 个字符单元。分钟和每日计数由 Workers KV 承担，适合作为滥用抑制而不是精确计费；并发下 KV 计数允许少量穿透，因此 OpenRouter Key 的额度上限仍是最后的成本熔断器。
+
+这不是可选的洁癖，而是唯一安全的设计：
+
+- 任何直接放进 `.app` 的 Key 都能用一条 `PlistBuddy -c "Print ..."` 取出来，而本项目完全开源，连提取方法都是公开的
+- 允许客户端传 `model` 等于允许任何人指定付费模型，成本无上限
+- 允许客户端传 `messages` 等于把这个端点变成通用聊天接口
+
+代价是这个端点本身是公开的（URL 就在仓库里），任何人都能拿它当免费翻译接口用。可控性来自三层：模型被钉死在免费档、按 IP 限流、以及**必须在 OpenRouter 侧给这个 Key 设置额度上限**——最后一条才是真正的兜底。
+
+本地构建若要指向 staging Worker，覆盖 endpoint 即可：
 
 ```bash
-POLYGLANCE_FREE_AI_API_KEY="..." \
-POLYGLANCE_FREE_AI_ENDPOINT="https://openrouter.ai/api/v1" \
-POLYGLANCE_FREE_AI_MODEL="openrouter/free" \
+POLYGLANCE_FREE_AI_ENDPOINT="https://staging.example/api/free-translate" \
 ./scripts/build-macos-app.sh
 ```
 
-也可以复制仓库根目录的 `.env.example` 为被 Git 忽略的 `.env.local`，填写后执行：
+也可以复制仓库根目录的 `.env.example` 为被 Git 忽略的 `.env.local` 后 `source` 再构建。该变量可省略，默认走上面的生产地址，且必须是 HTTPS，否则构建脚本直接失败。
+
+部署 Worker 时把凭据放进 Cloudflare secret，不要进代码：
 
 ```bash
-set -a
-source .env.local
-set +a
-./scripts/build-macos-app.sh
+cd website
+npx wrangler pages secret put OPENROUTER_API_KEY
+npm run deploy
 ```
-
-`POLYGLANCE_FREE_AI_ENDPOINT` 和 `POLYGLANCE_FREE_AI_MODEL` 可省略并使用上面的默认值。构建脚本不会输出 Key；GitHub Release 工作流从 `FREE_AI_OPENROUTER_API_KEY` Secret 注入。
-
-重要：任何直接放进桌面应用的 Key 都可以从最终 `.app` 中提取。公开发布时必须给该 Key 配置独立额度、模型限制、速率限制和隐私策略，不得与管理账号或付费高额度 Key 共用。更可靠的生产方案是让应用调用自己的限流代理，由代理在服务端持有 OpenRouter Key。
 
 如果应用无法通过 Accessibility API 直接获取选区，会自动模拟一次 `Command+C`，读取本次复制的文本，并在剪贴板没有被其他操作再次修改时恢复原内容。不会把原有的旧剪贴板文本误当成选区。
 

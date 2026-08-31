@@ -3,7 +3,7 @@ import PageLayout from '../layouts/PageLayout.astro';
 import { getReleases } from '../lib/releases';
 
 const releases = await getReleases();
-let latestTag = releases[0]?.tag_name || 'v0.0.4-beta.11';
+let latestTag = releases[0]?.tag_name || 'GitHub Releases';
 
 let macDmgUrl = '/api/download?target=mac-dmg';
 let macZipUrl = '/api/download?target=mac-zip';
