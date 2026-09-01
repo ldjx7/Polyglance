@@ -1,9 +1,7 @@
-use std::io::{Read, Write};
-use std::net::TcpListener;
-use std::thread;
-
 use translator_core::TranslationRequest;
 use translator_providers::microsoft::{MicrosoftConfig, MicrosoftProvider, parse_response_body};
+
+mod common;
 
 #[test]
 fn parses_a_microsoft_translation() {
@@ -24,9 +22,10 @@ fn requires_no_user_or_build_credentials_and_https_outside_loopback() {
 
 #[tokio::test]
 async fn sends_the_keyless_edge_translation_contract() {
-    let (endpoint, server) = serve_once(
+    let (base, server) = common::serve_once(
         r#"[{"detectedLanguage":{"language":"en","score":1.0},"translations":[{"text":"你好","to":"zh-Hans"}]}]"#,
     );
+    let endpoint = format!("{base}/translate/translatetext");
     let provider =
         MicrosoftProvider::new(MicrosoftConfig::with_endpoint(endpoint).unwrap()).unwrap();
     let request = TranslationRequest::new("Hello", None, "zh-CN").unwrap();
@@ -44,22 +43,4 @@ async fn sends_the_keyless_edge_translation_contract() {
     assert!(!raw_request.contains("ocp-apim-subscription-key"));
     assert!(!raw_request.contains("authorization:"));
     assert!(raw_request.contains(r#"["hello"]"#));
-}
-
-fn serve_once(body: &'static str) -> (String, thread::JoinHandle<String>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let mut request = [0_u8; 32 * 1024];
-        let byte_count = stream.read(&mut request).unwrap();
-        let raw_request = String::from_utf8_lossy(&request[..byte_count]).to_string();
-        let response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        stream.write_all(response.as_bytes()).unwrap();
-        raw_request
-    });
-    (format!("http://{address}/translate/translatetext"), server)
 }

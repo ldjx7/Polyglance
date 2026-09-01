@@ -1,9 +1,7 @@
-use std::io::{Read, Write};
-use std::net::TcpListener;
-use std::thread;
-
 use translator_core::TranslationRequest;
 use translator_providers::google::{GoogleConfig, GoogleProvider, parse_response_body};
+
+mod common;
 
 #[test]
 fn parses_and_decodes_a_google_translation() {
@@ -24,7 +22,8 @@ fn requires_no_user_credentials_and_https_outside_loopback() {
 
 #[tokio::test]
 async fn sends_the_keyless_google_web_translation_contract() {
-    let (endpoint, server) = serve_once(r#"[[["你好","Hello",null,null,10]],null,"en"]"#);
+    let (base, server) = common::serve_once(r#"[[["你好","Hello",null,null,10]],null,"en"]"#);
+    let endpoint = format!("{base}/translate_a/single?client=gtx&dt=t");
     let provider = GoogleProvider::new(GoogleConfig::with_endpoint(endpoint).unwrap()).unwrap();
     let request = TranslationRequest::new("Hello", None, "zh-CN").unwrap();
 
@@ -39,25 +38,4 @@ async fn sends_the_keyless_google_web_translation_contract() {
     assert!(raw_request.contains("sl=auto&tl=zh-CN&q=Hello"));
     assert!(!raw_request.to_ascii_lowercase().contains("api-key"));
     assert!(!raw_request.to_ascii_lowercase().contains("authorization"));
-}
-
-fn serve_once(body: &'static str) -> (String, thread::JoinHandle<String>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let mut request = [0_u8; 32 * 1024];
-        let byte_count = stream.read(&mut request).unwrap();
-        let raw_request = String::from_utf8_lossy(&request[..byte_count]).to_string();
-        let response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        stream.write_all(response.as_bytes()).unwrap();
-        raw_request
-    });
-    (
-        format!("http://{address}/translate_a/single?client=gtx&dt=t"),
-        server,
-    )
 }
