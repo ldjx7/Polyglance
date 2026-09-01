@@ -4,6 +4,91 @@ import XCTest
 
 @MainActor
 final class ScreenSelectionWindowTests: XCTestCase {
+    func testVirtualDesktopWindowUsesTheCombinedCaptureFrame() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let captureFrame = CGRect(
+            x: screen.frame.minX,
+            y: screen.frame.minY,
+            width: screen.frame.width + 1920,
+            height: max(screen.frame.height, 1080)
+        )
+        let window = ScreenSelectionWindow(
+            image: try makeImage(width: 448, height: 144),
+            screen: screen,
+            captureFrame: captureFrame
+        )
+
+        XCTAssertEqual(window.frame, captureFrame)
+        XCTAssertEqual(window.selectionView.frame.size, captureFrame.size)
+    }
+
+    func testVirtualDesktopWindowIsNotConstrainedBackOntoOneDisplay() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let captureFrame = CGRect(x: -1920, y: 0, width: 4480, height: 1440)
+        let window = ScreenSelectionWindow(
+            image: try makeImage(width: 448, height: 144),
+            screen: screen,
+            captureFrame: captureFrame
+        )
+
+        XCTAssertEqual(window.constrainFrameRect(captureFrame, to: screen), captureFrame)
+    }
+
+    func testGlobalDragTrackingFinishesSelectionAcrossTheDisplaySeam() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let captureFrame = CGRect(x: -1920, y: 0, width: 4480, height: 1440)
+        let window = ScreenSelectionWindow(
+            image: try makeImage(width: 448, height: 144),
+            screen: screen,
+            captureFrame: captureFrame
+        )
+        window.orderFront(nil)
+        let start = CGPoint(x: 40, y: 100)
+        window.selectionView.mouseDown(
+            with: mouseEvent(.leftMouseDown, at: start, window: window)
+        )
+        let globalEnd = CGPoint(x: captureFrame.maxX - 60, y: captureFrame.minY + 600)
+
+        window.selectionView.advanceGlobalDragForTesting(
+            globalPoint: globalEnd,
+            leftButtonPressed: true
+        )
+        window.selectionView.advanceGlobalDragForTesting(
+            globalPoint: globalEnd,
+            leftButtonPressed: false
+        )
+
+        let selection = try XCTUnwrap(window.selectionView.confirmedSelection)
+        XCTAssertGreaterThan(selection.maxX, screen.frame.width)
+    }
+
+    func testCrossScreenToolbarStaysInsideTheDisplayWhereDragStarted() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let captureFrame = CGRect(
+            x: screen.frame.minX,
+            y: screen.frame.minY,
+            width: screen.frame.width + 1920,
+            height: max(screen.frame.height, 1080)
+        )
+        let window = ScreenSelectionWindow(
+            image: try makeImage(width: 448, height: 144),
+            screen: screen,
+            captureFrame: captureFrame
+        )
+        window.orderFront(nil)
+        let localScreen = screen.frame.offsetBy(dx: -captureFrame.minX, dy: -captureFrame.minY)
+        let start = CGPoint(x: localScreen.minX + 30, y: 100)
+        let end = CGPoint(x: captureFrame.width - 30, y: 700)
+
+        dragSelection(in: window, from: start, to: end)
+
+        XCTAssertTrue(localScreen.contains(window.selectionView.toolbarFrameForTesting))
+    }
+
     func testWindowConstructsWithCapturedImage() throws {
         _ = NSApplication.shared
         let screen = try XCTUnwrap(NSScreen.main)

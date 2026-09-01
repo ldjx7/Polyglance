@@ -72,8 +72,10 @@ public partial class MagnifierControl : UserControl
         int requestedY = targetY - SampleRadius;
         int srcX = Math.Max(0, requestedX);
         int srcY = Math.Max(0, requestedY);
-        int width = Math.Min(SampleSide, source.PixelWidth - srcX);
-        int height = Math.Min(SampleSide, source.PixelHeight - srcY);
+        int srcRight = Math.Min(source.PixelWidth, targetX + SampleRadius + 1);
+        int srcBottom = Math.Min(source.PixelHeight, targetY + SampleRadius + 1);
+        int width = srcRight - srcX;
+        int height = srcBottom - srcY;
         if (width <= 0 || height <= 0)
         {
             CurrentSample = null;

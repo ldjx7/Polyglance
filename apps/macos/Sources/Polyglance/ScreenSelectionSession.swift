@@ -206,10 +206,171 @@ final class ScreenshotToolbarHelpBubble: NSView {
     }
 }
 
+fileprivate struct ScreenSelectionMirrorState {
+    let selection: CGRect?
+    let dimsDesktop: Bool
+    let showsHandles: Bool
+    let annotations: [ScreenshotAnnotationElement]
+}
+
+@MainActor
+private final class CrossScreenSelectionMirrorView: NSView {
+    private let capturedImage: CGImage
+    private let displayImage: NSImage
+    private let captureFrame: CGRect
+    private let displayFrame: CGRect
+    private var state = ScreenSelectionMirrorState(
+        selection: nil,
+        dimsDesktop: false,
+        showsHandles: false,
+        annotations: []
+    )
+
+    var displayedSelectionForTesting: CGRect? {
+        localSelection(state.selection)
+    }
+
+    init(image: CGImage, captureFrame: CGRect, displayFrame: CGRect) {
+        capturedImage = image
+        displayImage = NSImage(cgImage: image, size: captureFrame.size)
+        self.captureFrame = captureFrame
+        self.displayFrame = displayFrame
+        super.init(frame: CGRect(origin: .zero, size: displayFrame.size))
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func update(_ state: ScreenSelectionMirrorState) {
+        self.state = state
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        drawCapturedDesktop()
+
+        guard state.dimsDesktop,
+              let selection = localSelection(state.selection),
+              selection.intersects(bounds) else {
+            return
+        }
+
+        NSColor.black.withAlphaComponent(0.46).setFill()
+        bounds.fill()
+
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: selection).addClip()
+        drawCapturedDesktop()
+        drawAnnotations()
+        NSGraphicsContext.restoreGraphicsState()
+
+        NSColor.controlAccentColor.setStroke()
+        let border = NSBezierPath(rect: selection.insetBy(dx: 1, dy: 1))
+        border.lineWidth = 2
+        border.stroke()
+
+        if state.showsHandles {
+            drawHandles(for: selection)
+        }
+    }
+
+    private func drawCapturedDesktop() {
+        displayImage.draw(in: captureFrame.offsetBy(
+            dx: -displayFrame.minX,
+            dy: -displayFrame.minY
+        ))
+    }
+
+    private func localSelection(_ selection: CGRect?) -> CGRect? {
+        selection?.offsetBy(
+            dx: captureFrame.minX - displayFrame.minX,
+            dy: captureFrame.minY - displayFrame.minY
+        )
+    }
+
+    private func drawAnnotations() {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        let offset = CGPoint(
+            x: captureFrame.minX - displayFrame.minX,
+            y: captureFrame.minY - displayFrame.minY
+        )
+        ScreenshotAnnotationRenderer.draw(
+            elements: state.annotations,
+            in: context,
+            sourceImage: capturedImage,
+            pointTransform: { point in
+                CGPoint(x: point.x + offset.x, y: point.y + offset.y)
+            },
+            sourcePixelTransform: { [captureFrame, capturedImage] point in
+                guard captureFrame.width > 0, captureFrame.height > 0 else { return .zero }
+                return CGPoint(
+                    x: point.x * CGFloat(capturedImage.width) / captureFrame.width,
+                    y: point.y * CGFloat(capturedImage.height) / captureFrame.height
+                )
+            }
+        )
+    }
+
+    private func drawHandles(for selection: CGRect) {
+        let points = [
+            CGPoint(x: selection.minX, y: selection.minY),
+            CGPoint(x: selection.midX, y: selection.minY),
+            CGPoint(x: selection.maxX, y: selection.minY),
+            CGPoint(x: selection.minX, y: selection.midY),
+            CGPoint(x: selection.maxX, y: selection.midY),
+            CGPoint(x: selection.minX, y: selection.maxY),
+            CGPoint(x: selection.midX, y: selection.maxY),
+            CGPoint(x: selection.maxX, y: selection.maxY),
+        ]
+        for point in points {
+            let handle = CGRect(x: point.x - 3, y: point.y - 3, width: 6, height: 6)
+            NSColor.white.setFill()
+            handle.fill()
+            NSColor.controlAccentColor.setStroke()
+            NSBezierPath(rect: handle).stroke()
+        }
+    }
+}
+
+@MainActor
+private final class CrossScreenSelectionMirrorWindow: NSPanel {
+    let mirrorView: CrossScreenSelectionMirrorView
+
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+
+    init(image: CGImage, captureFrame: CGRect, displayFrame: CGRect) {
+        mirrorView = CrossScreenSelectionMirrorView(
+            image: image,
+            captureFrame: captureFrame,
+            displayFrame: displayFrame
+        )
+        super.init(
+            contentRect: displayFrame,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        level = .screenSaver
+        isOpaque = true
+        backgroundColor = .black
+        hasShadow = false
+        ignoresMouseEvents = true
+        animationBehavior = .none
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        contentView = mirrorView
+        setFrame(displayFrame, display: false)
+    }
+}
+
 @MainActor
 final class ScreenSelectionSession {
     private let window: ScreenSelectionWindow
     private let inactiveDimmingWindows: [InactiveScreenDimmingWindow]
+    private let crossScreenWindows: [CrossScreenSelectionMirrorWindow]
     private var completion: ((ScreenshotSelectionAction?) -> Void)?
     private var didFinish = false
     private var screenChangeObserver: NSObjectProtocol?
@@ -226,10 +387,22 @@ final class ScreenSelectionSession {
         window.isVisible
     }
 
+    var crossScreenOverlayFrames: [CGRect] { crossScreenWindows.map(\.frame) }
+    var areCrossScreenOverlaysVisible: Bool {
+        !crossScreenWindows.isEmpty && crossScreenWindows.allSatisfy(\.isVisible)
+    }
+    var crossScreenSelectionsForTesting: [CGRect?] {
+        crossScreenWindows.map { $0.mirrorView.displayedSelectionForTesting }
+    }
+
+    var selectionWindowForTesting: ScreenSelectionWindow { window }
+
     init(
         image: CGImage,
         screen: NSScreen,
+        captureFrame: CGRect? = nil,
         inactiveScreenFrames: [CGRect]? = nil,
+        crossScreenFrames: [CGRect]? = nil,
         regionProvider: ScreenshotRegionProvider? = nil,
         regionRefiner: ScreenshotRegionRefiner? = nil,
         preferredAction: ScreenshotPreferredAction? = nil
@@ -237,14 +410,16 @@ final class ScreenSelectionSession {
         window = ScreenSelectionWindow(
             image: image,
             screen: screen,
+            captureFrame: captureFrame,
             regionProvider: regionProvider,
             regionRefiner: regionRefiner,
             preferredAction: preferredAction
         )
+        let activeFrame = (captureFrame ?? screen.frame).standardized
         let candidateFrames = inactiveScreenFrames ?? NSScreen.screens.map(\.frame)
         var uniqueFrames: [CGRect] = []
         for frame in candidateFrames.map(\.standardized) {
-            guard !frame.intersects(screen.frame.standardized),
+            guard !frame.intersects(activeFrame),
                   !uniqueFrames.contains(where: { $0.intersects(frame) }) else {
                 continue
             }
@@ -252,6 +427,22 @@ final class ScreenSelectionSession {
         }
         inactiveDimmingWindows = uniqueFrames.map(InactiveScreenDimmingWindow.init(frame:))
         let selectionView = window.selectionView
+        let participatingFrames = (crossScreenFrames ?? NSScreen.screens.map(\.frame))
+            .map(\.standardized)
+            .filter { frame in
+                frame.intersects(activeFrame) && !frame.equalTo(screen.frame.standardized)
+            }
+        crossScreenWindows = participatingFrames.map { frame in
+            CrossScreenSelectionMirrorWindow(
+                image: image,
+                captureFrame: activeFrame,
+                displayFrame: frame
+            )
+        }
+        selectionView.onMirrorStateChange = { [weak self] state in
+            self?.crossScreenWindows.forEach { $0.mirrorView.update(state) }
+        }
+        selectionView.publishMirrorState()
         inactiveDimmingWindows.forEach { dimmingWindow in
             dimmingWindow.onRightClick = { [weak selectionView] in
                 selectionView?.handleRightClickOutsideTargetScreen()
@@ -275,6 +466,7 @@ final class ScreenSelectionSession {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKey()
         window.makeFirstResponder(window.selectionView)
+        crossScreenWindows.forEach { $0.orderFrontRegardless() }
         window.selectionView.prepareForCaptureInput()
         screenChangeObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -291,6 +483,13 @@ final class ScreenSelectionSession {
         finish(with: nil)
     }
 
+    func dismiss() {
+        inactiveDimmingWindows.forEach { $0.orderOut(nil) }
+        crossScreenWindows.forEach { $0.orderOut(nil) }
+        window.orderOut(nil)
+        NSCursor.arrow.set()
+    }
+
     private func finish(with action: ScreenshotSelectionAction?) {
         guard !didFinish else {
             return
@@ -304,8 +503,14 @@ final class ScreenSelectionSession {
             self.screenChangeObserver = nil
         }
         inactiveDimmingWindows.forEach { $0.orderOut(nil) }
-        window.orderOut(nil)
-        NSCursor.arrow.set()
+        crossScreenWindows.forEach { $0.orderOut(nil) }
+        if case .pin = action {
+            // Keep the captured pixels on screen until the pin window has been
+            // created at the same frame. This avoids exposing one desktop frame
+            // between the selection overlay and its pinned replacement.
+        } else {
+            dismiss()
+        }
         let completion = completion
         self.completion = nil
         completion?(action)
@@ -366,24 +571,35 @@ final class ScreenSelectionWindow: NSWindow {
 
     override var canBecomeKey: Bool { true }
 
+    /// Screenshot selection is intentionally allowed to span the complete
+    /// virtual desktop. AppKit may otherwise constrain a borderless window back
+    /// to the screen passed to the placement routine on some Spaces/display
+    /// configurations.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        frameRect
+    }
+
     init(
         image: CGImage,
         screen: NSScreen,
+        captureFrame: CGRect? = nil,
         regionProvider: ScreenshotRegionProvider? = nil,
         regionRefiner: ScreenshotRegionRefiner? = nil,
         colorPasteboard: NSPasteboard = .general,
         preferredAction: ScreenshotPreferredAction? = nil
     ) {
+        let activeFrame = captureFrame ?? screen.frame
         selectionView = ScreenSelectionView(
             image: image,
             screen: screen,
+            captureFrame: activeFrame,
             regionProvider: regionProvider,
             regionRefiner: regionRefiner,
             colorPasteboard: colorPasteboard,
             preferredAction: preferredAction
         )
         super.init(
-            contentRect: screen.frame,
+            contentRect: activeFrame,
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -395,6 +611,9 @@ final class ScreenSelectionWindow: NSWindow {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         acceptsMouseMovedEvents = true
         contentView = selectionView
+        isMovable = false
+        isMovableByWindowBackground = false
+        setFrame(activeFrame, display: false)
 
         selectionView.onAction = { [weak self] action in
             self?.onAction?(action)
@@ -424,10 +643,12 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
 
     var onAction: ((ScreenshotSelectionAction) -> Void)?
     var onCancel: (() -> Void)?
+    fileprivate var onMirrorStateChange: ((ScreenSelectionMirrorState) -> Void)?
 
     private let capturedImage: CGImage
     private let displayImage: NSImage
-    private let targetScreen: NSScreen
+    private let captureFrame: CGRect
+    private let toolbarPlacementFrame: CGRect
     private let regionProvider: ScreenshotRegionProvider?
     private let regionRefiner: ScreenshotRegionRefiner?
     private let pixelSampler: PixelSampler?
@@ -460,12 +681,17 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     private var didLastClickExpandSelection = false
     private var activeTextOrigin: CGPoint?
     private var movingText: (index: Int, grabOffset: CGPoint)?
+    private var globalDragTimer: Timer?
 
     private(set) var activeTextField: NSTextField?
     private(set) var currentPixelSample: PixelSample?
     private(set) var colorDisplayFormat: ScreenshotColorDisplayFormat = .hex
 
-    private(set) var capturePhase: ScreenshotCapturePhase = .ready
+    private(set) var capturePhase: ScreenshotCapturePhase = .ready {
+        didSet {
+            publishMirrorState()
+        }
+    }
     private(set) var hoveredCandidate: CGRect?
 
     var visibleToolbarHelpText: String? {
@@ -478,7 +704,12 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     private let dragThreshold: CGFloat = 4
 
     private var usesTwoRowToolbar: Bool {
-        bounds.width < 700
+        toolbarPlacementBounds.width < 700
+    }
+
+    private var toolbarPlacementBounds: CGRect {
+        let placementBounds = toolbarPlacementFrame.intersection(bounds)
+        return placementBounds.isNull || placementBounds.isEmpty ? bounds : placementBounds
     }
 
     private var toolbarSize: CGSize {
@@ -487,9 +718,11 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
                 width: 672,
                 height: usesTwoRowToolbar ? 78 : 44
             ),
-            bounds: bounds
+            bounds: toolbarPlacementBounds
         )
     }
+
+    var toolbarFrameForTesting: CGRect { toolbar.frame }
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -535,23 +768,40 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
 
     var showsSelectionHandles: Bool { confirmedSelection != nil }
 
+    fileprivate func publishMirrorState() {
+        onMirrorStateChange?(ScreenSelectionMirrorState(
+            selection: displayedSelection,
+            dimsDesktop: dimsCurrentScreen,
+            showsHandles: showsSelectionHandles,
+            annotations: annotationHistory.elements
+                + (activeAnnotationElement.map { [$0] } ?? [])
+        ))
+    }
+
     init(
         image: CGImage,
         screen: NSScreen,
+        captureFrame: CGRect? = nil,
         regionProvider: ScreenshotRegionProvider? = nil,
         regionRefiner: ScreenshotRegionRefiner? = nil,
         colorPasteboard: NSPasteboard = .general,
         preferredAction: ScreenshotPreferredAction? = nil
     ) {
         capturedImage = image
-        displayImage = NSImage(cgImage: image, size: screen.frame.size)
-        targetScreen = screen
+        let activeFrame = captureFrame ?? screen.frame
+        displayImage = NSImage(cgImage: image, size: activeFrame.size)
+        self.captureFrame = activeFrame
+        let localScreenFrame = screen.frame.offsetBy(
+            dx: -activeFrame.minX,
+            dy: -activeFrame.minY
+        )
+        toolbarPlacementFrame = localScreenFrame
         self.regionProvider = regionProvider
         self.regionRefiner = regionRefiner
         pixelSampler = PixelSampler(image: image)
         self.colorPasteboard = colorPasteboard
         self.preferredAction = preferredAction
-        super.init(frame: CGRect(origin: .zero, size: screen.frame.size))
+        super.init(frame: CGRect(origin: .zero, size: activeFrame.size))
         configureMagnifier()
         configureToolbar()
     }
@@ -592,7 +842,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             toolbar.frame.origin = CaptureGeometry.toolbarOrigin(
                 selection: selection,
                 toolbarSize: toolbarSize,
-                bounds: bounds
+                bounds: toolbarPlacementBounds
             )
         }
     }
@@ -603,6 +853,9 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
+        // Annotation edits do not always transition capturePhase, so keep the
+        // passive overlays on the other displays in sync with every redraw.
+        publishMirrorState()
         displayImage.draw(in: bounds)
 
         if dimsCurrentScreen {
@@ -753,19 +1006,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             return
         }
 
-        switch capturePhase {
-        case let .pressed(start, _):
-            guard distance(from: start, to: point) >= dragThreshold else {
-                return
-            }
-            hoveredCandidate = nil
-            capturePhase = .dragging(start: start, current: point)
-        case let .dragging(start, _):
-            capturePhase = .dragging(start: start, current: point)
-        case .ready, .selected, .annotating:
-            return
-        }
-        needsDisplay = true
+        continueInitialSelection(to: point)
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -818,20 +1059,8 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             return
         }
 
-        switch capturePhase {
-        case let .pressed(start, candidate):
-            if distance(from: start, to: point) >= dragThreshold {
-                confirmSelection(CaptureGeometry.selectionRect(from: start, to: point, in: bounds))
-            } else if let candidate {
-                confirmSelection(candidate)
-            } else {
-                returnToInitialState(at: point)
-            }
-        case let .dragging(start, _):
-            confirmSelection(CaptureGeometry.selectionRect(from: start, to: point, in: bounds))
-        case .ready, .selected, .annotating:
-            return
-        }
+        stopGlobalDragTracking()
+        finishInitialSelection(at: point)
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -992,6 +1221,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     }
 
     func cancelPendingWork() {
+        stopGlobalDragTracking()
         cancelHoverRefinement()
         cancelActiveTextInput(restoringFirstResponder: false)
         activeSelectionEdit = nil
@@ -1181,7 +1411,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         toolbar.frame.origin = CaptureGeometry.toolbarOrigin(
             selection: selection,
             toolbarSize: toolbarSize,
-            bounds: bounds
+            bounds: toolbarPlacementBounds
         )
         toolbar.isHidden = false
     }
@@ -1201,6 +1431,87 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         updateAnnotationControls()
         updateCursor()
         needsDisplay = true
+        startGlobalDragTracking()
+    }
+
+    private func startGlobalDragTracking() {
+        stopGlobalDragTracking()
+        let timer = Timer(
+            timeInterval: 1.0 / 60.0,
+            target: self,
+            selector: #selector(trackGlobalDrag(_:)),
+            userInfo: nil,
+            repeats: true
+        )
+        RunLoop.main.add(timer, forMode: .common)
+        globalDragTimer = timer
+    }
+
+    private func stopGlobalDragTracking() {
+        globalDragTimer?.invalidate()
+        globalDragTimer = nil
+    }
+
+    @objc private func trackGlobalDrag(_ timer: Timer) {
+        advanceGlobalDrag(
+            globalPoint: NSEvent.mouseLocation,
+            leftButtonPressed: NSEvent.pressedMouseButtons & 1 != 0
+        )
+    }
+
+    func advanceGlobalDragForTesting(globalPoint: CGPoint, leftButtonPressed: Bool) {
+        advanceGlobalDrag(globalPoint: globalPoint, leftButtonPressed: leftButtonPressed)
+    }
+
+    private func advanceGlobalDrag(globalPoint: CGPoint, leftButtonPressed: Bool) {
+        switch capturePhase {
+        case .pressed, .dragging:
+            break
+        case .ready, .selected, .annotating:
+            stopGlobalDragTracking()
+            return
+        }
+        let localPoint = CGPoint(
+            x: globalPoint.x - captureFrame.minX,
+            y: globalPoint.y - captureFrame.minY
+        )
+        if leftButtonPressed {
+            continueInitialSelection(to: localPoint)
+        } else {
+            stopGlobalDragTracking()
+            finishInitialSelection(at: localPoint)
+        }
+    }
+
+    private func continueInitialSelection(to point: CGPoint) {
+        switch capturePhase {
+        case let .pressed(start, _):
+            guard distance(from: start, to: point) >= dragThreshold else { return }
+            hoveredCandidate = nil
+            capturePhase = .dragging(start: start, current: point)
+        case let .dragging(start, _):
+            capturePhase = .dragging(start: start, current: point)
+        case .ready, .selected, .annotating:
+            return
+        }
+        needsDisplay = true
+    }
+
+    private func finishInitialSelection(at point: CGPoint) {
+        switch capturePhase {
+        case let .pressed(start, candidate):
+            if distance(from: start, to: point) >= dragThreshold {
+                confirmSelection(CaptureGeometry.selectionRect(from: start, to: point, in: bounds))
+            } else if let candidate {
+                confirmSelection(candidate)
+            } else {
+                returnToInitialState(at: point)
+            }
+        case let .dragging(start, _):
+            confirmSelection(CaptureGeometry.selectionRect(from: start, to: point, in: bounds))
+        case .ready, .selected, .annotating:
+            return
+        }
     }
 
     private func applySelectionEdit(_ edit: ActiveSelectionEdit, current point: CGPoint) {
@@ -1440,12 +1751,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             return nil
         }
         let image = NSImage(cgImage: composedImage, size: selection.size)
-        let screenFrame = CGRect(
-            x: targetScreen.frame.minX + selection.minX,
-            y: targetScreen.frame.minY + selection.minY,
-            width: selection.width,
-            height: selection.height
-        )
+        let screenFrame = VirtualDesktopCapture.globalFrame(for: selection, in: captureFrame)
         return SelectedScreenshot(image: image, screenFrame: screenFrame)
     }
 
@@ -1498,13 +1804,11 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
                 onAction?(.screenTranslation(ScreenTranslationSelection(
                     capture: ScreenTranslationCapture(
                         fullImage: capturedImage,
-                        screenFrame: targetScreen.frame
+                        screenFrame: captureFrame
                     ),
-                    selection: CGRect(
-                        x: targetScreen.frame.minX + clippedSelection.minX,
-                        y: targetScreen.frame.minY + clippedSelection.minY,
-                        width: clippedSelection.width,
-                        height: clippedSelection.height
+                    selection: VirtualDesktopCapture.globalFrame(
+                        for: clippedSelection,
+                        in: captureFrame
                     )
                 )))
                 return

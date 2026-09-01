@@ -15,6 +15,7 @@
         MouseDown="OnMouseDown"
         MouseMove="OnMouseMove"
         MouseUp="OnMouseUp"
+        LostMouseCapture="OnLostMouseCapture"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Display"

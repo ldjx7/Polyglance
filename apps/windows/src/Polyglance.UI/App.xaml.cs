@@ -148,6 +148,7 @@ public partial class App : Application
         // Group 3: 贴图管理
         var pinMenu = new ToolStripMenuItem("贴图管理");
         pinMenu.DropDownItems.Add("贴出剪贴板图片", null, (s, e) => PinClipboardImage());
+        pinMenu.DropDownItems.Add("恢复最近贴图", null, (s, e) => RestoreMostRecentPin());
         pinMenu.DropDownItems.Add(new ToolStripSeparator());
         pinMenu.DropDownItems.Add("隐藏全部贴图", null, (s, e) => HideAllPins());
         pinMenu.DropDownItems.Add("显示全部贴图", null, (s, e) => ShowAllPins());
@@ -349,7 +350,10 @@ public partial class App : Application
             var pin = new PinWindow(
                 bitmap,
                 _translationService!,
-                LoadConfigurationOrDefault());
+                LoadConfigurationOrDefault(),
+                Clipboard.SetText,
+                capturedDisplaySize: null,
+                saveToHistory: false);
             pin.Show();
         });
     }

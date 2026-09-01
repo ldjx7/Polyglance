@@ -90,6 +90,24 @@ public sealed class AnnotationInteractionTests
     }
 
     [Fact]
+    public void SelectionCrossingOverlayEdgesIsClampedBeforeRendering()
+    {
+        RunInSta(() =>
+        {
+            var window = CreateSelectionWindow();
+            window.Show();
+
+            window.SetSelectionForTesting(new Rect(-12, -8, 228, 164));
+
+            Assert.Equal(new Rect(0, 0, 200, 140), window.SelectionRectForTesting);
+            BitmapSource output = Assert.IsAssignableFrom<BitmapSource>(window.RenderedSelectionForTesting());
+            Assert.Equal(200, output.PixelWidth);
+            Assert.Equal(140, output.PixelHeight);
+            window.Close();
+        });
+    }
+
+    [Fact]
     public void MosaicStrokeInterpolatesAContinuousPathAsOneGesture()
     {
         Point[] points = MosaicStrokeBuilder.Interpolate(

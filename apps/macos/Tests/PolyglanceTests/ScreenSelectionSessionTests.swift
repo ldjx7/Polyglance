@@ -82,6 +82,100 @@ final class ScreenSelectionSessionTests: XCTestCase {
         XCTAssertEqual(rightClickCount, 1)
     }
 
+    func testPinHandoffKeepsSelectionVisibleUntilCoordinatorDismissesIt() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let session = ScreenSelectionSession(
+            image: try makeImage(width: 240, height: 160),
+            screen: screen
+        )
+        var receivedPin = false
+        session.present { action in
+            if case .pin = action {
+                receivedPin = true
+            }
+        }
+
+        let window = session.selectionWindowForTesting
+        let view = window.selectionView
+        view.mouseDown(with: mouseEvent(.leftMouseDown, at: CGPoint(x: 20, y: 20), window: window))
+        view.mouseDragged(with: mouseEvent(.leftMouseDragged, at: CGPoint(x: 180, y: 120), window: window))
+        view.mouseUp(with: mouseEvent(.leftMouseUp, at: CGPoint(x: 180, y: 120), window: window))
+        try button(titled: "贴图", in: try XCTUnwrap(window.contentView)).performClick(nil)
+
+        XCTAssertTrue(receivedPin)
+        XCTAssertTrue(session.isSelectionWindowVisible)
+
+        session.dismiss()
+        XCTAssertFalse(session.isSelectionWindowVisible)
+    }
+
+    func testCrossScreenMirrorShowsTheLiveSelectionOnTheSecondDisplay() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let secondFrame = screen.frame.offsetBy(dx: screen.frame.width, dy: 0)
+        let captureFrame = screen.frame.union(secondFrame)
+        let session = ScreenSelectionSession(
+            image: try makeImage(width: 400, height: 120),
+            screen: screen,
+            captureFrame: captureFrame,
+            crossScreenFrames: [screen.frame, secondFrame]
+        )
+        session.present { _ in }
+        let window = session.selectionWindowForTesting
+        let start = CGPoint(x: 40, y: 80)
+        let globalEnd = CGPoint(x: secondFrame.midX, y: secondFrame.midY)
+
+        window.selectionView.mouseDown(
+            with: mouseEvent(.leftMouseDown, at: start, window: window)
+        )
+        window.selectionView.advanceGlobalDragForTesting(
+            globalPoint: globalEnd,
+            leftButtonPressed: true
+        )
+
+        XCTAssertEqual(session.crossScreenOverlayFrames, [secondFrame])
+        XCTAssertTrue(session.areCrossScreenOverlaysVisible)
+        let mirroredSelection = try XCTUnwrap(
+            session.crossScreenSelectionsForTesting.first ?? nil
+        )
+        XCTAssertGreaterThan(mirroredSelection.width, 0)
+        XCTAssertTrue(CGRect(origin: .zero, size: secondFrame.size).intersects(mirroredSelection))
+
+        session.cancel()
+        XCTAssertFalse(session.areCrossScreenOverlaysVisible)
+    }
+
+    private func mouseEvent(
+        _ type: NSEvent.EventType,
+        at point: CGPoint,
+        window: NSWindow
+    ) -> NSEvent {
+        NSEvent.mouseEvent(
+            with: type,
+            location: point,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        )!
+    }
+
+    private func button(titled title: String, in view: NSView) throws -> NSButton {
+        if let button = view as? NSButton, button.title == title {
+            return button
+        }
+        for child in view.subviews {
+            if let button = try? button(titled: title, in: child) {
+                return button
+            }
+        }
+        throw NSError(domain: "ScreenSelectionSessionTests", code: 1)
+    }
+
     private func makeImage(width: Int = 10, height: Int = 10) throws -> CGImage {
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         let pixelData = Data(repeating: 255, count: width * height * 4) as CFData

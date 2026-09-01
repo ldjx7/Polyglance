@@ -4,6 +4,22 @@ import XCTest
 
 @MainActor
 final class PinContentViewTests: XCTestCase {
+    func testSelectedPinUsesSubtleBlueEdgeAndDiffuseGlow() {
+        _ = NSApplication.shared
+        let (_, view) = makePinnedWindow()
+
+        view.setSelectionHighlighted(true)
+
+        XCTAssertTrue(view.isSelectionHighlighted)
+        XCTAssertEqual(view.layer?.borderWidth, 1)
+        XCTAssertEqual(view.layer?.shadowOpacity, 0.50)
+        XCTAssertEqual(view.layer?.shadowRadius, 14)
+        let borderColor = try! XCTUnwrap(
+            NSColor(cgColor: try! XCTUnwrap(view.layer?.borderColor))?.usingColorSpace(.sRGB)
+        )
+        XCTAssertEqual(borderColor.alphaComponent, 0.38, accuracy: 0.01)
+    }
+
     func testLeftDoubleClickClosesPinnedWindow() {
         _ = NSApplication.shared
         let (panel, view) = makePinnedWindow()

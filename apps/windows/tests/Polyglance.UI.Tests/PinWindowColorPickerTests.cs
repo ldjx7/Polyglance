@@ -62,6 +62,27 @@ public sealed class PinWindowColorPickerTests
         });
     }
 
+    [Fact]
+    public void ActivePinUsesSubtleBlueEdgeAndDiffuseGlow()
+    {
+        RunInSta(() =>
+        {
+            var pin = new PinWindow(CreateSolidBitmap(80, 60, 0x12, 0x34, 0x56));
+
+            pin.SetSelectionHighlightForTesting(true);
+
+            Assert.True(pin.IsSelectionHighlighted);
+            Assert.Equal(1, pin.SelectionBorderThickness.Left);
+            Assert.Equal((byte)0x60, pin.SelectionBorderColor.A);
+            Assert.Equal((byte)0x0A, pin.SelectionBorderColor.R);
+            Assert.Equal((byte)0x84, pin.SelectionBorderColor.G);
+            Assert.Equal((byte)0xFF, pin.SelectionBorderColor.B);
+            Assert.Equal(Color.FromRgb(0x0A, 0x84, 0xFF), pin.SelectionShadowColor);
+            Assert.True(pin.SelectionShadowOpacity >= 0.5);
+            pin.Close();
+        });
+    }
+
     private static BitmapSource CreateSolidBitmap(
         int width,
         int height,

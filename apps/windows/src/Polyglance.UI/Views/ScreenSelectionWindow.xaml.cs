@@ -55,6 +55,7 @@ public partial class ScreenSelectionWindow : Window
     private Point _lastMosaicPoint;
     private Point _drawingStart;
     private int _nextNumber = 1;
+    private bool _isCompletingMouseGesture;
 
     public ScreenSelectionWindow(
         BitmapSource fullScreenBitmap,
@@ -111,7 +112,7 @@ public partial class ScreenSelectionWindow : Window
 
     private void OnMouseDown(object sender, MouseButtonEventArgs e)
     {
-        Point pt = e.GetPosition(this);
+        Point pt = ClampPointToOverlay(e.GetPosition(this));
 
         if (Toolbar.IsMouseOver)
             return;
@@ -141,6 +142,7 @@ public partial class ScreenSelectionWindow : Window
                 }
                 _drawingStart = pt;
                 StartAnnotationDrawing(pt);
+                CaptureMouse();
                 return;
             }
 
@@ -163,6 +165,7 @@ public partial class ScreenSelectionWindow : Window
                 _phase = SelectionPhase.DraggingNew;
                 _dragStart = pt;
                 _selectionRect = new Rect(pt, new Size(0, 0));
+                CaptureMouse();
                 Toolbar.Visibility = Visibility.Collapsed;
                 CandidateBorder.Visibility = Visibility.Collapsed;
                 ShowMagnifier(pt);
@@ -173,7 +176,7 @@ public partial class ScreenSelectionWindow : Window
 
     private void OnMouseMove(object sender, MouseEventArgs e)
     {
-        Point pt = e.GetPosition(this);
+        Point pt = ClampPointToOverlay(e.GetPosition(this));
 
         if (_currentDrawingShape != null || _currentMosaicStroke != null)
         {
@@ -280,6 +283,13 @@ public partial class ScreenSelectionWindow : Window
 
     private void OnMouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (IsMouseCaptured)
+        {
+            _isCompletingMouseGesture = true;
+            ReleaseMouseCapture();
+            _isCompletingMouseGesture = false;
+        }
+
         if (_currentDrawingShape != null || _currentMosaicStroke != null)
         {
             UIElement finished = _currentDrawingShape is not null
@@ -328,6 +338,35 @@ public partial class ScreenSelectionWindow : Window
         }
     }
 
+    private void OnLostMouseCapture(object sender, MouseEventArgs e)
+    {
+        if (_isCompletingMouseGesture)
+            return;
+
+        // Display edges and top-level system UI can steal mouse capture. Finish
+        // with a legal selection instead of leaving a half-dragged gesture whose
+        // later crop could throw from an async event handler and terminate the app.
+        if (_phase is SelectionPhase.DraggingNew
+            or SelectionPhase.Moving
+            or SelectionPhase.Resizing
+            or SelectionPhase.Expanding)
+        {
+            _selectionRect = ClampSelectionToOverlay(_selectionRect);
+            if (_selectionRect.Width > 6 && _selectionRect.Height > 6)
+            {
+                _phase = SelectionPhase.Selected;
+                _currentEditTarget = NativeSelectionEditTarget.None;
+                HideMagnifier();
+                UpdateSelectionDisplay();
+                PositionToolbar();
+            }
+            else
+            {
+                ClearSelection();
+            }
+        }
+    }
+
     private void HandleRightClick()
     {
         if (_activeTool != "None")
@@ -349,6 +388,8 @@ public partial class ScreenSelectionWindow : Window
 
     private void ClearSelection()
     {
+        if (IsMouseCaptured)
+            ReleaseMouseCapture();
         _phase = SelectionPhase.Ready;
         _currentEditTarget = NativeSelectionEditTarget.None;
         _selectionRect = Rect.Empty;
@@ -471,6 +512,7 @@ public partial class ScreenSelectionWindow : Window
         _dragStart = pt;
         _initialSelection = _selectionRect;
         Toolbar.Visibility = Visibility.Collapsed;
+        CaptureMouse();
 
         switch (target)
         {
@@ -819,9 +861,6 @@ public partial class ScreenSelectionWindow : Window
 
     private async void OnActionTriggered(string action)
     {
-        var cropped = GetRenderedCroppedBitmap();
-        if (cropped == null) return;
-
         switch (action)
         {
             case "Undo":
@@ -833,7 +872,7 @@ public partial class ScreenSelectionWindow : Window
                     AnnotationCanvas.Children.Remove(last);
                     UpdateUndoRedoButtons();
                 }
-                break;
+                return;
 
             case "Redo":
                 if (_redoStack.Count > 0)
@@ -844,11 +883,53 @@ public partial class ScreenSelectionWindow : Window
                     AnnotationCanvas.Children.Add(last);
                     UpdateUndoRedoButtons();
                 }
-                break;
+                return;
 
             case "Finish":
                 FinishAnnotationMode();
-                break;
+                return;
+
+            case "Cancel":
+                Close();
+                return;
+
+            case "LongScreenshot":
+                var longWin = new LongScreenshotSessionWindow(
+                    _fullScreenBitmap,
+                    _screenBounds,
+                    _selectionRect,
+                    _translationService,
+                    _config);
+                longWin.Show();
+                Close();
+                return;
+
+            case "ScreenRecording":
+                var recordWin = new ScreenRecordingWindow(_screenBounds, _selectionRect, _config);
+                recordWin.Show();
+                Close();
+                return;
+        }
+
+        BitmapSource? cropped;
+        try
+        {
+            _selectionRect = ClampSelectionToOverlay(_selectionRect);
+            cropped = GetRenderedCroppedBitmap();
+        }
+        catch (Exception error)
+        {
+            ShowCaptureError("截图失败", error);
+            return;
+        }
+        if (cropped == null)
+        {
+            SystemSounds.Beep.Play();
+            return;
+        }
+
+        switch (action)
+        {
 
             case "Copy":
                 Clipboard.SetImage(cropped);
@@ -856,9 +937,19 @@ public partial class ScreenSelectionWindow : Window
                 break;
 
             case "Pin":
-                var pinWin = new PinWindow(cropped, _translationService, _config);
-                pinWin.Left = Left + _selectionRect.X;
-                pinWin.Top = Top + _selectionRect.Y;
+                var pinWin = new PinWindow(
+                    cropped,
+                    _translationService,
+                    _config,
+                    _selectionRect.Size);
+                Point pinOrigin = PinWindow.WindowOriginForContentFrame(
+                    new Rect(
+                        Left + _selectionRect.X,
+                        Top + _selectionRect.Y,
+                        _selectionRect.Width,
+                        _selectionRect.Height));
+                pinWin.Left = pinOrigin.X;
+                pinWin.Top = pinOrigin.Y;
                 pinWin.Show();
                 Close();
                 break;
@@ -876,27 +967,6 @@ public partial class ScreenSelectionWindow : Window
                     using var stream = File.Create(dlg.FileName);
                     encoder.Save(stream);
                 }
-                Close();
-                break;
-
-            case "Cancel":
-                Close();
-                break;
-
-            case "LongScreenshot":
-                var longWin = new LongScreenshotSessionWindow(
-                    _fullScreenBitmap,
-                    _screenBounds,
-                    _selectionRect,
-                    _translationService,
-                    _config);
-                longWin.Show();
-                Close();
-                break;
-
-            case "ScreenRecording":
-                var recordWin = new ScreenRecordingWindow(_screenBounds, _selectionRect, _config);
-                recordWin.Show();
                 Close();
                 break;
 
@@ -1058,6 +1128,23 @@ public partial class ScreenSelectionWindow : Window
         ActualWidth > 0 ? ActualWidth : Width,
         ActualHeight > 0 ? ActualHeight : Height);
 
+    private Point ClampPointToOverlay(Point point)
+    {
+        Size view = OverlayViewSize();
+        return new Point(
+            Math.Clamp(point.X, 0, Math.Max(0, view.Width)),
+            Math.Clamp(point.Y, 0, Math.Max(0, view.Height)));
+    }
+
+    private Rect ClampSelectionToOverlay(Rect selection)
+    {
+        if (selection.IsEmpty)
+            return Rect.Empty;
+        Size view = OverlayViewSize();
+        Rect clipped = Rect.Intersect(selection, new Rect(0, 0, view.Width, view.Height));
+        return clipped.IsEmpty ? Rect.Empty : clipped;
+    }
+
     /// <summary>
     /// Places the overlay over exactly the captured area using physical pixels.
     /// SetWindowPos takes device pixels, so this is immune to the DIP conversion
@@ -1159,7 +1246,7 @@ public partial class ScreenSelectionWindow : Window
 
     internal void SetSelectionForTesting(Rect selection)
     {
-        _selectionRect = selection;
+        _selectionRect = ClampSelectionToOverlay(selection);
         _phase = SelectionPhase.Selected;
         UpdateSelectionDisplay();
         PositionToolbar();

@@ -91,7 +91,11 @@ final class ScreenTranslationCoordinator {
             guard let self, self.session === session else { return }
             session.close()
             cleanupAfterSessionClosed()
-            pinWindowManager.pin(image, sourceFrame: region)
+            pinWindowManager.pin(
+                image,
+                sourceFrame: region,
+                preferredDisplaySize: region.size
+            )
         }
         session.onRefresh = { [weak self] in
             self?.refreshFromLiveScreen()

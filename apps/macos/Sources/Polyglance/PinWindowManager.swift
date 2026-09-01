@@ -49,29 +49,29 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
         pin(image, sourceFrame: nil)
     }
 
-    func pin(_ image: NSImage, sourceFrame: CGRect?) {
+    func pin(
+        _ image: NSImage,
+        sourceFrame: CGRect?,
+        preferredDisplaySize: CGSize? = nil
+    ) {
         guard let screen = targetScreen(for: sourceFrame) else {
             return
         }
 
-        let maximumSize = CGSize(
-            width: screen.visibleFrame.width * 0.72,
-            height: screen.visibleFrame.height * 0.72
-        )
-        let fittedSize = CaptureGeometry.fittedPinSize(
+        let size = Self.initialPinSize(
             imageSize: image.size,
-            maximumSize: maximumSize
-        )
-        let size = PinResizeGeometry.operableInitialSize(
-            fittedSize,
-            maximumSize: maximumSize
+            preferredDisplaySize: preferredDisplaySize,
+            maximumSize: screen.frame.size
         )
         guard size.width > 0, size.height > 0 else {
             return
         }
 
-        let origin = fittedOrigin(
-            preferred: sourceFrame?.origin,
+        // Screenshot pins replace the selected pixels in place, including a
+        // selection spanning multiple displays. Clipboard/history pins still
+        // use the screen-fitting behavior below.
+        let origin = sourceFrame?.origin ?? fittedOrigin(
+            preferred: nil,
             size: size,
             visibleFrame: screen.visibleFrame
         )
@@ -82,6 +82,33 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
             opacity: 1,
             isLocked: false,
             isAlwaysOnTop: true
+        )
+    }
+
+    /// A normal screenshot carries its selection size in screen points. Using
+    /// that size avoids treating Retina backing pixels as window points and
+    /// keeps a full-width capture full-width when it is pinned. Images without
+    /// capture geometry (clipboard and long screenshots) still fit to one full
+    /// screen so they cannot create an unusable off-screen window.
+    static func initialPinSize(
+        imageSize: CGSize,
+        preferredDisplaySize: CGSize?,
+        maximumSize: CGSize
+    ) -> CGSize {
+        if let preferredDisplaySize,
+           preferredDisplaySize.width.isFinite,
+           preferredDisplaySize.height.isFinite,
+           preferredDisplaySize.width > 0,
+           preferredDisplaySize.height > 0 {
+            return preferredDisplaySize
+        }
+        let fittedSize = CaptureGeometry.fittedPinSize(
+            imageSize: imageSize,
+            maximumSize: maximumSize
+        )
+        return PinResizeGeometry.operableInitialSize(
+            fittedSize,
+            maximumSize: maximumSize
         )
     }
 
@@ -216,6 +243,7 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
             defer: false
         )
         panel.hidesOnDeactivate = false
+        panel.animationBehavior = .none
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -228,19 +256,27 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
         panel.delegate = self
 
         let actions = makeActions(for: panel)
-        panel.contentView = PinContentView(
+        let contentView = PinContentView(
             image: image,
             initialSize: initialSize,
             isLocked: isLocked,
             isAlwaysOnTop: isAlwaysOnTop,
             actions: actions
         )
+        contentView.setSelectionHighlighted(true)
+        panel.contentView = contentView
         panel.alphaValue = min(1, max(0.1, opacity.isFinite ? opacity : 1))
+        contentView.layoutSubtreeIfNeeded()
+        contentView.displayIfNeeded()
 
         let identifier = ObjectIdentifier(panel)
         panels[identifier] = panel
         panelOrder.append(identifier)
         panel.orderFrontRegardless()
+        panel.makeKey()
+        // Force the first frame into the backing store before the caller tears
+        // down the screenshot overlay that is still covering these pixels.
+        panel.display()
         return panel
     }
 
@@ -464,6 +500,18 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
         }
         panels.removeValue(forKey: identifier)
         panelOrder.removeAll { $0 == identifier }
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        (notification.object as? NSPanel)?.contentView
+            .flatMap { $0 as? PinContentView }?
+            .setSelectionHighlighted(true)
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        (notification.object as? NSPanel)?.contentView
+            .flatMap { $0 as? PinContentView }?
+            .setSelectionHighlighted(false)
     }
 
     private var orderedPanels: [NSPanel] {
@@ -777,6 +825,7 @@ final class PinContentView: NSView {
     private(set) var isColorPicking = false
     private(set) var currentPixelSample: PixelSample?
     private(set) var magnifierPanel: NSPanel?
+    private(set) var isSelectionHighlighted = false
 
     init(
         image: NSImage,
@@ -813,10 +862,9 @@ final class PinContentView: NSView {
         annotationEditor = PinAnnotationOverlayView(sourceImage: image)
         super.init(frame: CGRect(origin: .zero, size: image.size))
         wantsLayer = true
-        layer?.borderColor = NSColor.white.withAlphaComponent(0.65).cgColor
-        layer?.borderWidth = 1
         layer?.cornerRadius = 5
-        layer?.masksToBounds = true
+        layer?.masksToBounds = false
+        setSelectionHighlighted(true)
 
         closeButton.target = self
         closeButton.action = #selector(closePin)
@@ -886,10 +934,13 @@ final class PinContentView: NSView {
         super.layout()
         closeButton.frame = CGRect(x: bounds.maxX - 29, y: bounds.maxY - 29, width: 24, height: 24)
         annotationEditor.frame = bounds
+        setSelectionHighlighted(isSelectionHighlighted)
     }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(roundedRect: bounds, xRadius: 5, yRadius: 5).addClip()
         image.draw(
             in: bounds,
             from: .zero,
@@ -897,6 +948,26 @@ final class PinContentView: NSView {
             fraction: 1,
             respectFlipped: true,
             hints: [.interpolation: NSImageInterpolation.high]
+        )
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    func setSelectionHighlighted(_ highlighted: Bool) {
+        isSelectionHighlighted = highlighted
+        wantsLayer = true
+        layer?.borderColor = (highlighted
+            ? NSColor.systemBlue.withAlphaComponent(0.38)
+            : NSColor.white.withAlphaComponent(0.28)).cgColor
+        layer?.borderWidth = 1
+        layer?.shadowColor = NSColor.systemBlue.cgColor
+        layer?.shadowOpacity = highlighted ? 0.50 : 0
+        layer?.shadowRadius = highlighted ? 14 : 0
+        layer?.shadowOffset = .zero
+        layer?.shadowPath = CGPath(
+            roundedRect: bounds.insetBy(dx: 1, dy: 1),
+            cornerWidth: 5,
+            cornerHeight: 5,
+            transform: nil
         )
     }
 
@@ -932,6 +1003,7 @@ final class PinContentView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        window?.makeKey()
         window?.makeFirstResponder(self)
         if isColorPicking {
             clearDragState()

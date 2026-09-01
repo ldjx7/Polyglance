@@ -17,6 +17,8 @@
         MouseWheel="OnMouseWheel"
         MouseDoubleClick="OnMouseDoubleClick"
         KeyDown="OnKeyDown"
+        Activated="OnActivated"
+        Deactivated="OnDeactivated"
         Focusable="True">
     <Border x:Name="ContainerBorder" Margin="8" Background="#FFFFFF" BorderBrush="#20000000" BorderThickness="1" CornerRadius="4">
         <Border.Effect>

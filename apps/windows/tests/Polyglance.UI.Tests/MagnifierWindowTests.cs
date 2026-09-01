@@ -39,6 +39,26 @@ public sealed class MagnifierWindowTests
     }
 
     [Fact]
+    public void LargeDesktopLeftEdgeDoesNotOverflowTheFixedPreviewPatch()
+    {
+        RunInSta(() =>
+        {
+            var magnifier = new MagnifierControl();
+            BitmapSource source = CreateBitmap(256, 144, (x, y) =>
+                x == 0 && y == 72
+                    ? ((byte)0x12, (byte)0x34, (byte)0x56)
+                    : ((byte)0xEE, (byte)0xEE, (byte)0xEE));
+
+            Exception? error = Record.Exception(() => magnifier.Update(source, 0, 72));
+
+            Assert.Null(error);
+            BitmapSource preview = Assert.IsAssignableFrom<BitmapSource>(magnifier.PreviewSource);
+            Assert.Equal((0x12, 0x34, 0x56), ReadRgb(preview, 10, 10));
+            Assert.Equal("#123456", magnifier.CurrentSample?.Hex);
+        });
+    }
+
+    [Fact]
     public void ColourAndCoordinateEachGetTheirOwnUntruncatedLine()
     {
         RunInSta(() =>

@@ -4,6 +4,42 @@ import XCTest
 
 @MainActor
 final class PinWindowManagerTests: XCTestCase {
+    func testCapturedDisplaySizePreservesFullScreenWidthOnRetinaDisplay() {
+        let size = PinWindowManager.initialPinSize(
+            imageSize: CGSize(width: 3_840, height: 2_160),
+            preferredDisplaySize: CGSize(width: 1_920, height: 1_080),
+            maximumSize: CGSize(width: 1_920, height: 1_080)
+        )
+
+        XCTAssertEqual(size, CGSize(width: 1_920, height: 1_080))
+    }
+
+    func testPinPanelDisablesAppKitPresentationAnimation() {
+        _ = NSApplication.shared
+        let manager = makeManager()
+        let panel = manager.createPinWindow(
+            image: NSImage(size: CGSize(width: 200, height: 120)),
+            initialSize: CGSize(width: 200, height: 120),
+            frame: CGRect(x: 100, y: 120, width: 200, height: 120),
+            opacity: 1,
+            isLocked: false,
+            isAlwaysOnTop: true
+        )
+
+        XCTAssertEqual(panel.animationBehavior, .none)
+        manager.destroyAllPins()
+    }
+
+    func testPinWithoutCapturedDisplaySizeFitsOnlyWhenLargerThanScreen() {
+        let size = PinWindowManager.initialPinSize(
+            imageSize: CGSize(width: 2_400, height: 1_200),
+            preferredDisplaySize: nil,
+            maximumSize: CGSize(width: 1_920, height: 1_080)
+        )
+
+        XCTAssertEqual(size, CGSize(width: 1_920, height: 960))
+    }
+
     func testDefaultManagerPinsImageAndMakesOrdinaryCloseRestorable() throws {
         _ = NSApplication.shared
         let screen = try XCTUnwrap(NSScreen.main ?? NSScreen.screens.first)

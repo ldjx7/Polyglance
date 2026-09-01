@@ -145,4 +145,16 @@ public sealed class CaptureRegionGeometryTests
 
         Assert.Equal(new Int32Rect(20, 10, 40, 20), region);
     }
+
+    [Fact]
+    public void SelectionCanCrossTheSeamBetweenTwoDisplays()
+    {
+        var region = CaptureRegionGeometry.ToBitmapRegion(
+            new Rect(1800, 120, 400, 600),
+            new Size(3840, 1080),
+            bitmapPixelWidth: 3840,
+            bitmapPixelHeight: 1080);
+
+        Assert.Equal(new Int32Rect(1800, 120, 400, 600), region);
+    }
 }

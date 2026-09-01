@@ -8,6 +8,35 @@ enum ScreenshotCapturePolicy {
     // so including our existing windows is safe and lets users capture the
     // translator/result panels themselves.
     static let includesCurrentApplicationWindows = true
+
+    static func usesVirtualDesktop(
+        screenCount: Int,
+        preferredAction: ScreenshotPreferredAction?
+    ) -> Bool {
+        guard screenCount > 1 else {
+            return false
+        }
+        switch preferredAction {
+        case .longScreenshot, .screenRecording:
+            // These modes hand the selected rectangle to display-bound capture
+            // engines. Standard screenshots, OCR and screenshot translation can
+            // consume the composed virtual-desktop bitmap directly.
+            return false
+        case .screenTranslation, .none:
+            return true
+        }
+    }
+
+    /// A pin replaces the selected pixels in place, so the overlay must stay up
+    /// until the pin window has drawn its first frame. Tearing it down in the
+    /// same run loop turn exposes one frame of the untouched desktop, which
+    /// reads as the pin flashing in from the clipboard.
+    static func keepsOverlayUntilHandoff(for action: ScreenshotSelectionAction?) -> Bool {
+        if case .pin = action {
+            return true
+        }
+        return false
+    }
 }
 
 @MainActor
@@ -50,18 +79,39 @@ final class ScreenshotCoordinator {
     }
 
     func captureAndPin(preferredAction: ScreenshotPreferredAction? = nil) async throws {
+        guard selectionSession == nil, !isCapturing else {
+            return
+        }
+        isCapturing = true
+        var keepsOverlayUntilHandoff = false
+        defer {
+            let session = selectionSession
+            if keepsOverlayUntilHandoff {
+                DispatchQueue.main.async { session?.dismiss() }
+            } else {
+                session?.dismiss()
+            }
+            selectionSession = nil
+            isCapturing = false
+        }
         guard let action = try await captureSelectionAction(
             preferredAction: preferredAction
         ) else {
             return
         }
+        keepsOverlayUntilHandoff = ScreenshotCapturePolicy
+            .keepsOverlayUntilHandoff(for: action)
         switch action {
         case let .copy(result):
             try ImagePasteboard.write(result.image)
         case let .save(result):
             _ = try fileSaver.save(result.image)
         case let .pin(result):
-            pinWindowManager.pin(result.image, sourceFrame: result.screenFrame)
+            pinWindowManager.pin(
+                result.image,
+                sourceFrame: result.screenFrame,
+                preferredDisplaySize: result.screenFrame.size
+            )
         case let .ocrCopy(result):
             let document = try await ocrService.recognizeDocument(in: result.image)
             guard pinWindowManager.pinOCRSelection(
@@ -106,20 +156,53 @@ final class ScreenshotCoordinator {
     private func captureSelectionAction(
         preferredAction: ScreenshotPreferredAction?
     ) async throws -> ScreenshotSelectionAction? {
-        guard selectionSession == nil, !isCapturing else {
-            return nil
-        }
-        isCapturing = true
-        defer {
-            selectionSession = nil
-            isCapturing = false
-        }
         guard CGPreflightScreenCaptureAccess() else {
             _ = CGRequestScreenCaptureAccess()
             throw ScreenshotError.permissionRequired(restartRequired: false)
         }
         guard let screen = screenUnderPointer() else {
             throw ScreenshotError.screenUnavailable
+        }
+
+        if ScreenshotCapturePolicy.usesVirtualDesktop(
+            screenCount: NSScreen.screens.count,
+            preferredAction: preferredAction
+        ) {
+            let screens = NSScreen.screens
+            var segments: [VirtualDesktopCapture.Segment] = []
+            for candidate in screens {
+                segments.append(VirtualDesktopCapture.Segment(
+                    image: try await capture(screen: candidate),
+                    frame: candidate.frame,
+                    backingScaleFactor: candidate.backingScaleFactor
+                ))
+            }
+            guard let desktop = VirtualDesktopCapture.compose(segments) else {
+                throw ScreenshotError.screenUnavailable
+            }
+            let detector = VirtualDesktopRegionDetector(
+                captureFrame: desktop.frame,
+                entries: screens.compactMap { candidate in
+                    ScreenshotRegionDetector.capture(for: candidate).map {
+                        VirtualDesktopRegionDetector.Entry(frame: candidate.frame, detector: $0)
+                    }
+                }
+            )
+            let session = ScreenSelectionSession(
+                image: desktop.image,
+                screen: screen,
+                captureFrame: desktop.frame,
+                inactiveScreenFrames: [],
+                regionProvider: { point in detector.windowRegion(at: point) },
+                regionRefiner: { point in detector.refinedElementRegion(at: point) },
+                preferredAction: preferredAction
+            )
+            selectionSession = session
+            return await withCheckedContinuation { continuation in
+                session.present { result in
+                    continuation.resume(returning: result)
+                }
+            }
         }
 
         let image = try await capture(screen: screen)

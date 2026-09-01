@@ -19,6 +19,9 @@ namespace Polyglance.UI.Views;
 
 public partial class PinWindow : Window
 {
+    // Eight DIPs of transparent shadow breathing room plus the one-DIP border
+    // that participates in WPF layout before the image content begins.
+    internal const double ContentInset = 9;
     private readonly BitmapSource _bitmap;
     private readonly TranslationService? _translationService;
     private readonly AppConfiguration? _configuration;
@@ -40,12 +43,18 @@ public partial class PinWindow : Window
     internal MagnifierControl ColorMagnifierControl => _colorMagnifier;
     internal ScreenshotToolbar AnnotationTools => AnnotationToolbar;
     internal string ColorPickerMenuHeader => ColorPickerMenuItem.Header?.ToString() ?? string.Empty;
+    internal bool IsSelectionHighlighted { get; private set; }
+    internal Thickness SelectionBorderThickness => ContainerBorder.BorderThickness;
+    internal Color SelectionBorderColor => ((SolidColorBrush)ContainerBorder.BorderBrush).Color;
+    internal Color SelectionShadowColor => Shadow.Color;
+    internal double SelectionShadowOpacity => Shadow.Opacity;
 
     public PinWindow(
         BitmapSource bitmap,
         TranslationService? translationService = null,
-        AppConfiguration? configuration = null)
-        : this(bitmap, translationService, configuration, Clipboard.SetText)
+        AppConfiguration? configuration = null,
+        Size? capturedDisplaySize = null)
+        : this(bitmap, translationService, configuration, Clipboard.SetText, capturedDisplaySize)
     {
     }
 
@@ -53,7 +62,9 @@ public partial class PinWindow : Window
         BitmapSource bitmap,
         TranslationService? translationService,
         AppConfiguration? configuration,
-        Action<string> colorClipboardWriter)
+        Action<string> colorClipboardWriter,
+        Size? capturedDisplaySize = null,
+        bool saveToHistory = true)
     {
         InitializeComponent();
         _bitmap = bitmap;
@@ -76,21 +87,79 @@ public partial class PinWindow : Window
         };
         PinImage.Source = bitmap;
         Rect workArea = SystemParameters.WorkArea;
-        double maximumWidth = Math.Max(240, workArea.Width * 0.72);
-        double maximumHeight = Math.Max(180, workArea.Height * 0.72);
-        _scale = Math.Min(1, Math.Min(
-            maximumWidth / Math.Max(1, bitmap.PixelWidth),
-            maximumHeight / Math.Max(1, bitmap.PixelHeight)));
-        PinImage.Width = bitmap.PixelWidth * _scale;
-        PinImage.Height = bitmap.PixelHeight * _scale;
+        Size initialDisplaySize = CalculateInitialDisplaySize(
+            new Size(bitmap.PixelWidth, bitmap.PixelHeight),
+            capturedDisplaySize,
+            new Size(Math.Max(240, workArea.Width), Math.Max(180, workArea.Height)));
+        _scale = initialDisplaySize.Width / Math.Max(1, bitmap.PixelWidth);
+        PinImage.Width = initialDisplaySize.Width;
+        PinImage.Height = initialDisplaySize.Height;
 
         AnnotationToolbar.ToolSelected += OnAnnotationToolSelected;
         AnnotationToolbar.ActionTriggered += OnAnnotationActionTriggered;
 
-        PinHistoryManager.SavePinToHistory(bitmap);
+        if (saveToHistory)
+            PinHistoryManager.SavePinToHistory(bitmap);
 
         OcrMenuItem.IsEnabled = true;
         TranslateMenuItem.IsEnabled = translationService != null && configuration != null;
+        // The pin is created as the active replacement for the screenshot
+        // selection. Apply its selected appearance before the first render so
+        // there is no inactive-to-active flash after Show().
+        SetSelectionHighlight(true);
+    }
+
+    private void OnActivated(object? sender, EventArgs e) => SetSelectionHighlight(true);
+
+    private void OnDeactivated(object? sender, EventArgs e) => SetSelectionHighlight(false);
+
+    private void SetSelectionHighlight(bool highlighted)
+    {
+        IsSelectionHighlighted = highlighted;
+        ContainerBorder.BorderBrush = new SolidColorBrush(highlighted
+            ? Color.FromArgb(0x60, 0x0A, 0x84, 0xFF)
+            : Color.FromArgb(0x20, 0, 0, 0));
+        ContainerBorder.BorderThickness = new Thickness(1);
+        Shadow.Color = highlighted ? Color.FromRgb(0x0A, 0x84, 0xFF) : Colors.Black;
+        Shadow.BlurRadius = highlighted ? 24 : 12;
+        Shadow.ShadowDepth = highlighted ? 0 : 3;
+        Shadow.Opacity = highlighted ? 0.50 : 0.3;
+    }
+
+    internal void SetSelectionHighlightForTesting(bool highlighted) =>
+        SetSelectionHighlight(highlighted);
+
+    internal static Point WindowOriginForContentFrame(Rect contentFrame) =>
+        new(contentFrame.X - ContentInset, contentFrame.Y - ContentInset);
+
+    /// <summary>
+    /// Normal screenshots provide their size in WPF device-independent pixels.
+    /// It must win over the bitmap's backing-pixel size, especially at 125%-200%
+    /// display scaling. Images without capture geometry are fitted to one work
+    /// area, without the former arbitrary 72% reduction.
+    /// </summary>
+    internal static Size CalculateInitialDisplaySize(
+        Size bitmapPixelSize,
+        Size? capturedDisplaySize,
+        Size maximumDisplaySize)
+    {
+        if (capturedDisplaySize is { } captured
+            && double.IsFinite(captured.Width)
+            && double.IsFinite(captured.Height)
+            && captured.Width > 0
+            && captured.Height > 0)
+        {
+            return captured;
+        }
+
+        double bitmapWidth = Math.Max(1, bitmapPixelSize.Width);
+        double bitmapHeight = Math.Max(1, bitmapPixelSize.Height);
+        double maximumWidth = Math.Max(1, maximumDisplaySize.Width);
+        double maximumHeight = Math.Max(1, maximumDisplaySize.Height);
+        double scale = Math.Min(1, Math.Min(
+            maximumWidth / bitmapWidth,
+            maximumHeight / bitmapHeight));
+        return new Size(bitmapWidth * scale, bitmapHeight * scale);
     }
 
     private void OnMouseDown(object sender, MouseButtonEventArgs e)
