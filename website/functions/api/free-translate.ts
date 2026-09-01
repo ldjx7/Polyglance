@@ -423,12 +423,104 @@ function sanitizedTranslationStream(
   }));
 }
 
+export interface ProviderCandidate {
+  name: string;
+  endpoint: string;
+  apiKey: string;
+  model: string;
+  weight: number;
+  extraHeaders?: Record<string, string>;
+}
+
+export function extractKeys(raw?: string): string[] {
+  if (!raw) return [];
+  return raw
+    .split(/[,\n]/)
+    .map((k) => k.trim())
+    .filter((k) => k.length > 0);
+}
+
+export function getAvailableCandidates(env: TranslationEnvironment): ProviderCandidate[] {
+  const candidates: ProviderCandidate[] = [];
+
+  for (const key of extractKeys(env.GEMINI_API_KEY)) {
+    candidates.push({
+      name: 'Gemini',
+      endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      apiKey: key,
+      model: 'gemini-2.0-flash',
+      weight: 5,
+    });
+  }
+
+  for (const key of extractKeys(env.GROQ_API_KEY)) {
+    candidates.push({
+      name: 'Groq',
+      endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+      apiKey: key,
+      model: 'llama-3.3-70b-versatile',
+      weight: 5,
+    });
+  }
+
+  for (const key of extractKeys(env.SILICONFLOW_API_KEY)) {
+    candidates.push({
+      name: 'SiliconFlow',
+      endpoint: 'https://api.siliconflow.cn/v1/chat/completions',
+      apiKey: key,
+      model: 'Qwen/Qwen2.5-7B-Instruct',
+      weight: 4,
+    });
+  }
+
+  for (const key of extractKeys(env.OPENROUTER_API_KEY)) {
+    candidates.push({
+      name: 'OpenRouter',
+      endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+      apiKey: key,
+      model: 'openrouter/free',
+      weight: 2,
+      extraHeaders: {
+        'HTTP-Referer': 'https://polyglance.ldjx7.dpdns.org',
+        'X-Title': 'Polyglance',
+      },
+    });
+  }
+
+  return candidates;
+}
+
+export function buildTrySequence(candidates: ProviderCandidate[]): ProviderCandidate[] {
+  if (candidates.length <= 1) return [...candidates];
+
+  const pool = [...candidates];
+  const sequence: ProviderCandidate[] = [];
+
+  while (pool.length > 0) {
+    const totalWeight = pool.reduce((sum, c) => sum + c.weight, 0);
+    let rand = Math.random() * totalWeight;
+    let selectedIndex = 0;
+    for (let i = 0; i < pool.length; i++) {
+      rand -= pool[i].weight;
+      if (rand <= 0) {
+        selectedIndex = i;
+        break;
+      }
+    }
+    sequence.push(pool[selectedIndex]);
+    pool.splice(selectedIndex, 1);
+  }
+
+  return sequence;
+}
+
 export async function handleTranslationRequest(
   request: Request,
   env: TranslationEnvironment,
   fetcher: typeof fetch = fetch,
 ): Promise<Response> {
-  if (!env.OPENROUTER_API_KEY) {
+  const candidates = getAvailableCandidates(env);
+  if (candidates.length === 0) {
     return failure('Free AI translation is not configured', 503);
   }
 
@@ -460,60 +552,71 @@ export async function handleTranslationRequest(
     );
   }
 
-  let upstream: Response;
-  try {
-    upstream = await fetcher(UPSTREAM_ENDPOINT, {
-      method: 'POST',
-      headers: {
+  const trySequence = buildTrySequence(candidates);
+  let lastErrorStatus = 502;
+  let lastErrorMessage = 'All free AI translation providers failed';
+
+  for (const candidate of trySequence) {
+    try {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
-        'HTTP-Referer': 'https://polyglance.ldjx7.dpdns.org',
-        'X-Title': 'Polyglance',
-      },
-      signal: AbortSignal.timeout(45_000),
-      body: JSON.stringify({
-        model: DEFAULT_MODEL,
-        temperature: 0,
-        max_tokens: MAX_OUTPUT_TOKENS,
-        stream: body.stream,
-        // Refuse to let the upstream provider train on user text.
-        provider: { data_collection: 'deny' },
-        messages: [
-          { role: 'system', content: buildSystemPrompt(body) },
-          { role: 'user', content: body.text },
-        ],
-      }),
-    });
-  } catch (error) {
-    console.error(JSON.stringify({
-      message: 'free AI upstream request failed',
-      error: error instanceof Error ? error.name : 'unknown',
-    }));
-    return failure('Upstream request failed', 502);
+        Authorization: `Bearer ${candidate.apiKey}`,
+        ...(candidate.extraHeaders || {}),
+      };
+
+      const upstream = await fetcher(candidate.endpoint, {
+        method: 'POST',
+        headers,
+        signal: AbortSignal.timeout(30_000),
+        body: JSON.stringify({
+          model: candidate.model,
+          temperature: 0,
+          max_tokens: MAX_OUTPUT_TOKENS,
+          stream: body.stream,
+          ...(candidate.name === 'OpenRouter' ? { provider: { data_collection: 'deny' } } : {}),
+          messages: [
+            { role: 'system', content: buildSystemPrompt(body) },
+            { role: 'user', content: body.text },
+          ],
+        }),
+      });
+
+      if (!upstream.ok || !upstream.body) {
+        console.warn(JSON.stringify({
+          message: `Provider ${candidate.name} returned error status`,
+          status: upstream.status,
+        }));
+        lastErrorStatus = upstream.status >= 500 ? 502 : upstream.status;
+        lastErrorMessage = `Provider ${candidate.name} returned status ${upstream.status}`;
+        continue;
+      }
+
+      if (body.stream) {
+        return new Response(sanitizedTranslationStream(upstream.body), {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-store',
+            'X-Content-Type-Options': 'nosniff',
+          },
+        });
+      }
+
+      const reshaped = reshapeNonStreaming(await upstream.json().catch(() => null));
+      if (reshaped) {
+        return reshaped;
+      }
+      lastErrorMessage = `Provider ${candidate.name} returned an unusable response`;
+    } catch (error) {
+      console.warn(JSON.stringify({
+        message: `Provider ${candidate.name} request threw error`,
+        error: error instanceof Error ? error.message : 'unknown',
+      }));
+      lastErrorMessage = error instanceof Error ? error.message : 'Network error';
+    }
   }
 
-  if (!upstream.ok || !upstream.body) {
-    // Surface only the status; upstream bodies can echo request metadata.
-    console.error(JSON.stringify({
-      message: 'free AI upstream rejected request',
-      status: upstream.status,
-    }));
-    return failure('Upstream rejected the request', 502);
-  }
-
-  if (body.stream) {
-    return new Response(sanitizedTranslationStream(upstream.body), {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-store',
-        'X-Content-Type-Options': 'nosniff',
-      },
-    });
-  }
-
-  const reshaped = reshapeNonStreaming(await upstream.json().catch(() => null));
-  return reshaped ?? failure('Upstream returned an unusable response', 502);
+  return failure(lastErrorMessage, lastErrorStatus);
 }
 
 export const onRequestPost: PagesFunction<TranslationEnvironment> = async (context) => {

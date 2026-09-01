@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   buildSystemPrompt,
+  getAvailableCandidates,
   handleTranslationRequest,
   parseTranslateBody,
   type TranslationEnvironment,
@@ -255,4 +256,47 @@ test('streams only translated text while removing upstream model and provider me
       'data: [DONE]\n\n',
   );
   assert.doesNotMatch(text, /paid-model|vendor|OPENROUTER/);
+});
+
+test('collects candidates from multiple providers and supports multiple comma-separated keys', () => {
+  const env: TranslationEnvironment = {
+    GEMINI_API_KEY: 'gemini-1, gemini-2',
+    GROQ_API_KEY: 'groq-1',
+    SILICONFLOW_API_KEY: 'silicon-1',
+    OPENROUTER_API_KEY: 'openrouter-1',
+  };
+
+  const candidates = getAvailableCandidates(env);
+  assert.equal(candidates.length, 5);
+  assert.equal(candidates.filter((c) => c.name === 'Gemini').length, 2);
+  assert.equal(candidates.filter((c) => c.name === 'Groq').length, 1);
+  assert.equal(candidates.filter((c) => c.name === 'SiliconFlow').length, 1);
+  assert.equal(candidates.filter((c) => c.name === 'OpenRouter').length, 1);
+});
+
+test('automatically fails over to next candidate if first candidate returns 429', async () => {
+  const kv = new MemoryKV();
+  const env: TranslationEnvironment = {
+    GEMINI_API_KEY: 'gemini-1',
+    GROQ_API_KEY: 'groq-1',
+    POLYGLANCE_STATS: kv as unknown as KVNamespace,
+  };
+
+  let attempt = 0;
+  const response = await handleTranslationRequest(
+    request({ text: 'Hello', target: 'zh-CN' }),
+    env,
+    async () => {
+      attempt += 1;
+      if (attempt === 1) {
+        return new Response('{"error":"rate limited"}', { status: 429 });
+      }
+      return Response.json({ choices: [{ message: { content: '你好' } }] });
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(attempt, 2);
+  const data = await response.json();
+  assert.deepEqual(data, { choices: [{ message: { content: '你好' } }] });
 });
