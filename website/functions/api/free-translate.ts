@@ -446,9 +446,9 @@ export function getAvailableCandidates(env: TranslationEnvironment): ProviderCan
   for (const key of extractKeys(env.GEMINI_API_KEY)) {
     candidates.push({
       name: 'Gemini',
-      endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      endpoint: env.GEMINI_BASE_URL?.trim() || 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
       apiKey: key,
-      model: 'gemini-2.0-flash',
+      model: env.GEMINI_MODEL?.trim() || 'gemini-2.0-flash',
       weight: 5,
     });
   }
@@ -456,9 +456,9 @@ export function getAvailableCandidates(env: TranslationEnvironment): ProviderCan
   for (const key of extractKeys(env.GROQ_API_KEY)) {
     candidates.push({
       name: 'Groq',
-      endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+      endpoint: env.GROQ_BASE_URL?.trim() || 'https://api.groq.com/openai/v1/chat/completions',
       apiKey: key,
-      model: 'llama-3.3-70b-versatile',
+      model: env.GROQ_MODEL?.trim() || 'llama-3.3-70b-versatile',
       weight: 5,
     });
   }
@@ -466,9 +466,9 @@ export function getAvailableCandidates(env: TranslationEnvironment): ProviderCan
   for (const key of extractKeys(env.SILICONFLOW_API_KEY)) {
     candidates.push({
       name: 'SiliconFlow',
-      endpoint: 'https://api.siliconflow.cn/v1/chat/completions',
+      endpoint: env.SILICONFLOW_BASE_URL?.trim() || 'https://api.siliconflow.cn/v1/chat/completions',
       apiKey: key,
-      model: 'Qwen/Qwen2.5-7B-Instruct',
+      model: env.SILICONFLOW_MODEL?.trim() || 'Qwen/Qwen2.5-7B-Instruct',
       weight: 4,
     });
   }
@@ -476,9 +476,9 @@ export function getAvailableCandidates(env: TranslationEnvironment): ProviderCan
   for (const key of extractKeys(env.OPENROUTER_API_KEY)) {
     candidates.push({
       name: 'OpenRouter',
-      endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+      endpoint: env.OPENROUTER_BASE_URL?.trim() || 'https://openrouter.ai/api/v1/chat/completions',
       apiKey: key,
-      model: 'openrouter/free',
+      model: env.OPENROUTER_MODEL?.trim() || 'openrouter/free',
       weight: 2,
       extraHeaders: {
         'HTTP-Referer': 'https://polyglance.ldjx7.dpdns.org',
