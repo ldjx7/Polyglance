@@ -194,10 +194,16 @@ jobs:
           RELEASE_NOTES: docs/releases/${{ github.ref_name }}.md
         run: |
           set -euo pipefail
+          prerelease_flag=""
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            prerelease_flag="--prerelease"
+          fi
+
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release edit "$GITHUB_REF_NAME" \
               --title "Polyglance ${{ steps.version.outputs.number }}" \
               --notes-file "$RELEASE_NOTES" \
+              $prerelease_flag \
               --draft
             gh release upload "$GITHUB_REF_NAME" \
               "$RELEASE_DIRECTORY/$ARCHIVE_NAME" \
@@ -212,5 +218,6 @@ jobs:
               --verify-tag \
               --notes-file "$RELEASE_NOTES" \
               --title "Polyglance ${{ steps.version.outputs.number }}" \
+              $prerelease_flag \
               --draft
           fi

@@ -171,4 +171,8 @@ jobs:
             (Join-Path $env:RELEASE_DIRECTORY $env:SETUP_NAME) `
             (Join-Path $env:RELEASE_DIRECTORY "appcast-windows.xml") `
             --clobber
-          gh release edit $env:RELEASE_TAG --draft=false --latest
+          if ($env:RELEASE_TAG -like "*-*") {
+            gh release edit $env:RELEASE_TAG --draft=false --prerelease
+          } else {
+            gh release edit $env:RELEASE_TAG --draft=false --latest
+          }
