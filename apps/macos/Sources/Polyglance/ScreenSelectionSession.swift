@@ -1455,7 +1455,8 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
 
     private func updateSubToolbarPosition() {
         guard let subToolbar, !subToolbar.isHidden, !toolbar.isHidden else { return }
-        let subSize = CGSize(width: min(bounds.width - 20, 390), height: 34)
+        let naturalWidth = subToolbar.fittingSize.width > 50 ? subToolbar.fittingSize.width : 360
+        let subSize = CGSize(width: min(bounds.width - 20, naturalWidth), height: 34)
         var originX = toolbar.frame.minX
         if originX + subSize.width > bounds.maxX - 10 {
             originX = bounds.maxX - subSize.width - 10

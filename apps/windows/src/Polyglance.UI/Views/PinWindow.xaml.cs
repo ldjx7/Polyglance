@@ -31,7 +31,7 @@ public partial class PinWindow : Window
     private double _scale = 1.0;
     private readonly List<UIElement> _annotationHistory = new();
     private readonly List<UIElement> _annotationRedoStack = new();
-    private Shape? _currentDrawingShape;
+    private FrameworkElement? _currentDrawingShape;
     private Canvas? _currentMosaicStroke;
     private Point _lastMosaicPoint;
     private Point _drawingStart;
@@ -472,14 +472,28 @@ public partial class PinWindow : Window
                 _currentDrawingShape = pen;
                 break;
             case "Rect":
-                var rect = new Rectangle { Stroke = brush, StrokeThickness = strokeSize, RadiusX = 3, RadiusY = 3 };
+                var rect = new Rectangle
+                {
+                    Stroke = brush,
+                    StrokeThickness = strokeSize,
+                    RadiusX = 3,
+                    RadiusY = 3,
+                    StrokeDashArray = AnnotationToolbar.IsDashed ? new DoubleCollection { 3, 2 } : null,
+                    Fill = AnnotationToolbar.IsFilled ? brush : Brushes.Transparent
+                };
                 Canvas.SetLeft(rect, point.X);
                 Canvas.SetTop(rect, point.Y);
                 AnnotationCanvas.Children.Add(rect);
                 _currentDrawingShape = rect;
                 break;
             case "Ellipse":
-                var ellipse = new Ellipse { Stroke = brush, StrokeThickness = strokeSize };
+                var ellipse = new Ellipse
+                {
+                    Stroke = brush,
+                    StrokeThickness = strokeSize,
+                    StrokeDashArray = AnnotationToolbar.IsDashed ? new DoubleCollection { 3, 2 } : null,
+                    Fill = AnnotationToolbar.IsFilled ? brush : Brushes.Transparent
+                };
                 Canvas.SetLeft(ellipse, point.X);
                 Canvas.SetTop(ellipse, point.Y);
                 AnnotationCanvas.Children.Add(ellipse);
@@ -495,7 +509,8 @@ public partial class PinWindow : Window
                     Stroke = brush,
                     StrokeThickness = strokeSize,
                     StrokeStartLineCap = PenLineCap.Round,
-                    StrokeEndLineCap = PenLineCap.Round
+                    StrokeEndLineCap = PenLineCap.Round,
+                    StrokeDashArray = AnnotationToolbar.IsDashed ? new DoubleCollection { 3, 2 } : null
                 };
                 AnnotationCanvas.Children.Add(line);
                 _currentDrawingShape = line;
@@ -508,6 +523,7 @@ public partial class PinWindow : Window
                     StrokeStartLineCap = PenLineCap.Round,
                     StrokeEndLineCap = PenLineCap.Round,
                     StrokeLineJoin = PenLineJoin.Round,
+                    StrokeDashArray = AnnotationToolbar.IsDashed ? new DoubleCollection { 3, 2 } : null,
                     Data = MakeArrowGeometry(point, point, strokeSize)
                 };
                 AnnotationCanvas.Children.Add(arrow);
@@ -520,8 +536,9 @@ public partial class PinWindow : Window
                     BorderBrush = brush,
                     BorderThickness = new Thickness(1),
                     Foreground = brush,
-                    FontSize = 16,
-                    FontWeight = FontWeights.Bold,
+                    FontSize = AnnotationToolbar.FontSizeValue,
+                    FontWeight = AnnotationToolbar.IsBold ? FontWeights.Bold : FontWeights.Normal,
+                    FontStyle = AnnotationToolbar.IsItalic ? FontStyles.Italic : FontStyles.Normal,
                     MinWidth = 60,
                     CaretBrush = brush
                 };
@@ -548,26 +565,46 @@ public partial class PinWindow : Window
                 UpdateAnnotationUndoRedoState();
                 break;
             case "Mosaic":
-                double mosaicDiameter = Math.Max(18, strokeSize * 5);
-                _currentMosaicStroke = MosaicStrokeBuilder.Begin(
-                    _bitmap,
-                    new Size(PinSurface.ActualWidth, PinSurface.ActualHeight),
-                    point,
-                    mosaicDiameter);
-                _lastMosaicPoint = point;
-                AnnotationCanvas.Children.Add(_currentMosaicStroke);
+                if (AnnotationToolbar.MosaicShapeType == 1)
+                {
+                    var rectImg = MosaicStrokeBuilder.CreateRectMosaic(
+                        _bitmap,
+                        new Size(PinSurface.ActualWidth, PinSurface.ActualHeight),
+                        new Rect(point, new Size(1, 1)),
+                        Math.Max(4, strokeSize * 2),
+                        AnnotationToolbar.MosaicIsBlur);
+                    Canvas.SetLeft(rectImg, point.X);
+                    Canvas.SetTop(rectImg, point.Y);
+                    AnnotationCanvas.Children.Add(rectImg);
+                    _currentDrawingShape = rectImg;
+                }
+                else
+                {
+                    double mosaicDiameter = Math.Max(18, strokeSize * 5);
+                    _currentMosaicStroke = MosaicStrokeBuilder.Begin(
+                        _bitmap,
+                        new Size(PinSurface.ActualWidth, PinSurface.ActualHeight),
+                        point,
+                        mosaicDiameter,
+                        AnnotationToolbar.MosaicIsBlur);
+                    _lastMosaicPoint = point;
+                    AnnotationCanvas.Children.Add(_currentMosaicStroke);
+                }
                 break;
             case "Number":
+                bool isOutline = AnnotationToolbar.NumberStyle == 1;
                 var marker = new Border
                 {
                     Width = 24,
                     Height = 24,
                     CornerRadius = new CornerRadius(12),
-                    Background = brush,
+                    Background = isOutline ? Brushes.Transparent : brush,
+                    BorderBrush = isOutline ? brush : Brushes.Transparent,
+                    BorderThickness = isOutline ? new Thickness(2) : new Thickness(0),
                     Child = new TextBlock
                     {
                         Text = _nextNumber.ToString(),
-                        Foreground = Brushes.White,
+                        Foreground = isOutline ? brush : Brushes.White,
                         FontWeight = FontWeights.Bold,
                         FontSize = 13,
                         HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
@@ -617,6 +654,24 @@ public partial class PinWindow : Window
         {
             arrow.Data = MakeArrowGeometry(_drawingStart, current, arrow.StrokeThickness);
         }
+        else if (_currentDrawingShape is System.Windows.Controls.Image mosaicImg && _activeAnnotationTool == "Mosaic")
+        {
+            double x = Math.Min(_drawingStart.X, current.X);
+            double y = Math.Min(_drawingStart.Y, current.Y);
+            double w = Math.Max(1, Math.Abs(current.X - _drawingStart.X));
+            double h = Math.Max(1, Math.Abs(current.Y - _drawingStart.Y));
+            var newImg = MosaicStrokeBuilder.CreateRectMosaic(
+                _bitmap,
+                new Size(PinSurface.ActualWidth, PinSurface.ActualHeight),
+                new Rect(x, y, w, h),
+                Math.Max(4, AnnotationToolbar.CurrentStrokeSize * 2),
+                AnnotationToolbar.MosaicIsBlur);
+            mosaicImg.Source = newImg.Source;
+            mosaicImg.Width = w;
+            mosaicImg.Height = h;
+            Canvas.SetLeft(mosaicImg, x);
+            Canvas.SetTop(mosaicImg, y);
+        }
         else if (_currentMosaicStroke is not null && _activeAnnotationTool == "Mosaic")
         {
             double diameter = Math.Max(18, AnnotationToolbar.CurrentStrokeSize * 5);
@@ -630,7 +685,8 @@ public partial class PinWindow : Window
                     _bitmap,
                     new Size(PinSurface.ActualWidth, PinSurface.ActualHeight),
                     sample,
-                    diameter);
+                    diameter,
+                    AnnotationToolbar.MosaicIsBlur);
             }
             _lastMosaicPoint = current;
         }

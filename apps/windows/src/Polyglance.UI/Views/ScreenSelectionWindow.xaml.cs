@@ -51,7 +51,7 @@ public partial class ScreenSelectionWindow : Window
 
     private readonly List<UIElement> _annotationHistory = new();
     private readonly List<UIElement> _redoStack = new();
-    private Shape? _currentDrawingShape;
+    private FrameworkElement? _currentDrawingShape;
     private Canvas? _currentMosaicStroke;
     private Point _lastMosaicPoint;
     private Point _drawingStart;
@@ -683,7 +683,9 @@ public partial class ScreenSelectionWindow : Window
                     Stroke = brush,
                     StrokeThickness = strokeSize,
                     RadiusX = 3,
-                    RadiusY = 3
+                    RadiusY = 3,
+                    StrokeDashArray = Toolbar.IsDashed ? new DoubleCollection { 3, 2 } : null,
+                    Fill = Toolbar.IsFilled ? brush : Brushes.Transparent
                 };
                 Canvas.SetLeft(rect, pt.X);
                 Canvas.SetTop(rect, pt.Y);
@@ -695,7 +697,9 @@ public partial class ScreenSelectionWindow : Window
                 var ellipse = new Ellipse
                 {
                     Stroke = brush,
-                    StrokeThickness = strokeSize
+                    StrokeThickness = strokeSize,
+                    StrokeDashArray = Toolbar.IsDashed ? new DoubleCollection { 3, 2 } : null,
+                    Fill = Toolbar.IsFilled ? brush : Brushes.Transparent
                 };
                 Canvas.SetLeft(ellipse, pt.X);
                 Canvas.SetTop(ellipse, pt.Y);
@@ -727,7 +731,8 @@ public partial class ScreenSelectionWindow : Window
                     Stroke = brush,
                     StrokeThickness = strokeSize,
                     StrokeStartLineCap = PenLineCap.Round,
-                    StrokeEndLineCap = PenLineCap.Round
+                    StrokeEndLineCap = PenLineCap.Round,
+                    StrokeDashArray = Toolbar.IsDashed ? new DoubleCollection { 3, 2 } : null
                 };
                 AnnotationCanvas.Children.Add(line);
                 _currentDrawingShape = line;
@@ -741,6 +746,7 @@ public partial class ScreenSelectionWindow : Window
                     StrokeStartLineCap = PenLineCap.Round,
                     StrokeEndLineCap = PenLineCap.Round,
                     StrokeLineJoin = PenLineJoin.Round,
+                    StrokeDashArray = Toolbar.IsDashed ? new DoubleCollection { 3, 2 } : null,
                     Data = MakeArrowGeometry(pt, pt, strokeSize)
                 };
                 AnnotationCanvas.Children.Add(arrowPath);
@@ -754,8 +760,9 @@ public partial class ScreenSelectionWindow : Window
                     BorderBrush = brush,
                     BorderThickness = new Thickness(1),
                     Foreground = brush,
-                    FontSize = 16,
-                    FontWeight = FontWeights.Bold,
+                    FontSize = Toolbar.FontSizeValue,
+                    FontWeight = Toolbar.IsBold ? FontWeights.Bold : FontWeights.Normal,
+                    FontStyle = Toolbar.IsItalic ? FontStyles.Italic : FontStyles.Normal,
                     AcceptsReturn = true,
                     MinWidth = 60,
                     CaretBrush = brush
@@ -785,27 +792,47 @@ public partial class ScreenSelectionWindow : Window
                 break;
 
             case "Mosaic":
-                double mosaicDiameter = Math.Max(18, strokeSize * 5);
-                _currentMosaicStroke = MosaicStrokeBuilder.Begin(
-                    _fullScreenBitmap,
-                    OverlayViewSize(),
-                    pt,
-                    mosaicDiameter);
-                _lastMosaicPoint = pt;
-                AnnotationCanvas.Children.Add(_currentMosaicStroke);
+                if (Toolbar.MosaicShapeType == 1)
+                {
+                    var rectImg = MosaicStrokeBuilder.CreateRectMosaic(
+                        _fullScreenBitmap,
+                        OverlayViewSize(),
+                        new Rect(pt, new Size(1, 1)),
+                        Math.Max(4, strokeSize * 2),
+                        Toolbar.MosaicIsBlur);
+                    Canvas.SetLeft(rectImg, pt.X);
+                    Canvas.SetTop(rectImg, pt.Y);
+                    AnnotationCanvas.Children.Add(rectImg);
+                    _currentDrawingShape = rectImg;
+                }
+                else
+                {
+                    double mosaicDiameter = Math.Max(18, strokeSize * 5);
+                    _currentMosaicStroke = MosaicStrokeBuilder.Begin(
+                        _fullScreenBitmap,
+                        OverlayViewSize(),
+                        pt,
+                        mosaicDiameter,
+                        Toolbar.MosaicIsBlur);
+                    _lastMosaicPoint = pt;
+                    AnnotationCanvas.Children.Add(_currentMosaicStroke);
+                }
                 break;
 
             case "Number":
+                bool isOutline = Toolbar.NumberStyle == 1;
                 var marker = new Border
                 {
                     Width = 24,
                     Height = 24,
                     CornerRadius = new CornerRadius(12),
-                    Background = brush,
+                    Background = isOutline ? Brushes.Transparent : brush,
+                    BorderBrush = isOutline ? brush : Brushes.Transparent,
+                    BorderThickness = isOutline ? new Thickness(2) : new Thickness(0),
                     Child = new TextBlock
                     {
                         Text = _nextNumber.ToString(),
-                        Foreground = Brushes.White,
+                        Foreground = isOutline ? brush : Brushes.White,
                         FontWeight = FontWeights.Bold,
                         FontSize = 13,
                         HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
@@ -863,6 +890,24 @@ public partial class ScreenSelectionWindow : Window
         {
             path.Data = MakeArrowGeometry(_drawingStart, new Point(curX, curY), path.StrokeThickness);
         }
+        else if (_currentDrawingShape is System.Windows.Controls.Image mosaicImg && _activeTool == "Mosaic")
+        {
+            double x = Math.Min(_drawingStart.X, curX);
+            double y = Math.Min(_drawingStart.Y, curY);
+            double w = Math.Max(1, Math.Abs(curX - _drawingStart.X));
+            double h = Math.Max(1, Math.Abs(curY - _drawingStart.Y));
+            var newImg = MosaicStrokeBuilder.CreateRectMosaic(
+                _fullScreenBitmap,
+                OverlayViewSize(),
+                new Rect(x, y, w, h),
+                Math.Max(4, Toolbar.CurrentStrokeSize * 2),
+                Toolbar.MosaicIsBlur);
+            mosaicImg.Source = newImg.Source;
+            mosaicImg.Width = w;
+            mosaicImg.Height = h;
+            Canvas.SetLeft(mosaicImg, x);
+            Canvas.SetTop(mosaicImg, y);
+        }
         else if (_currentMosaicStroke is not null && _activeTool == "Mosaic")
         {
             double diameter = Math.Max(18, Toolbar.CurrentStrokeSize * 5);
@@ -877,7 +922,8 @@ public partial class ScreenSelectionWindow : Window
                     _fullScreenBitmap,
                     OverlayViewSize(),
                     sample,
-                    diameter);
+                    diameter,
+                    Toolbar.MosaicIsBlur);
             }
             _lastMosaicPoint = current;
         }

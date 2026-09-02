@@ -331,8 +331,9 @@ enum ScreenshotAnnotationRenderer {
             let style = element.style
             let lineWidth = max(style.lineWidth * lineWidthScale, 0.5)
 
-            if case let .mosaic(points, _) = element {
+            if case let .mosaic(points, style) = element {
                 if let sourceImage {
+                    let isBlur = style.hasBorder
                     let destinationPoints = points.map(pointTransform)
                     let sourcePoints: [CGPoint]
                     if let sourcePixelTransform {
@@ -340,23 +341,43 @@ enum ScreenshotAnnotationRenderer {
                     } else {
                         sourcePoints = points.map(pointTransform)
                     }
-                    let sourceToDestinationScale = averageScale(
-                        sourcePoints: sourcePoints,
-                        destinationPoints: destinationPoints
-                    )
-                    let destinationBrushWidth = max(style.lineWidth * 8 * lineWidthScale, 12)
-                    drawMosaicStroke(
-                        sourceImage: sourceImage,
-                        sourcePoints: sourcePoints,
-                        destinationPoints: destinationPoints,
-                        sourceBrushWidth: destinationBrushWidth * sourceToDestinationScale,
-                        destinationBrushWidth: destinationBrushWidth,
-                        blockSize: max(
-                            style.lineWidth * 4 * max(lineWidthScale, sourceToDestinationScale),
-                            4
-                        ),
-                        in: context
-                    )
+
+                    if style.shapeType == 1,
+                       let destFirst = destinationPoints.first,
+                       let destLast = destinationPoints.last,
+                       let srcFirst = sourcePoints.first,
+                       let srcLast = sourcePoints.last {
+                        let blockSize = max(style.lineWidth * 3 * lineWidthScale, 4)
+                        drawMosaicRect(
+                            sourceImage: sourceImage,
+                            sourceStart: srcFirst,
+                            sourceEnd: srcLast,
+                            destinationStart: destFirst,
+                            destinationEnd: destLast,
+                            blockSize: blockSize,
+                            isBlur: isBlur,
+                            in: context
+                        )
+                    } else {
+                        let sourceToDestinationScale = averageScale(
+                            sourcePoints: sourcePoints,
+                            destinationPoints: destinationPoints
+                        )
+                        let destinationBrushWidth = max(style.lineWidth * 8 * lineWidthScale, 12)
+                        drawMosaicStroke(
+                            sourceImage: sourceImage,
+                            sourcePoints: sourcePoints,
+                            destinationPoints: destinationPoints,
+                            sourceBrushWidth: destinationBrushWidth * sourceToDestinationScale,
+                            destinationBrushWidth: destinationBrushWidth,
+                            blockSize: max(
+                                style.lineWidth * 4 * max(lineWidthScale, sourceToDestinationScale),
+                                4
+                            ),
+                            isBlur: isBlur,
+                            in: context
+                        )
+                    }
                 }
                 continue
             }
@@ -552,6 +573,7 @@ enum ScreenshotAnnotationRenderer {
         sourceBrushWidth: CGFloat,
         destinationBrushWidth: CGFloat,
         blockSize: CGFloat,
+        isBlur: Bool,
         in context: CGContext
     ) {
         guard sourcePoints.count > 1, destinationPoints.count > 1 else {
@@ -595,12 +617,12 @@ enum ScreenshotAnnotationRenderer {
         ) else {
             return
         }
-        lowResolutionContext.interpolationQuality = .medium
+        lowResolutionContext.interpolationQuality = isBlur ? .high : .medium
         lowResolutionContext.draw(
             sourcePatch,
             in: CGRect(x: 0, y: 0, width: lowWidth, height: lowHeight)
         )
-        guard let pixelatedPatch = lowResolutionContext.makeImage() else {
+        guard let processedPatch = lowResolutionContext.makeImage() else {
             return
         }
 
@@ -615,8 +637,77 @@ enum ScreenshotAnnotationRenderer {
         context.setLineJoin(.round)
         context.replacePathWithStrokedPath()
         context.clip()
-        context.interpolationQuality = .none
-        context.draw(pixelatedPatch, in: destinationRect)
+        context.interpolationQuality = isBlur ? .high : .none
+        context.draw(processedPatch, in: destinationRect)
+        context.restoreGState()
+    }
+
+    private static func drawMosaicRect(
+        sourceImage: CGImage,
+        sourceStart: CGPoint,
+        sourceEnd: CGPoint,
+        destinationStart: CGPoint,
+        destinationEnd: CGPoint,
+        blockSize: CGFloat,
+        isBlur: Bool,
+        in context: CGContext
+    ) {
+        let destinationRect = CGRect(
+            x: min(destinationStart.x, destinationEnd.x),
+            y: min(destinationStart.y, destinationEnd.y),
+            width: abs(destinationEnd.x - destinationStart.x),
+            height: abs(destinationEnd.y - destinationStart.y)
+        )
+        guard destinationRect.width >= 1, destinationRect.height >= 1 else { return }
+
+        let bottomLeftSourceRect = CGRect(
+            x: min(sourceStart.x, sourceEnd.x),
+            y: min(sourceStart.y, sourceEnd.y),
+            width: abs(sourceEnd.x - sourceStart.x),
+            height: abs(sourceEnd.y - sourceStart.y)
+        )
+        let topLeftSourceRect = CGRect(
+            x: bottomLeftSourceRect.minX,
+            y: CGFloat(sourceImage.height) - bottomLeftSourceRect.maxY,
+            width: bottomLeftSourceRect.width,
+            height: bottomLeftSourceRect.height
+        ).integral.intersection(CGRect(
+            x: 0,
+            y: 0,
+            width: sourceImage.width,
+            height: sourceImage.height
+        ))
+        guard !topLeftSourceRect.isNull,
+              !topLeftSourceRect.isEmpty,
+              let sourcePatch = sourceImage.cropping(to: topLeftSourceRect) else {
+            return
+        }
+
+        let lowWidth = max(1, Int(ceil(topLeftSourceRect.width / blockSize)))
+        let lowHeight = max(1, Int(ceil(topLeftSourceRect.height / blockSize)))
+        guard let lowResolutionContext = CGContext(
+            data: nil,
+            width: lowWidth,
+            height: lowHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return
+        }
+        lowResolutionContext.interpolationQuality = isBlur ? .high : .medium
+        lowResolutionContext.draw(
+            sourcePatch,
+            in: CGRect(x: 0, y: 0, width: lowWidth, height: lowHeight)
+        )
+        guard let processedPatch = lowResolutionContext.makeImage() else {
+            return
+        }
+
+        context.saveGState()
+        context.interpolationQuality = isBlur ? .high : .none
+        context.draw(processedPatch, in: destinationRect)
         context.restoreGState()
     }
 

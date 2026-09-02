@@ -74,6 +74,51 @@ public partial class ScreenshotToolbar : UserControl
         }
     }
 
+    private void SetButtonActiveState(Button? button, bool isActive)
+    {
+        if (button == null) return;
+        if (isActive)
+        {
+            button.Background = (System.Windows.Media.Brush)FindResource("ToolbarActiveBackgroundBrush");
+            button.Foreground = (System.Windows.Media.Brush)FindResource("ToolbarActiveBrush");
+        }
+        else
+        {
+            button.Background = System.Windows.Media.Brushes.Transparent;
+            button.Foreground = (System.Windows.Media.Brush)FindResource("ToolbarTextBrush");
+        }
+    }
+
+    public void UpdateSubToolButtonStates(string? currentTool = null)
+    {
+        currentTool ??= _selectedToolButton?.Tag as string ?? "";
+
+        // Rect / Ellipse
+        SetButtonActiveState(BtnShapeRect, currentTool == "Rect");
+        SetButtonActiveState(BtnShapeEllipse, currentTool == "Ellipse");
+        SetButtonActiveState(BtnToggleFill, IsFilled);
+        SetButtonActiveState(BtnToggleDash, IsDashed);
+
+        // Line / Arrow
+        SetButtonActiveState(BtnLineStraight, !HasArrow && (currentTool == "Line" || currentTool == "Straight"));
+        SetButtonActiveState(BtnLineArrow, HasArrow || currentTool == "Arrow");
+        SetButtonActiveState(BtnLineDash, IsDashed);
+
+        // Text
+        SetButtonActiveState(BtnTextBold, IsBold);
+        SetButtonActiveState(BtnTextItalic, IsItalic);
+
+        // Number
+        SetButtonActiveState(BtnNumFilled, NumberStyle == 0);
+        SetButtonActiveState(BtnNumOutline, NumberStyle == 1);
+
+        // Mosaic
+        SetButtonActiveState(BtnMosaicBrush, MosaicShapeType == 0);
+        SetButtonActiveState(BtnMosaicRect, MosaicShapeType == 1);
+        SetButtonActiveState(BtnMosaicPixel, !MosaicIsBlur);
+        SetButtonActiveState(BtnMosaicBlur, MosaicIsBlur);
+    }
+
     private void UpdateSubToolbar(string tool)
     {
         PanelRectControls.Visibility = Visibility.Collapsed;
@@ -104,6 +149,8 @@ public partial class ScreenshotToolbar : UserControl
                 PanelColorPalette.Visibility = Visibility.Collapsed;
                 break;
         }
+
+        UpdateSubToolButtonStates(tool);
     }
 
     private void OnSubToolActionClicked(object sender, RoutedEventArgs e)
@@ -113,10 +160,10 @@ public partial class ScreenshotToolbar : UserControl
             switch (action)
             {
                 case "ShapeRect":
-                    ToolSelected?.Invoke("Rect");
+                    OnToolClicked(BtnRect, e);
                     break;
                 case "ShapeEllipse":
-                    ToolSelected?.Invoke("Ellipse");
+                    OnToolClicked(BtnEllipse, e);
                     break;
                 case "ToggleFill":
                     IsFilled = !IsFilled;
@@ -126,9 +173,11 @@ public partial class ScreenshotToolbar : UserControl
                     break;
                 case "LineStraight":
                     HasArrow = false;
+                    OnToolClicked(BtnLine, e);
                     break;
                 case "LineArrow":
                     HasArrow = true;
+                    OnToolClicked(BtnArrow, e);
                     break;
                 case "TextBold":
                     IsBold = !IsBold;
@@ -155,6 +204,7 @@ public partial class ScreenshotToolbar : UserControl
                     MosaicIsBlur = true;
                     break;
             }
+            UpdateSubToolButtonStates();
             SubToolActionTriggered?.Invoke(action);
         }
     }
