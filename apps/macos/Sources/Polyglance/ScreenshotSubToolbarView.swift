@@ -1,28 +1,30 @@
 import AppKit
 
 @MainActor
-final class ScreenshotSubToolbarView: NSVisualEffectView {
+final class ScreenshotSubToolbarView: NSView {
     var onStyleChanged: ((ScreenshotAnnotationStyle) -> Void)?
     var onToolChanged: ((ScreenshotAnnotationTool) -> Void)?
 
     private(set) var currentTool: ScreenshotAnnotationTool = .rectangle
     private(set) var currentStyle: ScreenshotAnnotationStyle = .default
 
+    private let visualEffectView = NSVisualEffectView()
     private let contentStack = NSStackView()
     private let controlStack = NSStackView()
     private let colorStack = NSStackView()
 
-    private var colorButtons: [NSButton] = []
-    private var lineWidthButtons: [NSButton] = []
+    private var colorButtons: [ColorDotButton] = []
+    private var lineWidthButtons: [LineWidthButton] = []
 
-    private static let presetColors: [NSColor] = [
-        NSColor(srgbRed: 0.96, green: 0.26, blue: 0.21, alpha: 1.0), // Red
-        NSColor(srgbRed: 1.00, green: 0.58, blue: 0.00, alpha: 1.0), // Orange
-        NSColor(srgbRed: 1.00, green: 0.80, blue: 0.00, alpha: 1.0), // Yellow
-        NSColor(srgbRed: 0.20, green: 0.78, blue: 0.35, alpha: 1.0), // Green
-        NSColor(srgbRed: 0.00, green: 0.48, blue: 1.00, alpha: 1.0), // Blue
-        NSColor(srgbRed: 0.12, green: 0.12, blue: 0.14, alpha: 1.0), // Dark
-        NSColor(srgbRed: 0.98, green: 0.98, blue: 0.98, alpha: 1.0)  // White
+    static let presetColors: [NSColor] = [
+        NSColor(srgbRed: 0.94, green: 0.27, blue: 0.27, alpha: 1.0), // Red (#EF4444)
+        NSColor(srgbRed: 0.98, green: 0.45, blue: 0.09, alpha: 1.0), // Orange (#F97316)
+        NSColor(srgbRed: 0.98, green: 0.80, blue: 0.08, alpha: 1.0), // Yellow (#FACC15)
+        NSColor(srgbRed: 0.06, green: 0.73, blue: 0.51, alpha: 1.0), // Green (#10B981)
+        NSColor(srgbRed: 0.23, green: 0.51, blue: 0.96, alpha: 1.0), // Blue (#3B82F6)
+        NSColor(srgbRed: 0.55, green: 0.36, blue: 0.96, alpha: 1.0), // Purple (#8B5CF6)
+        NSColor(srgbRed: 0.12, green: 0.16, blue: 0.22, alpha: 1.0), // Dark (#1F2937)
+        NSColor(srgbRed: 1.00, green: 1.00, blue: 1.00, alpha: 1.0)  // White (#FFFFFF)
     ]
 
     override init(frame frameRect: NSRect) {
@@ -36,35 +38,50 @@ final class ScreenshotSubToolbarView: NSVisualEffectView {
     }
 
     private func setupView() {
-        material = .hudWindow
-        blendingMode = .withinWindow
-        state = .active
         wantsLayer = true
-        layer?.cornerRadius = 8
-        layer?.masksToBounds = true
-        layer?.borderWidth = 0.5
-        layer?.borderColor = NSColor(white: 1.0, alpha: 0.2).cgColor
+        layer?.cornerRadius = 17
+        layer?.masksToBounds = false
+        layer?.shadowColor = NSColor.black.cgColor
+        layer?.shadowOpacity = 0.16
+        layer?.shadowOffset = CGSize(width: 0, height: -2)
+        layer?.shadowRadius = 8
+
+        visualEffectView.material = .popover
+        visualEffectView.blendingMode = .withinWindow
+        visualEffectView.state = .active
+        visualEffectView.wantsLayer = true
+        visualEffectView.layer?.cornerRadius = 17
+        visualEffectView.layer?.masksToBounds = true
+        visualEffectView.layer?.borderWidth = 0.5
+        visualEffectView.layer?.borderColor = NSColor(white: 0.0, alpha: 0.08).cgColor
+        visualEffectView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(visualEffectView)
 
         contentStack.orientation = .horizontal
         contentStack.alignment = .centerY
-        contentStack.spacing = 8
+        contentStack.spacing = 6
         contentStack.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
         contentStack.translatesAutoresizingMaskIntoConstraints = false
+        visualEffectView.addSubview(contentStack)
 
         controlStack.orientation = .horizontal
         controlStack.alignment = .centerY
-        controlStack.spacing = 4
+        controlStack.spacing = 3
 
         colorStack.orientation = .horizontal
         colorStack.alignment = .centerY
-        colorStack.spacing = 5
+        colorStack.spacing = 4
 
-        addSubview(contentStack)
         NSLayoutConstraint.activate([
-            contentStack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            contentStack.trailingAnchor.constraint(equalTo: trailingAnchor),
-            contentStack.topAnchor.constraint(equalTo: topAnchor),
-            contentStack.bottomAnchor.constraint(equalTo: bottomAnchor)
+            visualEffectView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            visualEffectView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            visualEffectView.topAnchor.constraint(equalTo: topAnchor),
+            visualEffectView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            contentStack.leadingAnchor.constraint(equalTo: visualEffectView.leadingAnchor),
+            contentStack.trailingAnchor.constraint(equalTo: visualEffectView.trailingAnchor),
+            contentStack.topAnchor.constraint(equalTo: visualEffectView.topAnchor),
+            contentStack.bottomAnchor.constraint(equalTo: visualEffectView.bottomAnchor)
         ])
 
         buildColorPalette()
@@ -80,17 +97,25 @@ final class ScreenshotSubToolbarView: NSVisualEffectView {
         }
 
         rebuildControls(for: tool)
-
         contentStack.addArrangedSubview(controlStack)
 
         if tool != .mosaic {
-            let divider = NSBox()
-            divider.boxType = .separator
+            let divider = makeDivider()
             contentStack.addArrangedSubview(divider)
-
             contentStack.addArrangedSubview(colorStack)
             updateColorSelection()
         }
+    }
+
+    private func makeDivider() -> NSView {
+        let box = NSBox()
+        box.boxType = .separator
+        box.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            box.widthAnchor.constraint(equalToConstant: 1),
+            box.heightAnchor.constraint(equalToConstant: 16)
+        ])
+        return box
     }
 
     private func rebuildControls(for tool: ScreenshotAnnotationTool) {
@@ -102,7 +127,6 @@ final class ScreenshotSubToolbarView: NSVisualEffectView {
 
         switch tool {
         case .rectangle, .ellipse:
-            // Shape selector: Rect vs Ellipse
             let rectBtn = makeIconButton(symbol: "rectangle", tooltip: "矩形", selected: tool == .rectangle) { [weak self] in
                 self?.onToolChanged?(.rectangle)
             }
@@ -112,7 +136,6 @@ final class ScreenshotSubToolbarView: NSVisualEffectView {
             controlStack.addArrangedSubview(rectBtn)
             controlStack.addArrangedSubview(ellipseBtn)
 
-            // Fill Toggle
             let fillBtn = makeIconButton(
                 symbol: currentStyle.isFilled ? "square.fill" : "square",
                 tooltip: currentStyle.isFilled ? "实心填充" : "空心轮廓",
@@ -125,7 +148,6 @@ final class ScreenshotSubToolbarView: NSVisualEffectView {
             }
             controlStack.addArrangedSubview(fillBtn)
 
-            // Dashed Toggle
             let dashBtn = makeIconButton(
                 symbol: "line.horizontal.3.decrease",
                 tooltip: currentStyle.isDashed ? "虚线" : "实线",
@@ -137,14 +159,12 @@ final class ScreenshotSubToolbarView: NSVisualEffectView {
                 self.rebuildControls(for: self.currentTool)
             }
             controlStack.addArrangedSubview(dashBtn)
-
             addLineWidthButtons()
 
         case .freehand:
             addLineWidthButtons()
 
         case .line:
-            // Straight vs Arrow
             let lineBtn = makeIconButton(symbol: "line.diagonal", tooltip: "直线", selected: !currentStyle.hasArrow) { [weak self] in
                 guard let self else { return }
                 self.currentStyle.hasArrow = false
@@ -171,7 +191,6 @@ final class ScreenshotSubToolbarView: NSVisualEffectView {
                 self.rebuildControls(for: self.currentTool)
             }
             controlStack.addArrangedSubview(dashBtn)
-
             addLineWidthButtons()
 
         case .arrow:
@@ -203,7 +222,6 @@ final class ScreenshotSubToolbarView: NSVisualEffectView {
             controlStack.addArrangedSubview(boldBtn)
             controlStack.addArrangedSubview(italicBtn)
             controlStack.addArrangedSubview(borderBtn)
-
             addFontSizeButtons()
 
         case .number:
@@ -221,7 +239,6 @@ final class ScreenshotSubToolbarView: NSVisualEffectView {
             }
             controlStack.addArrangedSubview(filledBtn)
             controlStack.addArrangedSubview(outlineBtn)
-
             addLineWidthButtons()
 
         case .mosaic:
@@ -254,7 +271,6 @@ final class ScreenshotSubToolbarView: NSVisualEffectView {
             }
             controlStack.addArrangedSubview(pixelBtn)
             controlStack.addArrangedSubview(blurBtn)
-
             addLineWidthButtons()
         }
     }
@@ -263,32 +279,12 @@ final class ScreenshotSubToolbarView: NSVisualEffectView {
         let sizes: [CGFloat] = [2, 4, 8]
         for size in sizes {
             let isSelected = abs(currentStyle.lineWidth - size) < 0.5
-            let btn = NSButton(frame: NSRect(x: 0, y: 0, width: 22, height: 22))
-            btn.isBordered = false
-            btn.wantsLayer = true
-            btn.layer?.cornerRadius = 4
-            btn.layer?.backgroundColor = isSelected ? NSColor.white.withAlphaComponent(0.25).cgColor : NSColor.clear.cgColor
-            btn.toolTip = "线宽 \(Int(size))px"
-            btn.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                btn.widthAnchor.constraint(equalToConstant: 22),
-                btn.heightAnchor.constraint(equalToConstant: 22)
-            ])
-
-            let dot = CALayer()
-            dot.cornerRadius = size / 2
-            dot.backgroundColor = NSColor.white.cgColor
-            dot.frame = CGRect(
-                x: (22 - size) / 2,
-                y: (22 - size) / 2,
-                width: size,
-                height: size
-            )
-            btn.layer?.addSublayer(dot)
-
-            btn.target = self
-            btn.action = #selector(onLineWidthClicked(_:))
-            btn.tag = Int(size)
+            let btn = LineWidthButton(dotSize: size, isSelected: isSelected) { [weak self] in
+                guard let self else { return }
+                self.currentStyle.lineWidth = size
+                self.notifyStyleChanged()
+                self.rebuildControls(for: self.currentTool)
+            }
             lineWidthButtons.append(btn)
             controlStack.addArrangedSubview(btn)
         }
@@ -298,16 +294,12 @@ final class ScreenshotSubToolbarView: NSVisualEffectView {
         let fontSizes: [(String, CGFloat)] = [("小", 14), ("中", 18), ("大", 26)]
         for (label, size) in fontSizes {
             let isSelected = abs(currentStyle.fontSize - size) < 1.0
-            let btn = NSButton(title: label, target: self, action: #selector(onFontSizeClicked(_:)))
-            btn.isBordered = false
-            btn.font = .systemFont(ofSize: 11, weight: isSelected ? .bold : .regular)
-            btn.contentTintColor = isSelected ? .systemBlue : .white
-            btn.tag = Int(size)
-            btn.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                btn.widthAnchor.constraint(equalToConstant: 24),
-                btn.heightAnchor.constraint(equalToConstant: 22)
-            ])
+            let btn = TextPillButton(title: label, isSelected: isSelected) { [weak self] in
+                guard let self else { return }
+                self.currentStyle.fontSize = size
+                self.notifyStyleChanged()
+                self.rebuildControls(for: self.currentTool)
+            }
             controlStack.addArrangedSubview(btn)
         }
     }
@@ -320,27 +312,17 @@ final class ScreenshotSubToolbarView: NSVisualEffectView {
         colorButtons.removeAll()
 
         for (index, color) in Self.presetColors.enumerated() {
-            let btn = NSButton(frame: NSRect(x: 0, y: 0, width: 18, height: 18))
-            btn.isBordered = false
-            btn.wantsLayer = true
-            btn.layer?.cornerRadius = 9
-            btn.layer?.backgroundColor = color.cgColor
-            btn.layer?.borderWidth = 1.5
-            btn.layer?.borderColor = NSColor.clear.cgColor
-            btn.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                btn.widthAnchor.constraint(equalToConstant: 18),
-                btn.heightAnchor.constraint(equalToConstant: 18)
-            ])
-
-            btn.target = self
-            btn.action = #selector(onColorClicked(_:))
+            let btn = ColorDotButton(color: color, isSelected: false) { [weak self] in
+                guard let self else { return }
+                self.currentStyle.color = color
+                self.notifyStyleChanged()
+                self.updateColorSelection()
+            }
             btn.tag = index
             colorButtons.append(btn)
             colorStack.addArrangedSubview(btn)
         }
 
-        // Custom Color Picker Button
         let pickerBtn = makeIconButton(symbol: "paintpalette", tooltip: "自定义颜色", selected: false) { [weak self] in
             guard let self else { return }
             NSColorPanel.shared.color = self.currentStyle.color
@@ -352,11 +334,9 @@ final class ScreenshotSubToolbarView: NSVisualEffectView {
     }
 
     private func updateColorSelection() {
-        for (index, btn) in colorButtons.enumerated() {
-            let color = Self.presetColors[index]
-            let isSelected = currentStyle.color.isEqual(color)
-            btn.layer?.borderColor = isSelected ? NSColor.white.cgColor : NSColor.clear.cgColor
-            btn.layer?.borderWidth = isSelected ? 2.0 : 1.0
+        for btn in colorButtons {
+            let isSelected = currentStyle.color.isEqual(btn.color)
+            btn.isSelected = isSelected
         }
     }
 
@@ -366,22 +346,7 @@ final class ScreenshotSubToolbarView: NSVisualEffectView {
         selected: Bool,
         action: @escaping () -> Void
     ) -> NSButton {
-        let btn = ClosureButton(title: "", target: nil, action: nil)
-        btn.isBordered = false
-        btn.wantsLayer = true
-        btn.layer?.cornerRadius = 4
-        btn.layer?.backgroundColor = selected ? NSColor.white.withAlphaComponent(0.25).cgColor : NSColor.clear.cgColor
-        btn.toolTip = tooltip
-        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
-        btn.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)?.withSymbolConfiguration(config)
-        btn.imagePosition = .imageOnly
-        btn.contentTintColor = selected ? .systemBlue : .white
-        btn.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            btn.widthAnchor.constraint(equalToConstant: 24),
-            btn.heightAnchor.constraint(equalToConstant: 22)
-        ])
-        btn.closure = action
+        let btn = IconOnlyButton(symbolName: symbol, tooltip: tooltip, isSelected: selected, action: action)
         return btn
     }
 
@@ -393,45 +358,8 @@ final class ScreenshotSubToolbarView: NSVisualEffectView {
         selected: Bool,
         action: @escaping () -> Void
     ) -> NSButton {
-        let btn = ClosureButton(title: title, target: nil, action: nil)
-        btn.isBordered = false
-        btn.wantsLayer = true
-        btn.layer?.cornerRadius = 4
-        btn.layer?.backgroundColor = selected ? NSColor.white.withAlphaComponent(0.25).cgColor : NSColor.clear.cgColor
-        btn.toolTip = tooltip
-        var font = NSFont.systemFont(ofSize: 13, weight: isBold ? .bold : .regular)
-        if isItalic {
-            let desc = font.fontDescriptor.withSymbolicTraits(.italic)
-            font = NSFont(descriptor: desc, size: 13) ?? font
-        }
-        btn.font = font
-        btn.contentTintColor = selected ? .systemBlue : .white
-        btn.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            btn.widthAnchor.constraint(equalToConstant: 24),
-            btn.heightAnchor.constraint(equalToConstant: 22)
-        ])
-        btn.closure = action
+        let btn = TextFormatButton(title: title, tooltip: tooltip, isBold: isBold, isItalic: isItalic, isSelected: selected, action: action)
         return btn
-    }
-
-    @objc private func onLineWidthClicked(_ sender: NSButton) {
-        currentStyle.lineWidth = CGFloat(sender.tag)
-        notifyStyleChanged()
-        rebuildControls(for: currentTool)
-    }
-
-    @objc private func onFontSizeClicked(_ sender: NSButton) {
-        currentStyle.fontSize = CGFloat(sender.tag)
-        notifyStyleChanged()
-        rebuildControls(for: currentTool)
-    }
-
-    @objc private func onColorClicked(_ sender: NSButton) {
-        guard sender.tag >= 0 && sender.tag < Self.presetColors.count else { return }
-        currentStyle.color = Self.presetColors[sender.tag]
-        notifyStyleChanged()
-        updateColorSelection()
     }
 
     @objc private func onCustomColorPanelChanged(_ sender: NSColorPanel) {
@@ -445,14 +373,275 @@ final class ScreenshotSubToolbarView: NSVisualEffectView {
     }
 }
 
-private final class ClosureButton: NSButton {
-    var closure: (() -> Void)?
+// MARK: - Native Sub-toolbar Controls
 
-    override func sendAction(_ action: Selector?, to target: Any?) -> Bool {
-        if let closure {
-            closure()
-            return true
+final class IconOnlyButton: NSButton {
+    private let actionClosure: () -> Void
+    var isSelectedState: Bool {
+        didSet { updateAppearance() }
+    }
+
+    init(symbolName: String, tooltip: String, isSelected: Bool, action: @escaping () -> Void) {
+        self.actionClosure = action
+        self.isSelectedState = isSelected
+        super.init(frame: .zero)
+        self.title = ""
+        self.attributedTitle = NSAttributedString()
+        self.isBordered = false
+        self.imagePosition = .imageOnly
+        self.toolTip = tooltip
+        self.wantsLayer = true
+        self.layer?.cornerRadius = 5
+
+        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+        self.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: tooltip)?.withSymbolConfiguration(config)
+        self.imageScaling = .scaleProportionallyDown
+
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: 26),
+            heightAnchor.constraint(equalToConstant: 24)
+        ])
+        target = self
+        self.action = #selector(handleClick)
+        updateAppearance()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func handleClick() {
+        actionClosure()
+    }
+
+    private func updateAppearance() {
+        if isSelectedState {
+            layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.16).cgColor
+            contentTintColor = .systemBlue
+        } else {
+            layer?.backgroundColor = NSColor.clear.cgColor
+            contentTintColor = NSColor(white: 0.25, alpha: 1.0)
         }
-        return super.sendAction(action, to: target)
+    }
+}
+
+final class TextFormatButton: NSButton {
+    private let actionClosure: () -> Void
+    var isSelectedState: Bool {
+        didSet { updateAppearance() }
+    }
+
+    init(title: String, tooltip: String, isBold: Bool, isItalic: Bool, isSelected: Bool, action: @escaping () -> Void) {
+        self.actionClosure = action
+        self.isSelectedState = isSelected
+        super.init(frame: .zero)
+        self.title = title
+        self.isBordered = false
+        self.toolTip = tooltip
+        self.wantsLayer = true
+        self.layer?.cornerRadius = 5
+
+        var font = NSFont.systemFont(ofSize: 13, weight: isBold ? .bold : .medium)
+        if isItalic {
+            let desc = font.fontDescriptor.withSymbolicTraits(.italic)
+            font = NSFont(descriptor: desc, size: 13) ?? font
+        }
+        self.font = font
+
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: 26),
+            heightAnchor.constraint(equalToConstant: 24)
+        ])
+        target = self
+        self.action = #selector(handleClick)
+        updateAppearance()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func handleClick() {
+        actionClosure()
+    }
+
+    private func updateAppearance() {
+        if isSelectedState {
+            layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.16).cgColor
+            contentTintColor = .systemBlue
+        } else {
+            layer?.backgroundColor = NSColor.clear.cgColor
+            contentTintColor = NSColor(white: 0.25, alpha: 1.0)
+        }
+    }
+}
+
+final class TextPillButton: NSButton {
+    private let actionClosure: () -> Void
+    var isSelectedState: Bool {
+        didSet { updateAppearance() }
+    }
+
+    init(title: String, isSelected: Bool, action: @escaping () -> Void) {
+        self.actionClosure = action
+        self.isSelectedState = isSelected
+        super.init(frame: .zero)
+        self.title = title
+        self.isBordered = false
+        self.wantsLayer = true
+        self.layer?.cornerRadius = 4
+        self.font = .systemFont(ofSize: 11, weight: isSelected ? .bold : .regular)
+
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: 22),
+            heightAnchor.constraint(equalToConstant: 22)
+        ])
+        target = self
+        self.action = #selector(handleClick)
+        updateAppearance()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func handleClick() {
+        actionClosure()
+    }
+
+    private func updateAppearance() {
+        if isSelectedState {
+            layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.16).cgColor
+            contentTintColor = .systemBlue
+        } else {
+            layer?.backgroundColor = NSColor.clear.cgColor
+            contentTintColor = NSColor(white: 0.25, alpha: 1.0)
+        }
+    }
+}
+
+final class LineWidthButton: NSButton {
+    let dotSize: CGFloat
+    private let actionClosure: () -> Void
+    var isSelectedState: Bool {
+        didSet { needsDisplay = true }
+    }
+
+    init(dotSize: CGFloat, isSelected: Bool, action: @escaping () -> Void) {
+        self.dotSize = dotSize
+        self.isSelectedState = isSelected
+        self.actionClosure = action
+        super.init(frame: .zero)
+        self.title = ""
+        self.attributedTitle = NSAttributedString()
+        self.isBordered = false
+        self.imagePosition = .noImage
+        self.toolTip = "粗细 \(Int(dotSize))px"
+        self.wantsLayer = true
+        self.layer?.cornerRadius = 4
+
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: 22),
+            heightAnchor.constraint(equalToConstant: 22)
+        ])
+        target = self
+        self.action = #selector(handleClick)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func handleClick() {
+        actionClosure()
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if isSelectedState {
+            let bgRect = bounds.insetBy(dx: 1, dy: 1)
+            let bgPath = NSBezierPath(roundedRect: bgRect, xRadius: 4, yRadius: 4)
+            NSColor.systemBlue.withAlphaComponent(0.16).setFill()
+            bgPath.fill()
+        }
+
+        let dotRect = CGRect(
+            x: (bounds.width - dotSize) / 2,
+            y: (bounds.height - dotSize) / 2,
+            width: dotSize,
+            height: dotSize
+        )
+        let dotPath = NSBezierPath(ovalIn: dotRect)
+        if isSelectedState {
+            NSColor.systemBlue.setFill()
+        } else {
+            NSColor(white: 0.3, alpha: 1.0).setFill()
+        }
+        dotPath.fill()
+    }
+}
+
+final class ColorDotButton: NSButton {
+    let color: NSColor
+    private let actionClosure: () -> Void
+    var isSelected: Bool {
+        didSet { needsDisplay = true }
+    }
+
+    init(color: NSColor, isSelected: Bool, action: @escaping () -> Void) {
+        self.color = color
+        self.isSelected = isSelected
+        self.actionClosure = action
+        super.init(frame: .zero)
+        self.title = ""
+        self.attributedTitle = NSAttributedString()
+        self.isBordered = false
+        self.imagePosition = .noImage
+        self.wantsLayer = true
+
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: 20),
+            heightAnchor.constraint(equalToConstant: 20)
+        ])
+        target = self
+        self.action = #selector(handleClick)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func handleClick() {
+        actionClosure()
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        let dotRadius: CGFloat = 7.5
+        let dotRect = CGRect(x: center.x - dotRadius, y: center.y - dotRadius, width: dotRadius * 2, height: dotRadius * 2)
+
+        if isSelected {
+            // Outer selection ring
+            let ringRect = bounds.insetBy(dx: 1, dy: 1)
+            let ringPath = NSBezierPath(ovalIn: ringRect)
+            ringPath.lineWidth = 1.5
+            color.setStroke()
+            ringPath.stroke()
+
+            // Inner dot
+            let innerRadius: CGFloat = 5.5
+            let innerRect = CGRect(x: center.x - innerRadius, y: center.y - innerRadius, width: innerRadius * 2, height: innerRadius * 2)
+            let innerPath = NSBezierPath(ovalIn: innerRect)
+            color.setFill()
+            innerPath.fill()
+        } else {
+            let dotPath = NSBezierPath(ovalIn: dotRect)
+            color.setFill()
+            dotPath.fill()
+
+            // Subtle border for white / very bright colors
+            NSColor(white: 0.0, alpha: 0.15).setStroke()
+            dotPath.lineWidth = 0.5
+            dotPath.stroke()
+        }
     }
 }

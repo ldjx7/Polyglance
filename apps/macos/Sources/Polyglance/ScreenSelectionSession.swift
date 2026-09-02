@@ -1342,6 +1342,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
 
     private func makeToolbarButton(title: String, symbol: String, action: Selector) -> NSButton {
         let button = ScreenshotToolbarButton(title: title, target: self, action: action)
+        button.title = title
         button.bezelStyle = .toolbar
         button.isBordered = false
         button.controlSize = .large
