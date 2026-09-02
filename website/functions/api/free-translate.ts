@@ -468,7 +468,7 @@ export function getAvailableCandidates(env: TranslationEnvironment): ProviderCan
       name: 'SiliconFlow',
       endpoint: env.SILICONFLOW_BASE_URL?.trim() || 'https://api.siliconflow.cn/v1/chat/completions',
       apiKey: key,
-      model: env.SILICONFLOW_MODEL?.trim() || 'Qwen/Qwen2.5-7B-Instruct',
+      model: env.SILICONFLOW_MODEL?.trim() || 'tencent/Hunyuan-MT-7B',
       weight: 4,
     });
   }
