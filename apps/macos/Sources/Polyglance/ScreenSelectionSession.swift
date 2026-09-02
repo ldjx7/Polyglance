@@ -13,6 +13,7 @@ enum ScreenshotSelectionAction {
     case ocrCopy(SelectedScreenshot)
     case ocrCopyAll(SelectedScreenshot)
     case ocrTranslate(SelectedScreenshot)
+    case detectBarcode(SelectedScreenshot)
     case longScreenshot(SelectedScreenshot)
     case screenRecording(SelectedScreenshot)
     case screenTranslation(ScreenTranslationSelection)
@@ -508,6 +509,9 @@ final class ScreenSelectionSession {
             // Keep the captured pixels on screen until the pin window has been
             // created at the same frame. This avoids exposing one desktop frame
             // between the selection overlay and its pinned replacement.
+        } else if case .detectBarcode = action {
+            // The barcode result card is created at the code's on-screen frame,
+            // so the overlay stays up for the same handoff as a pin.
         } else {
             dismiss()
         }
@@ -1260,6 +1264,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         redoButton = makeToolbarButton(title: "重做", symbol: "arrow.uturn.forward", action: #selector(redoAnnotation))
         let ocrCopyButton = makeToolbarButton(title: "OCR", symbol: "text.viewfinder", action: #selector(ocrCopySelection))
         let ocrTranslateButton = makeToolbarButton(title: "OCR翻译", symbol: "character.bubble", action: #selector(ocrTranslateSelection))
+        let barcodeButton = makeToolbarButton(title: "二维码", symbol: "qrcode.viewfinder", action: #selector(detectBarcodeSelection))
         let longScreenshotButton = makeToolbarButton(title: "长截图", symbol: "scroll", action: #selector(longScreenshotSelection))
         let screenRecordingButton = makeToolbarButton(title: "录屏", symbol: "record.circle", action: #selector(screenRecordingSelection))
         let pinButton = makeToolbarButton(title: "贴图", symbol: "pin.fill", action: #selector(pinSelection))
@@ -1272,6 +1277,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             redoButton,
             ocrCopyButton,
             ocrTranslateButton,
+            barcodeButton,
             longScreenshotButton,
             screenRecordingButton,
             pinButton,
@@ -1711,6 +1717,14 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             return
         }
         onAction?(.ocrTranslate(result))
+    }
+
+    @objc private func detectBarcodeSelection() {
+        guard let result = makeSelectedScreenshot() else {
+            NSSound.beep()
+            return
+        }
+        onAction?(.detectBarcode(result))
     }
 
     @objc private func longScreenshotSelection() {

@@ -31,6 +31,6 @@ public static class AppVersionDisplay
             version = version[..metadataSeparator];
 
         version = version.Trim();
-        return $"v{(version.Length == 0 ? "0.0.4" : version)}";
+        return $"v{(version.Length == 0 ? "0.0.5" : version)}";
     }
 }

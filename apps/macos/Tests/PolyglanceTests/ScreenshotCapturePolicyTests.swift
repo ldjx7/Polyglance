@@ -33,7 +33,7 @@ final class ScreenshotCapturePolicyTests: XCTestCase {
         ))
     }
 
-    func testOnlyPinningKeepsTheOverlayUntilTheReplacementWindowIsOnScreen() {
+    func testReplacementWindowsKeepTheOverlayUntilTheirFirstFrameIsOnScreen() {
         XCTAssertTrue(ScreenshotCapturePolicy.keepsOverlayUntilHandoff(for: .pin(
             SelectedScreenshot(image: NSImage(size: CGSize(width: 4, height: 4)),
                                screenFrame: CGRect(x: 0, y: 0, width: 4, height: 4))

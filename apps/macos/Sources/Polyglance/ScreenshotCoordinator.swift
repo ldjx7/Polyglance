@@ -35,6 +35,9 @@ enum ScreenshotCapturePolicy {
         if case .pin = action {
             return true
         }
+        if case .detectBarcode = action {
+            return true
+        }
         return false
     }
 }
@@ -44,16 +47,19 @@ final class ScreenshotCoordinator {
     private let pinWindowManager: PinWindowManager
     private let fileSaver: ScreenshotFileSaver
     private let ocrService: OCRService
+    private let barcodeService: BarcodeService
     private let onOCRTranslate: @MainActor (SelectedScreenshot, String) async throws -> Void
     private let onLongScreenshot: @MainActor (CGRect) async throws -> Void
     private let onScreenRecording: @MainActor (CGRect) async throws -> Void
     private let onScreenTranslate: @MainActor (ScreenTranslationSelection) async throws -> Void
     private var selectionSession: ScreenSelectionSession?
+    private let barcodeResultWindows = BarcodeResultWindowStore()
     private var isCapturing = false
 
     init(
         pinWindowManager: PinWindowManager,
         ocrService: OCRService = OCRService(),
+        barcodeService: BarcodeService = BarcodeService(),
         onOCRTranslate: @escaping @MainActor (SelectedScreenshot, String) async throws -> Void = { _, _ in },
         onLongScreenshot: @escaping @MainActor (CGRect) async throws -> Void = { _ in },
         onScreenRecording: @escaping @MainActor (CGRect) async throws -> Void = { _ in },
@@ -62,6 +68,7 @@ final class ScreenshotCoordinator {
         self.pinWindowManager = pinWindowManager
         fileSaver = ScreenshotFileSaver()
         self.ocrService = ocrService
+        self.barcodeService = barcodeService
         self.onOCRTranslate = onOCRTranslate
         self.onLongScreenshot = onLongScreenshot
         self.onScreenRecording = onScreenRecording
@@ -72,6 +79,7 @@ final class ScreenshotCoordinator {
         self.pinWindowManager = pinWindowManager
         self.fileSaver = fileSaver
         ocrService = OCRService()
+        barcodeService = BarcodeService()
         onOCRTranslate = { _, _ in }
         onLongScreenshot = { _ in }
         onScreenRecording = { _ in }
@@ -141,6 +149,28 @@ final class ScreenshotCoordinator {
         case let .ocrTranslate(result):
             let text = try await ocrService.recognizeText(in: result.image)
             try await onOCRTranslate(result, text)
+        case let .detectBarcode(result):
+            let observations: [BarcodeObservation]
+            do {
+                observations = try await barcodeService.recognizeBarcodes(in: result.image)
+            } catch BarcodeError.notFound {
+                throw ScreenshotError.barcodeNotFound
+            } catch BarcodeError.invalidImage {
+                throw ScreenshotError.barcodeDetectionFailed("无法从图像中读取有效像素")
+            } catch let BarcodeError.recognitionFailed(message) {
+                throw ScreenshotError.barcodeDetectionFailed(message)
+            }
+            let window = BarcodeResultWindow(
+                observations: observations,
+                image: result.image,
+                screenFrame: result.screenFrame
+            )
+            barcodeResultWindows.retain(window)
+            window.orderFrontRegardless()
+            window.makeKey()
+            // Force the first frame into the backing store before the deferred
+            // teardown removes the overlay covering these pixels.
+            window.display()
         case let .longScreenshot(result):
             try await onLongScreenshot(result.screenFrame)
         case let .screenRecording(result):
@@ -304,6 +334,9 @@ enum ScreenshotError: LocalizedError {
     case captureFailed(String)
     case ocrSelectionPresentationFailed
     case ocrCopyFailed
+    case barcodeDetectionFailed(String)
+    case barcodeNotFound
+    case barcodeResultNotPresentable
 
     var errorDescription: String? {
         switch self {
@@ -319,6 +352,12 @@ enum ScreenshotError: LocalizedError {
             return "无法打开 OCR 文字选择窗口"
         case .ocrCopyFailed:
             return "无法将 OCR 文字写入剪贴板"
+        case let .barcodeDetectionFailed(message):
+            return "条码识别失败：\(message)"
+        case .barcodeNotFound:
+            return "选区内未识别到二维码或条码"
+        case .barcodeResultNotPresentable:
+            return "无法显示条码识别结果"
         }
     }
 }

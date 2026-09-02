@@ -13,6 +13,7 @@ using System.Windows.Shapes;
 using Microsoft.Win32;
 using Polyglance.Core.Models;
 using Polyglance.Core.Services;
+using Polyglance.Platform.Barcode;
 using Polyglance.Platform.Capture;
 using Polyglance.Platform.Dpi;
 using Polyglance.Platform.Interop;
@@ -56,6 +57,8 @@ public partial class ScreenSelectionWindow : Window
     private Point _drawingStart;
     private int _nextNumber = 1;
     private bool _isCompletingMouseGesture;
+    private CancellationTokenSource? _barcodeRecognitionCancellation;
+    private bool _isBarcodeRecognitionInFlight;
 
     public ScreenSelectionWindow(
         BitmapSource fullScreenBitmap,
@@ -994,6 +997,49 @@ public partial class ScreenSelectionWindow : Window
                 }
                 break;
 
+            case "Barcode":
+                if (_isBarcodeRecognitionInFlight)
+                {
+                    return;
+                }
+                _isBarcodeRecognitionInFlight = true;
+                _barcodeRecognitionCancellation?.Cancel();
+                _barcodeRecognitionCancellation?.Dispose();
+                _barcodeRecognitionCancellation = new CancellationTokenSource();
+                try
+                {
+                    var barcodes = await WindowsBarcodeReader.RecognizeAsync(
+                        cropped,
+                        _barcodeRecognitionCancellation.Token);
+                    if (barcodes.Count == 0)
+                    {
+                        throw new WindowsBarcodeException("当前截图中没有识别到条码。");
+                    }
+                    var barcodeWindow = new BarcodeResultWindow(
+                        barcodes,
+                        cropped,
+                        SelectedScreenFrame());
+                    barcodeWindow.Show();
+                    barcodeWindow.Activate();
+                    if (IsLoaded)
+                    {
+                        Close();
+                    }
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception error)
+                {
+                    if (_barcodeRecognitionCancellation?.IsCancellationRequested != true && IsLoaded)
+                    {
+                        ShowCaptureError("条码识别失败", error);
+                    }
+                }
+                finally
+                {
+                    _isBarcodeRecognitionInFlight = false;
+                }
+                break;
+
             case "OCRTranslate":
                 try
                 {
@@ -1063,6 +1109,14 @@ public partial class ScreenSelectionWindow : Window
     private static void ShowCaptureError(string title, Exception error)
     {
         MessageBox.Show(error.Message, title, MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _barcodeRecognitionCancellation?.Cancel();
+        _barcodeRecognitionCancellation?.Dispose();
+        _barcodeRecognitionCancellation = null;
+        base.OnClosed(e);
     }
 
     private BitmapSource? GetRenderedCroppedBitmap()

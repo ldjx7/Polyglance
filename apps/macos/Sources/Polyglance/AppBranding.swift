@@ -52,7 +52,7 @@ enum PolyglanceMenuBarIcon {
 @MainActor
 enum AppVersionInfo {
     static func versionString(infoDictionary: [String: Any]?) -> String {
-        var version = (infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.4")
+        var version = (infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.5")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if version.lowercased().hasPrefix("polyglance ") {
             version.removeFirst("Polyglance ".count)
@@ -61,7 +61,7 @@ enum AppVersionInfo {
             version.removeFirst()
         }
         version = String(version.split(separator: "+", maxSplits: 1).first ?? "")
-        return version.isEmpty ? "0.0.4" : version
+        return version.isEmpty ? "0.0.5" : version
     }
 
     static var versionString: String {

@@ -21,6 +21,7 @@ public partial class ScreenshotToolbar : UserControl
     internal bool AreScreenshotActionsVisible =>
         BtnOCR.Visibility == Visibility.Visible &&
         BtnTranslate.Visibility == Visibility.Visible &&
+        BtnBarcode.Visibility == Visibility.Visible &&
         BtnLongScreenshot.Visibility == Visibility.Visible &&
         BtnScreenRecording.Visibility == Visibility.Visible &&
         BtnPin.Visibility == Visibility.Visible &&
@@ -130,6 +131,7 @@ public partial class ScreenshotToolbar : UserControl
     {
         BtnOCR.Visibility = visibility;
         BtnTranslate.Visibility = visibility;
+        BtnBarcode.Visibility = visibility;
         BtnLongScreenshot.Visibility = visibility;
         BtnScreenRecording.Visibility = visibility;
         BtnPin.Visibility = visibility;

@@ -34,6 +34,10 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // Polyglance is a tray application. Floating screenshot/result windows
+        // are disposable UI and closing the final one must never stop the app.
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
         const string appName = "Polyglance_SingleInstance_Mutex";
         _mutex = new Mutex(true, appName, out bool createdNew);
 
