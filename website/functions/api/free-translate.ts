@@ -468,43 +468,47 @@ export function extractKeys(raw?: string): string[] {
 export function getPreferredCandidates(env: TranslationEnvironment): ProviderCandidate[] {
   const candidates: ProviderCandidate[] = [];
 
-  for (const key of extractKeys(env.GEMINI_API_KEY)) {
-    candidates.push({
-      name: 'Gemini',
-      endpoint: env.GEMINI_BASE_URL?.trim() || 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-      apiKey: key,
-      model: env.GEMINI_PREFERRED_MODEL?.trim() || 'gemini-3.5-flash-lite',
-      weight: 5,
-    });
-  }
-
-  for (const key of extractKeys(env.GROQ_API_KEY)) {
-    candidates.push({
-      name: 'Groq',
-      endpoint: env.GROQ_BASE_URL?.trim() || 'https://api.groq.com/openai/v1/chat/completions',
-      apiKey: key,
-      model: env.GROQ_PREFERRED_MODEL?.trim() || 'qwen/qwen3.6-27b',
-      weight: 5,
-    });
-  }
-
+  // 1. 硅基流动（首选最高优先级：0.6s极速，MT专用翻译模型，1000 RPM无单日上限）
   for (const key of extractKeys(env.SILICONFLOW_API_KEY)) {
     candidates.push({
       name: 'SiliconFlow',
       endpoint: env.SILICONFLOW_BASE_URL?.trim() || 'https://api.siliconflow.cn/v1/chat/completions',
       apiKey: key,
       model: env.SILICONFLOW_PREFERRED_MODEL?.trim() || 'tencent/Hunyuan-MT-7B',
-      weight: 5,
+      weight: 10,
     });
   }
 
+  // 2. Groq（次优高速通道：0.6s硬件LPU极速推理）
+  for (const key of extractKeys(env.GROQ_API_KEY)) {
+    candidates.push({
+      name: 'Groq',
+      endpoint: env.GROQ_BASE_URL?.trim() || 'https://api.groq.com/openai/v1/chat/completions',
+      apiKey: key,
+      model: env.GROQ_PREFERRED_MODEL?.trim() || 'openai/gpt-oss-20b',
+      weight: 8,
+    });
+  }
+
+  // 3. Google Gemini（三级深度语义通道）
+  for (const key of extractKeys(env.GEMINI_API_KEY)) {
+    candidates.push({
+      name: 'Gemini',
+      endpoint: env.GEMINI_BASE_URL?.trim() || 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      apiKey: key,
+      model: env.GEMINI_PREFERRED_MODEL?.trim() || 'gemini-3.5-flash-lite',
+      weight: 3,
+    });
+  }
+
+  // 4. OpenRouter（最终路由保底）
   for (const key of extractKeys(env.OPENROUTER_API_KEY)) {
     candidates.push({
       name: 'OpenRouter',
       endpoint: env.OPENROUTER_BASE_URL?.trim() || 'https://openrouter.ai/api/v1/chat/completions',
       apiKey: key,
       model: env.OPENROUTER_PREFERRED_MODEL?.trim() || 'openrouter/free',
-      weight: 2,
+      weight: 1,
       extraHeaders: {
         'HTTP-Referer': 'https://polyglance.ldjx7.dpdns.org',
         'X-Title': 'Polyglance',
@@ -518,13 +522,13 @@ export function getPreferredCandidates(env: TranslationEnvironment): ProviderCan
 export function getDefaultFallbackCandidates(env: TranslationEnvironment): ProviderCandidate[] {
   const candidates: ProviderCandidate[] = [];
 
-  for (const key of extractKeys(env.GEMINI_API_KEY)) {
+  for (const key of extractKeys(env.SILICONFLOW_API_KEY)) {
     candidates.push({
-      name: 'Gemini',
-      endpoint: env.GEMINI_BASE_URL?.trim() || 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      name: 'SiliconFlow',
+      endpoint: env.SILICONFLOW_BASE_URL?.trim() || 'https://api.siliconflow.cn/v1/chat/completions',
       apiKey: key,
-      model: env.GEMINI_MODEL?.trim() || 'gemma-4-26b-a4b-it',
-      weight: 5,
+      model: env.SILICONFLOW_MODEL?.trim() || 'Qwen/Qwen2.5-7B-Instruct',
+      weight: 10,
     });
   }
 
@@ -533,18 +537,18 @@ export function getDefaultFallbackCandidates(env: TranslationEnvironment): Provi
       name: 'Groq',
       endpoint: env.GROQ_BASE_URL?.trim() || 'https://api.groq.com/openai/v1/chat/completions',
       apiKey: key,
-      model: env.GROQ_MODEL?.trim() || 'openai/gpt-oss-20b',
-      weight: 4,
+      model: env.GROQ_MODEL?.trim() || 'qwen/qwen3.6-27b',
+      weight: 8,
     });
   }
 
-  for (const key of extractKeys(env.SILICONFLOW_API_KEY)) {
+  for (const key of extractKeys(env.GEMINI_API_KEY)) {
     candidates.push({
-      name: 'SiliconFlow',
-      endpoint: env.SILICONFLOW_BASE_URL?.trim() || 'https://api.siliconflow.cn/v1/chat/completions',
+      name: 'Gemini',
+      endpoint: env.GEMINI_BASE_URL?.trim() || 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
       apiKey: key,
-      model: env.SILICONFLOW_MODEL?.trim() || 'Qwen/Qwen2.5-7B-Instruct',
-      weight: 4,
+      model: env.GEMINI_MODEL?.trim() || 'gemma-4-26b-a4b-it',
+      weight: 3,
     });
   }
 
@@ -554,7 +558,7 @@ export function getDefaultFallbackCandidates(env: TranslationEnvironment): Provi
       endpoint: env.OPENROUTER_BASE_URL?.trim() || 'https://openrouter.ai/api/v1/chat/completions',
       apiKey: key,
       model: env.OPENROUTER_MODEL?.trim() || 'openrouter/free',
-      weight: 2,
+      weight: 1,
       extraHeaders: {
         'HTTP-Referer': 'https://polyglance.ldjx7.dpdns.org',
         'X-Title': 'Polyglance',
