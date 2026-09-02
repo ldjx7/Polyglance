@@ -54,8 +54,8 @@ test('accepts only translation content and allow-listed language metadata', () =
 
   assert.deepEqual(parsed, {
     text: 'Hello',
-    target: 'Simplified Chinese',
-    source: 'English',
+    target: '简体中文',
+    source: '英语',
     stream: true,
   });
   assert.equal(
@@ -77,13 +77,13 @@ test('resolves the language codes each desktop platform actually sends', () => {
   // break the free service on one platform only.
   for (const code of ['zh-Hans', 'zh-CN', 'zh-CHS', 'zh']) {
     const parsed = parseTranslateBody({ text: 'Hello', target: code });
-    assert.equal(parsed?.target, 'Simplified Chinese', `${code} must resolve`);
+    assert.equal(parsed?.target, '简体中文', `${code} must resolve`);
   }
   for (const code of ['zh-Hant', 'zh-TW']) {
-    assert.equal(parseTranslateBody({ text: 'Hello', target: code })?.target, 'Traditional Chinese');
+    assert.equal(parseTranslateBody({ text: 'Hello', target: code })?.target, '繁体中文');
   }
   for (const code of ['en', 'en-US', 'en-GB']) {
-    assert.equal(parseTranslateBody({ text: 'Hello', target: code })?.target, 'English');
+    assert.equal(parseTranslateBody({ text: 'Hello', target: code })?.target, '英语');
   }
 });
 
@@ -109,7 +109,7 @@ test('builds the prompt entirely from server-owned language names', () => {
   assert.ok(body);
 
   const prompt = buildSystemPrompt(body);
-  assert.match(prompt, /Translate from English into Simplified Chinese/);
+  assert.match(prompt, /将以下内容从英语翻译成简体中文/);
   assert.doesNotMatch(prompt, /Hello/);
 });
 
