@@ -142,6 +142,9 @@
                     <Button x:Name="BtnEllipse" Style="{StaticResource ToolbarButtonStyle}" ToolTip="椭圆" AutomationProperties.Name="椭圆" Click="OnToolClicked" Tag="Ellipse">
                         <Ellipse Width="14" Height="14" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8"/>
                     </Button>
+                    <Button x:Name="BtnLine" Style="{StaticResource ToolbarButtonStyle}" ToolTip="线条" AutomationProperties.Name="线条" Click="OnToolClicked" Tag="Line">
+                        <Path Data="M4,18 L18,4" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Width="14" Height="14" Stretch="Uniform"/>
+                    </Button>
                     <Button x:Name="BtnArrow" Style="{StaticResource ToolbarButtonStyle}" ToolTip="箭头" AutomationProperties.Name="箭头" Click="OnToolClicked" Tag="Arrow">
                         <Path Data="M4,18 L18,4 M18,4 L9,4 M18,4 L18,13" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="14" Height="14" Stretch="Uniform"/>
                     </Button>

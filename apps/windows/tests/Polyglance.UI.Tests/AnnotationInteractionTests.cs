@@ -30,6 +30,42 @@ public sealed class AnnotationInteractionTests
     }
 
     [Fact]
+    public void ClickingSelectedToolTogglesItOffAndCollapsesSubToolbar()
+    {
+        RunInSta(() =>
+        {
+            var toolbar = new ScreenshotToolbar();
+            string selectedTool = "";
+            toolbar.ToolSelected += t => selectedTool = t;
+
+            // Click Pen to select
+            toolbar.BtnPen.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            Assert.Equal("Pen", selectedTool);
+            Assert.Equal(Visibility.Visible, toolbar.SubToolbarBorder.Visibility);
+
+            // Click Pen again to deselect
+            toolbar.BtnPen.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            Assert.Equal("None", selectedTool);
+            Assert.Equal(Visibility.Collapsed, toolbar.SubToolbarBorder.Visibility);
+        });
+    }
+
+    [Fact]
+    public void LineToolCanBeSelectedOnToolbar()
+    {
+        RunInSta(() =>
+        {
+            var toolbar = new ScreenshotToolbar();
+            string selectedTool = "";
+            toolbar.ToolSelected += t => selectedTool = t;
+
+            toolbar.BtnLine.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            Assert.Equal("Line", selectedTool);
+            Assert.Equal(Visibility.Visible, toolbar.SubToolbarBorder.Visibility);
+        });
+    }
+
+    [Fact]
     public void AnnotationModeKeepsBlueSelectionHandlesAndUsesCrosshairAwayFromEdges()
     {
         RunInSta(() =>

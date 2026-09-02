@@ -10,9 +10,10 @@ final class ScreenshotAnnotationTests: XCTestCase {
     func testToolCatalogContainsEveryFirstBatchDrawingTool() {
         XCTAssertEqual(
             Set(ScreenshotAnnotationTool.allCases),
-            Set([.freehand, .rectangle, .ellipse, .arrow, .text, .mosaic, .number])
+            Set([.freehand, .rectangle, .ellipse, .line, .arrow, .text, .mosaic, .number])
         )
         XCTAssertEqual(ScreenshotAnnotationTool.text.symbolName, "t.square")
+        XCTAssertEqual(ScreenshotAnnotationTool.line.symbolName, "line.diagonal")
     }
 
     func testEveryToolCreatesAnElementThatTracksItsDragEndpoint() {
@@ -336,6 +337,23 @@ final class ScreenshotAnnotationTests: XCTestCase {
             shouldInterpolate: false,
             intent: .defaultIntent
         ))
+    }
+
+    @MainActor
+    func testLineAnnotationRenderingAndSubToolbarState() throws {
+        let style = ScreenshotAnnotationStyle(color: .systemGreen, lineWidth: 4, isDashed: true, hasArrow: true)
+        let element = ScreenshotAnnotationElement.line(
+            start: CGPoint(x: 10, y: 10),
+            end: CGPoint(x: 80, y: 80),
+            style: style
+        )
+        let context = try makeContext(width: 100, height: 100)
+        ScreenshotAnnotationRenderer.draw(elements: [element], in: context)
+
+        let subToolbar = ScreenshotSubToolbarView(frame: NSRect(x: 0, y: 0, width: 300, height: 36))
+        subToolbar.update(tool: .line, style: style)
+        XCTAssertEqual(subToolbar.currentTool, .line)
+        XCTAssertEqual(subToolbar.currentStyle, style)
     }
 
     private func makeGradientImage(width: Int, height: Int) throws -> CGImage {

@@ -717,6 +717,22 @@ public partial class ScreenSelectionWindow : Window
                 _currentDrawingShape = polyline;
                 break;
 
+            case "Line":
+                var line = new System.Windows.Shapes.Line
+                {
+                    X1 = pt.X,
+                    Y1 = pt.Y,
+                    X2 = pt.X,
+                    Y2 = pt.Y,
+                    Stroke = brush,
+                    StrokeThickness = strokeSize,
+                    StrokeStartLineCap = PenLineCap.Round,
+                    StrokeEndLineCap = PenLineCap.Round
+                };
+                AnnotationCanvas.Children.Add(line);
+                _currentDrawingShape = line;
+                break;
+
             case "Arrow":
                 var arrowPath = new System.Windows.Shapes.Path
                 {
@@ -833,6 +849,11 @@ public partial class ScreenSelectionWindow : Window
             Canvas.SetTop(ellipse, y);
             ellipse.Width = w;
             ellipse.Height = h;
+        }
+        else if (_currentDrawingShape is System.Windows.Shapes.Line line)
+        {
+            line.X2 = curX;
+            line.Y2 = curY;
         }
         else if (_currentDrawingShape is Polyline polyline)
         {

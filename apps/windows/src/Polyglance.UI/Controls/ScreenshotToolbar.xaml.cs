@@ -55,10 +55,7 @@ public partial class ScreenshotToolbar : UserControl
                 _selectedToolButton = btn;
                 btn.Foreground = (System.Windows.Media.Brush)FindResource("ToolbarActiveBrush");
                 btn.Background = (System.Windows.Media.Brush)FindResource("ToolbarActiveBackgroundBrush");
-                // The macOS toolbar keeps its markup controls in a single compact
-                // row. Keeping this collapsed also prevents a second bar from
-                // covering the captured content on small selections.
-                SubToolbarBorder.Visibility = Visibility.Collapsed;
+                SubToolbarBorder.Visibility = Visibility.Visible;
                 ToolSelected?.Invoke(tool);
             }
         }

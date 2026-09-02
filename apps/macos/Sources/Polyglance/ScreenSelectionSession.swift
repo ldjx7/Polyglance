@@ -674,6 +674,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     private var toolbarHelpLabel: NSTextField!
     private weak var hoveredToolbarButton: NSButton?
     private var annotationToolButtons: [ScreenshotAnnotationTool: NSButton] = [:]
+    private var subToolbar: ScreenshotSubToolbarView!
     private var undoButton: NSButton!
     private var redoButton: NSButton!
     private var magnifierView: ScreenshotMagnifierView!
@@ -914,7 +915,8 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         updateMagnifier(at: point)
-        guard toolbar.isHidden || !toolbar.frame.contains(point) else {
+        guard (toolbar.isHidden || !toolbar.frame.contains(point))
+            && (subToolbar.isHidden || !subToolbar.frame.contains(point)) else {
             return
         }
         if case let .annotating(selection) = capturePhase {
@@ -1297,6 +1299,23 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         addSubview(container)
         toolbar = container
         toolbarStack = stack
+
+        let subBar = ScreenshotSubToolbarView(frame: .zero)
+        subBar.isHidden = true
+        subBar.onStyleChanged = { [weak self] newStyle in
+            guard let self else { return }
+            self.annotationStyle = newStyle
+            self.needsDisplay = true
+        }
+        subBar.onToolChanged = { [weak self] newTool in
+            guard let self else { return }
+            self.selectedAnnotationTool = newTool
+            self.updateAnnotationControls()
+            self.needsDisplay = true
+        }
+        addSubview(subBar, positioned: .above, relativeTo: container)
+        subToolbar = subBar
+
         configureToolbarHelpBubble()
         updateToolbarLayout(force: true)
         updateToolbarButtonPresentation()
@@ -1420,6 +1439,35 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             bounds: toolbarPlacementBounds
         )
         toolbar.isHidden = false
+        updateSubToolbar()
+    }
+
+    private func updateSubToolbar() {
+        guard case .annotating = capturePhase, !toolbar.isHidden else {
+            subToolbar?.isHidden = true
+            return
+        }
+        subToolbar?.update(tool: selectedAnnotationTool, style: annotationStyle)
+        subToolbar?.isHidden = false
+        updateSubToolbarPosition()
+    }
+
+    private func updateSubToolbarPosition() {
+        guard let subToolbar, !subToolbar.isHidden, !toolbar.isHidden else { return }
+        let subSize = CGSize(width: min(bounds.width - 20, 390), height: 34)
+        var originX = toolbar.frame.minX
+        if originX + subSize.width > bounds.maxX - 10 {
+            originX = bounds.maxX - subSize.width - 10
+        }
+        if originX < bounds.minX + 10 {
+            originX = bounds.minX + 10
+        }
+
+        var originY = toolbar.frame.minY - subSize.height - 6
+        if originY < bounds.minY + 6 {
+            originY = toolbar.frame.maxY + 6
+        }
+        subToolbar.frame = CGRect(origin: CGPoint(x: originX, y: originY), size: subSize)
     }
 
     private func beginNewSelection(at point: CGPoint) {
@@ -1430,6 +1478,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         hoveredCandidate = candidate
         capturePhase = .pressed(start: point, candidate: candidate)
         toolbar.isHidden = true
+        subToolbar?.isHidden = true
         hideToolbarHelp()
         annotationHistory.removeAll()
         activeAnnotationElement = nil
@@ -1633,6 +1682,16 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             return
         }
         cancelActiveTextInput(restoringFirstResponder: false)
+        if case let .annotating(selection) = capturePhase, selectedAnnotationTool == tool {
+            capturePhase = .selected(selection)
+            activeAnnotationElement = nil
+            resetAnnotationControls()
+            updateCursor()
+            needsDisplay = true
+            window?.makeFirstResponder(self)
+            return
+        }
+
         selectedAnnotationTool = tool
         switch capturePhase {
         case let .selected(selection):
@@ -1875,6 +1934,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         }
         undoButton?.isEnabled = annotationHistory.canUndo
         redoButton?.isEnabled = annotationHistory.canRedo
+        updateSubToolbar()
     }
 
     private func updateToolbarButtonPresentation() {

@@ -6,6 +6,7 @@ enum ScreenshotAnnotationTool: Int, CaseIterable, Hashable {
     case freehand
     case rectangle
     case ellipse
+    case line
     case arrow
     case text
     case mosaic
@@ -19,6 +20,8 @@ enum ScreenshotAnnotationTool: Int, CaseIterable, Hashable {
             return "矩形"
         case .ellipse:
             return "椭圆"
+        case .line:
+            return "线条"
         case .arrow:
             return "箭头"
         case .text:
@@ -38,6 +41,8 @@ enum ScreenshotAnnotationTool: Int, CaseIterable, Hashable {
             return "rectangle"
         case .ellipse:
             return "circle"
+        case .line:
+            return "line.diagonal"
         case .arrow:
             return "arrow.up.right"
         case .text:
@@ -54,19 +59,55 @@ struct ScreenshotAnnotationStyle: Equatable {
     var color: NSColor
     var lineWidth: CGFloat
     var fontSize: CGFloat
+    var isFilled: Bool
+    var isDashed: Bool
+    var hasArrow: Bool
+    var isBold: Bool
+    var isItalic: Bool
+    var hasBorder: Bool
+    var shapeType: Int
+    var numberStyle: Int
 
     static let `default` = ScreenshotAnnotationStyle(color: .systemRed, lineWidth: 3)
 
-    init(color: NSColor, lineWidth: CGFloat, fontSize: CGFloat = 16) {
+    init(
+        color: NSColor = .systemRed,
+        lineWidth: CGFloat = 3,
+        fontSize: CGFloat = 16,
+        isFilled: Bool = false,
+        isDashed: Bool = false,
+        hasArrow: Bool = false,
+        isBold: Bool = false,
+        isItalic: Bool = false,
+        hasBorder: Bool = false,
+        shapeType: Int = 0,
+        numberStyle: Int = 0
+    ) {
         self.color = color
         self.lineWidth = lineWidth
         self.fontSize = fontSize
+        self.isFilled = isFilled
+        self.isDashed = isDashed
+        self.hasArrow = hasArrow
+        self.isBold = isBold
+        self.isItalic = isItalic
+        self.hasBorder = hasBorder
+        self.shapeType = shapeType
+        self.numberStyle = numberStyle
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.color.isEqual(rhs.color)
             && lhs.lineWidth == rhs.lineWidth
             && lhs.fontSize == rhs.fontSize
+            && lhs.isFilled == rhs.isFilled
+            && lhs.isDashed == rhs.isDashed
+            && lhs.hasArrow == rhs.hasArrow
+            && lhs.isBold == rhs.isBold
+            && lhs.isItalic == rhs.isItalic
+            && lhs.hasBorder == rhs.hasBorder
+            && lhs.shapeType == rhs.shapeType
+            && lhs.numberStyle == rhs.numberStyle
     }
 }
 
@@ -74,6 +115,7 @@ enum ScreenshotAnnotationElement: Equatable {
     case freehand(points: [CGPoint], style: ScreenshotAnnotationStyle)
     case rectangle(start: CGPoint, end: CGPoint, style: ScreenshotAnnotationStyle)
     case ellipse(start: CGPoint, end: CGPoint, style: ScreenshotAnnotationStyle)
+    case line(start: CGPoint, end: CGPoint, style: ScreenshotAnnotationStyle)
     case arrow(start: CGPoint, end: CGPoint, style: ScreenshotAnnotationStyle)
     case text(origin: CGPoint, text: String, style: ScreenshotAnnotationStyle)
     case mosaic(points: [CGPoint], style: ScreenshotAnnotationStyle)
@@ -92,6 +134,8 @@ enum ScreenshotAnnotationElement: Equatable {
             self = .rectangle(start: start, end: start, style: style)
         case .ellipse:
             self = .ellipse(start: start, end: start, style: style)
+        case .line:
+            self = .line(start: start, end: start, style: style)
         case .arrow:
             self = .arrow(start: start, end: start, style: style)
         case .text:
@@ -111,6 +155,8 @@ enum ScreenshotAnnotationElement: Equatable {
             return .rectangle
         case .ellipse:
             return .ellipse
+        case .line:
+            return .line
         case .arrow:
             return .arrow
         case .text:
@@ -127,6 +173,7 @@ enum ScreenshotAnnotationElement: Equatable {
         case let .freehand(_, style),
              let .rectangle(_, _, style),
              let .ellipse(_, _, style),
+             let .line(_, _, style),
              let .arrow(_, _, style),
              let .text(_, _, style),
              let .mosaic(_, style),
@@ -141,6 +188,7 @@ enum ScreenshotAnnotationElement: Equatable {
             return points.last
         case let .rectangle(_, end, _),
              let .ellipse(_, end, _),
+             let .line(_, end, _),
              let .arrow(_, end, _):
             return end
         case let .mosaic(points, _):
@@ -162,6 +210,8 @@ enum ScreenshotAnnotationElement: Equatable {
             return .rectangle(start: start, end: point, style: style)
         case let .ellipse(start, _, style):
             return .ellipse(start: start, end: point, style: style)
+        case let .line(start, _, style):
+            return .line(start: start, end: point, style: style)
         case let .arrow(start, _, style):
             return .arrow(start: start, end: point, style: style)
         case let .text(_, text, style):
@@ -185,6 +235,8 @@ enum ScreenshotAnnotationElement: Equatable {
             return .rectangle(start: transform(start), end: transform(end), style: style)
         case let .ellipse(start, end, style):
             return .ellipse(start: transform(start), end: transform(end), style: style)
+        case let .line(start, end, style):
+            return .line(start: transform(start), end: transform(end), style: style)
         case let .arrow(start, end, style):
             return .arrow(start: transform(start), end: transform(end), style: style)
         case let .text(origin, text, style):
@@ -204,7 +256,7 @@ enum ScreenshotAnnotationElement: Equatable {
             return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case let .mosaic(points, _):
             return points.count > 1
-        case .rectangle, .ellipse, .arrow, .number:
+        case .rectangle, .ellipse, .line, .arrow, .number:
             return true
         }
     }
@@ -323,9 +375,33 @@ enum ScreenshotAnnotationRenderer {
                     in: context
                 )
             case let .rectangle(start, end, _):
-                context.stroke(rect(from: pointTransform(start), to: pointTransform(end)))
+                let r = rect(from: pointTransform(start), to: pointTransform(end))
+                if style.isFilled {
+                    context.fill(r)
+                }
+                if style.isDashed {
+                    context.setLineDash(phase: 0, lengths: [lineWidth * 3, lineWidth * 2])
+                }
+                context.stroke(r)
+                context.setLineDash(phase: 0, lengths: [])
             case let .ellipse(start, end, _):
-                context.strokeEllipse(in: rect(from: pointTransform(start), to: pointTransform(end)))
+                let r = rect(from: pointTransform(start), to: pointTransform(end))
+                if style.isFilled {
+                    context.fillEllipse(in: r)
+                }
+                if style.isDashed {
+                    context.setLineDash(phase: 0, lengths: [lineWidth * 3, lineWidth * 2])
+                }
+                context.strokeEllipse(in: r)
+                context.setLineDash(phase: 0, lengths: [])
+            case let .line(start, end, _):
+                drawLine(
+                    from: pointTransform(start),
+                    to: pointTransform(end),
+                    style: style,
+                    lineWidth: lineWidth,
+                    in: context
+                )
             case let .arrow(start, end, _):
                 drawArrow(
                     from: pointTransform(start),
@@ -345,13 +421,36 @@ enum ScreenshotAnnotationRenderer {
                 drawNumber(
                     value,
                     at: pointTransform(origin),
-                    color: style.color,
+                    style: style,
                     diameter: max(18, lineWidth * 6),
                     in: context
                 )
             case .mosaic:
                 break
             }
+        }
+    }
+
+    private static func drawLine(
+        from start: CGPoint,
+        to end: CGPoint,
+        style: ScreenshotAnnotationStyle,
+        lineWidth: CGFloat,
+        in context: CGContext
+    ) {
+        guard start != end else { return }
+        context.saveGState()
+        if style.isDashed {
+            context.setLineDash(phase: 0, lengths: [lineWidth * 3, lineWidth * 2])
+        }
+        context.beginPath()
+        context.move(to: start)
+        context.addLine(to: end)
+        context.strokePath()
+        context.restoreGState()
+
+        if style.hasArrow {
+            drawArrow(from: start, to: end, lineWidth: lineWidth, in: context)
         }
     }
 
@@ -365,17 +464,37 @@ enum ScreenshotAnnotationRenderer {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
         }
+        var font = NSFont.systemFont(
+            ofSize: max(1, style.fontSize * scale),
+            weight: style.isBold ? .bold : .medium
+        )
+        if style.isItalic {
+            let fontDescriptor = font.fontDescriptor.withSymbolicTraits(.italic)
+            font = NSFont(descriptor: fontDescriptor, size: max(1, style.fontSize * scale)) ?? font
+        }
         let attributedText = NSAttributedString(
             string: text,
             attributes: [
-                .font: NSFont.systemFont(
-                    ofSize: max(1, style.fontSize * scale),
-                    weight: .semibold
-                ),
+                .font: font,
                 .foregroundColor: style.color,
             ]
         )
         let line = CTLineCreateWithAttributedString(attributedText)
+        let bounds = CTLineGetBoundsWithOptions(line, .useOpticalBounds)
+
+        if style.hasBorder {
+            context.saveGState()
+            let bgRect = CGRect(
+                x: origin.x - 4,
+                y: origin.y - 2,
+                width: bounds.width + 8,
+                height: bounds.height + 4
+            )
+            context.setFillColor(NSColor.black.withAlphaComponent(0.6).cgColor)
+            context.fill(bgRect)
+            context.restoreGState()
+        }
+
         context.saveGState()
         context.textMatrix = .identity
         context.textPosition = origin
@@ -386,7 +505,7 @@ enum ScreenshotAnnotationRenderer {
     private static func drawNumber(
         _ value: Int,
         at origin: CGPoint,
-        color: NSColor,
+        style: ScreenshotAnnotationStyle,
         diameter: CGFloat,
         in context: CGContext
     ) {
@@ -397,13 +516,22 @@ enum ScreenshotAnnotationRenderer {
             height: diameter
         )
         context.saveGState()
-        context.setFillColor(color.cgColor)
-        context.fillEllipse(in: rect)
+        if style.numberStyle == 1 {
+            // Outline style
+            context.setStrokeColor(style.color.cgColor)
+            context.setLineWidth(max(2, diameter * 0.1))
+            context.strokeEllipse(in: rect)
+        } else {
+            // Filled style
+            context.setFillColor(style.color.cgColor)
+            context.fillEllipse(in: rect)
+        }
+        let textColor = style.numberStyle == 1 ? style.color : NSColor.white
         let text = NSAttributedString(
             string: String(value),
             attributes: [
                 .font: NSFont.systemFont(ofSize: max(10, diameter * 0.55), weight: .bold),
-                .foregroundColor: NSColor.white,
+                .foregroundColor: textColor,
             ]
         )
         let line = CTLineCreateWithAttributedString(text)

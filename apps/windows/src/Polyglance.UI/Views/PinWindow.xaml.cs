@@ -485,6 +485,21 @@ public partial class PinWindow : Window
                 AnnotationCanvas.Children.Add(ellipse);
                 _currentDrawingShape = ellipse;
                 break;
+            case "Line":
+                var line = new System.Windows.Shapes.Line
+                {
+                    X1 = point.X,
+                    Y1 = point.Y,
+                    X2 = point.X,
+                    Y2 = point.Y,
+                    Stroke = brush,
+                    StrokeThickness = strokeSize,
+                    StrokeStartLineCap = PenLineCap.Round,
+                    StrokeEndLineCap = PenLineCap.Round
+                };
+                AnnotationCanvas.Children.Add(line);
+                _currentDrawingShape = line;
+                break;
             case "Arrow":
                 var arrow = new System.Windows.Shapes.Path
                 {
@@ -588,6 +603,11 @@ public partial class PinWindow : Window
             Canvas.SetTop(ellipse, Math.Min(_drawingStart.Y, current.Y));
             ellipse.Width = Math.Abs(current.X - _drawingStart.X);
             ellipse.Height = Math.Abs(current.Y - _drawingStart.Y);
+        }
+        else if (_currentDrawingShape is System.Windows.Shapes.Line line)
+        {
+            line.X2 = current.X;
+            line.Y2 = current.Y;
         }
         else if (_currentDrawingShape is Polyline pen)
         {
