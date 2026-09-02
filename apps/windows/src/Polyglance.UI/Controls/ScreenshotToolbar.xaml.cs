@@ -18,6 +18,18 @@ public partial class ScreenshotToolbar : UserControl
 
     public double CurrentStrokeSize { get; private set; } = 4;
     public Color CurrentColor { get; private set; } = Color.FromRgb(0xEF, 0x44, 0x44);
+    public bool IsFilled { get; private set; } = false;
+    public bool IsDashed { get; private set; } = false;
+    public bool HasArrow { get; private set; } = false;
+    public bool IsBold { get; private set; } = false;
+    public bool IsItalic { get; private set; } = false;
+    public double FontSizeValue { get; private set; } = 16;
+    public int NumberStyle { get; private set; } = 0;
+    public int MosaicShapeType { get; private set; } = 0;
+    public bool MosaicIsBlur { get; private set; } = false;
+
+    public event Action<string>? SubToolActionTriggered;
+
     internal bool AreScreenshotActionsVisible =>
         BtnOCR.Visibility == Visibility.Visible &&
         BtnTranslate.Visibility == Visibility.Visible &&
@@ -55,9 +67,103 @@ public partial class ScreenshotToolbar : UserControl
                 _selectedToolButton = btn;
                 btn.Foreground = (System.Windows.Media.Brush)FindResource("ToolbarActiveBrush");
                 btn.Background = (System.Windows.Media.Brush)FindResource("ToolbarActiveBackgroundBrush");
+                UpdateSubToolbar(tool);
                 SubToolbarBorder.Visibility = Visibility.Visible;
                 ToolSelected?.Invoke(tool);
             }
+        }
+    }
+
+    private void UpdateSubToolbar(string tool)
+    {
+        PanelRectControls.Visibility = Visibility.Collapsed;
+        PanelLineControls.Visibility = Visibility.Collapsed;
+        PanelTextControls.Visibility = Visibility.Collapsed;
+        PanelNumberControls.Visibility = Visibility.Collapsed;
+        PanelMosaicControls.Visibility = Visibility.Collapsed;
+        PanelColorPalette.Visibility = Visibility.Visible;
+
+        switch (tool)
+        {
+            case "Rect":
+            case "Ellipse":
+                PanelRectControls.Visibility = Visibility.Visible;
+                break;
+            case "Line":
+            case "Arrow":
+                PanelLineControls.Visibility = Visibility.Visible;
+                break;
+            case "Text":
+                PanelTextControls.Visibility = Visibility.Visible;
+                break;
+            case "Number":
+                PanelNumberControls.Visibility = Visibility.Visible;
+                break;
+            case "Mosaic":
+                PanelMosaicControls.Visibility = Visibility.Visible;
+                PanelColorPalette.Visibility = Visibility.Collapsed;
+                break;
+        }
+    }
+
+    private void OnSubToolActionClicked(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is string action)
+        {
+            switch (action)
+            {
+                case "ShapeRect":
+                    ToolSelected?.Invoke("Rect");
+                    break;
+                case "ShapeEllipse":
+                    ToolSelected?.Invoke("Ellipse");
+                    break;
+                case "ToggleFill":
+                    IsFilled = !IsFilled;
+                    break;
+                case "ToggleDash":
+                    IsDashed = !IsDashed;
+                    break;
+                case "LineStraight":
+                    HasArrow = false;
+                    break;
+                case "LineArrow":
+                    HasArrow = true;
+                    break;
+                case "TextBold":
+                    IsBold = !IsBold;
+                    break;
+                case "TextItalic":
+                    IsItalic = !IsItalic;
+                    break;
+                case "NumFilled":
+                    NumberStyle = 0;
+                    break;
+                case "NumOutline":
+                    NumberStyle = 1;
+                    break;
+                case "MosaicBrush":
+                    MosaicShapeType = 0;
+                    break;
+                case "MosaicRect":
+                    MosaicShapeType = 1;
+                    break;
+                case "MosaicPixel":
+                    MosaicIsBlur = false;
+                    break;
+                case "MosaicBlur":
+                    MosaicIsBlur = true;
+                    break;
+            }
+            SubToolActionTriggered?.Invoke(action);
+        }
+    }
+
+    private void OnFontSizeChecked(object sender, RoutedEventArgs e)
+    {
+        if (sender is RadioButton rb && rb.Tag is string sizeStr && double.TryParse(sizeStr, out double size))
+        {
+            FontSizeValue = size;
         }
     }
 

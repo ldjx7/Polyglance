@@ -83,12 +83,14 @@ final class ScreenshotSubToolbarView: NSVisualEffectView {
 
         contentStack.addArrangedSubview(controlStack)
 
-        let divider = NSBox()
-        divider.boxType = .separator
-        contentStack.addArrangedSubview(divider)
+        if tool != .mosaic {
+            let divider = NSBox()
+            divider.boxType = .separator
+            contentStack.addArrangedSubview(divider)
 
-        contentStack.addArrangedSubview(colorStack)
-        updateColorSelection()
+            contentStack.addArrangedSubview(colorStack)
+            updateColorSelection()
+        }
     }
 
     private func rebuildControls(for tool: ScreenshotAnnotationTool) {
@@ -223,6 +225,36 @@ final class ScreenshotSubToolbarView: NSVisualEffectView {
             addLineWidthButtons()
 
         case .mosaic:
+            let brushBtn = makeIconButton(symbol: "scribble", tooltip: "涂抹马赛克", selected: currentStyle.shapeType == 0) { [weak self] in
+                guard let self else { return }
+                self.currentStyle.shapeType = 0
+                self.notifyStyleChanged()
+                self.rebuildControls(for: self.currentTool)
+            }
+            let rectBtn = makeIconButton(symbol: "rectangle.dashed", tooltip: "矩形马赛克", selected: currentStyle.shapeType == 1) { [weak self] in
+                guard let self else { return }
+                self.currentStyle.shapeType = 1
+                self.notifyStyleChanged()
+                self.rebuildControls(for: self.currentTool)
+            }
+            controlStack.addArrangedSubview(brushBtn)
+            controlStack.addArrangedSubview(rectBtn)
+
+            let pixelBtn = makeIconButton(symbol: "square.grid.3x3.fill", tooltip: "像素颗粒", selected: !currentStyle.hasBorder) { [weak self] in
+                guard let self else { return }
+                self.currentStyle.hasBorder = false
+                self.notifyStyleChanged()
+                self.rebuildControls(for: self.currentTool)
+            }
+            let blurBtn = makeIconButton(symbol: "sparkles", tooltip: "高斯模糊", selected: currentStyle.hasBorder) { [weak self] in
+                guard let self else { return }
+                self.currentStyle.hasBorder = true
+                self.notifyStyleChanged()
+                self.rebuildControls(for: self.currentTool)
+            }
+            controlStack.addArrangedSubview(pixelBtn)
+            controlStack.addArrangedSubview(blurBtn)
+
             addLineWidthButtons()
         }
     }
