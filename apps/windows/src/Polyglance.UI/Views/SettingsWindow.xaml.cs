@@ -19,10 +19,12 @@ public partial class SettingsWindow : FluentWindow
     private readonly ConfigurationStore _configStore;
     private readonly AppConfiguration _config;
     private readonly StartupRegistrationManager _startupRegistration;
+    private UpdateInfo? _latestFoundUpdate;
 
     public SettingsWindow(
         ConfigurationStore configStore,
-        StartupRegistrationManager? startupRegistration = null)
+        StartupRegistrationManager? startupRegistration = null,
+        string initialTab = "General")
     {
         InitializeComponent();
         _configStore = configStore;
@@ -42,11 +44,31 @@ public partial class SettingsWindow : FluentWindow
         }
 
         string versionStr = AppVersionDisplay.FromAssembly(Assembly.GetEntryAssembly());
+        bool isCurrentBeta = versionStr.Contains("-beta", StringComparison.OrdinalIgnoreCase);
 
         TxtCurrentVersion.Text = versionStr;
         TxtAboutVersion.Text = versionStr;
 
+        if (isCurrentBeta)
+        {
+            TxtVersionType.Text = "Beta 尝鲜";
+            TxtVersionType.Foreground = new SolidColorBrush(Color.FromRgb(0x8B, 0x5C, 0xF6));
+            BadgeVersionType.Background = new SolidColorBrush(Color.FromArgb(0x20, 0x8B, 0x5C, 0xF6));
+        }
+        else
+        {
+            TxtVersionType.Text = "正式版";
+            TxtVersionType.Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
+            BadgeVersionType.Background = new SolidColorBrush(Color.FromArgb(0x20, 0x10, 0xB9, 0x81));
+        }
+
         LoadConfigToUi();
+
+        if (string.Equals(initialTab, "About", StringComparison.OrdinalIgnoreCase))
+        {
+            NavAbout.IsChecked = true;
+            OnNavChanged(NavAbout, new RoutedEventArgs());
+        }
     }
 
     private void OnNavChanged(object sender, RoutedEventArgs e)
@@ -97,7 +119,7 @@ public partial class SettingsWindow : FluentWindow
         RecHotkeyRestoreMostRecentPin.Hotkey = _config.HotkeyRestoreMostRecentPin;
         RecHotkeyMainTranslator.Hotkey = _config.HotkeyMainTranslator;
 
-        ChkAutoCheckUpdates.IsChecked = _config.AutoCheckUpdates;
+        SwIncludeBetaUpdates.IsChecked = _config.IncludeBetaUpdates;
         SelectComboBoxItemByTag(CmbDefaultRecordFormat, _config.DefaultRecordingFormat, "MP4");
         SelectComboBoxItemByTag(CmbDefaultRecordFps, _config.DefaultRecordingFps.ToString(), "30");
         SelectComboBoxItemByTag(
@@ -172,32 +194,44 @@ public partial class SettingsWindow : FluentWindow
         TxtUpdateStatus.SetResourceReference(
             System.Windows.Controls.TextBlock.ForegroundProperty,
             "TextFillColorSecondaryBrush");
+        BorderAvailableUpdate.Visibility = Visibility.Collapsed;
         PbUpdateProgress.Visibility = Visibility.Collapsed;
         PbUpdateProgress.Value = 0;
 
+        bool includeBeta = SwIncludeBetaUpdates.IsChecked == true;
+
         try
         {
-            UpdateCheckResult check = await AppUpdater.CheckForUpdatesAsync(_config.AppcastUrl);
+            UpdateCheckResult check = await AppUpdater.CheckForUpdatesAsync(
+                _config.AppcastUrl,
+                includeBeta,
+                _config.SkippedUpdateVersion);
+
             if (check.Status == UpdateCheckStatus.UpdateAvailable)
             {
-                UpdateInfo update = check.Update!;
-                BtnCheckUpdate.Content = "正在下载更新...";
-                TxtUpdateStatus.Text = $"发现新版本 v{update.Version}，正在下载更新包 (0%)...";
-                TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
-                PbUpdateProgress.Visibility = Visibility.Visible;
+                _latestFoundUpdate = check.Update!;
+                TxtUpdateStatus.Visibility = Visibility.Collapsed;
+                BorderAvailableUpdate.Visibility = Visibility.Visible;
 
-                var progress = new Progress<int>(percent =>
+                TxtNewVersionTitle.Text = $"发现新版本 v{_latestFoundUpdate.Version}";
+                if (_latestFoundUpdate.IsBeta)
                 {
-                    PbUpdateProgress.Value = percent;
-                    TxtUpdateStatus.Text = $"正在下载更新包 ({percent}%)...";
-                });
-
-                bool started = await AppUpdater.DownloadAndApplyUpdateAsync(update.DownloadUrl, progress);
-                if (!started)
-                {
-                    TxtUpdateStatus.Text = "更新包下载或替换失败，请稍后重试";
-                    TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
+                    TxtNewVersionType.Text = "Beta 测试版";
+                    TxtNewVersionType.Foreground = new SolidColorBrush(Color.FromRgb(0x8B, 0x5C, 0xF6));
+                    BadgeNewVersionType.Background = new SolidColorBrush(Color.FromArgb(0x20, 0x8B, 0x5C, 0xF6));
+                    BtnSkipVersion.Visibility = Visibility.Visible;
                 }
+                else
+                {
+                    TxtNewVersionType.Text = "正式版";
+                    TxtNewVersionType.Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
+                    BadgeNewVersionType.Background = new SolidColorBrush(Color.FromArgb(0x20, 0x10, 0xB9, 0x81));
+                    BtnSkipVersion.Visibility = Visibility.Collapsed;
+                }
+
+                TxtReleaseNotes.Text = string.IsNullOrWhiteSpace(_latestFoundUpdate.ReleaseNotes)
+                    ? "包含多项体验优化与功能更新。"
+                    : _latestFoundUpdate.ReleaseNotes;
             }
             else if (check.Status == UpdateCheckStatus.UpToDate)
             {
@@ -221,6 +255,54 @@ public partial class SettingsWindow : FluentWindow
         {
             BtnCheckUpdate.IsEnabled = true;
             BtnCheckUpdate.Content = "立即检查更新";
+        }
+    }
+
+    private void OnSkipVersionClick(object sender, RoutedEventArgs e)
+    {
+        if (_latestFoundUpdate != null)
+        {
+            _config.SkippedUpdateVersion = _latestFoundUpdate.Version;
+            try
+            {
+                _configStore.Save(_config);
+            }
+            catch { }
+            BorderAvailableUpdate.Visibility = Visibility.Collapsed;
+            TxtUpdateStatus.Visibility = Visibility.Visible;
+            TxtUpdateStatus.Text = $"已跳过版本 v{_latestFoundUpdate.Version}，有更高版本时将再次提醒。";
+            TxtUpdateStatus.SetResourceReference(
+                System.Windows.Controls.TextBlock.ForegroundProperty,
+                "TextFillColorSecondaryBrush");
+        }
+    }
+
+    private async void OnApplyUpdateClick(object sender, RoutedEventArgs e)
+    {
+        if (_latestFoundUpdate == null) return;
+
+        BtnApplyUpdate.IsEnabled = false;
+        BtnSkipVersion.IsEnabled = false;
+        BtnCheckUpdate.IsEnabled = false;
+        PbUpdateProgress.Visibility = Visibility.Visible;
+        TxtUpdateStatus.Visibility = Visibility.Visible;
+        TxtUpdateStatus.Text = "正在下载更新包 (0%)...";
+        TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
+
+        var progress = new Progress<int>(percent =>
+        {
+            PbUpdateProgress.Value = percent;
+            TxtUpdateStatus.Text = $"正在下载更新包 ({percent}%)...";
+        });
+
+        bool started = await AppUpdater.DownloadAndApplyUpdateAsync(_latestFoundUpdate.DownloadUrl, progress);
+        if (!started)
+        {
+            TxtUpdateStatus.Text = "更新包下载或替换失败，请稍后重试";
+            TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
+            BtnApplyUpdate.IsEnabled = true;
+            BtnSkipVersion.IsEnabled = true;
+            BtnCheckUpdate.IsEnabled = true;
         }
     }
 
@@ -312,7 +394,7 @@ public partial class SettingsWindow : FluentWindow
         _config.HotkeyRestoreMostRecentPin = RecHotkeyRestoreMostRecentPin.Hotkey;
         _config.HotkeyMainTranslator = RecHotkeyMainTranslator.Hotkey;
 
-        _config.AutoCheckUpdates = ChkAutoCheckUpdates.IsChecked == true;
+        _config.IncludeBetaUpdates = SwIncludeBetaUpdates.IsChecked == true;
         _config.DefaultRecordingFormat = SelectedTag(CmbDefaultRecordFormat, "MP4");
         _config.DefaultRecordingFps = int.TryParse(
             SelectedTag(CmbDefaultRecordFps, "30"),

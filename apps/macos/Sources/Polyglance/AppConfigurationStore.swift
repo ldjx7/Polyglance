@@ -32,6 +32,8 @@ struct AppConfiguration: Equatable, Sendable {
     var model: String
     var targetLanguage: String
     var aiStreamingEnabled: Bool
+    var includeBetaUpdates: Bool
+    var autoCheckUpdates: Bool
 
     init(
         provider: TranslationProvider,
@@ -39,7 +41,9 @@ struct AppConfiguration: Equatable, Sendable {
         apiKey: String,
         model: String,
         targetLanguage: String,
-        aiStreamingEnabled: Bool = true
+        aiStreamingEnabled: Bool = true,
+        includeBetaUpdates: Bool = false,
+        autoCheckUpdates: Bool = true
     ) {
         self.provider = provider
         self.endpoint = endpoint
@@ -47,6 +51,8 @@ struct AppConfiguration: Equatable, Sendable {
         self.model = model
         self.targetLanguage = targetLanguage
         self.aiStreamingEnabled = aiStreamingEnabled
+        self.includeBetaUpdates = includeBetaUpdates
+        self.autoCheckUpdates = autoCheckUpdates
     }
 }
 
@@ -93,6 +99,8 @@ final class AppConfigurationStore: @unchecked Sendable {
         static let model = "provider.model"
         static let targetLanguage = "translation.target-language"
         static let aiStreamingEnabled = "translation.ai-streaming-enabled"
+        static let includeBetaUpdates = "updater.include-beta-updates"
+        static let autoCheckUpdates = "updater.auto-check-updates"
     }
 
     private let defaults: UserDefaults
@@ -128,7 +136,9 @@ final class AppConfigurationStore: @unchecked Sendable {
             apiKey: apiKey,
             model: defaults.string(forKey: Key.model) ?? "gpt-4.1-mini",
             targetLanguage: defaults.string(forKey: Key.targetLanguage) ?? "zh-CN",
-            aiStreamingEnabled: defaults.object(forKey: Key.aiStreamingEnabled) as? Bool ?? true
+            aiStreamingEnabled: defaults.object(forKey: Key.aiStreamingEnabled) as? Bool ?? true,
+            includeBetaUpdates: defaults.bool(forKey: Key.includeBetaUpdates),
+            autoCheckUpdates: defaults.object(forKey: Key.autoCheckUpdates) as? Bool ?? true
         )
     }
 
@@ -151,6 +161,8 @@ final class AppConfigurationStore: @unchecked Sendable {
         defaults.set(model, forKey: Key.model)
         defaults.set(configuration.targetLanguage, forKey: Key.targetLanguage)
         defaults.set(configuration.aiStreamingEnabled, forKey: Key.aiStreamingEnabled)
+        defaults.set(configuration.includeBetaUpdates, forKey: Key.includeBetaUpdates)
+        defaults.set(configuration.autoCheckUpdates, forKey: Key.autoCheckUpdates)
     }
 }
 

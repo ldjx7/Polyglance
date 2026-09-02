@@ -21,6 +21,7 @@ public sealed class UpdateInfo
     public string DownloadUrl { get; set; } = "";
     public string ReleaseNotes { get; set; } = "";
     public string Title { get; set; } = "";
+    public bool IsBeta => Version.Contains("-beta", StringComparison.OrdinalIgnoreCase);
 }
 
 public enum UpdateCheckStatus
@@ -48,24 +49,32 @@ public static class AppUpdater
     public static string CurrentSemanticVersion =>
         AppVersionDisplay.FromAssembly(Assembly.GetEntryAssembly()).TrimStart('v', 'V');
 
-    public static Task<UpdateCheckResult> CheckForUpdatesAsync(string appcastUrl) =>
-        CheckForUpdatesAsync(appcastUrl, _httpClient, CurrentSemanticVersion, CurrentVersion);
+    public static Task<UpdateCheckResult> CheckForUpdatesAsync(
+        string appcastUrl,
+        bool? includeBetaUpdates = null,
+        string? skippedVersion = null) =>
+        CheckForUpdatesAsync(appcastUrl, _httpClient, CurrentSemanticVersion, CurrentVersion, includeBetaUpdates, skippedVersion);
 
     internal static async Task<UpdateCheckResult> CheckForUpdatesAsync(
         string appcastUrl,
         HttpClient httpClient,
         string currentSemanticVersion,
-        Version currentBuildVersion)
+        Version currentBuildVersion,
+        bool? includeBetaUpdates = null,
+        string? skippedVersion = null)
     {
         if (string.IsNullOrWhiteSpace(appcastUrl))
             return Failed("更新地址未配置。");
+
+        bool effectiveIncludeBeta = includeBetaUpdates ?? currentSemanticVersion.Contains("-beta", StringComparison.OrdinalIgnoreCase);
 
         try
         {
             string xmlContent = await DownloadAppcastAsync(
                 appcastUrl,
                 httpClient,
-                currentSemanticVersion);
+                currentSemanticVersion,
+                effectiveIncludeBeta);
 
             var doc = XDocument.Parse(xmlContent);
             XNamespace sparkleNs = "http://www.andymatuschak.org/xml-namespaces/sparkle";
@@ -90,6 +99,18 @@ public static class AppUpdater
                 return Failed("更新信息格式无效：构建版本号无法识别。");
             if (string.IsNullOrWhiteSpace(downloadUrl))
                 return Failed("更新信息格式无效：缺少下载地址。");
+
+            bool isRemoteBeta = semanticVersion.Contains("-beta", StringComparison.OrdinalIgnoreCase);
+            if (!effectiveIncludeBeta && isRemoteBeta)
+            {
+                return new UpdateCheckResult { Status = UpdateCheckStatus.UpToDate };
+            }
+
+            if (!string.IsNullOrWhiteSpace(skippedVersion)
+                && string.Equals(semanticVersion.TrimStart('v', 'V'), skippedVersion.TrimStart('v', 'V'), StringComparison.OrdinalIgnoreCase))
+            {
+                return new UpdateCheckResult { Status = UpdateCheckStatus.UpToDate };
+            }
 
             bool remoteSemanticVersionValid =
                 SemanticVersion.TryParse(semanticVersion, out SemanticVersion? remoteSemanticVersion);
@@ -150,7 +171,8 @@ public static class AppUpdater
     private static async Task<string> DownloadAppcastAsync(
         string appcastUrl,
         HttpClient httpClient,
-        string currentSemanticVersion)
+        string currentSemanticVersion,
+        bool includeBetaUpdates = false)
     {
         using HttpResponseMessage response = await SendUpdateRequestAsync(
             httpClient,
@@ -164,7 +186,8 @@ public static class AppUpdater
                 httpClient,
                 releasesApiUrl!,
                 assetName!,
-                currentSemanticVersion);
+                currentSemanticVersion,
+                includeBetaUpdates);
             if (!string.IsNullOrWhiteSpace(fallbackUrl))
             {
                 using HttpResponseMessage fallbackResponse = await SendUpdateRequestAsync(
@@ -226,7 +249,8 @@ public static class AppUpdater
         HttpClient httpClient,
         string releasesApiUrl,
         string assetName,
-        string currentSemanticVersion)
+        string currentSemanticVersion,
+        bool includeBetaUpdates = false)
     {
         using HttpResponseMessage response = await SendUpdateRequestAsync(
             httpClient,
@@ -246,6 +270,18 @@ public static class AppUpdater
             {
                 continue;
             }
+
+            bool isPrerelease = release.TryGetProperty("prerelease", out JsonElement prerelease)
+                && prerelease.ValueKind == JsonValueKind.True;
+            string tagName = release.TryGetProperty("tag_name", out JsonElement tag)
+                ? tag.GetString() ?? ""
+                : "";
+
+            if (!includeBetaUpdates && (isPrerelease || tagName.Contains("-beta", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
             if (!release.TryGetProperty("assets", out JsonElement assets)
                 || assets.ValueKind != JsonValueKind.Array)
             {

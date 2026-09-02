@@ -89,6 +89,12 @@ public sealed class AppConfiguration
     [JsonPropertyName("auto_check_updates")]
     public bool AutoCheckUpdates { get; set; } = true;
 
+    [JsonPropertyName("include_beta_updates")]
+    public bool IncludeBetaUpdates { get; set; }
+
+    [JsonPropertyName("skipped_update_version")]
+    public string SkippedUpdateVersion { get; set; } = "";
+
     [JsonPropertyName("appcast_url")]
     public string AppcastUrl { get; set; } = "https://github.com/ldjx7/Polyglance/releases/latest/download/appcast-windows.xml";
 

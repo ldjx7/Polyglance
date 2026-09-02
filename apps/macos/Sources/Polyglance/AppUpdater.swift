@@ -29,17 +29,25 @@ struct AppUpdateConfiguration: Equatable {
 }
 
 @MainActor
-final class AppUpdater {
+final class AppUpdater: NSObject {
     private let configuration: AppUpdateConfiguration
     private let updaterController: SPUStandardUpdaterController
 
     init(configuration: AppUpdateConfiguration = AppUpdateConfiguration()) {
         self.configuration = configuration
-        updaterController = SPUStandardUpdaterController(
-            startingUpdater: configuration.isConfigured,
+        let controller = SPUStandardUpdaterController(
+            startingUpdater: false,
             updaterDelegate: nil,
             userDriverDelegate: nil
         )
+        self.updaterController = controller
+        super.init()
+
+        if configuration.isConfigured {
+            controller.updater.automaticallyChecksForUpdates = true
+            controller.updater.updateCheckInterval = 21600
+            controller.startUpdater()
+        }
     }
 
     func checkForUpdates() {

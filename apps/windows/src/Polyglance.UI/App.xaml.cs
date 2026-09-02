@@ -31,6 +31,9 @@ public partial class App : Application
     private ConfigurationStore? _configStore;
     private MainWindow? _mainWindow;
     private HwndSource? _hiddenHwndSource;
+    private CancellationTokenSource? _updateCts;
+    private ToolStripMenuItem? _dynamicUpdateMenuItem;
+    private ToolStripSeparator? _dynamicUpdateSeparator;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -72,7 +75,8 @@ public partial class App : Application
         var config = LoadConfigurationOrDefault();
         if (config.AutoCheckUpdates)
         {
-            _ = CheckBackgroundUpdateAsync(config.AppcastUrl);
+            _updateCts = new CancellationTokenSource();
+            _ = StartBackgroundUpdateLoopAsync(_updateCts.Token);
         }
     }
 
@@ -463,13 +467,13 @@ public partial class App : Application
         });
     }
 
-    public void ShowSettings()
+    public void ShowSettings(string initialTab = "General")
     {
         Dispatcher.Invoke(() =>
         {
             if (_configStore != null)
             {
-                var settings = new SettingsWindow(_configStore);
+                var settings = new SettingsWindow(_configStore, initialTab: initialTab);
                 if (settings.ShowDialog() == true)
                 {
                     RegisterDynamicHotKeys();
@@ -478,31 +482,92 @@ public partial class App : Application
         });
     }
 
-    private async Task CheckBackgroundUpdateAsync(string appcastUrl)
+    private async Task StartBackgroundUpdateLoopAsync(CancellationToken cancellationToken)
     {
         try
         {
-            await Task.Delay(3000);
-            UpdateCheckResult check = await AppUpdater.CheckForUpdatesAsync(appcastUrl);
-            if (check.Status == UpdateCheckStatus.UpdateAvailable)
+            await Task.Delay(TimeSpan.FromSeconds(10), cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
             {
-                UpdateInfo update = check.Update!;
-                Dispatcher.Invoke(() =>
+                var config = LoadConfigurationOrDefault();
+                if (config.AutoCheckUpdates)
                 {
-                    _notifyIcon?.ShowBalloonTip(
-                        5000,
-                        "Polyglance 发现新版本",
-                        $"v{update.Version} 已发布，点击偏好设置可一键更新。",
-                        ToolTipIcon.Info
-                    );
-                });
+                    UpdateCheckResult check = await AppUpdater.CheckForUpdatesAsync(
+                        config.AppcastUrl,
+                        config.IncludeBetaUpdates,
+                        config.SkippedUpdateVersion);
+
+                    if (check.Status == UpdateCheckStatus.UpdateAvailable && check.Update != null)
+                    {
+                        UpdateInfo update = check.Update;
+                        Dispatcher.Invoke(() =>
+                        {
+                            ApplyUpdateNotification(update);
+                        });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Background update check failed: {ex.Message}");
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromHours(6), cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
             }
         }
-        catch { }
+    }
+
+    private void ApplyUpdateNotification(UpdateInfo update)
+    {
+        if (_notifyIcon?.ContextMenuStrip == null) return;
+
+        string updateTitle = update.IsBeta
+            ? $"🧪 发现新测试版 v{update.Version}"
+            : $"🚀 发现新版本 v{update.Version}";
+
+        if (_dynamicUpdateMenuItem == null)
+        {
+            _dynamicUpdateMenuItem = new ToolStripMenuItem(updateTitle, null, (s, e) => ShowSettings(initialTab: "About"))
+            {
+                Font = new System.Drawing.Font(System.Drawing.SystemFonts.MenuFont?.FontFamily ?? System.Drawing.FontFamily.GenericSansSerif, 9f, System.Drawing.FontStyle.Bold)
+            };
+            _dynamicUpdateSeparator = new ToolStripSeparator();
+
+            _notifyIcon.ContextMenuStrip.Items.Insert(0, _dynamicUpdateMenuItem);
+            _notifyIcon.ContextMenuStrip.Items.Insert(1, _dynamicUpdateSeparator);
+        }
+        else
+        {
+            _dynamicUpdateMenuItem.Text = updateTitle;
+        }
+
+        _notifyIcon.ShowBalloonTip(
+            6000,
+            update.IsBeta ? "Polyglance 发现新测试版" : "Polyglance 发现新版本",
+            $"v{update.Version} ({(update.IsBeta ? "测试版" : "正式版")}) 已发布，点击偏好设置可一键更新。",
+            ToolTipIcon.Info
+        );
     }
 
     private void ShutdownApp()
     {
+        _updateCts?.Cancel();
+        _updateCts?.Dispose();
+        _updateCts = null;
         _notifyIcon?.Dispose();
         _hotKeyManager?.Dispose();
         _translationService?.Dispose();

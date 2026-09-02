@@ -479,22 +479,63 @@
                             <!-- 检查版本更新 -->
                             <ui:Card Margin="0,0,0,12" Padding="16,14">
                                 <StackPanel>
-                                    <Grid Margin="0,0,0,8">
+                                    <Grid Margin="0,0,0,10">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
-                                            <TextBlock Text="检查版本更新" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-                                            <TextBlock x:Name="TxtCurrentVersion" Text="v0.0.4" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <TextBlock Text="Polyglance 版本" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}" VerticalAlignment="Center"/>
+                                                <Border x:Name="BadgeVersionType" Margin="8,0,0,0" Padding="6,1" CornerRadius="4" Background="#1A0A84FF" VerticalAlignment="Center">
+                                                    <TextBlock x:Name="TxtVersionType" Text="正式版" FontSize="10.5" FontWeight="SemiBold" Foreground="#FF0A84FF"/>
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock x:Name="TxtCurrentVersion" Text="v0.0.5" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
                                         </StackPanel>
                                         <ui:Button x:Name="BtnCheckUpdate" Grid.Column="1" Appearance="Secondary" Content="立即检查更新" Padding="14,6" Click="OnCheckUpdateClick"/>
                                     </Grid>
 
+                                    <!-- 发现新版本卡片 -->
+                                    <Border x:Name="BorderAvailableUpdate" Visibility="Collapsed" Margin="0,0,0,12" Padding="12" CornerRadius="6" Background="#0A0A84FF" BorderBrush="#200A84FF" BorderThickness="1">
+                                        <StackPanel>
+                                            <Grid Margin="0,0,0,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <TextBlock x:Name="TxtNewVersionTitle" Text="发现新版本" FontWeight="Bold" FontSize="12.5" Foreground="{DynamicResource TextFillColorPrimaryBrush}" VerticalAlignment="Center"/>
+                                                    <Border x:Name="BadgeNewVersionType" Margin="6,0,0,0" Padding="5,1" CornerRadius="4" Background="#200A84FF" VerticalAlignment="Center">
+                                                        <TextBlock x:Name="TxtNewVersionType" Text="正式版" FontSize="10" FontWeight="SemiBold" Foreground="#FF0A84FF"/>
+                                                    </Border>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                    <ui:Button x:Name="BtnSkipVersion" Appearance="Secondary" Content="跳过此版本" Margin="0,0,6,0" Padding="8,3" FontSize="11" Click="OnSkipVersionClick"/>
+                                                    <ui:Button x:Name="BtnApplyUpdate" Appearance="Primary" Content="立即更新并重启" Padding="10,3" FontSize="11" Click="OnApplyUpdateClick"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <TextBlock x:Name="TxtReleaseNotes" Text="" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" MaxHeight="100"/>
+                                        </StackPanel>
+                                    </Border>
+
                                     <TextBlock x:Name="TxtUpdateStatus" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,6" Visibility="Collapsed"/>
                                     <ProgressBar x:Name="PbUpdateProgress" Height="4" Margin="0,0,0,10" Minimum="0" Maximum="100" Value="0" Visibility="Collapsed"/>
 
-                                    <ui:ToggleSwitch x:Name="ChkAutoCheckUpdates" Content="启动应用时自动在后台静默检查更新" IsChecked="True"/>
+                                    <Separator Margin="0,6,0,10" Background="{DynamicResource CardStrokeColorDefaultBrush}" Height="1"/>
+
+                                    <!-- 更新通道切换开关 -->
+                                    <Grid Margin="0,2,0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" Margin="0,0,16,0" VerticalAlignment="Center">
+                                            <TextBlock Text="接收测试版更新 (Beta Channel)" FontSize="12.5" FontWeight="Medium" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                            <TextBlock Text="开启后优先接收包含实验性新特性的测试版本；关闭后仅接收稳定的正式版。" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                        <ui:ToggleSwitch x:Name="SwIncludeBetaUpdates" Grid.Column="1" VerticalAlignment="Center"/>
+                                    </Grid>
                                 </StackPanel>
                             </ui:Card>
 

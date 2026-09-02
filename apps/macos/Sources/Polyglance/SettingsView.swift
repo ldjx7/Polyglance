@@ -25,6 +25,8 @@ struct SettingsView: View {
     @State private var shortcuts = GlobalShortcutConfiguration.default
     @State private var recordingSettings = RecordingSettings.default
     @State private var launchAtLoginEnabled = false
+    @State private var includeBetaUpdates = false
+    @State private var autoCheckUpdates = true
     @State private var statusMessage: String?
 
     var body: some View {
@@ -299,31 +301,63 @@ struct SettingsView: View {
     }
 
     private var aboutTab: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: 64, height: 64)
+        Form {
+            Section {
+                HStack(spacing: 12) {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .interpolation(.high)
+                        .frame(width: 44, height: 44)
 
-            VStack(spacing: 4) {
-                Text("Polyglance")
-                    .font(.system(size: 16, weight: .bold))
-                Text(AppVersionInfo.displayString)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("多语言内容，一眼看懂")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text("Polyglance")
+                                .font(.headline)
+                            let isBeta = AppVersionInfo.versionString.contains("-beta")
+                            Text(isBeta ? "Beta 尝鲜" : "正式版")
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(isBeta ? Color.purple.opacity(0.15) : Color.green.opacity(0.15))
+                                .foregroundStyle(isBeta ? Color.purple : Color.green)
+                                .clipShape(Capsule())
+                        }
+
+                        Text(AppVersionInfo.displayString)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button("立即检查更新") {
+                        AppUpdater().checkForUpdates()
+                    }
+                    .controlSize(.regular)
+                }
+                .padding(.vertical, 2)
+            } header: {
+                Text("版本信息")
             }
 
-            Text("基于 Rust 共享内核的原生跨平台翻译与截图工具")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+            Section {
+                Toggle("接收测试版更新 (Beta Channel)", isOn: $includeBetaUpdates)
+                Text("开启后优先接收包含实验性新特性的测试版本；关闭后仅接收经过充分测试的正式版本。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("更新通道")
+            }
 
-            Spacer()
+            Section {
+                Text("多语言内容，一眼看懂。基于 Rust 共享内核的原生跨平台翻译与截图工具。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("关于软件")
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .formStyle(.grouped)
     }
 
     private func iconForShortcutAction(_ action: GlobalShortcutAction) -> String {
@@ -351,6 +385,8 @@ struct SettingsView: View {
             model = configuration.model
             targetLanguage = configuration.targetLanguage
             aiStreamingEnabled = configuration.aiStreamingEnabled
+            includeBetaUpdates = configuration.includeBetaUpdates
+            autoCheckUpdates = configuration.autoCheckUpdates
             shortcuts = shortcutStore.load()
             recordingSettings = recordingSettingsStore.load()
             launchAtLoginEnabled = launchAtLoginManager.isEnabled
@@ -371,7 +407,9 @@ struct SettingsView: View {
                 apiKey: apiKey,
                 model: model,
                 targetLanguage: targetLanguage,
-                aiStreamingEnabled: aiStreamingEnabled
+                aiStreamingEnabled: aiStreamingEnabled,
+                includeBetaUpdates: includeBetaUpdates,
+                autoCheckUpdates: autoCheckUpdates
             )
             try onSave(configuration, shortcuts, recordingSettings, launchAtLoginEnabled)
             statusMessage = "设置已保存"

@@ -213,6 +213,57 @@ public sealed class AppUpdaterTests
         Assert.Equal(expectedSign, Math.Sign(leftVersion!.CompareTo(rightVersion)));
     }
 
+    [Fact]
+    public async Task BetaUpdateIsIgnoredWhenIncludeBetaUpdatesIsFalse()
+    {
+        using var client = CreateClient(_ => Response(Appcast("0.0.5-beta.1", "0.0.5.1")));
+
+        UpdateCheckResult result = await AppUpdater.CheckForUpdatesAsync(
+            "https://updates.example.test/appcast.xml",
+            client,
+            "0.0.4",
+            new Version(0, 0, 4, 0),
+            includeBetaUpdates: false);
+
+        Assert.Equal(UpdateCheckStatus.UpToDate, result.Status);
+        Assert.Null(result.Update);
+    }
+
+    [Fact]
+    public async Task BetaUpdateIsOfferedWhenIncludeBetaUpdatesIsTrue()
+    {
+        using var client = CreateClient(_ => Response(Appcast("0.0.5-beta.1", "0.0.5.1")));
+
+        UpdateCheckResult result = await AppUpdater.CheckForUpdatesAsync(
+            "https://updates.example.test/appcast.xml",
+            client,
+            "0.0.4",
+            new Version(0, 0, 4, 0),
+            includeBetaUpdates: true);
+
+        Assert.Equal(UpdateCheckStatus.UpdateAvailable, result.Status);
+        Assert.NotNull(result.Update);
+        Assert.Equal("0.0.5-beta.1", result.Update!.Version);
+        Assert.True(result.Update.IsBeta);
+    }
+
+    [Fact]
+    public async Task SkippedVersionIsReportedAsUpToDate()
+    {
+        using var client = CreateClient(_ => Response(Appcast("0.0.5-beta.1", "0.0.5.1")));
+
+        UpdateCheckResult result = await AppUpdater.CheckForUpdatesAsync(
+            "https://updates.example.test/appcast.xml",
+            client,
+            "0.0.4",
+            new Version(0, 0, 4, 0),
+            includeBetaUpdates: true,
+            skippedVersion: "0.0.5-beta.1");
+
+        Assert.Equal(UpdateCheckStatus.UpToDate, result.Status);
+        Assert.Null(result.Update);
+    }
+
     private static HttpClient CreateClient(Func<HttpRequestMessage, HttpResponseMessage> responder) =>
         new(new StubHttpMessageHandler(responder));
 
