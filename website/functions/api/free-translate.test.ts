@@ -3,7 +3,9 @@ import test from 'node:test';
 
 import {
   buildSystemPrompt,
-  getAvailableCandidates,
+  buildTieredTrySequence,
+  getDefaultFallbackCandidates,
+  getPreferredCandidates,
   handleTranslationRequest,
   parseTranslateBody,
   type TranslationEnvironment,
@@ -266,12 +268,15 @@ test('collects candidates from multiple providers and supports multiple comma-se
     OPENROUTER_API_KEY: 'openrouter-1',
   };
 
-  const candidates = getAvailableCandidates(env);
-  assert.equal(candidates.length, 5);
-  assert.equal(candidates.filter((c) => c.name === 'Gemini').length, 2);
-  assert.equal(candidates.filter((c) => c.name === 'Groq').length, 1);
-  assert.equal(candidates.filter((c) => c.name === 'SiliconFlow').length, 1);
-  assert.equal(candidates.filter((c) => c.name === 'OpenRouter').length, 1);
+  const preferred = getPreferredCandidates(env);
+  assert.equal(preferred.length, 5);
+  assert.equal(preferred.filter((c) => c.name === 'Gemini').length, 2);
+  assert.equal(preferred.filter((c) => c.name === 'Groq').length, 1);
+  assert.equal(preferred.filter((c) => c.name === 'SiliconFlow').length, 1);
+  assert.equal(preferred.filter((c) => c.name === 'OpenRouter').length, 1);
+
+  const sequence = buildTieredTrySequence(env);
+  assert.ok(sequence.length >= 5);
 });
 
 test('automatically fails over to next candidate if first candidate returns 429', async () => {

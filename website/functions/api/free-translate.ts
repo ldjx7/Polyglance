@@ -440,7 +440,7 @@ export function extractKeys(raw?: string): string[] {
     .filter((k) => k.length > 0);
 }
 
-export function getAvailableCandidates(env: TranslationEnvironment): ProviderCandidate[] {
+export function getPreferredCandidates(env: TranslationEnvironment): ProviderCandidate[] {
   const candidates: ProviderCandidate[] = [];
 
   for (const key of extractKeys(env.GEMINI_API_KEY)) {
@@ -448,7 +448,7 @@ export function getAvailableCandidates(env: TranslationEnvironment): ProviderCan
       name: 'Gemini',
       endpoint: env.GEMINI_BASE_URL?.trim() || 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
       apiKey: key,
-      model: env.GEMINI_MODEL?.trim() || 'gemini-2.0-flash',
+      model: env.GEMINI_PREFERRED_MODEL?.trim() || 'gemini-3.5-flash-lite',
       weight: 5,
     });
   }
@@ -458,7 +458,7 @@ export function getAvailableCandidates(env: TranslationEnvironment): ProviderCan
       name: 'Groq',
       endpoint: env.GROQ_BASE_URL?.trim() || 'https://api.groq.com/openai/v1/chat/completions',
       apiKey: key,
-      model: env.GROQ_MODEL?.trim() || 'llama-3.3-70b-versatile',
+      model: env.GROQ_PREFERRED_MODEL?.trim() || 'qwen/qwen3.6-27b',
       weight: 5,
     });
   }
@@ -468,7 +468,57 @@ export function getAvailableCandidates(env: TranslationEnvironment): ProviderCan
       name: 'SiliconFlow',
       endpoint: env.SILICONFLOW_BASE_URL?.trim() || 'https://api.siliconflow.cn/v1/chat/completions',
       apiKey: key,
-      model: env.SILICONFLOW_MODEL?.trim() || 'tencent/Hunyuan-MT-7B',
+      model: env.SILICONFLOW_PREFERRED_MODEL?.trim() || 'tencent/Hunyuan-MT-7B',
+      weight: 5,
+    });
+  }
+
+  for (const key of extractKeys(env.OPENROUTER_API_KEY)) {
+    candidates.push({
+      name: 'OpenRouter',
+      endpoint: env.OPENROUTER_BASE_URL?.trim() || 'https://openrouter.ai/api/v1/chat/completions',
+      apiKey: key,
+      model: env.OPENROUTER_PREFERRED_MODEL?.trim() || 'openrouter/free',
+      weight: 2,
+      extraHeaders: {
+        'HTTP-Referer': 'https://polyglance.ldjx7.dpdns.org',
+        'X-Title': 'Polyglance',
+      },
+    });
+  }
+
+  return candidates;
+}
+
+export function getDefaultFallbackCandidates(env: TranslationEnvironment): ProviderCandidate[] {
+  const candidates: ProviderCandidate[] = [];
+
+  for (const key of extractKeys(env.GEMINI_API_KEY)) {
+    candidates.push({
+      name: 'Gemini',
+      endpoint: env.GEMINI_BASE_URL?.trim() || 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      apiKey: key,
+      model: env.GEMINI_MODEL?.trim() || 'gemma-4-26b',
+      weight: 5,
+    });
+  }
+
+  for (const key of extractKeys(env.GROQ_API_KEY)) {
+    candidates.push({
+      name: 'Groq',
+      endpoint: env.GROQ_BASE_URL?.trim() || 'https://api.groq.com/openai/v1/chat/completions',
+      apiKey: key,
+      model: env.GROQ_MODEL?.trim() || 'openai/gpt-oss-20b',
+      weight: 4,
+    });
+  }
+
+  for (const key of extractKeys(env.SILICONFLOW_API_KEY)) {
+    candidates.push({
+      name: 'SiliconFlow',
+      endpoint: env.SILICONFLOW_BASE_URL?.trim() || 'https://api.siliconflow.cn/v1/chat/completions',
+      apiKey: key,
+      model: env.SILICONFLOW_MODEL?.trim() || 'Qwen/Qwen2.5-7B-Instruct',
       weight: 4,
     });
   }
@@ -514,13 +564,27 @@ export function buildTrySequence(candidates: ProviderCandidate[]): ProviderCandi
   return sequence;
 }
 
+export function buildTieredTrySequence(env: TranslationEnvironment): ProviderCandidate[] {
+  const tier1 = buildTrySequence(getPreferredCandidates(env));
+  const tier2 = buildTrySequence(getDefaultFallbackCandidates(env));
+
+  const sequence: ProviderCandidate[] = [...tier1];
+  for (const fallback of tier2) {
+    if (!sequence.some((p) => p.name === fallback.name && p.apiKey === fallback.apiKey && p.model === fallback.model)) {
+      sequence.push(fallback);
+    }
+  }
+
+  return sequence;
+}
+
 export async function handleTranslationRequest(
   request: Request,
   env: TranslationEnvironment,
   fetcher: typeof fetch = fetch,
 ): Promise<Response> {
-  const candidates = getAvailableCandidates(env);
-  if (candidates.length === 0) {
+  const trySequence = buildTieredTrySequence(env);
+  if (trySequence.length === 0) {
     return failure('Free AI translation is not configured', 503);
   }
 
@@ -552,7 +616,6 @@ export async function handleTranslationRequest(
     );
   }
 
-  const trySequence = buildTrySequence(candidates);
   let lastErrorStatus = 502;
   let lastErrorMessage = 'All free AI translation providers failed';
 
