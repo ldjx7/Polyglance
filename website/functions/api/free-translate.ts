@@ -349,6 +349,13 @@ async function readBoundedJson(request: Request): Promise<ReadJsonResult> {
   }
 }
 
+function cleanTranslatedText(raw: string): string {
+  return raw
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<thought>[\s\S]*?<\/thought>/gi, '')
+    .trim();
+}
+
 /** Mirrors the shape the desktop clients already parse, so they need no change. */
 function reshapeNonStreaming(payload: unknown): Response | null {
   if (typeof payload !== 'object' || payload === null) return null;
@@ -356,11 +363,12 @@ function reshapeNonStreaming(payload: unknown): Response | null {
     ?.message?.content;
   if (typeof content !== 'string') return null;
 
-  return json({ choices: [{ message: { content } }] }, 200);
+  const cleaned = cleanTranslatedText(content);
+  return json({ choices: [{ message: { content: cleaned } }] }, 200);
 }
 
 /**
- * Converts OpenRouter's SSE into the minimal OpenAI-compatible shape already
+ * Converts OpenRouter/Gemini/Groq SSE into the minimal OpenAI-compatible shape already
  * understood by the desktop clients. Raw upstream events contain model names,
  * provider names and reasoning metadata; none of that belongs on the client.
  * The transform processes complete lines incrementally, so translation remains
@@ -373,6 +381,7 @@ function sanitizedTranslationStream(
   const encoder = new TextEncoder();
   let pending = '';
   let finished = false;
+  let insideThinkingTag = false;
 
   function emit(line: string, controller: TransformStreamDefaultController<Uint8Array>): void {
     if (finished || !line.startsWith('data:')) return;
@@ -400,10 +409,26 @@ function sanitizedTranslationStream(
       return;
     }
 
-    const content = (
+    let content = (
       payload as { choices?: Array<{ delta?: { content?: unknown } }> }
     ).choices?.[0]?.delta?.content;
     if (typeof content !== 'string' || content.length === 0) return;
+
+    if (content.includes('<think>') || content.includes('<thought>')) {
+      insideThinkingTag = true;
+    }
+    if (insideThinkingTag) {
+      if (content.includes('</think>') || content.includes('</thought>')) {
+        insideThinkingTag = false;
+        content = content.replace(/^.*?<\/(think|thought)>/i, '');
+        if (content.length === 0) return;
+      } else {
+        return;
+      }
+    }
+
+    content = content.replace(/<(think|thought)>.*?<\/\1>/gi, '');
+    if (content.length === 0) return;
 
     const sanitized = { choices: [{ delta: { content } }] };
     controller.enqueue(encoder.encode(`data: ${JSON.stringify(sanitized)}\n\n`));
@@ -498,7 +523,7 @@ export function getDefaultFallbackCandidates(env: TranslationEnvironment): Provi
       name: 'Gemini',
       endpoint: env.GEMINI_BASE_URL?.trim() || 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
       apiKey: key,
-      model: env.GEMINI_MODEL?.trim() || 'gemma-4-26b',
+      model: env.GEMINI_MODEL?.trim() || 'gemma-4-26b-a4b-it',
       weight: 5,
     });
   }
