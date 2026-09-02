@@ -174,6 +174,27 @@ public static class AppUpdater
         string currentSemanticVersion,
         bool includeBetaUpdates = false)
     {
+        if (includeBetaUpdates && TryCreateGitHubReleaseLookup(appcastUrl, out string? betaReleasesApiUrl, out string? betaAssetName))
+        {
+            string? betaFeedUrl = await FindNewestGitHubReleaseAssetAsync(
+                httpClient,
+                betaReleasesApiUrl!,
+                betaAssetName!,
+                currentSemanticVersion,
+                includeBetaUpdates: true);
+            if (!string.IsNullOrWhiteSpace(betaFeedUrl))
+            {
+                using HttpResponseMessage betaResponse = await SendUpdateRequestAsync(
+                    httpClient,
+                    betaFeedUrl,
+                    currentSemanticVersion);
+                if (betaResponse.IsSuccessStatusCode)
+                {
+                    return await betaResponse.Content.ReadAsStringAsync();
+                }
+            }
+        }
+
         using HttpResponseMessage response = await SendUpdateRequestAsync(
             httpClient,
             appcastUrl,

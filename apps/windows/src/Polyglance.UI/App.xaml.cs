@@ -415,7 +415,10 @@ public partial class App : Application
 
         try
         {
-            UpdateCheckResult check = await AppUpdater.CheckForUpdatesAsync(config.AppcastUrl);
+            UpdateCheckResult check = await AppUpdater.CheckForUpdatesAsync(
+                config.AppcastUrl,
+                config.IncludeBetaUpdates,
+                config.SkippedUpdateVersion);
             if (check.Status == UpdateCheckStatus.UpdateAvailable)
             {
                 UpdateInfo update = check.Update!;

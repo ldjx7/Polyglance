@@ -108,7 +108,6 @@ public sealed class AppUpdaterTests
         Assert.Equal("0.0.4-beta.5", result.Update?.Version);
         Assert.Equal(
             [
-                "https://github.com/ldjx7/Polyglance/releases/latest/download/appcast-windows.xml",
                 "https://api.github.com/repos/ldjx7/Polyglance/releases?per_page=20",
                 "https://downloads.example.test/beta.5/appcast-windows.xml"
             ],
