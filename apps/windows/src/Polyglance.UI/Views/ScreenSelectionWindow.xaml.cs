@@ -5,6 +5,7 @@ using System.Media;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -48,6 +49,9 @@ public partial class ScreenSelectionWindow : Window
     private Rect _selectionRect = Rect.Empty;
     private Rect _hoveredWindowRect = Rect.Empty;
     private string _activeTool = "None";
+    private bool _isToolbarManuallyMoved;
+    private double _manualMainToolbarLeft;
+    private double _manualMainToolbarTop;
 
     private readonly List<UIElement> _annotationHistory = new();
     private readonly List<UIElement> _redoStack = new();
@@ -108,6 +112,7 @@ public partial class ScreenSelectionWindow : Window
 
         Toolbar.ToolSelected += OnToolSelected;
         Toolbar.ActionTriggered += OnActionTriggered;
+        Toolbar.ToolbarDragDelta += OnToolbarDragDelta;
 
         Cursor = Cursors.Cross;
         UpdateMask(Rect.Empty);
@@ -119,6 +124,8 @@ public partial class ScreenSelectionWindow : Window
 
         if (Toolbar.IsMouseOver)
             return;
+
+        Toolbar.CloseAllPopups();
 
         // 1. 右键处理 (对齐 macOS: 逐级回退取消)
         if (e.RightButton == MouseButtonState.Pressed)
@@ -168,6 +175,9 @@ public partial class ScreenSelectionWindow : Window
                 _phase = SelectionPhase.DraggingNew;
                 _dragStart = pt;
                 _selectionRect = new Rect(pt, new Size(0, 0));
+                _isToolbarManuallyMoved = false;
+                _manualMainToolbarLeft = 0;
+                _manualMainToolbarTop = 0;
                 CaptureMouse();
                 Toolbar.Visibility = Visibility.Collapsed;
                 CandidateBorder.Visibility = Visibility.Collapsed;
@@ -396,6 +406,9 @@ public partial class ScreenSelectionWindow : Window
         _phase = SelectionPhase.Ready;
         _currentEditTarget = NativeSelectionEditTarget.None;
         _selectionRect = Rect.Empty;
+        _isToolbarManuallyMoved = false;
+        _manualMainToolbarLeft = 0;
+        _manualMainToolbarTop = 0;
         SelectionBorder.Visibility = Visibility.Collapsed;
         HandlesCanvas.Visibility = Visibility.Collapsed;
         SizeBadge.Visibility = Visibility.Collapsed;
@@ -622,21 +635,94 @@ public partial class ScreenSelectionWindow : Window
     {
         Toolbar.SetCompactLayout(OverlayViewSize().Width < 700);
         Toolbar.Visibility = Visibility.Visible;
-        Toolbar.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        double toolbarWidth = Toolbar.DesiredSize.Width;
-        double toolbarHeight = Toolbar.DesiredSize.Height;
 
         Size viewSize = OverlayViewSize();
-        double maximumLeft = Math.Max(12, viewSize.Width - toolbarWidth - 12);
-        double left = Math.Clamp(_selectionRect.Right - toolbarWidth, 12, maximumLeft);
-        double top = _selectionRect.Bottom + 10;
+        double mainWidth = Toolbar.MainToolbarWidth;
+        double mainHeight = Toolbar.MainToolbarHeight;
+        double subOccupiedHeight = Toolbar.SubToolbarOccupiedHeight;
+        double anticipatedSubHeight = subOccupiedHeight > 0 ? subOccupiedHeight : 38;
+        double spaceNeeded = mainHeight + anticipatedSubHeight + 10;
 
-        if (top + toolbarHeight > viewSize.Height - 12)
+        bool subToolbarAbove = false;
+        PlacementMode popupPlacement = PlacementMode.Bottom;
+        double mainToolbarTop;
+
+        if (_selectionRect.Bottom + spaceNeeded <= viewSize.Height - 12)
         {
-            top = Math.Max(12, _selectionRect.Top - toolbarHeight - 10);
+            // 选框外部下方有充足空间：主菜单在下方，二级菜单在主菜单下方，下拉框向下展示
+            subToolbarAbove = false;
+            popupPlacement = PlacementMode.Bottom;
+            mainToolbarTop = _selectionRect.Bottom + 10;
+        }
+        else if (_selectionRect.Top - spaceNeeded >= 12)
+        {
+            // 选框外部上方有充足空间：主菜单在上方，二级菜单在主菜单上方，下拉框正常向下展示
+            subToolbarAbove = true;
+            popupPlacement = PlacementMode.Bottom;
+            mainToolbarTop = _selectionRect.Top - mainHeight - 10;
+        }
+        else
+        {
+            // 选框外部上下空间均不足（全屏截图或大选区）：改到选区内部下方展示，二级菜单放置在主菜单上方，下拉框向上展示
+            subToolbarAbove = true;
+            popupPlacement = PlacementMode.Top;
+            mainToolbarTop = Math.Min(_selectionRect.Bottom - mainHeight - 10, viewSize.Height - mainHeight - 12);
+            mainToolbarTop = Math.Max(12, mainToolbarTop);
+        }
+
+        Toolbar.SetSubToolbarLayout(subToolbarAbove, popupPlacement);
+
+        double top = (subToolbarAbove && Toolbar.IsSubToolbarVisible)
+            ? mainToolbarTop - Toolbar.SubToolbarOccupiedHeight
+            : mainToolbarTop;
+
+        double maximumLeft = Math.Max(12, viewSize.Width - mainWidth - 12);
+        double left = Math.Clamp(_selectionRect.Right - mainWidth, 12, maximumLeft);
+
+        if (_isToolbarManuallyMoved)
+        {
+            left = Math.Clamp(_manualMainToolbarLeft, 12, maximumLeft);
+            top = (subToolbarAbove && Toolbar.IsSubToolbarVisible)
+                ? _manualMainToolbarTop - Toolbar.SubToolbarOccupiedHeight
+                : _manualMainToolbarTop;
+        }
+        else
+        {
+            _manualMainToolbarLeft = left;
+            _manualMainToolbarTop = mainToolbarTop;
         }
 
         Canvas.SetLeft(Toolbar, left);
+        Canvas.SetTop(Toolbar, top);
+    }
+
+    private void OnToolbarDragDelta(double deltaX, double deltaY)
+    {
+        _isToolbarManuallyMoved = true;
+        Size viewSize = OverlayViewSize();
+        double mainWidth = Toolbar.MainToolbarWidth;
+        double mainHeight = Toolbar.MainToolbarHeight;
+        double maximumLeft = Math.Max(12, viewSize.Width - mainWidth - 12);
+        double maximumTop = Math.Max(12, viewSize.Height - mainHeight - 12);
+
+        if (_manualMainToolbarLeft <= 0 && _manualMainToolbarTop <= 0)
+        {
+            _manualMainToolbarLeft = Canvas.GetLeft(Toolbar);
+            _manualMainToolbarTop = Canvas.GetTop(Toolbar);
+            if (Toolbar.IsSubToolbarAbove && Toolbar.IsSubToolbarVisible)
+            {
+                _manualMainToolbarTop += Toolbar.SubToolbarOccupiedHeight;
+            }
+        }
+
+        _manualMainToolbarLeft = Math.Clamp(_manualMainToolbarLeft + deltaX, 12, maximumLeft);
+        _manualMainToolbarTop = Math.Clamp(_manualMainToolbarTop + deltaY, 12, maximumTop);
+
+        double top = (Toolbar.IsSubToolbarAbove && Toolbar.IsSubToolbarVisible)
+            ? _manualMainToolbarTop - Toolbar.SubToolbarOccupiedHeight
+            : _manualMainToolbarTop;
+
+        Canvas.SetLeft(Toolbar, _manualMainToolbarLeft);
         Canvas.SetTop(Toolbar, top);
     }
 
@@ -742,11 +828,11 @@ public partial class ScreenSelectionWindow : Window
                 var arrowPath = new System.Windows.Shapes.Path
                 {
                     Stroke = brush,
-                    StrokeThickness = strokeSize,
+                    StrokeThickness = (Toolbar.ArrowStyle == 2 || Toolbar.ArrowStyle == 3) ? Math.Max(strokeSize * 1.6, strokeSize + 2.0) : strokeSize,
                     StrokeStartLineCap = PenLineCap.Round,
                     StrokeEndLineCap = PenLineCap.Round,
                     StrokeLineJoin = PenLineJoin.Round,
-                    Fill = Toolbar.IsFilled ? brush : Brushes.Transparent,
+                    Fill = (Toolbar.ArrowStyle == 5 || Toolbar.ArrowStyle == 7 || Toolbar.ArrowStyle == 8 || Toolbar.IsFilled) ? brush : Brushes.Transparent,
                     StrokeDashArray = Toolbar.CurrentDashArray,
                     Data = MakeArrowGeometry(pt, pt, strokeSize, Toolbar.ArrowStyle, Toolbar.IsFilled)
                 };
@@ -757,17 +843,18 @@ public partial class ScreenSelectionWindow : Window
             case "Text":
                 var tb = new System.Windows.Controls.TextBox
                 {
-                    Background = Brushes.Transparent,
-                    BorderBrush = brush,
-                    BorderThickness = new Thickness(1),
-                    Foreground = brush,
+                    Background = Toolbar.HasTextBorder ? new SolidColorBrush(Color.FromArgb(160, 0, 0, 0)) : Brushes.Transparent,
+                    BorderBrush = Toolbar.HasTextBorder ? brush : Brushes.Transparent,
+                    BorderThickness = Toolbar.HasTextBorder ? new Thickness(1) : new Thickness(1),
+                    Foreground = Toolbar.HasTextBorder ? Brushes.White : brush,
                     FontFamily = !string.IsNullOrEmpty(Toolbar.CurrentFontFamily) ? new System.Windows.Media.FontFamily(Toolbar.CurrentFontFamily) : new System.Windows.Media.FontFamily("Segoe UI, Microsoft YaHei"),
                     FontSize = Toolbar.FontSizeValue,
                     FontWeight = Toolbar.IsBold ? FontWeights.Bold : FontWeights.Normal,
                     FontStyle = Toolbar.IsItalic ? FontStyles.Italic : FontStyles.Normal,
                     AcceptsReturn = true,
                     MinWidth = 60,
-                    CaretBrush = brush
+                    Padding = Toolbar.HasTextBorder ? new Thickness(4, 2, 4, 2) : new Thickness(0),
+                    CaretBrush = Toolbar.HasTextBorder ? Brushes.White : brush
                 };
                 Canvas.SetLeft(tb, pt.X);
                 Canvas.SetTop(tb, pt.Y);
@@ -786,7 +873,7 @@ public partial class ScreenSelectionWindow : Window
                     }
                     else
                     {
-                        tb.BorderThickness = new Thickness(0);
+                        tb.BorderThickness = Toolbar.HasTextBorder ? new Thickness(1) : new Thickness(0);
                         tb.IsReadOnly = true;
                     }
                 };
@@ -823,11 +910,13 @@ public partial class ScreenSelectionWindow : Window
 
             case "Number":
                 bool isOutline = Toolbar.NumberStyle == 1;
+                double markerSize = Math.Max(18, Toolbar.CurrentStrokeSize * 5);
+                double radius = markerSize / 2.0;
                 var marker = new Border
                 {
-                    Width = 24,
-                    Height = 24,
-                    CornerRadius = new CornerRadius(12),
+                    Width = markerSize,
+                    Height = markerSize,
+                    CornerRadius = new CornerRadius(radius),
                     Background = isOutline ? Brushes.Transparent : brush,
                     BorderBrush = isOutline ? brush : Brushes.Transparent,
                     BorderThickness = isOutline ? new Thickness(2) : new Thickness(0),
@@ -836,14 +925,14 @@ public partial class ScreenSelectionWindow : Window
                         Text = _nextNumber.ToString(),
                         Foreground = isOutline ? brush : Brushes.White,
                         FontWeight = FontWeights.Bold,
-                        FontSize = 13,
+                        FontSize = Math.Max(9, markerSize * 0.55),
                         HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
                         VerticalAlignment = System.Windows.VerticalAlignment.Center
                     }
                 };
                 _nextNumber++;
-                Canvas.SetLeft(marker, pt.X - 12);
-                Canvas.SetTop(marker, pt.Y - 12);
+                Canvas.SetLeft(marker, pt.X - radius);
+                Canvas.SetTop(marker, pt.Y - radius);
                 AnnotationCanvas.Children.Add(marker);
                 _annotationHistory.Add(marker);
                 _redoStack.Clear();
@@ -1377,6 +1466,8 @@ public partial class ScreenSelectionWindow : Window
 
     internal void SelectAnnotationToolForTesting(string tool) => OnToolSelected(tool);
 
+    internal void ClearSelectedToolForTesting() => Toolbar.ClearSelectedTool();
+
     internal void UpdatePointerForTesting(Point point) => UpdateHoverCursor(point);
 
     internal bool BeginSelectionEditForTesting(Point point) =>
@@ -1470,19 +1561,19 @@ public partial class ScreenSelectionWindow : Window
         }
 
         double angle = Math.Atan2(dy, dx);
-        double headLength = Math.Min(Math.Max(strokeSize * 3.5, 9), length * 0.45);
+        double headLength = Math.Min(Math.Max(strokeSize * 3.0, 7), length * 0.38);
         double perpAngle = angle + Math.PI / 2;
 
         Point lineStart = start;
         Point lineEnd = end;
 
-        if (arrowStyle == 2 || arrowStyle == 3)
+        if (arrowStyle == 7 || arrowStyle == 8)
         {
-            lineEnd = new Point(end.X - headLength * 0.7 * Math.Cos(angle), end.Y - headLength * 0.7 * Math.Sin(angle));
+            lineEnd = new Point(end.X - headLength * 0.75 * Math.Cos(angle), end.Y - headLength * 0.75 * Math.Sin(angle));
         }
-        if (arrowStyle == 3)
+        if (arrowStyle == 8)
         {
-            lineStart = new Point(start.X + headLength * 0.7 * Math.Cos(angle), start.Y + headLength * 0.7 * Math.Sin(angle));
+            lineStart = new Point(start.X + headLength * 0.75 * Math.Cos(angle), start.Y + headLength * 0.75 * Math.Sin(angle));
         }
 
         var geometry = new StreamGeometry();
@@ -1521,38 +1612,61 @@ public partial class ScreenSelectionWindow : Window
                     ctx.LineTo(sh2, true, false);
                     break;
                 }
-                case 2: // Single filled triangle: ——▶
+                case 2: // Bold single open arrow: ——>
                 {
-                    double baseW = headLength * 0.65;
-                    Point b1 = new(end.X - headLength * Math.Cos(angle) + baseW * Math.Cos(perpAngle), end.Y - headLength * Math.Sin(angle) + baseW * Math.Sin(perpAngle));
-                    Point b2 = new(end.X - headLength * Math.Cos(angle) - baseW * Math.Cos(perpAngle), end.Y - headLength * Math.Sin(angle) - baseW * Math.Sin(perpAngle));
-                    ctx.BeginFigure(end, true, true);
-                    ctx.LineTo(b1, true, false);
-                    ctx.LineTo(b2, true, false);
+                    double wingAngle = Math.PI / 6.5;
+                    Point h1 = new(end.X - headLength * Math.Cos(angle - wingAngle), end.Y - headLength * Math.Sin(angle - wingAngle));
+                    Point h2 = new(end.X - headLength * Math.Cos(angle + wingAngle), end.Y - headLength * Math.Sin(angle + wingAngle));
+                    ctx.BeginFigure(h1, false, false);
+                    ctx.LineTo(end, true, false);
+                    ctx.LineTo(h2, true, false);
                     break;
                 }
-                case 3: // Double filled triangle: ◀——▶
+                case 3: // Bold double open arrow: <——>
                 {
-                    double baseW = headLength * 0.65;
-                    Point eb1 = new(end.X - headLength * Math.Cos(angle) + baseW * Math.Cos(perpAngle), end.Y - headLength * Math.Sin(angle) + baseW * Math.Sin(perpAngle));
-                    Point eb2 = new(end.X - headLength * Math.Cos(angle) - baseW * Math.Cos(perpAngle), end.Y - headLength * Math.Sin(angle) - baseW * Math.Sin(perpAngle));
-                    ctx.BeginFigure(end, true, true);
-                    ctx.LineTo(eb1, true, false);
-                    ctx.LineTo(eb2, true, false);
-
-                    Point sb1 = new(start.X + headLength * Math.Cos(angle) + baseW * Math.Cos(perpAngle), start.Y + headLength * Math.Sin(angle) + baseW * Math.Sin(perpAngle));
-                    Point sb2 = new(start.X + headLength * Math.Cos(angle) - baseW * Math.Cos(perpAngle), start.Y + headLength * Math.Sin(angle) - baseW * Math.Sin(perpAngle));
-                    ctx.BeginFigure(start, true, true);
-                    ctx.LineTo(sb1, true, false);
-                    ctx.LineTo(sb2, true, false);
+                    double wingAngle = Math.PI / 6.5;
+                    Point eh1 = new(end.X - headLength * Math.Cos(angle - wingAngle), end.Y - headLength * Math.Sin(angle - wingAngle));
+                    Point eh2 = new(end.X - headLength * Math.Cos(angle + wingAngle), end.Y - headLength * Math.Sin(angle + wingAngle));
+                    Point sh1 = new(start.X + headLength * Math.Cos(angle - wingAngle), start.Y + headLength * Math.Sin(angle - wingAngle));
+                    Point sh2 = new(start.X + headLength * Math.Cos(angle + wingAngle), start.Y + headLength * Math.Sin(angle + wingAngle));
+                    ctx.BeginFigure(eh1, false, false);
+                    ctx.LineTo(end, true, false);
+                    ctx.LineTo(eh2, true, false);
+                    ctx.BeginFigure(sh1, false, false);
+                    ctx.LineTo(start, true, false);
+                    ctx.LineTo(sh2, true, false);
                     break;
                 }
-                case 4: // Tapered expanding arrow (从小变大)
+                case 4: // Hollow tapered expanding arrow (左小右大空心 - DEFAULT)
                 {
                     double startW = Math.Max(1.2, strokeSize * 0.35);
-                    double baseW = Math.Max(3.5, strokeSize * 1.8);
-                    double hLen = Math.Min(Math.Max(strokeSize * 3.6, 11), length * 0.45);
-                    double wingW = baseW * 1.7;
+                    double baseW = Math.Max(3.2, strokeSize * 1.5);
+                    double hLen = Math.Min(Math.Max(strokeSize * 3.2, 9), length * 0.4);
+                    double wingW = baseW * 1.6;
+                    Point baseCenter = new(end.X - hLen * Math.Cos(angle), end.Y - hLen * Math.Sin(angle));
+
+                    Point s1 = new(start.X + (startW / 2) * Math.Cos(perpAngle), start.Y + (startW / 2) * Math.Sin(perpAngle));
+                    Point s2 = new(start.X - (startW / 2) * Math.Cos(perpAngle), start.Y - (startW / 2) * Math.Sin(perpAngle));
+                    Point b1 = new(baseCenter.X + (baseW / 2) * Math.Cos(perpAngle), baseCenter.Y + (baseW / 2) * Math.Sin(perpAngle));
+                    Point b2 = new(baseCenter.X - (baseW / 2) * Math.Cos(perpAngle), baseCenter.Y - (baseW / 2) * Math.Sin(perpAngle));
+                    Point w1 = new(baseCenter.X + (wingW / 2) * Math.Cos(perpAngle), baseCenter.Y + (wingW / 2) * Math.Sin(perpAngle));
+                    Point w2 = new(baseCenter.X - (wingW / 2) * Math.Cos(perpAngle), baseCenter.Y - (wingW / 2) * Math.Sin(perpAngle));
+
+                    ctx.BeginFigure(s1, false, true);
+                    ctx.LineTo(b1, true, false);
+                    ctx.LineTo(w1, true, false);
+                    ctx.LineTo(end, true, false);
+                    ctx.LineTo(w2, true, false);
+                    ctx.LineTo(b2, true, false);
+                    ctx.LineTo(s2, true, false);
+                    break;
+                }
+                case 5: // Solid tapered expanding arrow (左小右大实心)
+                {
+                    double startW = Math.Max(1.2, strokeSize * 0.35);
+                    double baseW = Math.Max(3.2, strokeSize * 1.5);
+                    double hLen = Math.Min(Math.Max(strokeSize * 3.2, 9), length * 0.4);
+                    double wingW = baseW * 1.6;
                     Point baseCenter = new(end.X - hLen * Math.Cos(angle), end.Y - hLen * Math.Sin(angle));
 
                     Point s1 = new(start.X + (startW / 2) * Math.Cos(perpAngle), start.Y + (startW / 2) * Math.Sin(perpAngle));
@@ -1571,47 +1685,9 @@ public partial class ScreenSelectionWindow : Window
                     ctx.LineTo(s2, true, false);
                     break;
                 }
-                case 5: // Block / hollow arrow: ===>
+                case 6: // Double T-bar: |——|
                 {
-                    double shaftHalfW = Math.Max(3, strokeSize * 1.2);
-                    double headBaseHalfW = shaftHalfW * 2.2;
-                    double hLen = Math.Max(headLength * 1.2, 14);
-                    Point headBaseCenter = new(end.X - hLen * Math.Cos(angle), end.Y - hLen * Math.Sin(angle));
-                    Point h1 = new(headBaseCenter.X + headBaseHalfW * Math.Cos(perpAngle), headBaseCenter.Y + headBaseHalfW * Math.Sin(perpAngle));
-                    Point h2 = new(headBaseCenter.X - headBaseHalfW * Math.Cos(perpAngle), headBaseCenter.Y - headBaseHalfW * Math.Sin(perpAngle));
-                    Point s1 = new(start.X + shaftHalfW * Math.Cos(perpAngle), start.Y + shaftHalfW * Math.Sin(perpAngle));
-                    Point s2 = new(start.X - shaftHalfW * Math.Cos(perpAngle), start.Y - shaftHalfW * Math.Sin(perpAngle));
-                    Point j1 = new(headBaseCenter.X + shaftHalfW * Math.Cos(perpAngle), headBaseCenter.Y + shaftHalfW * Math.Sin(perpAngle));
-                    Point j2 = new(headBaseCenter.X - shaftHalfW * Math.Cos(perpAngle), headBaseCenter.Y - shaftHalfW * Math.Sin(perpAngle));
-
-                    ctx.BeginFigure(s1, isFilled, true);
-                    ctx.LineTo(j1, true, false);
-                    ctx.LineTo(h1, true, false);
-                    ctx.LineTo(end, true, false);
-                    ctx.LineTo(h2, true, false);
-                    ctx.LineTo(j2, true, false);
-                    ctx.LineTo(s2, true, false);
-                    break;
-                }
-                case 6: // Single T-bar: |——>
-                {
-                    double barHalfLen = headLength * 0.7;
-                    Point t1 = new(start.X + barHalfLen * Math.Cos(perpAngle), start.Y + barHalfLen * Math.Sin(perpAngle));
-                    Point t2 = new(start.X - barHalfLen * Math.Cos(perpAngle), start.Y - barHalfLen * Math.Sin(perpAngle));
-                    ctx.BeginFigure(t1, false, false);
-                    ctx.LineTo(t2, true, false);
-
-                    double wingAngle = Math.PI / 6.5;
-                    Point h1 = new(end.X - headLength * Math.Cos(angle - wingAngle), end.Y - headLength * Math.Sin(angle - wingAngle));
-                    Point h2 = new(end.X - headLength * Math.Cos(angle + wingAngle), end.Y - headLength * Math.Sin(angle + wingAngle));
-                    ctx.BeginFigure(h1, false, false);
-                    ctx.LineTo(end, true, false);
-                    ctx.LineTo(h2, true, false);
-                    break;
-                }
-                case 7: // Double T-bar: |——|
-                {
-                    double barHalfLen = headLength * 0.7;
+                    double barHalfLen = headLength * 0.65;
                     Point st1 = new(start.X + barHalfLen * Math.Cos(perpAngle), start.Y + barHalfLen * Math.Sin(perpAngle));
                     Point st2 = new(start.X - barHalfLen * Math.Cos(perpAngle), start.Y - barHalfLen * Math.Sin(perpAngle));
                     Point et1 = new(end.X + barHalfLen * Math.Cos(perpAngle), end.Y + barHalfLen * Math.Sin(perpAngle));
@@ -1622,8 +1698,57 @@ public partial class ScreenSelectionWindow : Window
                     ctx.LineTo(et2, true, false);
                     break;
                 }
-                case 8: // Plain line: ————
+                case 7: // Single filled triangle: ——▶
+                {
+                    double baseW = headLength * 0.6;
+                    Point b1 = new(end.X - headLength * Math.Cos(angle) + baseW * Math.Cos(perpAngle), end.Y - headLength * Math.Sin(angle) + baseW * Math.Sin(perpAngle));
+                    Point b2 = new(end.X - headLength * Math.Cos(angle) - baseW * Math.Cos(perpAngle), end.Y - headLength * Math.Sin(angle) - baseW * Math.Sin(perpAngle));
+                    ctx.BeginFigure(end, true, true);
+                    ctx.LineTo(b1, true, false);
+                    ctx.LineTo(b2, true, false);
                     break;
+                }
+                case 8: // Double filled triangle: ◀——▶
+                {
+                    double baseW = headLength * 0.6;
+                    Point eb1 = new(end.X - headLength * Math.Cos(angle) + baseW * Math.Cos(perpAngle), end.Y - headLength * Math.Sin(angle) + baseW * Math.Sin(perpAngle));
+                    Point eb2 = new(end.X - headLength * Math.Cos(angle) - baseW * Math.Cos(perpAngle), end.Y - headLength * Math.Sin(angle) - baseW * Math.Sin(perpAngle));
+                    ctx.BeginFigure(end, true, true);
+                    ctx.LineTo(eb1, true, false);
+                    ctx.LineTo(eb2, true, false);
+
+                    Point sb1 = new(start.X + headLength * Math.Cos(angle) + baseW * Math.Cos(perpAngle), start.Y + headLength * Math.Sin(angle) + baseW * Math.Sin(perpAngle));
+                    Point sb2 = new(start.X + headLength * Math.Cos(angle) - baseW * Math.Cos(perpAngle), start.Y + headLength * Math.Sin(angle) - baseW * Math.Sin(perpAngle));
+                    ctx.BeginFigure(start, true, true);
+                    ctx.LineTo(sb1, true, false);
+                    ctx.LineTo(sb2, true, false);
+                    break;
+                }
+                case 9: // Double T-bar with arrows: |<——>|
+                {
+                    double barHalfLen = headLength * 0.65;
+                    Point st1 = new(start.X + barHalfLen * Math.Cos(perpAngle), start.Y + barHalfLen * Math.Sin(perpAngle));
+                    Point st2 = new(start.X - barHalfLen * Math.Cos(perpAngle), start.Y - barHalfLen * Math.Sin(perpAngle));
+                    Point et1 = new(end.X + barHalfLen * Math.Cos(perpAngle), end.Y + barHalfLen * Math.Sin(perpAngle));
+                    Point et2 = new(end.X - barHalfLen * Math.Cos(perpAngle), end.Y - barHalfLen * Math.Sin(perpAngle));
+                    ctx.BeginFigure(st1, false, false);
+                    ctx.LineTo(st2, true, false);
+                    ctx.BeginFigure(et1, false, false);
+                    ctx.LineTo(et2, true, false);
+
+                    double wingAngle = Math.PI / 6.5;
+                    Point eh1 = new(end.X - headLength * Math.Cos(angle - wingAngle), end.Y - headLength * Math.Sin(angle - wingAngle));
+                    Point eh2 = new(end.X - headLength * Math.Cos(angle + wingAngle), end.Y - headLength * Math.Sin(angle + wingAngle));
+                    Point sh1 = new(start.X + headLength * Math.Cos(angle - wingAngle), start.Y + headLength * Math.Sin(angle - wingAngle));
+                    Point sh2 = new(start.X + headLength * Math.Cos(angle + wingAngle), start.Y + headLength * Math.Sin(angle + wingAngle));
+                    ctx.BeginFigure(eh1, false, false);
+                    ctx.LineTo(end, true, false);
+                    ctx.LineTo(eh2, true, false);
+                    ctx.BeginFigure(sh1, false, false);
+                    ctx.LineTo(start, true, false);
+                    ctx.LineTo(sh2, true, false);
+                    break;
+                }
             }
         }
         geometry.Freeze();

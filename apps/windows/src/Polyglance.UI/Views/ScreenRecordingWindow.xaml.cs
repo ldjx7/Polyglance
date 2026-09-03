@@ -148,11 +148,24 @@ public partial class ScreenRecordingWindow : Window
         double left = _recordingRect.Left + (_recordingRect.Width - tbWidth) / 2.0;
         left = Math.Clamp(left, 12, Width - tbWidth - 12);
 
-        // 默认显示在选区正下方，若底部越界则显示在选区正上方
-        double top = _recordingRect.Bottom + 10;
-        if (top + tbHeight > Height - 12)
+        // 默认显示在选区正下方，若底部越界则显示在选区正上方，若上下均不足则显示在选区内部下方
+        double outsideBelow = _recordingRect.Bottom + 10;
+        double top;
+        if (outsideBelow + tbHeight <= Height - 12)
         {
-            top = Math.Max(12, _recordingRect.Top - tbHeight - 10);
+            top = outsideBelow;
+        }
+        else
+        {
+            double outsideAbove = _recordingRect.Top - tbHeight - 10;
+            if (outsideAbove >= 12)
+            {
+                top = outsideAbove;
+            }
+            else
+            {
+                top = Math.Clamp(_recordingRect.Bottom - tbHeight - 10, 12, Math.Max(12, Height - tbHeight - 12));
+            }
         }
 
         _toolbarWindow.Left = _screenBounds.X + left;

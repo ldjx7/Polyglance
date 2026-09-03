@@ -162,6 +162,30 @@ final class ScreenshotToolbarContainerView: NSVisualEffectView {
         updateShape()
     }
 
+    var onDragDelta: ((CGPoint) -> Void)?
+    private var dragStartScreenLocation: NSPoint?
+
+    override func mouseDown(with event: NSEvent) {
+        dragStartScreenLocation = NSEvent.mouseLocation
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let start = dragStartScreenLocation else { return }
+        let current = NSEvent.mouseLocation
+        let delta = CGPoint(x: current.x - start.x, y: current.y - start.y)
+        dragStartScreenLocation = current
+        onDragDelta?(delta)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        dragStartScreenLocation = nil
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .openHand)
+    }
+
     private func updateShape() {
         backgroundCard.frame = bounds
         backgroundCard.layer?.cornerRadius = cornerRadius
@@ -663,6 +687,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     private(set) var selectedAnnotationTool: ScreenshotAnnotationTool = .freehand
     private var annotationStyle = ScreenshotAnnotationStyle.default
     private var toolbar: ScreenshotToolbarContainerView!
+    private var isToolbarManuallyMoved = false
     private var toolbarStack: NSStackView!
     private var toolbarToolRow: NSStackView!
     private var toolbarActionRow: NSStackView!
@@ -844,11 +869,14 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         updateToolbarLayout()
         updateToolbarButtonPresentation()
         if let selection = confirmedSelection, !toolbar.isHidden {
-            toolbar.frame.origin = CaptureGeometry.toolbarOrigin(
-                selection: selection,
-                toolbarSize: toolbarSize,
-                bounds: toolbarPlacementBounds
-            )
+            if !isToolbarManuallyMoved {
+                toolbar.frame.origin = CaptureGeometry.toolbarOrigin(
+                    selection: selection,
+                    toolbarSize: toolbarSize,
+                    bounds: toolbarPlacementBounds
+                )
+            }
+            updateSubToolbarPosition()
         }
     }
 
@@ -1299,6 +1327,18 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         addSubview(container)
         toolbar = container
         toolbarStack = stack
+        container.onDragDelta = { [weak self] delta in
+            guard let self else { return }
+            self.isToolbarManuallyMoved = true
+            self.hideToolbarHelp()
+            var frame = self.toolbar.frame
+            frame.origin.x += delta.x
+            frame.origin.y += delta.y
+            frame.origin.x = max(10, min(frame.origin.x, self.bounds.maxX - frame.width - 10))
+            frame.origin.y = max(10, min(frame.origin.y, self.bounds.maxY - frame.height - 10))
+            self.toolbar.frame = frame
+            self.updateSubToolbarPosition()
+        }
 
         let subBar = ScreenshotSubToolbarView(frame: .zero)
         subBar.isHidden = true
@@ -1434,11 +1474,13 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         toolbar.frame.size = toolbarSize
         updateToolbarLayout()
         updateToolbarButtonPresentation()
-        toolbar.frame.origin = CaptureGeometry.toolbarOrigin(
-            selection: selection,
-            toolbarSize: toolbarSize,
-            bounds: toolbarPlacementBounds
-        )
+        if !isToolbarManuallyMoved {
+            toolbar.frame.origin = CaptureGeometry.toolbarOrigin(
+                selection: selection,
+                toolbarSize: toolbarSize,
+                bounds: toolbarPlacementBounds
+            )
+        }
         toolbar.isHidden = false
         updateSubToolbar()
     }
@@ -1465,10 +1507,30 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             originX = bounds.minX + 10
         }
 
-        var originY = toolbar.frame.minY - subSize.height - 6
-        if originY < bounds.minY + 6 {
+        let selection = confirmedSelection ?? .zero
+        var originY: CGFloat
+
+        if toolbar.frame.minY >= selection.maxY - 2 {
+            // 选区外部上方展示：二级菜单展示在一级菜单的上方
+            let aboveY = toolbar.frame.maxY + 6
+            if aboveY + subSize.height <= bounds.maxY - 6 {
+                originY = aboveY
+            } else {
+                originY = toolbar.frame.minY - subSize.height - 6
+            }
+        } else if toolbar.frame.maxY <= selection.minY + 2 {
+            // 选区外部下方展示：二级菜单优先在一级菜单下方展示
+            let belowY = toolbar.frame.minY - subSize.height - 6
+            if belowY >= bounds.minY + 6 {
+                originY = belowY
+            } else {
+                originY = toolbar.frame.maxY + 6
+            }
+        } else {
+            // 选区内部展示（全屏或上下空间均不足）：二级菜单展示在一级菜单上方
             originY = toolbar.frame.maxY + 6
         }
+
         subToolbar.frame = CGRect(origin: CGPoint(x: originX, y: originY), size: subSize)
     }
 
@@ -1479,6 +1541,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         didLastClickExpandSelection = false
         hoveredCandidate = candidate
         capturePhase = .pressed(start: point, candidate: candidate)
+        isToolbarManuallyMoved = false
         toolbar.isHidden = true
         subToolbar?.isHidden = true
         hideToolbarHelp()
@@ -1742,7 +1805,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         let tool = selectedAnnotationTool
         if tool == .text {
             let step: CGFloat = delta > 0 ? 2 : -2
-            let newSize = min(96, max(8, annotationStyle.fontSize + step))
+            let newSize = min(72, max(12, annotationStyle.fontSize + step))
             if newSize != annotationStyle.fontSize {
                 annotationStyle.fontSize = newSize
                 subToolbar?.update(tool: .text, style: annotationStyle)

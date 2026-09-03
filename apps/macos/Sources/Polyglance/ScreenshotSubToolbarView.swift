@@ -113,7 +113,7 @@ final class ScreenshotSubToolbarView: NSView {
 
         if currentTool == .text {
             let step: CGFloat = delta > 0 ? 2 : -2
-            let newSize = min(96, max(8, currentStyle.fontSize + step))
+            let newSize = min(72, max(12, currentStyle.fontSize + step))
             if newSize != currentStyle.fontSize {
                 currentStyle.fontSize = newSize
                 notifyStyleChanged()
@@ -300,7 +300,7 @@ final class ScreenshotSubToolbarView: NSView {
         btn.onScroll = { [weak self] delta in
             guard let self else { return }
             let step: CGFloat = delta > 0 ? 2 : -2
-            let newSize = min(96, max(8, self.currentStyle.fontSize + step))
+            let newSize = min(72, max(12, self.currentStyle.fontSize + step))
             if newSize != self.currentStyle.fontSize {
                 self.currentStyle.fontSize = newSize
                 self.notifyStyleChanged()
@@ -329,7 +329,7 @@ final class ScreenshotSubToolbarView: NSView {
     }
 
     private func makeArrowStyleDropdownButton() -> NSView {
-        let img = Self.makeArrowPreviewImage(arrowStyle: currentStyle.arrowStyle, isSelected: false, width: 42)
+        let img = Self.makeArrowPreviewImage(arrowStyle: currentStyle.arrowStyle, isSelected: false, width: 38)
         let btn = ImageDropdownPillButton(previewImage: img, tooltip: "箭头样式") { [weak self] sender in
             self?.showArrowStylePopover(for: sender)
         }
@@ -402,15 +402,15 @@ final class ScreenshotSubToolbarView: NSView {
         stack.spacing = 3
         stack.edgeInsets = NSEdgeInsets(top: 6, left: 6, bottom: 6, right: 6)
 
-        for arrowStyle in 0...8 {
+        for arrowStyle in 0...9 {
             let isSel = currentStyle.arrowStyle == arrowStyle
             let btn = PopoverItemButton(
-                image: Self.makeArrowPreviewImage(arrowStyle: arrowStyle, isSelected: isSel, width: 76),
+                image: Self.makeArrowPreviewImage(arrowStyle: arrowStyle, isSelected: isSel, width: 40),
                 isSelected: isSel
             ) { [weak self, weak popover] in
                 guard let self else { return }
                 self.currentStyle.arrowStyle = arrowStyle
-                self.currentStyle.hasArrow = arrowStyle != 8
+                self.currentStyle.hasArrow = true
                 self.notifyStyleChanged()
                 self.rebuildControls(for: self.currentTool)
                 popover?.close()
@@ -579,9 +579,20 @@ final class ScreenshotSubToolbarView: NSView {
 
     private func updateColorSelection() {
         for btn in colorButtons {
-            let isSelected = currentStyle.color.isEqual(btn.color)
+            let isSelected = Self.isColorEqual(currentStyle.color, btn.color)
             btn.isSelected = isSelected
         }
+    }
+
+    static func isColorEqual(_ c1: NSColor, _ c2: NSColor) -> Bool {
+        if c1.isEqual(c2) { return true }
+        guard let rgb1 = c1.usingColorSpace(.sRGB),
+              let rgb2 = c2.usingColorSpace(.sRGB) else {
+            return false
+        }
+        return abs(rgb1.redComponent - rgb2.redComponent) < 0.15 &&
+               abs(rgb1.greenComponent - rgb2.greenComponent) < 0.15 &&
+               abs(rgb1.blueComponent - rgb2.blueComponent) < 0.15
     }
 
     private func makeIconButton(
@@ -642,21 +653,21 @@ final class ScreenshotSubToolbarView: NSView {
     }
 
     static func makeArrowPreviewImage(arrowStyle: Int, isSelected: Bool, width: CGFloat) -> NSImage {
-        let size = NSSize(width: width, height: 18)
+        let size = NSSize(width: width, height: 16)
         let img = NSImage(size: size, flipped: false) { rect in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
             let color = isSelected ? NSColor.white : NSColor(white: 0.2, alpha: 1.0)
-            let dummyStyle = ScreenshotAnnotationStyle(color: color, lineWidth: 2, arrowStyle: arrowStyle)
+            let dummyStyle = ScreenshotAnnotationStyle(color: color, lineWidth: 1.5, arrowStyle: arrowStyle)
             ctx.setStrokeColor(color.cgColor)
             ctx.setFillColor(color.cgColor)
-            ctx.setLineWidth(2.0)
+            ctx.setLineWidth(1.5)
             ctx.setLineCap(.round)
             ctx.setLineJoin(.round)
             ScreenshotAnnotationRenderer.drawArrowGeometry(
-                from: CGPoint(x: 4, y: 9),
-                to: CGPoint(x: width - 4, y: 9),
+                from: CGPoint(x: 3, y: 8),
+                to: CGPoint(x: width - 3, y: 8),
                 style: dummyStyle,
-                lineWidth: 2.0,
+                lineWidth: 1.5,
                 in: ctx
             )
             return true

@@ -152,7 +152,15 @@ pub fn toolbar_origin(
     let y = if below_y >= bounds.min_y() + edge_inset {
         below_y
     } else {
-        (selection.max_y() + spacing).min(bounds.max_y() - toolbar_size.height - edge_inset)
+        let above_y = selection.max_y() + spacing;
+        if above_y + toolbar_size.height <= bounds.max_y() - edge_inset {
+            above_y
+        } else {
+            // 上下间距都不够在外部展示：改到选区内部下方
+            (selection.min_y() + spacing)
+                .max(bounds.min_y() + edge_inset)
+                .min(bounds.max_y() - toolbar_size.height - edge_inset)
+        }
     };
     Point::new(x, y)
 }
@@ -592,6 +600,22 @@ mod tests {
         );
 
         assert_eq!(origin, Point::new(8.0, 58.0));
+    }
+
+    #[test]
+    fn toolbar_moves_inside_selection_at_bottom_when_there_is_no_room_above_or_below() {
+        let origin = toolbar_origin(
+            Rect::new(20.0, 10.0, 100.0, 185.0),
+            Size::new(140.0, 36.0),
+            bounds(),
+            DEFAULT_TOOLBAR_SPACING,
+            DEFAULT_TOOLBAR_EDGE_INSET,
+        );
+
+        // Selection spans from y=10 to y=195 in bounds height 200.
+        // No room below (10 - 36 - 8 < 8), no room above (195 + 8 + 36 > 192).
+        // Should place inside selection at bottom: y = 10 + 8 = 18.0
+        assert_eq!(origin, Point::new(8.0, 18.0));
     }
 
     #[test]

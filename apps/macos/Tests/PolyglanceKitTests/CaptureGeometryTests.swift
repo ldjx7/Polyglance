@@ -108,6 +108,16 @@ final class CaptureGeometryTests: XCTestCase {
         XCTAssertEqual(origin, CGPoint(x: 8, y: 58))
     }
 
+    func testToolbarPlacementMovesInsideSelectionAtBottomWhenThereIsNoRoomAboveOrBelow() {
+        let origin = CaptureGeometry.toolbarOrigin(
+            selection: CGRect(x: 20, y: 10, width: 100, height: 185),
+            toolbarSize: CGSize(width: 140, height: 36),
+            bounds: CGRect(x: 0, y: 0, width: 320, height: 200)
+        )
+
+        XCTAssertEqual(origin, CGPoint(x: 8, y: 18))
+    }
+
     func testToolbarSizeFitsNarrowScreenWithoutChangingPreferredHeight() {
         XCTAssertEqual(
             CaptureGeometry.fittedToolbarSize(

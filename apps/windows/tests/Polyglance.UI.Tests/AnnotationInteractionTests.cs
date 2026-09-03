@@ -30,6 +30,74 @@ public sealed class AnnotationInteractionTests
     }
 
     [Fact]
+    public void SelectingToolDoesNotShiftMainToolbar()
+    {
+        RunInSta(() =>
+        {
+            var window = CreateSelectionWindow();
+            window.Width = 1000;
+            window.Height = 800;
+            window.Show();
+            window.UpdateLayout();
+
+            var tb = (ScreenshotToolbar)window.FindName("Toolbar");
+            var mainBorder = (System.Windows.Controls.Border)tb.FindName("MainToolbarBorder");
+            var subBorder = (System.Windows.Controls.Border)tb.FindName("SubToolbarBorder");
+
+            // Case 1: Below
+            window.SetSelectionForTesting(new Rect(100, 100, 600, 300));
+            window.UpdateLayout();
+            Point ptBelowBefore = mainBorder.TranslatePoint(new Point(0, 0), window);
+            tb.BtnPen.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            window.UpdateLayout();
+            Point ptBelowAfter = mainBorder.TranslatePoint(new Point(0, 0), window);
+            Assert.Equal(ptBelowBefore.X, ptBelowAfter.X, 1);
+            Assert.Equal(ptBelowBefore.Y, ptBelowAfter.Y, 1);
+
+            // Case 2: Above
+            window.ClearSelectedToolForTesting();
+            window.SetSelectionForTesting(new Rect(100, 450, 600, 300));
+            window.UpdateLayout();
+            Point ptAboveBefore = mainBorder.TranslatePoint(new Point(0, 0), window);
+            tb.BtnPen.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            window.UpdateLayout();
+            Point ptPenAbove = mainBorder.TranslatePoint(new Point(0, 0), window);
+            Assert.Equal(ptAboveBefore.X, ptPenAbove.X, 1);
+            Assert.Equal(ptAboveBefore.Y, ptPenAbove.Y, 1);
+
+            // Click Text
+            tb.BtnText.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            window.UpdateLayout();
+            Point ptTextAbove = mainBorder.TranslatePoint(new Point(0, 0), window);
+            Assert.Equal(ptAboveBefore.X, ptTextAbove.X, 1);
+            Assert.Equal(ptAboveBefore.Y, ptTextAbove.Y, 1);
+
+            // Click Rect
+            tb.BtnRect.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            window.UpdateLayout();
+            Point ptRectAbove = mainBorder.TranslatePoint(new Point(0, 0), window);
+            Assert.Equal(ptAboveBefore.X, ptRectAbove.X, 1);
+            Assert.Equal(ptAboveBefore.Y, ptRectAbove.Y, 1);
+
+            // Click Number
+            tb.BtnNumber.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            window.UpdateLayout();
+            Point ptNumberAbove = mainBorder.TranslatePoint(new Point(0, 0), window);
+            Assert.Equal(ptAboveBefore.X, ptNumberAbove.X, 1);
+            Assert.Equal(ptAboveBefore.Y, ptNumberAbove.Y, 1);
+
+            // Click Mosaic
+            tb.BtnMosaic.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            window.UpdateLayout();
+            Point ptMosaicAbove = mainBorder.TranslatePoint(new Point(0, 0), window);
+            Assert.Equal(ptAboveBefore.X, ptMosaicAbove.X, 1);
+            Assert.Equal(ptAboveBefore.Y, ptMosaicAbove.Y, 1);
+
+            window.Close();
+        });
+    }
+
+    [Fact]
     public void ClickingSelectedToolTogglesItOffAndCollapsesSubToolbar()
     {
         RunInSta(() =>
@@ -231,10 +299,8 @@ public sealed class AnnotationInteractionTests
             ExceptionDispatchInfo.Capture(failure).Throw();
     }
 
-    private static ScreenSelectionWindow CreateSelectionWindow()
+    private static ScreenSelectionWindow CreateSelectionWindow(int width = 1920, int height = 1080)
     {
-        const int width = 200;
-        const int height = 140;
         byte[] pixels = new byte[width * height * 4];
         for (int offset = 0; offset < pixels.Length; offset += 4)
         {

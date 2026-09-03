@@ -71,10 +71,11 @@ struct ScreenshotAnnotationStyle: Equatable {
     var arrowStyle: Int
     var lineDashPattern: Int
 
-    static let `default` = ScreenshotAnnotationStyle(color: .systemRed, lineWidth: 3)
+    static let defaultColor = NSColor(srgbRed: 0.94, green: 0.27, blue: 0.27, alpha: 1.0)
+    static let `default` = ScreenshotAnnotationStyle(color: defaultColor, lineWidth: 3, arrowStyle: 4)
 
     init(
-        color: NSColor = .systemRed,
+        color: NSColor = ScreenshotAnnotationStyle.defaultColor,
         lineWidth: CGFloat = 3,
         fontSize: CGFloat = 16,
         fontFamily: String = "",
@@ -426,7 +427,7 @@ enum ScreenshotAnnotationRenderer {
                     context.setLineDash(phase: 0, lengths: [])
                 }
             case let .line(start, end, _):
-                drawLine(
+                drawPlainStraightLine(
                     from: pointTransform(start),
                     to: pointTransform(end),
                     style: style,
@@ -434,7 +435,7 @@ enum ScreenshotAnnotationRenderer {
                     in: context
                 )
             case let .arrow(start, end, _):
-                drawLine(
+                drawArrow(
                     from: pointTransform(start),
                     to: pointTransform(end),
                     style: style,
@@ -473,7 +474,28 @@ enum ScreenshotAnnotationRenderer {
         }
     }
 
-    private static func drawLine(
+    private static func drawPlainStraightLine(
+        from start: CGPoint,
+        to end: CGPoint,
+        style: ScreenshotAnnotationStyle,
+        lineWidth: CGFloat,
+        in context: CGContext
+    ) {
+        guard start != end else { return }
+        context.saveGState()
+        context.setStrokeColor(style.color.cgColor)
+        context.setLineWidth(lineWidth)
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+        applyDashPattern(style.lineDashPattern, isDashed: style.isDashed, lineWidth: lineWidth, in: context)
+        context.beginPath()
+        context.move(to: start)
+        context.addLine(to: end)
+        context.strokePath()
+        context.restoreGState()
+    }
+
+    private static func drawArrow(
         from start: CGPoint,
         to end: CGPoint,
         style: ScreenshotAnnotationStyle,
@@ -808,23 +830,28 @@ enum ScreenshotAnnotationRenderer {
         }
 
         let angle = atan2(end.y - start.y, end.x - start.x)
-        let headLength = min(max(lineWidth * 3.5, 9), length * 0.45)
+        let headLength = min(max(lineWidth * 3.0, 7), length * 0.38)
         let perpAngle = angle + CGFloat.pi / 2
         let arrowStyle = style.arrowStyle
 
         var lineStart = start
         var lineEnd = end
 
-        if arrowStyle == 2 || arrowStyle == 3 {
-            lineEnd = CGPoint(x: end.x - headLength * 0.7 * cos(angle), y: end.y - headLength * 0.7 * sin(angle))
+        if arrowStyle == 7 || arrowStyle == 8 {
+            lineEnd = CGPoint(x: end.x - headLength * 0.75 * cos(angle), y: end.y - headLength * 0.75 * sin(angle))
         }
-        if arrowStyle == 3 {
-            lineStart = CGPoint(x: start.x + headLength * 0.7 * cos(angle), y: start.y + headLength * 0.7 * sin(angle))
+        if arrowStyle == 8 {
+            lineStart = CGPoint(x: start.x + headLength * 0.75 * cos(angle), y: start.y + headLength * 0.75 * sin(angle))
         }
 
         if arrowStyle != 4 && arrowStyle != 5 {
             context.saveGState()
             applyDashPattern(style.lineDashPattern, isDashed: style.isDashed, lineWidth: lineWidth, in: context)
+            if arrowStyle == 2 || arrowStyle == 3 {
+                context.setLineWidth(max(lineWidth * 1.6, lineWidth + 2.0))
+                context.setLineCap(.round)
+                context.setLineJoin(.round)
+            }
             context.beginPath()
             context.move(to: lineStart)
             context.addLine(to: lineEnd)
@@ -858,45 +885,74 @@ enum ScreenshotAnnotationRenderer {
             context.addLine(to: sh2)
             context.strokePath()
 
-        case 2: // Single filled triangle: ——▶
-            let baseW = headLength * 0.65
-            let tip = end
-            let b1 = CGPoint(x: end.x - headLength * cos(angle) + baseW * cos(perpAngle), y: end.y - headLength * sin(angle) + baseW * sin(perpAngle))
-            let b2 = CGPoint(x: end.x - headLength * cos(angle) - baseW * cos(perpAngle), y: end.y - headLength * sin(angle) - baseW * sin(perpAngle))
+        case 2: // Bold single open arrow: ——>
+            let wingAngle = CGFloat.pi / 6.5
+            let h1 = CGPoint(x: end.x - headLength * cos(angle - wingAngle), y: end.y - headLength * sin(angle - wingAngle))
+            let h2 = CGPoint(x: end.x - headLength * cos(angle + wingAngle), y: end.y - headLength * sin(angle + wingAngle))
+            context.saveGState()
+            context.setLineWidth(max(lineWidth * 1.6, lineWidth + 2.0))
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
             context.beginPath()
-            context.move(to: tip)
-            context.addLine(to: b1)
-            context.addLine(to: b2)
-            context.closePath()
-            context.fillPath()
+            context.move(to: h1)
+            context.addLine(to: end)
+            context.addLine(to: h2)
+            context.strokePath()
+            context.restoreGState()
 
-        case 3: // Double filled triangle: ◀——▶
-            let baseW = headLength * 0.65
-            let eTip = end
-            let eb1 = CGPoint(x: end.x - headLength * cos(angle) + baseW * cos(perpAngle), y: end.y - headLength * sin(angle) + baseW * sin(perpAngle))
-            let eb2 = CGPoint(x: end.x - headLength * cos(angle) - baseW * cos(perpAngle), y: end.y - headLength * sin(angle) - baseW * sin(perpAngle))
+        case 3: // Bold double open arrow: <——>
+            let wingAngle = CGFloat.pi / 6.5
+            let eh1 = CGPoint(x: end.x - headLength * cos(angle - wingAngle), y: end.y - headLength * sin(angle - wingAngle))
+            let eh2 = CGPoint(x: end.x - headLength * cos(angle + wingAngle), y: end.y - headLength * sin(angle + wingAngle))
+            let sh1 = CGPoint(x: start.x + headLength * cos(angle - wingAngle), y: start.y + headLength * sin(angle - wingAngle))
+            let sh2 = CGPoint(x: start.x + headLength * cos(angle + wingAngle), y: start.y + headLength * sin(angle + wingAngle))
+            context.saveGState()
+            context.setLineWidth(max(lineWidth * 1.6, lineWidth + 2.0))
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
             context.beginPath()
-            context.move(to: eTip)
-            context.addLine(to: eb1)
-            context.addLine(to: eb2)
-            context.closePath()
-            context.fillPath()
+            context.move(to: eh1)
+            context.addLine(to: end)
+            context.addLine(to: eh2)
+            context.move(to: sh1)
+            context.addLine(to: start)
+            context.addLine(to: sh2)
+            context.strokePath()
+            context.restoreGState()
 
-            let sTip = start
-            let sb1 = CGPoint(x: start.x + headLength * cos(angle) + baseW * cos(perpAngle), y: start.y + headLength * sin(angle) + baseW * sin(perpAngle))
-            let sb2 = CGPoint(x: start.x + headLength * cos(angle) - baseW * cos(perpAngle), y: start.y + headLength * sin(angle) - baseW * sin(perpAngle))
-            context.beginPath()
-            context.move(to: sTip)
-            context.addLine(to: sb1)
-            context.addLine(to: sb2)
-            context.closePath()
-            context.fillPath()
-
-        case 4: // Tapered expanding arrow (从小变大)
+        case 4: // Hollow tapered expanding arrow (左小右大空心 - DEFAULT)
             let startW = max(1.2, lineWidth * 0.35)
-            let baseW = max(3.5, lineWidth * 1.8)
-            let hLen = min(max(lineWidth * 3.6, 11), length * 0.45)
-            let wingW = baseW * 1.7
+            let baseW = max(3.2, lineWidth * 1.5)
+            let hLen = min(max(lineWidth * 3.2, 9), length * 0.4)
+            let wingW = baseW * 1.6
+            let baseCenter = CGPoint(x: end.x - hLen * cos(angle), y: end.y - hLen * sin(angle))
+
+            let s1 = CGPoint(x: start.x + (startW / 2) * cos(perpAngle), y: start.y + (startW / 2) * sin(perpAngle))
+            let s2 = CGPoint(x: start.x - (startW / 2) * cos(perpAngle), y: start.y - (startW / 2) * sin(perpAngle))
+            let b1 = CGPoint(x: baseCenter.x + (baseW / 2) * cos(perpAngle), y: baseCenter.y + (baseW / 2) * sin(perpAngle))
+            let b2 = CGPoint(x: baseCenter.x - (baseW / 2) * cos(perpAngle), y: baseCenter.y - (baseW / 2) * sin(perpAngle))
+            let w1 = CGPoint(x: baseCenter.x + (wingW / 2) * cos(perpAngle), y: baseCenter.y + (wingW / 2) * sin(perpAngle))
+            let w2 = CGPoint(x: baseCenter.x - (wingW / 2) * cos(perpAngle), y: baseCenter.y - (wingW / 2) * sin(perpAngle))
+
+            context.beginPath()
+            context.move(to: s1)
+            context.addLine(to: b1)
+            context.addLine(to: w1)
+            context.addLine(to: end)
+            context.addLine(to: w2)
+            context.addLine(to: b2)
+            context.addLine(to: s2)
+            context.closePath()
+            context.saveGState()
+            context.setLineWidth(max(1.5, lineWidth * 0.7))
+            context.strokePath()
+            context.restoreGState()
+
+        case 5: // Solid tapered expanding arrow (左小右大实心)
+            let startW = max(1.2, lineWidth * 0.35)
+            let baseW = max(3.2, lineWidth * 1.5)
+            let hLen = min(max(lineWidth * 3.2, 9), length * 0.4)
+            let wingW = baseW * 1.6
             let baseCenter = CGPoint(x: end.x - hLen * cos(angle), y: end.y - hLen * sin(angle))
 
             let s1 = CGPoint(x: start.x + (startW / 2) * cos(perpAngle), y: start.y + (startW / 2) * sin(perpAngle))
@@ -917,52 +973,8 @@ enum ScreenshotAnnotationRenderer {
             context.closePath()
             context.fillPath()
 
-        case 5: // Block / hollow arrow: ===>
-            let shaftHalfW = max(3, lineWidth * 1.2)
-            let headBaseHalfW = shaftHalfW * 2.2
-            let hLen = max(headLength * 1.2, 14)
-            let tip = end
-            let headBaseCenter = CGPoint(x: end.x - hLen * cos(angle), y: end.y - hLen * sin(angle))
-            let h1 = CGPoint(x: headBaseCenter.x + headBaseHalfW * cos(perpAngle), y: headBaseCenter.y + headBaseHalfW * sin(perpAngle))
-            let h2 = CGPoint(x: headBaseCenter.x - headBaseHalfW * cos(perpAngle), y: headBaseCenter.y - headBaseHalfW * sin(perpAngle))
-            let s1 = CGPoint(x: start.x + shaftHalfW * cos(perpAngle), y: start.y + shaftHalfW * sin(perpAngle))
-            let s2 = CGPoint(x: start.x - shaftHalfW * cos(perpAngle), y: start.y - shaftHalfW * sin(perpAngle))
-            let j1 = CGPoint(x: headBaseCenter.x + shaftHalfW * cos(perpAngle), y: headBaseCenter.y + shaftHalfW * sin(perpAngle))
-            let j2 = CGPoint(x: headBaseCenter.x - shaftHalfW * cos(perpAngle), y: headBaseCenter.y - shaftHalfW * sin(perpAngle))
-
-            context.beginPath()
-            context.move(to: s1)
-            context.addLine(to: j1)
-            context.addLine(to: h1)
-            context.addLine(to: tip)
-            context.addLine(to: h2)
-            context.addLine(to: j2)
-            context.addLine(to: s2)
-            context.closePath()
-            if style.isFilled {
-                context.fillPath()
-            } else {
-                context.setLineWidth(max(1.5, lineWidth * 0.7))
-                context.strokePath()
-            }
-
-        case 6: // Single T-bar: |——>
-            let barHalfLen = headLength * 0.7
-            let t1 = CGPoint(x: start.x + barHalfLen * cos(perpAngle), y: start.y + barHalfLen * sin(perpAngle))
-            let t2 = CGPoint(x: start.x - barHalfLen * cos(perpAngle), y: start.y - barHalfLen * sin(perpAngle))
-            let wingAngle = CGFloat.pi / 6.5
-            let h1 = CGPoint(x: end.x - headLength * cos(angle - wingAngle), y: end.y - headLength * sin(angle - wingAngle))
-            let h2 = CGPoint(x: end.x - headLength * cos(angle + wingAngle), y: end.y - headLength * sin(angle + wingAngle))
-            context.beginPath()
-            context.move(to: t1)
-            context.addLine(to: t2)
-            context.move(to: h1)
-            context.addLine(to: end)
-            context.addLine(to: h2)
-            context.strokePath()
-
-        case 7: // Double T-bar: |——|
-            let barHalfLen = headLength * 0.7
+        case 6: // Double T-bar line: |——|
+            let barHalfLen = headLength * 0.65
             let st1 = CGPoint(x: start.x + barHalfLen * cos(perpAngle), y: start.y + barHalfLen * sin(perpAngle))
             let st2 = CGPoint(x: start.x - barHalfLen * cos(perpAngle), y: start.y - barHalfLen * sin(perpAngle))
             let et1 = CGPoint(x: end.x + barHalfLen * cos(perpAngle), y: end.y + barHalfLen * sin(perpAngle))
@@ -974,8 +986,63 @@ enum ScreenshotAnnotationRenderer {
             context.addLine(to: et2)
             context.strokePath()
 
-        case 8: // Plain line: ————
-            break
+        case 7: // Single filled triangle: ——▶
+            let baseW = headLength * 0.6
+            let tip = end
+            let b1 = CGPoint(x: end.x - headLength * cos(angle) + baseW * cos(perpAngle), y: end.y - headLength * sin(angle) + baseW * sin(perpAngle))
+            let b2 = CGPoint(x: end.x - headLength * cos(angle) - baseW * cos(perpAngle), y: end.y - headLength * sin(angle) - baseW * sin(perpAngle))
+            context.beginPath()
+            context.move(to: tip)
+            context.addLine(to: b1)
+            context.addLine(to: b2)
+            context.closePath()
+            context.fillPath()
+
+        case 8: // Double filled triangle: ◀——▶
+            let baseW = headLength * 0.6
+            let eTip = end
+            let eb1 = CGPoint(x: end.x - headLength * cos(angle) + baseW * cos(perpAngle), y: end.y - headLength * sin(angle) + baseW * sin(perpAngle))
+            let eb2 = CGPoint(x: end.x - headLength * cos(angle) - baseW * cos(perpAngle), y: end.y - headLength * sin(angle) - baseW * sin(perpAngle))
+            context.beginPath()
+            context.move(to: eTip)
+            context.addLine(to: eb1)
+            context.addLine(to: eb2)
+            context.closePath()
+            context.fillPath()
+
+            let sTip = start
+            let sb1 = CGPoint(x: start.x + headLength * cos(angle) + baseW * cos(perpAngle), y: start.y + headLength * sin(angle) + baseW * sin(perpAngle))
+            let sb2 = CGPoint(x: start.x + headLength * cos(angle) - baseW * cos(perpAngle), y: start.y + headLength * sin(angle) - baseW * sin(perpAngle))
+            context.beginPath()
+            context.move(to: sTip)
+            context.addLine(to: sb1)
+            context.addLine(to: sb2)
+            context.closePath()
+            context.fillPath()
+
+        case 9: // Double T-bar with arrows: |<——>|
+            let barHalfLen = headLength * 0.65
+            let st1 = CGPoint(x: start.x + barHalfLen * cos(perpAngle), y: start.y + barHalfLen * sin(perpAngle))
+            let st2 = CGPoint(x: start.x - barHalfLen * cos(perpAngle), y: start.y - barHalfLen * sin(perpAngle))
+            let et1 = CGPoint(x: end.x + barHalfLen * cos(perpAngle), y: end.y + barHalfLen * sin(perpAngle))
+            let et2 = CGPoint(x: end.x - barHalfLen * cos(perpAngle), y: end.y - barHalfLen * sin(perpAngle))
+            let wingAngle = CGFloat.pi / 6.5
+            let eh1 = CGPoint(x: end.x - headLength * cos(angle - wingAngle), y: end.y - headLength * sin(angle - wingAngle))
+            let eh2 = CGPoint(x: end.x - headLength * cos(angle + wingAngle), y: end.y - headLength * sin(angle + wingAngle))
+            let sh1 = CGPoint(x: start.x + headLength * cos(angle - wingAngle), y: start.y + headLength * sin(angle - wingAngle))
+            let sh2 = CGPoint(x: start.x + headLength * cos(angle + wingAngle), y: start.y + headLength * sin(angle + wingAngle))
+            context.beginPath()
+            context.move(to: st1)
+            context.addLine(to: st2)
+            context.move(to: et1)
+            context.addLine(to: et2)
+            context.move(to: eh1)
+            context.addLine(to: end)
+            context.addLine(to: eh2)
+            context.move(to: sh1)
+            context.addLine(to: start)
+            context.addLine(to: sh2)
+            context.strokePath()
 
         default:
             break
