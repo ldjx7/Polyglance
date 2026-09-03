@@ -210,6 +210,20 @@ public partial class PinWindow : Window
 
     private void OnMouseWheel(object sender, MouseWheelEventArgs e)
     {
+        if (_activeAnnotationTool != "None" && !string.IsNullOrEmpty(_activeAnnotationTool))
+        {
+            if (_activeAnnotationTool == "Text")
+            {
+                AnnotationToolbar.AdjustFontSize(e.Delta > 0 ? 2 : -2);
+            }
+            else
+            {
+                AnnotationToolbar.AdjustStrokeSize(e.Delta > 0 ? 1 : -1);
+            }
+            e.Handled = true;
+            return;
+        }
+
         if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
         {
             // Ctrl+Wheel: Adjust Opacity
@@ -478,7 +492,7 @@ public partial class PinWindow : Window
                     StrokeThickness = strokeSize,
                     RadiusX = 3,
                     RadiusY = 3,
-                    StrokeDashArray = AnnotationToolbar.IsDashed ? new DoubleCollection { 3, 2 } : null,
+                    StrokeDashArray = AnnotationToolbar.CurrentDashArray,
                     Fill = AnnotationToolbar.IsFilled ? brush : Brushes.Transparent
                 };
                 Canvas.SetLeft(rect, point.X);
@@ -491,7 +505,7 @@ public partial class PinWindow : Window
                 {
                     Stroke = brush,
                     StrokeThickness = strokeSize,
-                    StrokeDashArray = AnnotationToolbar.IsDashed ? new DoubleCollection { 3, 2 } : null,
+                    StrokeDashArray = AnnotationToolbar.CurrentDashArray,
                     Fill = AnnotationToolbar.IsFilled ? brush : Brushes.Transparent
                 };
                 Canvas.SetLeft(ellipse, point.X);
@@ -510,7 +524,7 @@ public partial class PinWindow : Window
                     StrokeThickness = strokeSize,
                     StrokeStartLineCap = PenLineCap.Round,
                     StrokeEndLineCap = PenLineCap.Round,
-                    StrokeDashArray = AnnotationToolbar.IsDashed ? new DoubleCollection { 3, 2 } : null
+                    StrokeDashArray = AnnotationToolbar.CurrentDashArray
                 };
                 AnnotationCanvas.Children.Add(line);
                 _currentDrawingShape = line;
@@ -523,8 +537,9 @@ public partial class PinWindow : Window
                     StrokeStartLineCap = PenLineCap.Round,
                     StrokeEndLineCap = PenLineCap.Round,
                     StrokeLineJoin = PenLineJoin.Round,
-                    StrokeDashArray = AnnotationToolbar.IsDashed ? new DoubleCollection { 3, 2 } : null,
-                    Data = MakeArrowGeometry(point, point, strokeSize)
+                    Fill = AnnotationToolbar.IsFilled ? brush : Brushes.Transparent,
+                    StrokeDashArray = AnnotationToolbar.CurrentDashArray,
+                    Data = MakeArrowGeometry(point, point, strokeSize, AnnotationToolbar.ArrowStyle, AnnotationToolbar.IsFilled)
                 };
                 AnnotationCanvas.Children.Add(arrow);
                 _currentDrawingShape = arrow;
@@ -653,7 +668,7 @@ public partial class PinWindow : Window
         }
         else if (_currentDrawingShape is System.Windows.Shapes.Path arrow)
         {
-            arrow.Data = MakeArrowGeometry(_drawingStart, current, arrow.StrokeThickness);
+            arrow.Data = MakeArrowGeometry(_drawingStart, current, arrow.StrokeThickness, AnnotationToolbar.ArrowStyle, AnnotationToolbar.IsFilled);
         }
         else if (_currentDrawingShape is System.Windows.Controls.Image mosaicImg && _activeAnnotationTool == "Mosaic")
         {
@@ -718,27 +733,146 @@ public partial class PinWindow : Window
         return output;
     }
 
-    private static Geometry MakeArrowGeometry(Point start, Point end, double strokeSize)
+    private static Geometry MakeArrowGeometry(Point start, Point end, double strokeSize, int arrowStyle, bool isFilled)
     {
         double dx = end.X - start.X;
         double dy = end.Y - start.Y;
         double length = Math.Sqrt(dx * dx + dy * dy);
         if (length < 0.001)
             return new LineGeometry(start, end);
+
         double angle = Math.Atan2(dy, dx);
-        double headLength = Math.Min(Math.Max(strokeSize * 4, 8), length * 0.5);
-        const double headAngle = Math.PI / 7;
-        Point first = new(end.X - headLength * Math.Cos(angle - headAngle), end.Y - headLength * Math.Sin(angle - headAngle));
-        Point second = new(end.X - headLength * Math.Cos(angle + headAngle), end.Y - headLength * Math.Sin(angle + headAngle));
-        var geometry = new StreamGeometry();
-        using (StreamGeometryContext context = geometry.Open())
+        double headLength = Math.Min(Math.Max(strokeSize * 3.5, 9), length * 0.45);
+        double perpAngle = angle + Math.PI / 2;
+
+        Point lineStart = start;
+        Point lineEnd = end;
+
+        if (arrowStyle == 2 || arrowStyle == 3)
         {
-            context.BeginFigure(start, false, false);
-            context.LineTo(end, true, false);
-            context.BeginFigure(end, false, false);
-            context.LineTo(first, true, false);
-            context.BeginFigure(end, false, false);
-            context.LineTo(second, true, false);
+            lineEnd = new Point(end.X - headLength * 0.7 * Math.Cos(angle), end.Y - headLength * 0.7 * Math.Sin(angle));
+        }
+        if (arrowStyle == 3)
+        {
+            lineStart = new Point(start.X + headLength * 0.7 * Math.Cos(angle), start.Y + headLength * 0.7 * Math.Sin(angle));
+        }
+
+        var geometry = new StreamGeometry();
+        using (StreamGeometryContext ctx = geometry.Open())
+        {
+            if (arrowStyle != 4)
+            {
+                ctx.BeginFigure(lineStart, false, false);
+                ctx.LineTo(lineEnd, true, false);
+            }
+
+            switch (arrowStyle)
+            {
+                case 0: // Single open arrow: ——>
+                {
+                    double wingAngle = Math.PI / 6.5;
+                    Point h1 = new(end.X - headLength * Math.Cos(angle - wingAngle), end.Y - headLength * Math.Sin(angle - wingAngle));
+                    Point h2 = new(end.X - headLength * Math.Cos(angle + wingAngle), end.Y - headLength * Math.Sin(angle + wingAngle));
+                    ctx.BeginFigure(h1, false, false);
+                    ctx.LineTo(end, true, false);
+                    ctx.LineTo(h2, true, false);
+                    break;
+                }
+                case 1: // Double open arrow: <——>
+                {
+                    double wingAngle = Math.PI / 6.5;
+                    Point eh1 = new(end.X - headLength * Math.Cos(angle - wingAngle), end.Y - headLength * Math.Sin(angle - wingAngle));
+                    Point eh2 = new(end.X - headLength * Math.Cos(angle + wingAngle), end.Y - headLength * Math.Sin(angle + wingAngle));
+                    Point sh1 = new(start.X + headLength * Math.Cos(angle - wingAngle), start.Y + headLength * Math.Sin(angle - wingAngle));
+                    Point sh2 = new(start.X + headLength * Math.Cos(angle + wingAngle), start.Y + headLength * Math.Sin(angle + wingAngle));
+                    ctx.BeginFigure(eh1, false, false);
+                    ctx.LineTo(end, true, false);
+                    ctx.LineTo(eh2, true, false);
+                    ctx.BeginFigure(sh1, false, false);
+                    ctx.LineTo(start, true, false);
+                    ctx.LineTo(sh2, true, false);
+                    break;
+                }
+                case 2: // Single filled triangle: ——▶
+                {
+                    double baseW = headLength * 0.65;
+                    Point b1 = new(end.X - headLength * Math.Cos(angle) + baseW * Math.Cos(perpAngle), end.Y - headLength * Math.Sin(angle) + baseW * Math.Sin(perpAngle));
+                    Point b2 = new(end.X - headLength * Math.Cos(angle) - baseW * Math.Cos(perpAngle), end.Y - headLength * Math.Sin(angle) - baseW * Math.Sin(perpAngle));
+                    ctx.BeginFigure(end, true, true);
+                    ctx.LineTo(b1, true, false);
+                    ctx.LineTo(b2, true, false);
+                    break;
+                }
+                case 3: // Double filled triangle: ◀——▶
+                {
+                    double baseW = headLength * 0.65;
+                    Point eb1 = new(end.X - headLength * Math.Cos(angle) + baseW * Math.Cos(perpAngle), end.Y - headLength * Math.Sin(angle) + baseW * Math.Sin(perpAngle));
+                    Point eb2 = new(end.X - headLength * Math.Cos(angle) - baseW * Math.Cos(perpAngle), end.Y - headLength * Math.Sin(angle) - baseW * Math.Sin(perpAngle));
+                    ctx.BeginFigure(end, true, true);
+                    ctx.LineTo(eb1, true, false);
+                    ctx.LineTo(eb2, true, false);
+
+                    Point sb1 = new(start.X + headLength * Math.Cos(angle) + baseW * Math.Cos(perpAngle), start.Y + headLength * Math.Sin(angle) + baseW * Math.Sin(perpAngle));
+                    Point sb2 = new(start.X + headLength * Math.Cos(angle) - baseW * Math.Cos(perpAngle), start.Y + headLength * Math.Sin(angle) - baseW * Math.Sin(perpAngle));
+                    ctx.BeginFigure(start, true, true);
+                    ctx.LineTo(sb1, true, false);
+                    ctx.LineTo(sb2, true, false);
+                    break;
+                }
+                case 4: // Block / hollow arrow: ===>
+                {
+                    double shaftHalfW = Math.Max(3, strokeSize * 1.2);
+                    double headBaseHalfW = shaftHalfW * 2.2;
+                    double hLen = Math.Max(headLength * 1.2, 14);
+                    Point headBaseCenter = new(end.X - hLen * Math.Cos(angle), end.Y - hLen * Math.Sin(angle));
+                    Point h1 = new(headBaseCenter.X + headBaseHalfW * Math.Cos(perpAngle), headBaseCenter.Y + headBaseHalfW * Math.Sin(perpAngle));
+                    Point h2 = new(headBaseCenter.X - headBaseHalfW * Math.Cos(perpAngle), headBaseCenter.Y - headBaseHalfW * Math.Sin(perpAngle));
+                    Point s1 = new(start.X + shaftHalfW * Math.Cos(perpAngle), start.Y + shaftHalfW * Math.Sin(perpAngle));
+                    Point s2 = new(start.X - shaftHalfW * Math.Cos(perpAngle), start.Y - shaftHalfW * Math.Sin(perpAngle));
+                    Point j1 = new(headBaseCenter.X + shaftHalfW * Math.Cos(perpAngle), headBaseCenter.Y + shaftHalfW * Math.Sin(perpAngle));
+                    Point j2 = new(headBaseCenter.X - shaftHalfW * Math.Cos(perpAngle), headBaseCenter.Y - shaftHalfW * Math.Sin(perpAngle));
+
+                    ctx.BeginFigure(s1, isFilled, true);
+                    ctx.LineTo(j1, true, false);
+                    ctx.LineTo(h1, true, false);
+                    ctx.LineTo(end, true, false);
+                    ctx.LineTo(h2, true, false);
+                    ctx.LineTo(j2, true, false);
+                    ctx.LineTo(s2, true, false);
+                    break;
+                }
+                case 5: // Single T-bar: |——>
+                {
+                    double barHalfLen = headLength * 0.7;
+                    Point t1 = new(start.X + barHalfLen * Math.Cos(perpAngle), start.Y + barHalfLen * Math.Sin(perpAngle));
+                    Point t2 = new(start.X - barHalfLen * Math.Cos(perpAngle), start.Y - barHalfLen * Math.Sin(perpAngle));
+                    ctx.BeginFigure(t1, false, false);
+                    ctx.LineTo(t2, true, false);
+
+                    double wingAngle = Math.PI / 6.5;
+                    Point h1 = new(end.X - headLength * Math.Cos(angle - wingAngle), end.Y - headLength * Math.Sin(angle - wingAngle));
+                    Point h2 = new(end.X - headLength * Math.Cos(angle + wingAngle), end.Y - headLength * Math.Sin(angle + wingAngle));
+                    ctx.BeginFigure(h1, false, false);
+                    ctx.LineTo(end, true, false);
+                    ctx.LineTo(h2, true, false);
+                    break;
+                }
+                case 6: // Double T-bar: |——|
+                {
+                    double barHalfLen = headLength * 0.7;
+                    Point st1 = new(start.X + barHalfLen * Math.Cos(perpAngle), start.Y + barHalfLen * Math.Sin(perpAngle));
+                    Point st2 = new(start.X - barHalfLen * Math.Cos(perpAngle), start.Y - barHalfLen * Math.Sin(perpAngle));
+                    Point et1 = new(end.X + barHalfLen * Math.Cos(perpAngle), end.Y + barHalfLen * Math.Sin(perpAngle));
+                    Point et2 = new(end.X - barHalfLen * Math.Cos(perpAngle), end.Y - barHalfLen * Math.Sin(perpAngle));
+                    ctx.BeginFigure(st1, false, false);
+                    ctx.LineTo(st2, true, false);
+                    ctx.BeginFigure(et1, false, false);
+                    ctx.LineTo(et2, true, false);
+                    break;
+                }
+                case 7: // Plain line: ————
+                    break;
+            }
         }
         geometry.Freeze();
         return geometry;

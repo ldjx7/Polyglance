@@ -135,31 +135,50 @@ public partial class ScreenshotToolbar : UserControl
         UpdateSubToolButtonStates(tool);
     }
 
+    public int ArrowStyle { get; private set; } = 0;
+    public int LineDashPattern { get; private set; } = 0;
+
+    public DoubleCollection? CurrentDashArray => LineDashPattern switch
+    {
+        1 => new DoubleCollection { 4, 2 },
+        2 => new DoubleCollection { 1, 2 },
+        3 => new DoubleCollection { 6, 2, 1, 2 },
+        _ => null
+    };
+
+    public void AdjustStrokeSize(int step)
+    {
+        double newSize = Math.Clamp(CurrentStrokeSize + step, 1, 50);
+        if (Math.Abs(newSize - CurrentStrokeSize) > 0.1)
+        {
+            CurrentStrokeSize = newSize;
+            StrokeSizeChanged?.Invoke(newSize);
+            SelectComboItemByTag(CmbStrokeSize, ((int)newSize).ToString());
+        }
+    }
+
+    public void AdjustFontSize(int step)
+    {
+        double newSize = Math.Clamp(FontSizeValue + step, 8, 96);
+        if (Math.Abs(newSize - FontSizeValue) > 0.1)
+        {
+            FontSizeValue = newSize;
+            SelectComboItemByTag(CmbFontSize, ((int)newSize).ToString());
+        }
+    }
+
     private void OnSubToolbarMouseWheel(object sender, MouseWheelEventArgs e)
     {
         string currentTool = _selectedToolButton?.Tag as string ?? "";
         if (currentTool == "Text")
         {
-            int step = e.Delta > 0 ? 2 : -2;
-            double newSize = Math.Clamp(FontSizeValue + step, 8, 96);
-            if (Math.Abs(newSize - FontSizeValue) > 0.1)
-            {
-                FontSizeValue = newSize;
-                SelectComboItemByTag(CmbFontSize, ((int)newSize).ToString());
-                e.Handled = true;
-            }
+            AdjustFontSize(e.Delta > 0 ? 2 : -2);
+            e.Handled = true;
         }
         else
         {
-            int step = e.Delta > 0 ? 1 : -1;
-            double newSize = Math.Clamp(CurrentStrokeSize + step, 1, 50);
-            if (Math.Abs(newSize - CurrentStrokeSize) > 0.1)
-            {
-                CurrentStrokeSize = newSize;
-                StrokeSizeChanged?.Invoke(newSize);
-                SelectComboItemByTag(CmbStrokeSize, ((int)newSize).ToString());
-                e.Handled = true;
-            }
+            AdjustStrokeSize(e.Delta > 0 ? 1 : -1);
+            e.Handled = true;
         }
     }
 
@@ -173,7 +192,6 @@ public partial class ScreenshotToolbar : UserControl
                 return;
             }
         }
-        // If not matching preset tags, update text
         if (combo == CmbStrokeSize)
         {
             combo.Text = $"{tag} px";
@@ -184,28 +202,27 @@ public partial class ScreenshotToolbar : UserControl
         }
     }
 
-    private void OnRectStyleChanged(object sender, SelectionChangedEventArgs e)
+    private void OnFillCheckChanged(object sender, RoutedEventArgs e)
     {
-        if (CmbRectStyle.SelectedIndex == 0) // 描边实线
-        {
-            IsFilled = false;
-            IsDashed = false;
-        }
-        else if (CmbRectStyle.SelectedIndex == 1) // 描边虚线
-        {
-            IsFilled = false;
-            IsDashed = true;
-        }
-        else if (CmbRectStyle.SelectedIndex == 2) // 填充实心
-        {
-            IsFilled = true;
-            IsDashed = false;
-        }
+        IsFilled = ChkFilled.IsChecked == true;
     }
 
-    private void OnLineStyleChanged(object sender, SelectionChangedEventArgs e)
+    private void OnRectDashChanged(object sender, SelectionChangedEventArgs e)
     {
-        IsDashed = CmbLineStyle.SelectedIndex == 1;
+        LineDashPattern = CmbRectDash.SelectedIndex;
+        IsDashed = LineDashPattern != 0;
+    }
+
+    private void OnArrowStyleChanged(object sender, SelectionChangedEventArgs e)
+    {
+        ArrowStyle = CmbArrowStyle.SelectedIndex;
+        HasArrow = ArrowStyle != 7;
+    }
+
+    private void OnLineDashChanged(object sender, SelectionChangedEventArgs e)
+    {
+        LineDashPattern = CmbLineDash.SelectedIndex;
+        IsDashed = LineDashPattern != 0;
     }
 
     private void OnFontFamilyChanged(object sender, SelectionChangedEventArgs e)

@@ -1732,6 +1732,33 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         window?.makeFirstResponder(self)
     }
 
+    override func scrollWheel(with event: NSEvent) {
+        let delta = event.scrollingDeltaY
+        guard abs(delta) > 0.1, isAnnotating else {
+            super.scrollWheel(with: event)
+            return
+        }
+
+        let tool = selectedAnnotationTool
+        if tool == .text {
+            let step: CGFloat = delta > 0 ? 2 : -2
+            let newSize = min(96, max(8, annotationStyle.fontSize + step))
+            if newSize != annotationStyle.fontSize {
+                annotationStyle.fontSize = newSize
+                subToolbar?.update(tool: .text, style: annotationStyle)
+                needsDisplay = true
+            }
+        } else {
+            let step: CGFloat = delta > 0 ? 1 : -1
+            let newWidth = min(50, max(1, annotationStyle.lineWidth + step))
+            if newWidth != annotationStyle.lineWidth {
+                annotationStyle.lineWidth = newWidth
+                subToolbar?.update(tool: tool, style: annotationStyle)
+                needsDisplay = true
+            }
+        }
+    }
+
     @objc private func copySelection() {
         guard let result = makeSelectedScreenshot() else {
             NSSound.beep()

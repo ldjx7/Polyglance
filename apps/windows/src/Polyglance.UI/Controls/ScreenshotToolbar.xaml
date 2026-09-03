@@ -96,20 +96,73 @@
                 <DropShadowEffect Color="#000000" Opacity="0.12" BlurRadius="12" ShadowDepth="2" Direction="270"/>
             </Border.Effect>
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <!-- 矩形 / 椭圆属性组 (下拉框) -->
+                <!-- 矩形 / 椭圆属性组 (填充复选框 + 线条样式图形下拉框) -->
                 <StackPanel x:Name="PanelRectControls" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed">
-                    <ComboBox x:Name="CmbRectStyle" Style="{StaticResource ToolbarComboBoxStyle}" Width="88" SelectionChanged="OnRectStyleChanged">
-                        <ComboBoxItem Content="描边实线" IsSelected="True"/>
-                        <ComboBoxItem Content="描边虚线"/>
-                        <ComboBoxItem Content="填充实心"/>
+                    <CheckBox x:Name="ChkFilled" Content="填充" IsChecked="False" VerticalAlignment="Center" Margin="3,0" Cursor="Hand" Checked="OnFillCheckChanged" Unchecked="OnFillCheckChanged"/>
+                    <ComboBox x:Name="CmbRectDash" Style="{StaticResource ToolbarComboBoxStyle}" Width="72" SelectionChanged="OnRectDashChanged">
+                        <ComboBoxItem IsSelected="True" ToolTip="实线">
+                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="#222222" StrokeThickness="2" VerticalAlignment="Center"/>
+                        </ComboBoxItem>
+                        <ComboBoxItem ToolTip="长虚线">
+                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="#222222" StrokeThickness="2" StrokeDashArray="4 2" VerticalAlignment="Center"/>
+                        </ComboBoxItem>
+                        <ComboBoxItem ToolTip="点线">
+                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="#222222" StrokeThickness="2" StrokeDashArray="1 2" VerticalAlignment="Center"/>
+                        </ComboBoxItem>
+                        <ComboBoxItem ToolTip="点划线">
+                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="#222222" StrokeThickness="2" StrokeDashArray="6 2 1 2" VerticalAlignment="Center"/>
+                        </ComboBoxItem>
                     </ComboBox>
                 </StackPanel>
 
-                <!-- 线条属性组 (下拉框) -->
+                <!-- 箭头/线条属性组 (8种箭头样式 + 4种线条虚实样式图形下拉框) -->
                 <StackPanel x:Name="PanelLineControls" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed">
-                    <ComboBox x:Name="CmbLineStyle" Style="{StaticResource ToolbarComboBoxStyle}" Width="66" SelectionChanged="OnLineStyleChanged">
-                        <ComboBoxItem Content="实线" IsSelected="True"/>
-                        <ComboBoxItem Content="虚线"/>
+                    <ComboBox x:Name="CmbArrowStyle" Style="{StaticResource ToolbarComboBoxStyle}" Width="78" SelectionChanged="OnArrowStyleChanged">
+                        <ComboBoxItem IsSelected="True" ToolTip="单向箭头">
+                            <Path Data="M 2,8 L 48,8 M 38,3 L 48,8 L 38,13" Stroke="#222222" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="52" Height="16"/>
+                        </ComboBoxItem>
+                        <ComboBoxItem ToolTip="双向箭头">
+                            <Path Data="M 12,3 L 2,8 L 12,13 M 2,8 L 48,8 M 38,3 L 48,8 L 38,13" Stroke="#222222" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="52" Height="16"/>
+                        </ComboBoxItem>
+                        <ComboBoxItem ToolTip="实心三角箭头">
+                            <Canvas Width="52" Height="16">
+                                <Line X1="2" Y1="8" X2="38" Y2="8" Stroke="#222222" StrokeThickness="1.8" StrokeStartLineCap="Round"/>
+                                <Polygon Points="50,8 36,3 36,13" Fill="#222222"/>
+                            </Canvas>
+                        </ComboBoxItem>
+                        <ComboBoxItem ToolTip="双向实心三角箭头">
+                            <Canvas Width="52" Height="16">
+                                <Line X1="14" Y1="8" X2="38" Y2="8" Stroke="#222222" StrokeThickness="1.8"/>
+                                <Polygon Points="2,8 16,3 16,13" Fill="#222222"/>
+                                <Polygon Points="50,8 36,3 36,13" Fill="#222222"/>
+                            </Canvas>
+                        </ComboBoxItem>
+                        <ComboBoxItem ToolTip="空心块状箭头">
+                            <Path Data="M 2,5.5 L 32,5.5 L 32,2 L 48,8 L 32,14 L 32,10.5 L 2,10.5 Z" Stroke="#222222" StrokeThickness="1.4" Fill="Transparent" Width="52" Height="16"/>
+                        </ComboBoxItem>
+                        <ComboBoxItem ToolTip="T型端点箭头">
+                            <Path Data="M 2,2 L 2,14 M 2,8 L 48,8 M 38,3 L 48,8 L 38,13" Stroke="#222222" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="52" Height="16"/>
+                        </ComboBoxItem>
+                        <ComboBoxItem ToolTip="双向T型端点线">
+                            <Path Data="M 2,2 L 2,14 M 2,8 L 48,8 M 48,2 L 48,14" Stroke="#222222" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="52" Height="16"/>
+                        </ComboBoxItem>
+                        <ComboBoxItem ToolTip="普通直线">
+                            <Line X1="2" Y1="8" X2="48" Y2="8" Stroke="#222222" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                        </ComboBoxItem>
+                    </ComboBox>
+                    <ComboBox x:Name="CmbLineDash" Style="{StaticResource ToolbarComboBoxStyle}" Width="72" SelectionChanged="OnLineDashChanged">
+                        <ComboBoxItem IsSelected="True" ToolTip="实线">
+                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="#222222" StrokeThickness="2" VerticalAlignment="Center"/>
+                        </ComboBoxItem>
+                        <ComboBoxItem ToolTip="长虚线">
+                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="#222222" StrokeThickness="2" StrokeDashArray="4 2" VerticalAlignment="Center"/>
+                        </ComboBoxItem>
+                        <ComboBoxItem ToolTip="点线">
+                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="#222222" StrokeThickness="2" StrokeDashArray="1 2" VerticalAlignment="Center"/>
+                        </ComboBoxItem>
+                        <ComboBoxItem ToolTip="点划线">
+                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="#222222" StrokeThickness="2" StrokeDashArray="6 2 1 2" VerticalAlignment="Center"/>
+                        </ComboBoxItem>
                     </ComboBox>
                 </StackPanel>
 
