@@ -58,10 +58,60 @@
             </Setter>
         </Style>
 
+        <Style x:Key="ToolbarSubButtonStyle" TargetType="Button">
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Margin" Value="2,0"/>
+            <Setter Property="Padding" Value="5,1"/>
+            <Setter Property="Background" Value="#0F000000"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="BtnSurface" Background="{TemplateBinding Background}" CornerRadius="5" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="BtnSurface" Property="Background" Value="#1A000000"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="BtnSurface" Property="Background" Value="#25000000"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="#222222"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="ItemBorder" Background="Transparent" CornerRadius="5" Padding="{TemplateBinding Padding}" Margin="1">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="#F3F4F6"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="#2563EB"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="ToolbarComboBoxStyle" TargetType="ComboBox">
             <Setter Property="Height" Value="24"/>
             <Setter Property="Margin" Value="2,0"/>
-            <Setter Property="Padding" Value="6,1,4,1"/>
             <Setter Property="FontSize" Value="11.5"/>
             <Setter Property="Foreground" Value="#222222"/>
             <Setter Property="Background" Value="#0F000000"/>
@@ -69,13 +119,100 @@
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid SnapsToDevicePixels="True">
+                            <ToggleButton x:Name="DropDownToggle"
+                                          Background="{TemplateBinding Background}"
+                                          BorderThickness="0"
+                                          Focusable="False"
+                                          IsChecked="{Binding Path=IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          ClickMode="Press">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="ToggleBorder" Background="{TemplateBinding Background}" CornerRadius="5" Padding="4,1">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <ContentPresenter Grid.Column="0" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                <Path Grid.Column="1" Data="M 0,1 L 3,4 L 6,1" Stroke="#666666" StrokeThickness="1.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Margin="4,0,2,0" VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="ToggleBorder" Property="Background" Value="#1A000000"/>
+                                            </Trigger>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="ToggleBorder" Property="Background" Value="#25000000"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                                <ContentPresenter Content="{TemplateBinding SelectionBoxItem}"
+                                                  ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                  ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                                  VerticalAlignment="Center"
+                                                  HorizontalAlignment="Center"/>
+                            </ToggleButton>
+                            <Popup x:Name="PART_Popup"
+                                   AllowsTransparency="True"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   Placement="Bottom"
+                                   PopupAnimation="Slide"
+                                   Focusable="False">
+                                <Border x:Name="DropDownBorder"
+                                        Background="#FFFFFF"
+                                        BorderBrush="#E5E7EB"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Margin="0,2,0,4"
+                                        Padding="4"
+                                        SnapsToDevicePixels="True">
+                                    <Border.Effect>
+                                        <DropShadowEffect Color="#000000" Opacity="0.14" BlurRadius="10" ShadowDepth="2" Direction="270"/>
+                                    </Border.Effect>
+                                    <ScrollViewer SnapsToDevicePixels="True" MaxHeight="240" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ColorRadioStyle" TargetType="RadioButton">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Margin" Value="2,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Grid Width="22" Height="22">
+                            <Ellipse x:Name="OuterRing" Width="20" Height="20" Stroke="{TemplateBinding Foreground}" StrokeThickness="1.5" Opacity="0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <Ellipse x:Name="InnerDot" Width="14" Height="14" Fill="{TemplateBinding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="OuterRing" Property="Opacity" Value="0.85"/>
+                                <Setter TargetName="InnerDot" Property="Width" Value="11"/>
+                                <Setter TargetName="InnerDot" Property="Height" Value="11"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style x:Key="DividerStyle" TargetType="Rectangle">
             <Setter Property="Width" Value="1"/>
-            <Setter Property="Height" Value="18"/>
-            <Setter Property="Fill" Value="#18000000"/>
-            <Setter Property="Margin" Value="4,0"/>
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="Fill" Value="#1A000000"/>
+            <Setter Property="Margin" Value="5,0"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
     </UserControl.Resources>
@@ -87,7 +224,7 @@
                 BorderBrush="{StaticResource ToolbarBorderBrush}"
                 BorderThickness="1"
                 CornerRadius="16"
-                Padding="8,4"
+                Padding="8,3"
                 Margin="0,0,0,6"
                 HorizontalAlignment="Center"
                 Visibility="Collapsed"
@@ -101,67 +238,70 @@
                     <CheckBox x:Name="ChkFilled" Content="填充" IsChecked="False" VerticalAlignment="Center" Margin="3,0" Cursor="Hand" Checked="OnFillCheckChanged" Unchecked="OnFillCheckChanged"/>
                     <ComboBox x:Name="CmbRectDash" Style="{StaticResource ToolbarComboBoxStyle}" Width="72" SelectionChanged="OnRectDashChanged">
                         <ComboBoxItem IsSelected="True" ToolTip="实线">
-                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="#222222" StrokeThickness="2" VerticalAlignment="Center"/>
+                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}" StrokeThickness="2" VerticalAlignment="Center"/>
                         </ComboBoxItem>
                         <ComboBoxItem ToolTip="长虚线">
-                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="#222222" StrokeThickness="2" StrokeDashArray="4 2" VerticalAlignment="Center"/>
+                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}" StrokeThickness="2" StrokeDashArray="4 2" VerticalAlignment="Center"/>
                         </ComboBoxItem>
                         <ComboBoxItem ToolTip="点线">
-                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="#222222" StrokeThickness="2" StrokeDashArray="1 2" VerticalAlignment="Center"/>
+                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}" StrokeThickness="2" StrokeDashArray="1 2" VerticalAlignment="Center"/>
                         </ComboBoxItem>
                         <ComboBoxItem ToolTip="点划线">
-                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="#222222" StrokeThickness="2" StrokeDashArray="6 2 1 2" VerticalAlignment="Center"/>
+                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}" StrokeThickness="2" StrokeDashArray="6 2 1 2" VerticalAlignment="Center"/>
                         </ComboBoxItem>
                     </ComboBox>
                 </StackPanel>
 
-                <!-- 箭头/线条属性组 (8种箭头样式 + 4种线条虚实样式图形下拉框) -->
+                <!-- 箭头/线条属性组 (9种箭头样式 + 4种线条虚实样式图形下拉框) -->
                 <StackPanel x:Name="PanelLineControls" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed">
                     <ComboBox x:Name="CmbArrowStyle" Style="{StaticResource ToolbarComboBoxStyle}" Width="78" SelectionChanged="OnArrowStyleChanged">
                         <ComboBoxItem IsSelected="True" ToolTip="单向箭头">
-                            <Path Data="M 2,8 L 48,8 M 38,3 L 48,8 L 38,13" Stroke="#222222" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="52" Height="16"/>
+                            <Path Data="M 2,8 L 48,8 M 38,3 L 48,8 L 38,13" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="52" Height="16"/>
                         </ComboBoxItem>
                         <ComboBoxItem ToolTip="双向箭头">
-                            <Path Data="M 12,3 L 2,8 L 12,13 M 2,8 L 48,8 M 38,3 L 48,8 L 38,13" Stroke="#222222" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="52" Height="16"/>
+                            <Path Data="M 12,3 L 2,8 L 12,13 M 2,8 L 48,8 M 38,3 L 48,8 L 38,13" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="52" Height="16"/>
                         </ComboBoxItem>
                         <ComboBoxItem ToolTip="实心三角箭头">
                             <Canvas Width="52" Height="16">
-                                <Line X1="2" Y1="8" X2="38" Y2="8" Stroke="#222222" StrokeThickness="1.8" StrokeStartLineCap="Round"/>
-                                <Polygon Points="50,8 36,3 36,13" Fill="#222222"/>
+                                <Line X1="2" Y1="8" X2="38" Y2="8" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}" StrokeThickness="1.8" StrokeStartLineCap="Round"/>
+                                <Polygon Points="50,8 36,3 36,13" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}"/>
                             </Canvas>
                         </ComboBoxItem>
                         <ComboBoxItem ToolTip="双向实心三角箭头">
                             <Canvas Width="52" Height="16">
-                                <Line X1="14" Y1="8" X2="38" Y2="8" Stroke="#222222" StrokeThickness="1.8"/>
-                                <Polygon Points="2,8 16,3 16,13" Fill="#222222"/>
-                                <Polygon Points="50,8 36,3 36,13" Fill="#222222"/>
+                                <Line X1="14" Y1="8" X2="38" Y2="8" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}" StrokeThickness="1.8"/>
+                                <Polygon Points="2,8 16,3 16,13" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}"/>
+                                <Polygon Points="50,8 36,3 36,13" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}"/>
                             </Canvas>
                         </ComboBoxItem>
+                        <ComboBoxItem ToolTip="从小变大箭头">
+                            <Path Data="M 4,8 L 36,5.5 L 36,2 L 50,8 L 36,14 L 36,10.5 L 4,8 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}" Width="52" Height="16"/>
+                        </ComboBoxItem>
                         <ComboBoxItem ToolTip="空心块状箭头">
-                            <Path Data="M 2,5.5 L 32,5.5 L 32,2 L 48,8 L 32,14 L 32,10.5 L 2,10.5 Z" Stroke="#222222" StrokeThickness="1.4" Fill="Transparent" Width="52" Height="16"/>
+                            <Path Data="M 2,5.5 L 32,5.5 L 32,2 L 48,8 L 32,14 L 32,10.5 L 2,10.5 Z" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}" StrokeThickness="1.4" Fill="Transparent" Width="52" Height="16"/>
                         </ComboBoxItem>
                         <ComboBoxItem ToolTip="T型端点箭头">
-                            <Path Data="M 2,2 L 2,14 M 2,8 L 48,8 M 38,3 L 48,8 L 38,13" Stroke="#222222" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="52" Height="16"/>
+                            <Path Data="M 2,2 L 2,14 M 2,8 L 48,8 M 38,3 L 48,8 L 38,13" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="52" Height="16"/>
                         </ComboBoxItem>
                         <ComboBoxItem ToolTip="双向T型端点线">
-                            <Path Data="M 2,2 L 2,14 M 2,8 L 48,8 M 48,2 L 48,14" Stroke="#222222" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="52" Height="16"/>
+                            <Path Data="M 2,2 L 2,14 M 2,8 L 48,8 M 48,2 L 48,14" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="52" Height="16"/>
                         </ComboBoxItem>
                         <ComboBoxItem ToolTip="普通直线">
-                            <Line X1="2" Y1="8" X2="48" Y2="8" Stroke="#222222" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                            <Line X1="2" Y1="8" X2="48" Y2="8" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
                         </ComboBoxItem>
                     </ComboBox>
                     <ComboBox x:Name="CmbLineDash" Style="{StaticResource ToolbarComboBoxStyle}" Width="72" SelectionChanged="OnLineDashChanged">
                         <ComboBoxItem IsSelected="True" ToolTip="实线">
-                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="#222222" StrokeThickness="2" VerticalAlignment="Center"/>
+                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}" StrokeThickness="2" VerticalAlignment="Center"/>
                         </ComboBoxItem>
                         <ComboBoxItem ToolTip="长虚线">
-                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="#222222" StrokeThickness="2" StrokeDashArray="4 2" VerticalAlignment="Center"/>
+                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}" StrokeThickness="2" StrokeDashArray="4 2" VerticalAlignment="Center"/>
                         </ComboBoxItem>
                         <ComboBoxItem ToolTip="点线">
-                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="#222222" StrokeThickness="2" StrokeDashArray="1 2" VerticalAlignment="Center"/>
+                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}" StrokeThickness="2" StrokeDashArray="1 2" VerticalAlignment="Center"/>
                         </ComboBoxItem>
                         <ComboBoxItem ToolTip="点划线">
-                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="#222222" StrokeThickness="2" StrokeDashArray="6 2 1 2" VerticalAlignment="Center"/>
+                            <Line X1="0" Y1="8" X2="50" Y2="8" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBoxItem}}" StrokeThickness="2" StrokeDashArray="6 2 1 2" VerticalAlignment="Center"/>
                         </ComboBoxItem>
                     </ComboBox>
                 </StackPanel>
@@ -220,53 +360,39 @@
                     </ComboBox>
                 </StackPanel>
 
-                <!-- 线宽/粗细选择 (数字下拉框) -->
+                <!-- 线宽/粗细选择：数字按钮 + 点击弹出滑动条 Popup -->
                 <StackPanel x:Name="PanelStrokeSizes" Orientation="Horizontal" VerticalAlignment="Center">
-                    <ComboBox x:Name="CmbStrokeSize" Style="{StaticResource ToolbarComboBoxStyle}" Width="62" SelectionChanged="OnStrokeSizeComboChanged">
-                        <ComboBoxItem Content="1 px" Tag="1"/>
-                        <ComboBoxItem Content="2 px" Tag="2"/>
-                        <ComboBoxItem Content="3 px" Tag="3"/>
-                        <ComboBoxItem Content="4 px" Tag="4" IsSelected="True"/>
-                        <ComboBoxItem Content="5 px" Tag="5"/>
-                        <ComboBoxItem Content="6 px" Tag="6"/>
-                        <ComboBoxItem Content="8 px" Tag="8"/>
-                        <ComboBoxItem Content="10 px" Tag="10"/>
-                        <ComboBoxItem Content="12 px" Tag="12"/>
-                        <ComboBoxItem Content="16 px" Tag="16"/>
-                        <ComboBoxItem Content="20 px" Tag="20"/>
-                        <ComboBoxItem Content="24 px" Tag="24"/>
-                        <ComboBoxItem Content="32 px" Tag="32"/>
-                    </ComboBox>
+                    <Button x:Name="BtnStrokeSize" Style="{StaticResource ToolbarSubButtonStyle}" ToolTip="线条粗细（点击滑动条/滚轮调节）" Click="OnStrokeSizeButtonClick">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="5,0">
+                            <Path Data="M 0,2 L 10,2 M 0,5.5 L 10,5.5 M 0,9 L 10,9" Stroke="#444444" StrokeThickness="1.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <TextBlock x:Name="TxtStrokeSize" Text="4" FontSize="11.5" FontWeight="SemiBold" Foreground="#222222" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Popup x:Name="PopupStrokeSlider" PlacementTarget="{Binding ElementName=BtnStrokeSize}" Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
+                        <Border Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="10,6" Margin="4">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#000000" Opacity="0.14" BlurRadius="8" ShadowDepth="2" Direction="270"/>
+                            </Border.Effect>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Slider x:Name="SliderStrokeSize" Minimum="1" Maximum="50" Value="4" Width="110" VerticalAlignment="Center" ValueChanged="OnStrokeSliderValueChanged"/>
+                                <TextBlock x:Name="TxtSliderStrokeVal" Text="4 px" FontSize="11" FontWeight="SemiBold" Foreground="#333333" Width="36" TextAlignment="Right" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
                 </StackPanel>
 
                 <!-- 调色盘与分隔线（马赛克时不显示） -->
                 <StackPanel x:Name="PanelColorPalette" Orientation="Horizontal" VerticalAlignment="Center">
                     <Rectangle Style="{StaticResource DividerStyle}"/>
 
-                    <RadioButton GroupName="ColorPicker" Margin="3,0" IsChecked="True" Cursor="Hand" Checked="OnColorChecked" Tag="#EF4444">
-                        <Ellipse Width="16" Height="16" Fill="#EF4444" Stroke="#30000000" StrokeThickness="1"/>
-                    </RadioButton>
-                    <RadioButton GroupName="ColorPicker" Margin="3,0" Cursor="Hand" Checked="OnColorChecked" Tag="#F97316">
-                        <Ellipse Width="16" Height="16" Fill="#F97316" Stroke="#30000000" StrokeThickness="1"/>
-                    </RadioButton>
-                    <RadioButton GroupName="ColorPicker" Margin="3,0" Cursor="Hand" Checked="OnColorChecked" Tag="#FACC15">
-                        <Ellipse Width="16" Height="16" Fill="#FACC15" Stroke="#30000000" StrokeThickness="1"/>
-                    </RadioButton>
-                    <RadioButton GroupName="ColorPicker" Margin="3,0" Cursor="Hand" Checked="OnColorChecked" Tag="#10B981">
-                        <Ellipse Width="16" Height="16" Fill="#10B981" Stroke="#30000000" StrokeThickness="1"/>
-                    </RadioButton>
-                    <RadioButton GroupName="ColorPicker" Margin="3,0" Cursor="Hand" Checked="OnColorChecked" Tag="#3B82F6">
-                        <Ellipse Width="16" Height="16" Fill="#3B82F6" Stroke="#30000000" StrokeThickness="1"/>
-                    </RadioButton>
-                    <RadioButton GroupName="ColorPicker" Margin="3,0" Cursor="Hand" Checked="OnColorChecked" Tag="#8B5CF6">
-                        <Ellipse Width="16" Height="16" Fill="#8B5CF6" Stroke="#30000000" StrokeThickness="1"/>
-                    </RadioButton>
-                    <RadioButton GroupName="ColorPicker" Margin="3,0" Cursor="Hand" Checked="OnColorChecked" Tag="#1F2937">
-                        <Ellipse Width="16" Height="16" Fill="#1F2937" Stroke="#30000000" StrokeThickness="1"/>
-                    </RadioButton>
-                    <RadioButton GroupName="ColorPicker" Margin="3,0" Cursor="Hand" Checked="OnColorChecked" Tag="#FFFFFF">
-                        <Ellipse Width="16" Height="16" Fill="#FFFFFF" Stroke="#60000000" StrokeThickness="1.5"/>
-                    </RadioButton>
+                    <RadioButton Style="{StaticResource ColorRadioStyle}" GroupName="ColorPicker" IsChecked="True" Foreground="#EF4444" Checked="OnColorChecked" Tag="#EF4444"/>
+                    <RadioButton Style="{StaticResource ColorRadioStyle}" GroupName="ColorPicker" Foreground="#F97316" Checked="OnColorChecked" Tag="#F97316"/>
+                    <RadioButton Style="{StaticResource ColorRadioStyle}" GroupName="ColorPicker" Foreground="#FACC15" Checked="OnColorChecked" Tag="#FACC15"/>
+                    <RadioButton Style="{StaticResource ColorRadioStyle}" GroupName="ColorPicker" Foreground="#10B981" Checked="OnColorChecked" Tag="#10B981"/>
+                    <RadioButton Style="{StaticResource ColorRadioStyle}" GroupName="ColorPicker" Foreground="#3B82F6" Checked="OnColorChecked" Tag="#3B82F6"/>
+                    <RadioButton Style="{StaticResource ColorRadioStyle}" GroupName="ColorPicker" Foreground="#8B5CF6" Checked="OnColorChecked" Tag="#8B5CF6"/>
+                    <RadioButton Style="{StaticResource ColorRadioStyle}" GroupName="ColorPicker" Foreground="#1F2937" Checked="OnColorChecked" Tag="#1F2937"/>
+                    <RadioButton Style="{StaticResource ColorRadioStyle}" GroupName="ColorPicker" Foreground="#E5E7EB" Checked="OnColorChecked" Tag="#FFFFFF"/>
                 </StackPanel>
             </StackPanel>
         </Border>

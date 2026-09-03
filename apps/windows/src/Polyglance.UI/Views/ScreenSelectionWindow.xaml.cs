@@ -1488,7 +1488,7 @@ public partial class ScreenSelectionWindow : Window
         var geometry = new StreamGeometry();
         using (StreamGeometryContext ctx = geometry.Open())
         {
-            if (arrowStyle != 4)
+            if (arrowStyle != 4 && arrowStyle != 5)
             {
                 ctx.BeginFigure(lineStart, false, false);
                 ctx.LineTo(lineEnd, true, false);
@@ -1547,7 +1547,31 @@ public partial class ScreenSelectionWindow : Window
                     ctx.LineTo(sb2, true, false);
                     break;
                 }
-                case 4: // Block / hollow arrow: ===>
+                case 4: // Tapered expanding arrow (从小变大)
+                {
+                    double startW = Math.Max(1.2, strokeSize * 0.35);
+                    double baseW = Math.Max(3.5, strokeSize * 1.8);
+                    double hLen = Math.Min(Math.Max(strokeSize * 3.6, 11), length * 0.45);
+                    double wingW = baseW * 1.7;
+                    Point baseCenter = new(end.X - hLen * Math.Cos(angle), end.Y - hLen * Math.Sin(angle));
+
+                    Point s1 = new(start.X + (startW / 2) * Math.Cos(perpAngle), start.Y + (startW / 2) * Math.Sin(perpAngle));
+                    Point s2 = new(start.X - (startW / 2) * Math.Cos(perpAngle), start.Y - (startW / 2) * Math.Sin(perpAngle));
+                    Point b1 = new(baseCenter.X + (baseW / 2) * Math.Cos(perpAngle), baseCenter.Y + (baseW / 2) * Math.Sin(perpAngle));
+                    Point b2 = new(baseCenter.X - (baseW / 2) * Math.Cos(perpAngle), baseCenter.Y - (baseW / 2) * Math.Sin(perpAngle));
+                    Point w1 = new(baseCenter.X + (wingW / 2) * Math.Cos(perpAngle), baseCenter.Y + (wingW / 2) * Math.Sin(perpAngle));
+                    Point w2 = new(baseCenter.X - (wingW / 2) * Math.Cos(perpAngle), baseCenter.Y - (wingW / 2) * Math.Sin(perpAngle));
+
+                    ctx.BeginFigure(s1, true, true);
+                    ctx.LineTo(b1, true, false);
+                    ctx.LineTo(w1, true, false);
+                    ctx.LineTo(end, true, false);
+                    ctx.LineTo(w2, true, false);
+                    ctx.LineTo(b2, true, false);
+                    ctx.LineTo(s2, true, false);
+                    break;
+                }
+                case 5: // Block / hollow arrow: ===>
                 {
                     double shaftHalfW = Math.Max(3, strokeSize * 1.2);
                     double headBaseHalfW = shaftHalfW * 2.2;
@@ -1569,7 +1593,7 @@ public partial class ScreenSelectionWindow : Window
                     ctx.LineTo(s2, true, false);
                     break;
                 }
-                case 5: // Single T-bar: |——>
+                case 6: // Single T-bar: |——>
                 {
                     double barHalfLen = headLength * 0.7;
                     Point t1 = new(start.X + barHalfLen * Math.Cos(perpAngle), start.Y + barHalfLen * Math.Sin(perpAngle));
@@ -1585,7 +1609,7 @@ public partial class ScreenSelectionWindow : Window
                     ctx.LineTo(h2, true, false);
                     break;
                 }
-                case 6: // Double T-bar: |——|
+                case 7: // Double T-bar: |——|
                 {
                     double barHalfLen = headLength * 0.7;
                     Point st1 = new(start.X + barHalfLen * Math.Cos(perpAngle), start.Y + barHalfLen * Math.Sin(perpAngle));
@@ -1598,7 +1622,7 @@ public partial class ScreenSelectionWindow : Window
                     ctx.LineTo(et2, true, false);
                     break;
                 }
-                case 7: // Plain line: ————
+                case 8: // Plain line: ————
                     break;
             }
         }

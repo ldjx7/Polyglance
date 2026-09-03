@@ -152,8 +152,13 @@ public partial class ScreenshotToolbar : UserControl
         if (Math.Abs(newSize - CurrentStrokeSize) > 0.1)
         {
             CurrentStrokeSize = newSize;
+            if (TxtStrokeSize != null)
+                TxtStrokeSize.Text = ((int)newSize).ToString();
+            if (SliderStrokeSize != null)
+                SliderStrokeSize.Value = newSize;
+            if (TxtSliderStrokeVal != null)
+                TxtSliderStrokeVal.Text = $"{(int)newSize} px";
             StrokeSizeChanged?.Invoke(newSize);
-            SelectComboItemByTag(CmbStrokeSize, ((int)newSize).ToString());
         }
     }
 
@@ -192,11 +197,7 @@ public partial class ScreenshotToolbar : UserControl
                 return;
             }
         }
-        if (combo == CmbStrokeSize)
-        {
-            combo.Text = $"{tag} px";
-        }
-        else if (combo == CmbFontSize)
+        if (combo == CmbFontSize)
         {
             combo.Text = $"{tag} pt";
         }
@@ -216,7 +217,7 @@ public partial class ScreenshotToolbar : UserControl
     private void OnArrowStyleChanged(object sender, SelectionChangedEventArgs e)
     {
         ArrowStyle = CmbArrowStyle.SelectedIndex;
-        HasArrow = ArrowStyle != 7;
+        HasArrow = ArrowStyle != 8;
     }
 
     private void OnLineDashChanged(object sender, SelectionChangedEventArgs e)
@@ -269,12 +270,25 @@ public partial class ScreenshotToolbar : UserControl
         }
     }
 
-    private void OnStrokeSizeComboChanged(object sender, SelectionChangedEventArgs e)
+    private void OnStrokeSizeButtonClick(object sender, RoutedEventArgs e)
     {
-        if (CmbStrokeSize.SelectedItem is ComboBoxItem item && item.Tag is string tag && double.TryParse(tag, out double size))
+        if (SliderStrokeSize != null)
+            SliderStrokeSize.Value = CurrentStrokeSize;
+        if (TxtSliderStrokeVal != null)
+            TxtSliderStrokeVal.Text = $"{(int)CurrentStrokeSize} px";
+        PopupStrokeSlider.IsOpen = true;
+    }
+
+    private void OnStrokeSliderValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (TxtSliderStrokeVal == null || TxtStrokeSize == null) return;
+        double newSize = Math.Round(e.NewValue);
+        if (Math.Abs(newSize - CurrentStrokeSize) > 0.1)
         {
-            CurrentStrokeSize = size;
-            StrokeSizeChanged?.Invoke(size);
+            CurrentStrokeSize = newSize;
+            TxtStrokeSize.Text = ((int)newSize).ToString();
+            TxtSliderStrokeVal.Text = $"{(int)newSize} px";
+            StrokeSizeChanged?.Invoke(newSize);
         }
     }
 

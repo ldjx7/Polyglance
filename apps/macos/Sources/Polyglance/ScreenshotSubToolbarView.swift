@@ -15,6 +15,7 @@ final class ScreenshotSubToolbarView: NSView {
 
     private var colorButtons: [ColorDotButton] = []
     private var sizeButton: SizeStepperButton?
+    private var activePopover: NSPopover?
 
     static let presetColors: [NSColor] = [
         NSColor(srgbRed: 0.94, green: 0.27, blue: 0.27, alpha: 1.0), // Red (#EF4444)
@@ -27,7 +28,6 @@ final class ScreenshotSubToolbarView: NSView {
         NSColor(srgbRed: 1.00, green: 1.00, blue: 1.00, alpha: 1.0)  // White (#FFFFFF)
     ]
 
-    static let presetLineWidths: [CGFloat] = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32]
     static let presetFontSizes: [CGFloat] = [12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72]
 
     static let fontFamilies: [(title: String, name: String)] = [
@@ -54,28 +54,28 @@ final class ScreenshotSubToolbarView: NSView {
 
     private func setupView() {
         wantsLayer = true
-        layer?.cornerRadius = 17
+        layer?.cornerRadius = 16
         layer?.masksToBounds = false
         layer?.shadowColor = NSColor.black.cgColor
-        layer?.shadowOpacity = 0.16
+        layer?.shadowOpacity = 0.14
         layer?.shadowOffset = CGSize(width: 0, height: -2)
-        layer?.shadowRadius = 8
+        layer?.shadowRadius = 10
 
         visualEffectView.material = .popover
         visualEffectView.blendingMode = .withinWindow
         visualEffectView.state = .active
         visualEffectView.wantsLayer = true
-        visualEffectView.layer?.cornerRadius = 17
+        visualEffectView.layer?.cornerRadius = 16
         visualEffectView.layer?.masksToBounds = true
         visualEffectView.layer?.borderWidth = 0.5
-        visualEffectView.layer?.borderColor = NSColor(white: 0.0, alpha: 0.08).cgColor
+        visualEffectView.layer?.borderColor = NSColor(white: 0.0, alpha: 0.10).cgColor
         visualEffectView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(visualEffectView)
 
         contentStack.orientation = .horizontal
         contentStack.alignment = .centerY
         contentStack.spacing = 6
-        contentStack.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
+        contentStack.edgeInsets = NSEdgeInsets(top: 3, left: 8, bottom: 3, right: 8)
         contentStack.translatesAutoresizingMaskIntoConstraints = false
         visualEffectView.addSubview(contentStack)
 
@@ -168,7 +168,6 @@ final class ScreenshotSubToolbarView: NSView {
 
         switch tool {
         case .rectangle, .ellipse:
-            // 1. 形状切换: [ ▢ ] [ ○ ]
             let rectBtn = makeIconButton(symbol: "rectangle", tooltip: "矩形", selected: tool == .rectangle) { [weak self] in
                 self?.onToolChanged?(.rectangle)
             }
@@ -178,7 +177,6 @@ final class ScreenshotSubToolbarView: NSView {
             controlStack.addArrangedSubview(rectBtn)
             controlStack.addArrangedSubview(ellipseBtn)
 
-            // 2. 填充复选按钮: [ ▢ 填充 ]
             let fillCheckbox = FillCheckboxButton(title: "填充", isChecked: currentStyle.isFilled) { [weak self] in
                 guard let self else { return }
                 self.currentStyle.isFilled.toggle()
@@ -187,45 +185,34 @@ final class ScreenshotSubToolbarView: NSView {
             }
             controlStack.addArrangedSubview(fillCheckbox)
 
-            // 3. 线条样式图形下拉框 (实线/虚线/点线/点划线)
             let dashDropdown = makeDashLineDropdownButton()
             controlStack.addArrangedSubview(dashDropdown)
 
-            // 4. 线宽步进按钮: [ ≡ 3 ]
             addLineWidthStepper()
 
         case .freehand:
-            // 线条样式下拉框
             let dashDropdown = makeDashLineDropdownButton()
             controlStack.addArrangedSubview(dashDropdown)
-
-            // 线宽步进按钮
             addLineWidthStepper()
 
         case .line, .arrow:
-            // 1. 箭头类型图形下拉框 (8 种样式)
             let arrowDropdown = makeArrowStyleDropdownButton()
             controlStack.addArrangedSubview(arrowDropdown)
 
-            // 2. 线条样式图形下拉框
             let dashDropdown = makeDashLineDropdownButton()
             controlStack.addArrangedSubview(dashDropdown)
 
-            // 3. 线宽步进按钮
             addLineWidthStepper()
 
         case .text:
-            // 字体下拉框
             let currentFontTitle = Self.fontFamilies.first(where: { $0.name == currentStyle.fontFamily })?.title ?? "系统默认"
             let fontDropdown = DropdownPillButton(title: currentFontTitle, minWidth: 70) { [weak self] btn in
                 self?.showFontFamilyMenu(for: btn)
             }
             controlStack.addArrangedSubview(fontDropdown)
 
-            // 字号下拉框
             addFontSizeStepper()
 
-            // 加粗 / 斜体 / 边框
             let boldBtn = makeTextFormatButton(title: "B", tooltip: "加粗", isBold: true, selected: currentStyle.isBold) { [weak self] in
                 guard let self else { return }
                 self.currentStyle.isBold.toggle()
@@ -253,7 +240,6 @@ final class ScreenshotSubToolbarView: NSView {
             controlStack.addArrangedSubview(borderBtn)
 
         case .number:
-            // 序号样式切换
             let filledBtn = makeIconButton(symbol: "1.circle.fill", tooltip: "实心序号", selected: currentStyle.numberStyle == 0) { [weak self] in
                 guard let self else { return }
                 self.currentStyle.numberStyle = 0
@@ -268,12 +254,9 @@ final class ScreenshotSubToolbarView: NSView {
             }
             controlStack.addArrangedSubview(filledBtn)
             controlStack.addArrangedSubview(outlineBtn)
-
-            // 尺寸
             addLineWidthStepper()
 
         case .mosaic:
-            // 模式选择
             let modeTitle: String
             switch (currentStyle.shapeType, currentStyle.hasBorder) {
             case (0, false): modeTitle = "涂抹 · 像素"
@@ -286,8 +269,6 @@ final class ScreenshotSubToolbarView: NSView {
                 self?.showMosaicModeMenu(for: btn)
             }
             controlStack.addArrangedSubview(modeDropdown)
-
-            // 粗细
             addLineWidthStepper()
         }
     }
@@ -295,9 +276,9 @@ final class ScreenshotSubToolbarView: NSView {
     private func addLineWidthStepper() {
         let sizeVal = Int(currentStyle.lineWidth)
         let btn = SizeStepperButton(value: sizeVal, suffix: "") { [weak self] sender in
-            self?.showLineWidthMenu(for: sender)
+            self?.showLineWidthSliderPopover(for: sender)
         }
-        btn.toolTip = "线条粗细（滚轮可调节）"
+        btn.toolTip = "线条粗细（点击滑动条/滚轮调节）"
         btn.onScroll = { [weak self] delta in
             guard let self else { return }
             let step: CGFloat = delta > 0 ? 1 : -1
@@ -314,7 +295,7 @@ final class ScreenshotSubToolbarView: NSView {
 
     private func addFontSizeStepper() {
         let sizeVal = Int(currentStyle.fontSize)
-        let btn = SizeStepperButton(value: sizeVal, suffix: "pt") { [weak self] sender in
+        let btn = DropdownPillButton(title: "\(sizeVal) pt", minWidth: 54) { [weak self] sender in
             self?.showFontSizeMenu(for: sender)
         }
         btn.toolTip = "字号大小（滚轮可调节）"
@@ -325,95 +306,172 @@ final class ScreenshotSubToolbarView: NSView {
             if newSize != self.currentStyle.fontSize {
                 self.currentStyle.fontSize = newSize
                 self.notifyStyleChanged()
-                self.updateSizeDisplay()
+                btn.title = "\(Int(newSize)) pt"
             }
         }
-        sizeButton = btn
         controlStack.addArrangedSubview(btn)
     }
 
     private func updateSizeDisplay() {
-        if currentTool == .text {
-            sizeButton?.value = Int(currentStyle.fontSize)
-        } else {
+        if currentTool != .text {
             sizeButton?.value = Int(currentStyle.lineWidth)
         }
     }
 
-    // MARK: - Graphical Dropdowns
+    // MARK: - Graphical Dropdown Buttons
 
     private func makeDashLineDropdownButton() -> NSView {
         let img = Self.makeDashLineImage(pattern: currentStyle.lineDashPattern, isSelected: false, width: 36)
         let btn = ImageDropdownPillButton(previewImage: img, tooltip: "线条样式") { [weak self] sender in
-            self?.showLineDashMenu(for: sender)
+            self?.showLineDashPopover(for: sender)
         }
         return btn
     }
 
     private func makeArrowStyleDropdownButton() -> NSView {
-        let img = Self.makeArrowPreviewImage(arrowStyle: currentStyle.arrowStyle, isSelected: false, width: 44)
+        let img = Self.makeArrowPreviewImage(arrowStyle: currentStyle.arrowStyle, isSelected: false, width: 42)
         let btn = ImageDropdownPillButton(previewImage: img, tooltip: "箭头样式") { [weak self] sender in
-            self?.showArrowStyleMenu(for: sender)
+            self?.showArrowStylePopover(for: sender)
         }
         return btn
     }
 
-    // MARK: - Menus
+    // MARK: - Popovers
 
-    private func showLineDashMenu(for sender: NSView) {
-        let menu = NSMenu()
-        let patterns: [(title: String, pattern: Int)] = [
-            ("实线", 0),
-            ("长虚线", 1),
-            ("点线", 2),
-            ("点划线", 3)
-        ]
-        for item in patterns {
-            let isSel = currentStyle.lineDashPattern == item.pattern
-            let img = Self.makeDashLineImage(pattern: item.pattern, isSelected: isSel, width: 72)
-            let menuItem = NSMenuItem(title: "", action: #selector(onLineDashSelected(_:)), keyEquivalent: "")
-            menuItem.image = img
-            menuItem.target = self
-            menuItem.representedObject = item.pattern
-            if isSel {
-                menuItem.state = .on
-            }
-            menu.addItem(menuItem)
-        }
-        showMenu(menu, for: sender)
+    private func showLineWidthSliderPopover(for sender: NSView) {
+        activePopover?.close()
+
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 170, height: 42))
+
+        let slider = NSSlider(value: Double(currentStyle.lineWidth), minValue: 1.0, maxValue: 50.0, target: nil, action: nil)
+        slider.isContinuous = true
+        slider.frame = NSRect(x: 10, y: 11, width: 110, height: 20)
+
+        let label = NSTextField(labelWithString: "\(Int(currentStyle.lineWidth)) px")
+        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        label.alignment = .right
+        label.frame = NSRect(x: 122, y: 13, width: 38, height: 16)
+
+        slider.target = self
+        slider.action = #selector(onSliderValueChanged(_:))
+
+        container.addSubview(slider)
+        container.addSubview(label)
+
+        let viewController = NSViewController()
+        viewController.view = container
+        popover.contentViewController = viewController
+
+        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+        activePopover = popover
     }
 
-    @objc private func onLineDashSelected(_ sender: NSMenuItem) {
-        guard let pattern = sender.representedObject as? Int else { return }
-        currentStyle.lineDashPattern = pattern
-        currentStyle.isDashed = pattern != 0
+    @objc private func onSliderValueChanged(_ sender: NSSlider) {
+        let val = round(CGFloat(sender.doubleValue))
+        currentStyle.lineWidth = val
         notifyStyleChanged()
-        rebuildControls(for: currentTool)
+        updateSizeDisplay()
+
+        if let container = sender.superview,
+           let label = container.subviews.compactMap({ $0 as? NSTextField }).first {
+            label.stringValue = "\(Int(val)) px"
+        }
     }
 
-    private func showArrowStyleMenu(for sender: NSView) {
-        let menu = NSMenu()
-        for arrowStyle in 0...7 {
+    private func showArrowStylePopover(for sender: NSView) {
+        activePopover?.close()
+
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.spacing = 3
+        stack.edgeInsets = NSEdgeInsets(top: 6, left: 6, bottom: 6, right: 6)
+
+        for arrowStyle in 0...8 {
             let isSel = currentStyle.arrowStyle == arrowStyle
-            let img = Self.makeArrowPreviewImage(arrowStyle: arrowStyle, isSelected: isSel, width: 80)
-            let menuItem = NSMenuItem(title: "", action: #selector(onArrowStyleSelected(_:)), keyEquivalent: "")
-            menuItem.image = img
-            menuItem.target = self
-            menuItem.representedObject = arrowStyle
-            if isSel {
-                menuItem.state = .on
+            let btn = PopoverItemButton(
+                image: Self.makeArrowPreviewImage(arrowStyle: arrowStyle, isSelected: isSel, width: 76),
+                isSelected: isSel
+            ) { [weak self, weak popover] in
+                guard let self else { return }
+                self.currentStyle.arrowStyle = arrowStyle
+                self.currentStyle.hasArrow = arrowStyle != 8
+                self.notifyStyleChanged()
+                self.rebuildControls(for: self.currentTool)
+                popover?.close()
             }
-            menu.addItem(menuItem)
+            stack.addArrangedSubview(btn)
         }
-        showMenu(menu, for: sender)
+
+        let container = NSView()
+        container.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: container.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
+
+        let vc = NSViewController()
+        vc.view = container
+        popover.contentViewController = vc
+
+        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+        activePopover = popover
     }
 
-    @objc private func onArrowStyleSelected(_ sender: NSMenuItem) {
-        guard let arrowStyle = sender.representedObject as? Int else { return }
-        currentStyle.arrowStyle = arrowStyle
-        currentStyle.hasArrow = arrowStyle != 7
-        notifyStyleChanged()
-        rebuildControls(for: currentTool)
+    private func showLineDashPopover(for sender: NSView) {
+        activePopover?.close()
+
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.spacing = 3
+        stack.edgeInsets = NSEdgeInsets(top: 6, left: 6, bottom: 6, right: 6)
+
+        for pattern in 0...3 {
+            let isSel = currentStyle.lineDashPattern == pattern
+            let btn = PopoverItemButton(
+                image: Self.makeDashLineImage(pattern: pattern, isSelected: isSel, width: 70),
+                isSelected: isSel
+            ) { [weak self, weak popover] in
+                guard let self else { return }
+                self.currentStyle.lineDashPattern = pattern
+                self.currentStyle.isDashed = pattern != 0
+                self.notifyStyleChanged()
+                self.rebuildControls(for: self.currentTool)
+                popover?.close()
+            }
+            stack.addArrangedSubview(btn)
+        }
+
+        let container = NSView()
+        container.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: container.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
+
+        let vc = NSViewController()
+        vc.view = container
+        popover.contentViewController = vc
+
+        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+        activePopover = popover
     }
 
     private func showMosaicModeMenu(for sender: NSView) {
@@ -433,7 +491,8 @@ final class ScreenshotSubToolbarView: NSView {
             }
             menu.addItem(menuItem)
         }
-        showMenu(menu, for: sender)
+        let location = NSPoint(x: 0, y: sender.bounds.height + 4)
+        menu.popUp(positioning: menu.item(at: 0), at: location, in: sender)
     }
 
     @objc private func onMosaicModeSelected(_ sender: NSMenuItem) {
@@ -442,27 +501,6 @@ final class ScreenshotSubToolbarView: NSView {
         currentStyle.hasBorder = tuple.isBlur
         notifyStyleChanged()
         rebuildControls(for: currentTool)
-    }
-
-    private func showLineWidthMenu(for sender: NSView) {
-        let menu = NSMenu()
-        for width in Self.presetLineWidths {
-            let menuItem = NSMenuItem(title: "\(Int(width)) px", action: #selector(onLineWidthSelected(_:)), keyEquivalent: "")
-            menuItem.target = self
-            menuItem.representedObject = width
-            if abs(currentStyle.lineWidth - width) < 0.5 {
-                menuItem.state = .on
-            }
-            menu.addItem(menuItem)
-        }
-        showMenu(menu, for: sender)
-    }
-
-    @objc private func onLineWidthSelected(_ sender: NSMenuItem) {
-        guard let width = sender.representedObject as? CGFloat else { return }
-        currentStyle.lineWidth = width
-        notifyStyleChanged()
-        updateSizeDisplay()
     }
 
     private func showFontFamilyMenu(for sender: NSView) {
@@ -476,7 +514,8 @@ final class ScreenshotSubToolbarView: NSView {
             }
             menu.addItem(menuItem)
         }
-        showMenu(menu, for: sender)
+        let location = NSPoint(x: 0, y: sender.bounds.height + 4)
+        menu.popUp(positioning: menu.item(at: 0), at: location, in: sender)
     }
 
     @objc private func onFontFamilySelected(_ sender: NSMenuItem) {
@@ -497,19 +536,15 @@ final class ScreenshotSubToolbarView: NSView {
             }
             menu.addItem(menuItem)
         }
-        showMenu(menu, for: sender)
+        let location = NSPoint(x: 0, y: sender.bounds.height + 4)
+        menu.popUp(positioning: menu.item(at: 0), at: location, in: sender)
     }
 
     @objc private func onFontSizeSelected(_ sender: NSMenuItem) {
         guard let size = sender.representedObject as? CGFloat else { return }
         currentStyle.fontSize = size
         notifyStyleChanged()
-        updateSizeDisplay()
-    }
-
-    private func showMenu(_ menu: NSMenu, for view: NSView) {
-        let location = NSPoint(x: 0, y: view.bounds.height + 4)
-        menu.popUp(positioning: menu.item(at: 0), at: location, in: view)
+        rebuildControls(for: currentTool)
     }
 
     // MARK: - Color Palette
@@ -573,7 +608,7 @@ final class ScreenshotSubToolbarView: NSView {
         let size = NSSize(width: width, height: 18)
         let img = NSImage(size: size, flipped: false) { rect in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
-            ctx.setStrokeColor(isSelected ? NSColor.systemBlue.cgColor : NSColor(white: 0.22, alpha: 1.0).cgColor)
+            ctx.setStrokeColor(isSelected ? NSColor.white.cgColor : NSColor(white: 0.2, alpha: 1.0).cgColor)
             ctx.setLineWidth(2.0)
             ctx.setLineCap(.round)
             switch pattern {
@@ -602,7 +637,7 @@ final class ScreenshotSubToolbarView: NSView {
         let size = NSSize(width: width, height: 18)
         let img = NSImage(size: size, flipped: false) { rect in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
-            let color = isSelected ? NSColor.systemBlue : NSColor(white: 0.22, alpha: 1.0)
+            let color = isSelected ? NSColor.white : NSColor(white: 0.2, alpha: 1.0)
             let dummyStyle = ScreenshotAnnotationStyle(color: color, lineWidth: 2, arrowStyle: arrowStyle)
             ctx.setStrokeColor(color.cgColor)
             ctx.setFillColor(color.cgColor)
@@ -624,6 +659,45 @@ final class ScreenshotSubToolbarView: NSView {
 }
 
 // MARK: - Custom Controls
+
+final class PopoverItemButton: NSButton {
+    private let clickAction: () -> Void
+    private let isSelectedState: Bool
+
+    init(image: NSImage, isSelected: Bool, action: @escaping () -> Void) {
+        self.isSelectedState = isSelected
+        self.clickAction = action
+        super.init(frame: .zero)
+        self.title = ""
+        self.isBordered = false
+        self.wantsLayer = true
+        self.layer?.cornerRadius = 5
+        self.image = image
+        self.imagePosition = .imageOnly
+        self.imageScaling = .scaleProportionallyDown
+
+        if isSelected {
+            self.layer?.backgroundColor = NSColor(srgbRed: 0.14, green: 0.48, blue: 0.95, alpha: 1.0).cgColor
+        } else {
+            self.layer?.backgroundColor = NSColor.clear.cgColor
+        }
+
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: image.size.width + 12),
+            heightAnchor.constraint(equalToConstant: 24)
+        ])
+        target = self
+        self.action = #selector(handleClick)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func handleClick() {
+        clickAction()
+    }
+}
 
 final class FillCheckboxButton: NSButton {
     private let actionClosure: () -> Void
@@ -684,18 +758,27 @@ final class ImageDropdownPillButton: NSButton {
         self.isBordered = false
         self.wantsLayer = true
         self.layer?.cornerRadius = 5
-        self.layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.06).cgColor
+        self.layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.05).cgColor
         self.toolTip = tooltip
 
-        // Combine preview image and chevron down into a single composite image
-        let combinedW = previewImage.size.width + 16
+        let combinedW = previewImage.size.width + 12
         let combinedSize = NSSize(width: combinedW, height: 24)
         let composite = NSImage(size: combinedSize, flipped: false) { rect in
-            previewImage.draw(in: CGRect(x: 3, y: 3, width: previewImage.size.width, height: 18))
-            let chevronConfig = NSImage.SymbolConfiguration(pointSize: 8, weight: .bold)
-            if let chevron = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)?.withSymbolConfiguration(chevronConfig) {
-                chevron.draw(in: CGRect(x: previewImage.size.width + 5, y: 7, width: 8, height: 10))
-            }
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            previewImage.draw(in: CGRect(x: 2, y: 3, width: previewImage.size.width, height: 18))
+
+            // Subtle tiny caret ^ (width 6, height 3.5)
+            let cx = previewImage.size.width + 6
+            let cy: CGFloat = 11.5
+            ctx.setStrokeColor(NSColor(white: 0.35, alpha: 1.0).cgColor)
+            ctx.setLineWidth(1.2)
+            ctx.setLineCap(.round)
+            ctx.setLineJoin(.round)
+            ctx.beginPath()
+            ctx.move(to: CGPoint(x: cx - 3, y: cy - 2))
+            ctx.addLine(to: CGPoint(x: cx, y: cy + 1.5))
+            ctx.addLine(to: CGPoint(x: cx + 3, y: cy - 2))
+            ctx.strokePath()
             return true
         }
         self.image = composite
@@ -703,7 +786,7 @@ final class ImageDropdownPillButton: NSButton {
 
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: combinedW + 4),
+            widthAnchor.constraint(equalToConstant: combinedW + 2),
             heightAnchor.constraint(equalToConstant: 24)
         ])
         target = self
@@ -734,7 +817,7 @@ final class SizeStepperButton: NSButton {
         self.isBordered = false
         self.wantsLayer = true
         self.layer?.cornerRadius = 5
-        self.layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.06).cgColor
+        self.layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.05).cgColor
         self.font = .systemFont(ofSize: 11.5, weight: .semibold)
         self.contentTintColor = NSColor(white: 0.2, alpha: 1.0)
         self.imagePosition = .imageLeft
@@ -744,7 +827,7 @@ final class SizeStepperButton: NSButton {
 
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(greaterThanOrEqualToConstant: 40),
+            widthAnchor.constraint(greaterThanOrEqualToConstant: 42),
             heightAnchor.constraint(equalToConstant: 24)
         ])
         target = self
@@ -783,19 +866,19 @@ final class DropdownPillButton: NSButton {
         self.isBordered = false
         self.wantsLayer = true
         self.layer?.cornerRadius = 5
-        self.layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.06).cgColor
+        self.layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.05).cgColor
         self.font = .systemFont(ofSize: 11.5, weight: .medium)
-        self.contentTintColor = NSColor(white: 0.18, alpha: 1.0)
+        self.contentTintColor = NSColor(white: 0.2, alpha: 1.0)
         self.alignment = .center
 
-        let chevronConfig = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
-        self.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)?.withSymbolConfiguration(chevronConfig)
+        let chevronConfig = NSImage.SymbolConfiguration(pointSize: 7.5, weight: .bold)
+        self.image = NSImage(systemSymbolName: "chevron.up.chevron.down", accessibilityDescription: nil)?.withSymbolConfiguration(chevronConfig)
         self.imagePosition = .imageRight
         self.imageScaling = .scaleProportionallyDown
 
         translatesAutoresizingMaskIntoConstraints = false
         let titleWidth = (title as NSString).size(withAttributes: [.font: font!]).width
-        let minW: CGFloat = max(minWidth, titleWidth + 24)
+        let minW: CGFloat = max(minWidth, titleWidth + 20)
         NSLayoutConstraint.activate([
             widthAnchor.constraint(greaterThanOrEqualToConstant: minW),
             heightAnchor.constraint(equalToConstant: 24)
@@ -941,8 +1024,8 @@ final class ColorDotButton: NSButton {
 
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: 20),
-            heightAnchor.constraint(equalToConstant: 20)
+            widthAnchor.constraint(equalToConstant: 22),
+            heightAnchor.constraint(equalToConstant: 22)
         ])
         target = self
         self.action = #selector(handleClick)
@@ -961,10 +1044,11 @@ final class ColorDotButton: NSButton {
         let dotRect = CGRect(x: center.x - dotRadius, y: center.y - dotRadius, width: dotRadius * 2, height: dotRadius * 2)
 
         if isSelected {
+            // Distinct outer glowing ring matching the reference screenshot
             let ringRect = bounds.insetBy(dx: 1, dy: 1)
             let ringPath = NSBezierPath(ovalIn: ringRect)
             ringPath.lineWidth = 1.5
-            color.setStroke()
+            color.withAlphaComponent(0.85).setStroke()
             ringPath.stroke()
 
             let innerRadius: CGFloat = 5.5

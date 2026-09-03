@@ -822,7 +822,7 @@ enum ScreenshotAnnotationRenderer {
             lineStart = CGPoint(x: start.x + headLength * 0.7 * cos(angle), y: start.y + headLength * 0.7 * sin(angle))
         }
 
-        if arrowStyle != 4 {
+        if arrowStyle != 4 && arrowStyle != 5 {
             context.saveGState()
             applyDashPattern(style.lineDashPattern, isDashed: style.isDashed, lineWidth: lineWidth, in: context)
             context.beginPath()
@@ -892,7 +892,32 @@ enum ScreenshotAnnotationRenderer {
             context.closePath()
             context.fillPath()
 
-        case 4: // Block / hollow arrow: ===>
+        case 4: // Tapered expanding arrow (从小变大)
+            let startW = max(1.2, lineWidth * 0.35)
+            let baseW = max(3.5, lineWidth * 1.8)
+            let hLen = min(max(lineWidth * 3.6, 11), length * 0.45)
+            let wingW = baseW * 1.7
+            let baseCenter = CGPoint(x: end.x - hLen * cos(angle), y: end.y - hLen * sin(angle))
+
+            let s1 = CGPoint(x: start.x + (startW / 2) * cos(perpAngle), y: start.y + (startW / 2) * sin(perpAngle))
+            let s2 = CGPoint(x: start.x - (startW / 2) * cos(perpAngle), y: start.y - (startW / 2) * sin(perpAngle))
+            let b1 = CGPoint(x: baseCenter.x + (baseW / 2) * cos(perpAngle), y: baseCenter.y + (baseW / 2) * sin(perpAngle))
+            let b2 = CGPoint(x: baseCenter.x - (baseW / 2) * cos(perpAngle), y: baseCenter.y - (baseW / 2) * sin(perpAngle))
+            let w1 = CGPoint(x: baseCenter.x + (wingW / 2) * cos(perpAngle), y: baseCenter.y + (wingW / 2) * sin(perpAngle))
+            let w2 = CGPoint(x: baseCenter.x - (wingW / 2) * cos(perpAngle), y: baseCenter.y - (wingW / 2) * sin(perpAngle))
+
+            context.beginPath()
+            context.move(to: s1)
+            context.addLine(to: b1)
+            context.addLine(to: w1)
+            context.addLine(to: end)
+            context.addLine(to: w2)
+            context.addLine(to: b2)
+            context.addLine(to: s2)
+            context.closePath()
+            context.fillPath()
+
+        case 5: // Block / hollow arrow: ===>
             let shaftHalfW = max(3, lineWidth * 1.2)
             let headBaseHalfW = shaftHalfW * 2.2
             let hLen = max(headLength * 1.2, 14)
@@ -921,7 +946,7 @@ enum ScreenshotAnnotationRenderer {
                 context.strokePath()
             }
 
-        case 5: // Single T-bar: |——>
+        case 6: // Single T-bar: |——>
             let barHalfLen = headLength * 0.7
             let t1 = CGPoint(x: start.x + barHalfLen * cos(perpAngle), y: start.y + barHalfLen * sin(perpAngle))
             let t2 = CGPoint(x: start.x - barHalfLen * cos(perpAngle), y: start.y - barHalfLen * sin(perpAngle))
@@ -936,7 +961,7 @@ enum ScreenshotAnnotationRenderer {
             context.addLine(to: h2)
             context.strokePath()
 
-        case 6: // Double T-bar: |——|
+        case 7: // Double T-bar: |——|
             let barHalfLen = headLength * 0.7
             let st1 = CGPoint(x: start.x + barHalfLen * cos(perpAngle), y: start.y + barHalfLen * sin(perpAngle))
             let st2 = CGPoint(x: start.x - barHalfLen * cos(perpAngle), y: start.y - barHalfLen * sin(perpAngle))
@@ -949,7 +974,7 @@ enum ScreenshotAnnotationRenderer {
             context.addLine(to: et2)
             context.strokePath()
 
-        case 7: // Plain line: ————
+        case 8: // Plain line: ————
             break
 
         default:
