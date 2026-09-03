@@ -116,8 +116,15 @@ public partial class ScreenshotToolbar : UserControl
                 PanelRectControls.Visibility = Visibility.Visible;
                 break;
             case "Line":
+            case "Pen":
+                PanelLineControls.Visibility = Visibility.Visible;
+                CmbArrowStyle.Visibility = Visibility.Collapsed;
+                CmbLineDash.Visibility = Visibility.Visible;
+                break;
             case "Arrow":
                 PanelLineControls.Visibility = Visibility.Visible;
+                CmbArrowStyle.Visibility = Visibility.Visible;
+                CmbLineDash.Visibility = Visibility.Visible;
                 break;
             case "Text":
                 PanelTextControls.Visibility = Visibility.Visible;

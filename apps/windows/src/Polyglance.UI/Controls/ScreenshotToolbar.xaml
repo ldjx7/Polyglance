@@ -92,17 +92,26 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ComboBoxItem">
-                        <Border x:Name="ItemBorder" Background="Transparent" CornerRadius="5" Padding="{TemplateBinding Padding}" Margin="1">
+                        <Border x:Name="ItemBorder" Background="#00000000" CornerRadius="5" Padding="{TemplateBinding Padding}" Margin="1">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ItemBorder" Property="Background" Value="#F3F4F6"/>
+                                <Setter TargetName="ItemBorder" Property="Background" Value="#E0EDFF"/>
+                                <Setter Property="Foreground" Value="#1D4ED8"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="ItemBorder" Property="Background" Value="#2563EB"/>
                                 <Setter Property="Foreground" Value="#FFFFFF"/>
                             </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                    <Condition Property="IsSelected" Value="True"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="ItemBorder" Property="Background" Value="#1D4ED8"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </MultiTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -369,7 +378,7 @@
                         </StackPanel>
                     </Button>
                     <Popup x:Name="PopupStrokeSlider" PlacementTarget="{Binding ElementName=BtnStrokeSize}" Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
-                        <Border Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="10,6" Margin="4">
+                        <Border Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="10,6" Margin="4" PreviewMouseWheel="OnSubToolbarMouseWheel">
                             <Border.Effect>
                                 <DropShadowEffect Color="#000000" Opacity="0.14" BlurRadius="8" ShadowDepth="2" Direction="270"/>
                             </Border.Effect>

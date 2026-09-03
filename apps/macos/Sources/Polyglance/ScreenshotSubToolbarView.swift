@@ -16,6 +16,8 @@ final class ScreenshotSubToolbarView: NSView {
     private var colorButtons: [ColorDotButton] = []
     private var sizeButton: SizeStepperButton?
     private var activePopover: NSPopover?
+    private weak var activeSlider: NSSlider?
+    private weak var activeSliderLabel: NSTextField?
 
     static let presetColors: [NSColor] = [
         NSColor(srgbRed: 0.94, green: 0.27, blue: 0.27, alpha: 1.0), // Red (#EF4444)
@@ -168,15 +170,6 @@ final class ScreenshotSubToolbarView: NSView {
 
         switch tool {
         case .rectangle, .ellipse:
-            let rectBtn = makeIconButton(symbol: "rectangle", tooltip: "矩形", selected: tool == .rectangle) { [weak self] in
-                self?.onToolChanged?(.rectangle)
-            }
-            let ellipseBtn = makeIconButton(symbol: "circle", tooltip: "椭圆", selected: tool == .ellipse) { [weak self] in
-                self?.onToolChanged?(.ellipse)
-            }
-            controlStack.addArrangedSubview(rectBtn)
-            controlStack.addArrangedSubview(ellipseBtn)
-
             let fillCheckbox = FillCheckboxButton(title: "填充", isChecked: currentStyle.isFilled) { [weak self] in
                 guard let self else { return }
                 self.currentStyle.isFilled.toggle()
@@ -195,7 +188,12 @@ final class ScreenshotSubToolbarView: NSView {
             controlStack.addArrangedSubview(dashDropdown)
             addLineWidthStepper()
 
-        case .line, .arrow:
+        case .line:
+            let dashDropdown = makeDashLineDropdownButton()
+            controlStack.addArrangedSubview(dashDropdown)
+            addLineWidthStepper()
+
+        case .arrow:
             let arrowDropdown = makeArrowStyleDropdownButton()
             controlStack.addArrangedSubview(arrowDropdown)
 
@@ -315,6 +313,8 @@ final class ScreenshotSubToolbarView: NSView {
     private func updateSizeDisplay() {
         if currentTool != .text {
             sizeButton?.value = Int(currentStyle.lineWidth)
+            activeSlider?.doubleValue = Double(currentStyle.lineWidth)
+            activeSliderLabel?.stringValue = "\(Int(currentStyle.lineWidth)) px"
         }
     }
 
@@ -345,7 +345,17 @@ final class ScreenshotSubToolbarView: NSView {
         popover.behavior = .transient
         popover.animates = true
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 170, height: 42))
+        let container = SliderContainerView(frame: NSRect(x: 0, y: 0, width: 170, height: 42))
+        container.onScroll = { [weak self] delta in
+            guard let self else { return }
+            let step: CGFloat = delta > 0 ? 1 : -1
+            let newWidth = min(50, max(1, self.currentStyle.lineWidth + step))
+            if newWidth != self.currentStyle.lineWidth {
+                self.currentStyle.lineWidth = newWidth
+                self.notifyStyleChanged()
+                self.updateSizeDisplay()
+            }
+        }
 
         let slider = NSSlider(value: Double(currentStyle.lineWidth), minValue: 1.0, maxValue: 50.0, target: nil, action: nil)
         slider.isContinuous = true
@@ -362,6 +372,9 @@ final class ScreenshotSubToolbarView: NSView {
         container.addSubview(slider)
         container.addSubview(label)
 
+        self.activeSlider = slider
+        self.activeSliderLabel = label
+
         let viewController = NSViewController()
         viewController.view = container
         popover.contentViewController = viewController
@@ -375,11 +388,6 @@ final class ScreenshotSubToolbarView: NSView {
         currentStyle.lineWidth = val
         notifyStyleChanged()
         updateSizeDisplay()
-
-        if let container = sender.superview,
-           let label = container.subviews.compactMap({ $0 as? NSTextField }).first {
-            label.stringValue = "\(Int(val)) px"
-        }
     }
 
     private func showArrowStylePopover(for sender: NSView) {
@@ -660,9 +668,22 @@ final class ScreenshotSubToolbarView: NSView {
 
 // MARK: - Custom Controls
 
+final class SliderContainerView: NSView {
+    var onScroll: ((CGFloat) -> Void)?
+
+    override func scrollWheel(with event: NSEvent) {
+        if let onScroll {
+            onScroll(event.scrollingDeltaY)
+        } else {
+            super.scrollWheel(with: event)
+        }
+    }
+}
+
 final class PopoverItemButton: NSButton {
     private let clickAction: () -> Void
     private let isSelectedState: Bool
+    private var trackingArea: NSTrackingArea?
 
     init(image: NSImage, isSelected: Bool, action: @escaping () -> Void) {
         self.isSelectedState = isSelected
@@ -693,6 +714,32 @@ final class PopoverItemButton: NSButton {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+        let ta = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(ta)
+        self.trackingArea = ta
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        if !isSelectedState {
+            layer?.backgroundColor = NSColor(srgbRed: 0.14, green: 0.48, blue: 0.95, alpha: 0.12).cgColor
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        if !isSelectedState {
+            layer?.backgroundColor = NSColor.clear.cgColor
+        }
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
 
     @objc private func handleClick() {
         clickAction()
