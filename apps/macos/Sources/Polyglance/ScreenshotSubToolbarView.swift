@@ -746,59 +746,29 @@ final class PopoverItemButton: NSButton {
     }
 }
 
-final class FillCheckboxButton: NSButton {
+final class FillCheckboxButton: NSView {
     private let actionClosure: () -> Void
-    private let iconView = NSImageView()
-    private let label = NSTextField(labelWithString: "填充")
-    private var trackingArea: NSTrackingArea?
-
     var isChecked: Bool {
-        didSet { updateAppearance() }
+        didSet { needsDisplay = true }
     }
+    private var isHovered = false
+    private var trackingArea: NSTrackingArea?
 
     init(title: String, isChecked: Bool, action: @escaping () -> Void) {
         self.actionClosure = action
         self.isChecked = isChecked
         super.init(frame: .zero)
-        self.title = ""
-        self.isBordered = false
-        self.wantsLayer = true
-        self.layer?.cornerRadius = 5
-
-        label.stringValue = title
-        label.font = .systemFont(ofSize: 11.5, weight: .medium)
-        label.isBezeled = false
-        label.drawsBackground = false
-        label.isEditable = false
-        label.isSelectable = false
-
-        let stack = NSStackView(views: [iconView, label])
-        stack.orientation = .horizontal
-        stack.alignment = .centerY
-        stack.spacing = 3.0
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-
+        wantsLayer = true
+        layer?.cornerRadius = 5
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 24),
-            widthAnchor.constraint(equalToConstant: 46),
-            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 13),
-            iconView.heightAnchor.constraint(equalToConstant: 13)
+            widthAnchor.constraint(equalToConstant: 48)
         ])
-        target = self
-        self.action = #selector(handleClick)
-        updateAppearance()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        bounds.contains(point) ? self : nil
-    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -809,65 +779,80 @@ final class FillCheckboxButton: NSButton {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        if !isChecked {
-            layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.06).cgColor
-        }
+        isHovered = true
+        needsDisplay = true
     }
 
     override func mouseExited(with event: NSEvent) {
-        if !isChecked {
-            layer?.backgroundColor = NSColor.clear.cgColor
-        }
+        isHovered = false
+        needsDisplay = true
     }
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .pointingHand)
     }
 
-    @objc private func handleClick() {
+    override func mouseDown(with event: NSEvent) {
         actionClosure()
     }
 
-    private func updateAppearance() {
-        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
-        let iconName = isChecked ? "checkmark.square.fill" : "square"
-        iconView.image = NSImage(systemSymbolName: iconName, accessibilityDescription: "填充")?.withSymbolConfiguration(config)
+    override func draw(_ dirtyRect: NSRect) {
         if isChecked {
-            layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.14).cgColor
-            iconView.contentTintColor = .systemBlue
-            label.textColor = .systemBlue
-        } else {
-            layer?.backgroundColor = NSColor.clear.cgColor
-            iconView.contentTintColor = NSColor(white: 0.35, alpha: 1.0)
-            label.textColor = NSColor(white: 0.25, alpha: 1.0)
+            NSColor.systemBlue.withAlphaComponent(0.14).setFill()
+            let path = NSBezierPath(roundedRect: bounds, xRadius: 5, yRadius: 5)
+            path.fill()
+        } else if isHovered {
+            NSColor(white: 0.0, alpha: 0.07).setFill()
+            let path = NSBezierPath(roundedRect: bounds, xRadius: 5, yRadius: 5)
+            path.fill()
         }
+
+        let font = NSFont.systemFont(ofSize: 11.5, weight: .medium)
+        let textColor: NSColor = isChecked ? .systemBlue : NSColor(white: 0.25, alpha: 1.0)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: textColor]
+        let titleStr = "填充" as NSString
+        let textSize = titleStr.size(withAttributes: attrs)
+
+        let totalW = 12.0 + 3.0 + textSize.width
+        let startX = round((bounds.width - totalW) / 2)
+
+        let iconName = isChecked ? "checkmark.square.fill" : "square"
+        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        if let icon = NSImage(systemSymbolName: iconName, accessibilityDescription: nil)?.withSymbolConfiguration(config) {
+            let iconRect = NSRect(x: startX, y: round((bounds.height - 12) / 2), width: 12, height: 12)
+            if isChecked {
+                NSColor.systemBlue.set()
+            } else {
+                NSColor(white: 0.35, alpha: 1.0).set()
+            }
+            icon.draw(in: iconRect)
+        }
+
+        let textRect = NSRect(x: startX + 12.0 + 3.0, y: round((bounds.height - textSize.height) / 2) - 0.5, width: textSize.width, height: textSize.height)
+        titleStr.draw(in: textRect, withAttributes: attrs)
     }
 }
 
-final class ImageDropdownPillButton: NSButton {
+final class ImageDropdownPillButton: NSView {
     private let clickAction: (NSView) -> Void
+    var previewImage: NSImage {
+        didSet { needsDisplay = true }
+    }
+    private var isHovered = false
     private var trackingArea: NSTrackingArea?
 
     init(previewImage: NSImage, tooltip: String, action: @escaping (NSView) -> Void) {
+        self.previewImage = previewImage
         self.clickAction = action
         super.init(frame: .zero)
-        self.title = ""
-        self.isBordered = false
-        self.wantsLayer = true
-        self.layer?.cornerRadius = 5
-        self.layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.05).cgColor
         self.toolTip = tooltip
-        self.image = previewImage
-        self.imagePosition = .imageOnly
-        self.imageScaling = .scaleProportionallyDown
-
+        wantsLayer = true
+        layer?.cornerRadius = 5
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: previewImage.size.width + 12),
             heightAnchor.constraint(equalToConstant: 24)
         ])
-        target = self
-        self.action = #selector(handleClick)
     }
 
     @available(*, unavailable)
@@ -875,120 +860,96 @@ final class ImageDropdownPillButton: NSButton {
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        if let trackingArea {
-            removeTrackingArea(trackingArea)
-        }
+        if let trackingArea { removeTrackingArea(trackingArea) }
         let ta = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil)
         addTrackingArea(ta)
         self.trackingArea = ta
     }
 
     override func mouseEntered(with event: NSEvent) {
-        layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.09).cgColor
+        isHovered = true
+        needsDisplay = true
     }
 
     override func mouseExited(with event: NSEvent) {
-        layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.05).cgColor
+        isHovered = false
+        needsDisplay = true
     }
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .pointingHand)
     }
 
-    @objc private func handleClick() {
+    override func mouseDown(with event: NSEvent) {
         clickAction(self)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let bg = isHovered ? NSColor(white: 0.0, alpha: 0.10) : NSColor(white: 0.0, alpha: 0.05)
+        bg.setFill()
+        let path = NSBezierPath(roundedRect: bounds, xRadius: 5, yRadius: 5)
+        path.fill()
+
+        let imgRect = NSRect(
+            x: round((bounds.width - previewImage.size.width) / 2),
+            y: round((bounds.height - previewImage.size.height) / 2),
+            width: previewImage.size.width,
+            height: previewImage.size.height
+        )
+        previewImage.draw(in: imgRect)
     }
 }
 
-final class SizeStepperButton: NSButton {
+final class SizeStepperButton: NSView {
     private let clickAction: (NSView) -> Void
-    private let dotView = NSView()
-    private let label = NSTextField(labelWithString: "")
-    private var trackingArea: NSTrackingArea?
     var onScroll: ((CGFloat) -> Void)?
     var suffix: String
     var value: Int {
-        didSet { updateTitle() }
+        didSet { needsDisplay = true }
     }
+    private var isHovered = false
+    private var trackingArea: NSTrackingArea?
 
     init(value: Int, suffix: String = "", action: @escaping (NSView) -> Void) {
         self.value = value
         self.suffix = suffix
         self.clickAction = action
         super.init(frame: .zero)
-        self.title = ""
-        self.isBordered = false
-        self.wantsLayer = true
-        self.layer?.cornerRadius = 5
-        self.layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.05).cgColor
-
-        dotView.wantsLayer = true
-        dotView.layer?.cornerRadius = 2.5
-        dotView.layer?.backgroundColor = NSColor(white: 0.3, alpha: 1.0).cgColor
-        dotView.translatesAutoresizingMaskIntoConstraints = false
-
-        label.font = .systemFont(ofSize: 11.5, weight: .semibold)
-        label.textColor = NSColor(white: 0.2, alpha: 1.0)
-        label.isBezeled = false
-        label.drawsBackground = false
-        label.isEditable = false
-        label.isSelectable = false
-
-        let stack = NSStackView(views: [dotView, label])
-        stack.orientation = .horizontal
-        stack.alignment = .centerY
-        stack.spacing = 3.0
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-
+        wantsLayer = true
+        layer?.cornerRadius = 5
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 24),
-            widthAnchor.constraint(greaterThanOrEqualToConstant: 34),
-            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            dotView.widthAnchor.constraint(equalToConstant: 5),
-            dotView.heightAnchor.constraint(equalToConstant: 5)
+            widthAnchor.constraint(greaterThanOrEqualToConstant: 36)
         ])
-        target = self
-        self.action = #selector(handleClick)
-        updateTitle()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        bounds.contains(point) ? self : nil
-    }
-
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        if let trackingArea {
-            removeTrackingArea(trackingArea)
-        }
+        if let trackingArea { removeTrackingArea(trackingArea) }
         let ta = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil)
         addTrackingArea(ta)
         self.trackingArea = ta
     }
 
     override func mouseEntered(with event: NSEvent) {
-        layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.09).cgColor
+        isHovered = true
+        needsDisplay = true
     }
 
     override func mouseExited(with event: NSEvent) {
-        layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.05).cgColor
+        isHovered = false
+        needsDisplay = true
     }
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .pointingHand)
     }
 
-    private func updateTitle() {
-        label.stringValue = suffix.isEmpty ? "\(value)" : "\(value) \(suffix)"
-    }
-
-    @objc private func handleClick() {
+    override func mouseDown(with event: NSEvent) {
         clickAction(self)
     }
 
@@ -998,6 +959,31 @@ final class SizeStepperButton: NSButton {
         } else {
             super.scrollWheel(with: event)
         }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let bg = isHovered ? NSColor(white: 0.0, alpha: 0.10) : NSColor(white: 0.0, alpha: 0.05)
+        bg.setFill()
+        let path = NSBezierPath(roundedRect: bounds, xRadius: 5, yRadius: 5)
+        path.fill()
+
+        let font = NSFont.systemFont(ofSize: 11.5, weight: .semibold)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor(white: 0.2, alpha: 1.0)]
+        let textStr = (suffix.isEmpty ? "\(value)" : "\(value) \(suffix)") as NSString
+        let textSize = textStr.size(withAttributes: attrs)
+
+        let dotD: CGFloat = 5.0
+        let gap: CGFloat = 3.0
+        let totalW = dotD + gap + textSize.width
+        let startX = round((bounds.width - totalW) / 2)
+
+        let dotRect = NSRect(x: startX, y: round((bounds.height - dotD) / 2), width: dotD, height: dotD)
+        let dotPath = NSBezierPath(ovalIn: dotRect)
+        NSColor(white: 0.3, alpha: 1.0).setFill()
+        dotPath.fill()
+
+        let textRect = NSRect(x: startX + dotD + gap, y: round((bounds.height - textSize.height) / 2) - 0.5, width: textSize.width, height: textSize.height)
+        textStr.draw(in: textRect, withAttributes: attrs)
     }
 }
 
