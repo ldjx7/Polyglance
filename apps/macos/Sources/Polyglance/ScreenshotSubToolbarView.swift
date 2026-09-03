@@ -797,6 +797,7 @@ final class FillCheckboxButton: NSButton {
 
 final class ImageDropdownPillButton: NSButton {
     private let clickAction: (NSView) -> Void
+    private var trackingArea: NSTrackingArea?
 
     init(previewImage: NSImage, tooltip: String, action: @escaping (NSView) -> Void) {
         self.clickAction = action
@@ -807,33 +808,13 @@ final class ImageDropdownPillButton: NSButton {
         self.layer?.cornerRadius = 5
         self.layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.05).cgColor
         self.toolTip = tooltip
-
-        let combinedW = previewImage.size.width + 12
-        let combinedSize = NSSize(width: combinedW, height: 24)
-        let composite = NSImage(size: combinedSize, flipped: false) { rect in
-            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
-            previewImage.draw(in: CGRect(x: 2, y: 3, width: previewImage.size.width, height: 18))
-
-            // Subtle tiny caret ^ (width 6, height 3.5)
-            let cx = previewImage.size.width + 6
-            let cy: CGFloat = 11.5
-            ctx.setStrokeColor(NSColor(white: 0.35, alpha: 1.0).cgColor)
-            ctx.setLineWidth(1.2)
-            ctx.setLineCap(.round)
-            ctx.setLineJoin(.round)
-            ctx.beginPath()
-            ctx.move(to: CGPoint(x: cx - 3, y: cy - 2))
-            ctx.addLine(to: CGPoint(x: cx, y: cy + 1.5))
-            ctx.addLine(to: CGPoint(x: cx + 3, y: cy - 2))
-            ctx.strokePath()
-            return true
-        }
-        self.image = composite
+        self.image = previewImage
         self.imagePosition = .imageOnly
+        self.imageScaling = .scaleProportionallyDown
 
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: combinedW + 2),
+            widthAnchor.constraint(equalToConstant: previewImage.size.width + 12),
             heightAnchor.constraint(equalToConstant: 24)
         ])
         target = self
@@ -843,6 +824,28 @@ final class ImageDropdownPillButton: NSButton {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+        let ta = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(ta)
+        self.trackingArea = ta
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.09).cgColor
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.05).cgColor
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+
     @objc private func handleClick() {
         clickAction(self)
     }
@@ -850,6 +853,7 @@ final class ImageDropdownPillButton: NSButton {
 
 final class SizeStepperButton: NSButton {
     private let clickAction: (NSView) -> Void
+    private var trackingArea: NSTrackingArea?
     var onScroll: ((CGFloat) -> Void)?
     var suffix: String
     var value: Int {
@@ -869,12 +873,12 @@ final class SizeStepperButton: NSButton {
         self.contentTintColor = NSColor(white: 0.2, alpha: 1.0)
         self.imagePosition = .imageLeft
 
-        let config = NSImage.SymbolConfiguration(pointSize: 10, weight: .medium)
-        self.image = NSImage(systemSymbolName: "line.3.horizontal", accessibilityDescription: nil)?.withSymbolConfiguration(config)
+        let config = NSImage.SymbolConfiguration(pointSize: 5.5, weight: .bold)
+        self.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil)?.withSymbolConfiguration(config)
 
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(greaterThanOrEqualToConstant: 42),
+            widthAnchor.constraint(greaterThanOrEqualToConstant: 40),
             heightAnchor.constraint(equalToConstant: 24)
         ])
         target = self
@@ -884,6 +888,28 @@ final class SizeStepperButton: NSButton {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+        let ta = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(ta)
+        self.trackingArea = ta
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.09).cgColor
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.05).cgColor
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
 
     private func updateTitle() {
         self.title = suffix.isEmpty ? " \(value)" : " \(value) \(suffix)"

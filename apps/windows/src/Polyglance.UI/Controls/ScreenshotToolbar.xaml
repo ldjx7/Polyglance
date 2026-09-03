@@ -140,15 +140,8 @@
                                           ClickMode="Press">
                                 <ToggleButton.Template>
                                     <ControlTemplate TargetType="ToggleButton">
-                                        <Border x:Name="ToggleBorder" Background="{TemplateBinding Background}" CornerRadius="5" Padding="4,1">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <ContentPresenter Grid.Column="0" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                <Path Grid.Column="1" Data="M 0,1 L 3,4 L 6,1" Stroke="#666666" StrokeThickness="1.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Margin="4,0,2,0" VerticalAlignment="Center"/>
-                                            </Grid>
+                                        <Border x:Name="ToggleBorder" Background="{TemplateBinding Background}" CornerRadius="5" Padding="5,1">
+                                            <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
@@ -373,7 +366,7 @@
                 <StackPanel x:Name="PanelStrokeSizes" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button x:Name="BtnStrokeSize" Style="{StaticResource ToolbarSubButtonStyle}" ToolTip="线条粗细（点击滑动条/滚轮调节）" Click="OnStrokeSizeButtonClick">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="5,0">
-                            <Path Data="M 0,2 L 10,2 M 0,5.5 L 10,5.5 M 0,9 L 10,9" Stroke="#444444" StrokeThickness="1.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <Ellipse Width="6" Height="6" Fill="#444444" VerticalAlignment="Center" Margin="0,0,5,0"/>
                             <TextBlock x:Name="TxtStrokeSize" Text="4" FontSize="11.5" FontWeight="SemiBold" Foreground="#222222" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
