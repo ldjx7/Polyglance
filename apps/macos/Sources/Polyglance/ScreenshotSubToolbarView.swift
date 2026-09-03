@@ -748,6 +748,10 @@ final class PopoverItemButton: NSButton {
 
 final class FillCheckboxButton: NSButton {
     private let actionClosure: () -> Void
+    private let iconView = NSImageView()
+    private let label = NSTextField(labelWithString: "填充")
+    private var trackingArea: NSTrackingArea?
+
     var isChecked: Bool {
         didSet { updateAppearance() }
     }
@@ -756,18 +760,33 @@ final class FillCheckboxButton: NSButton {
         self.actionClosure = action
         self.isChecked = isChecked
         super.init(frame: .zero)
-        self.title = title
+        self.title = ""
         self.isBordered = false
         self.wantsLayer = true
         self.layer?.cornerRadius = 5
-        self.font = .systemFont(ofSize: 11.5, weight: .medium)
-        self.imageScaling = .scaleProportionallyDown
-        self.imagePosition = .imageLeft
+
+        label.stringValue = title
+        label.font = .systemFont(ofSize: 11.5, weight: .medium)
+        label.isBezeled = false
+        label.drawsBackground = false
+        label.isEditable = false
+        label.isSelectable = false
+
+        let stack = NSStackView(views: [iconView, label])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 3.0
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
 
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 24),
-            widthAnchor.constraint(greaterThanOrEqualToConstant: 52)
+            widthAnchor.constraint(equalToConstant: 46),
+            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 13),
+            iconView.heightAnchor.constraint(equalToConstant: 13)
         ])
         target = self
         self.action = #selector(handleClick)
@@ -777,6 +796,34 @@ final class FillCheckboxButton: NSButton {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        bounds.contains(point) ? self : nil
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea { removeTrackingArea(trackingArea) }
+        let ta = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(ta)
+        self.trackingArea = ta
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        if !isChecked {
+            layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.06).cgColor
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        if !isChecked {
+            layer?.backgroundColor = NSColor.clear.cgColor
+        }
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+
     @objc private func handleClick() {
         actionClosure()
     }
@@ -784,13 +831,15 @@ final class FillCheckboxButton: NSButton {
     private func updateAppearance() {
         let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
         let iconName = isChecked ? "checkmark.square.fill" : "square"
-        self.image = NSImage(systemSymbolName: iconName, accessibilityDescription: title)?.withSymbolConfiguration(config)
+        iconView.image = NSImage(systemSymbolName: iconName, accessibilityDescription: "填充")?.withSymbolConfiguration(config)
         if isChecked {
             layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.14).cgColor
-            contentTintColor = .systemBlue
+            iconView.contentTintColor = .systemBlue
+            label.textColor = .systemBlue
         } else {
             layer?.backgroundColor = NSColor.clear.cgColor
-            contentTintColor = NSColor(white: 0.25, alpha: 1.0)
+            iconView.contentTintColor = NSColor(white: 0.35, alpha: 1.0)
+            label.textColor = NSColor(white: 0.25, alpha: 1.0)
         }
     }
 }
@@ -853,6 +902,8 @@ final class ImageDropdownPillButton: NSButton {
 
 final class SizeStepperButton: NSButton {
     private let clickAction: (NSView) -> Void
+    private let dotView = NSView()
+    private let label = NSTextField(labelWithString: "")
     private var trackingArea: NSTrackingArea?
     var onScroll: ((CGFloat) -> Void)?
     var suffix: String
@@ -865,21 +916,39 @@ final class SizeStepperButton: NSButton {
         self.suffix = suffix
         self.clickAction = action
         super.init(frame: .zero)
+        self.title = ""
         self.isBordered = false
         self.wantsLayer = true
         self.layer?.cornerRadius = 5
         self.layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.05).cgColor
-        self.font = .systemFont(ofSize: 11.5, weight: .semibold)
-        self.contentTintColor = NSColor(white: 0.2, alpha: 1.0)
-        self.imagePosition = .imageLeft
 
-        let config = NSImage.SymbolConfiguration(pointSize: 5.5, weight: .bold)
-        self.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil)?.withSymbolConfiguration(config)
+        dotView.wantsLayer = true
+        dotView.layer?.cornerRadius = 2.5
+        dotView.layer?.backgroundColor = NSColor(white: 0.3, alpha: 1.0).cgColor
+        dotView.translatesAutoresizingMaskIntoConstraints = false
+
+        label.font = .systemFont(ofSize: 11.5, weight: .semibold)
+        label.textColor = NSColor(white: 0.2, alpha: 1.0)
+        label.isBezeled = false
+        label.drawsBackground = false
+        label.isEditable = false
+        label.isSelectable = false
+
+        let stack = NSStackView(views: [dotView, label])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 3.0
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
 
         translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(greaterThanOrEqualToConstant: 40),
-            heightAnchor.constraint(equalToConstant: 24)
+            heightAnchor.constraint(equalToConstant: 24),
+            widthAnchor.constraint(greaterThanOrEqualToConstant: 34),
+            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            dotView.widthAnchor.constraint(equalToConstant: 5),
+            dotView.heightAnchor.constraint(equalToConstant: 5)
         ])
         target = self
         self.action = #selector(handleClick)
@@ -888,6 +957,10 @@ final class SizeStepperButton: NSButton {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        bounds.contains(point) ? self : nil
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -912,7 +985,7 @@ final class SizeStepperButton: NSButton {
     }
 
     private func updateTitle() {
-        self.title = suffix.isEmpty ? " \(value)" : " \(value) \(suffix)"
+        label.stringValue = suffix.isEmpty ? "\(value)" : "\(value) \(suffix)"
     }
 
     @objc private func handleClick() {
