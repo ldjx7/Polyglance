@@ -536,6 +536,7 @@ public partial class PinWindow : Window
                     BorderBrush = brush,
                     BorderThickness = new Thickness(1),
                     Foreground = brush,
+                    FontFamily = !string.IsNullOrEmpty(AnnotationToolbar.CurrentFontFamily) ? new System.Windows.Media.FontFamily(AnnotationToolbar.CurrentFontFamily) : new System.Windows.Media.FontFamily("Segoe UI, Microsoft YaHei"),
                     FontSize = AnnotationToolbar.FontSizeValue,
                     FontWeight = AnnotationToolbar.IsBold ? FontWeights.Bold : FontWeights.Normal,
                     FontStyle = AnnotationToolbar.IsItalic ? FontStyles.Italic : FontStyles.Normal,

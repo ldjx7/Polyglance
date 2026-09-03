@@ -59,6 +59,7 @@ struct ScreenshotAnnotationStyle: Equatable {
     var color: NSColor
     var lineWidth: CGFloat
     var fontSize: CGFloat
+    var fontFamily: String
     var isFilled: Bool
     var isDashed: Bool
     var hasArrow: Bool
@@ -74,6 +75,7 @@ struct ScreenshotAnnotationStyle: Equatable {
         color: NSColor = .systemRed,
         lineWidth: CGFloat = 3,
         fontSize: CGFloat = 16,
+        fontFamily: String = "",
         isFilled: Bool = false,
         isDashed: Bool = false,
         hasArrow: Bool = false,
@@ -86,6 +88,7 @@ struct ScreenshotAnnotationStyle: Equatable {
         self.color = color
         self.lineWidth = lineWidth
         self.fontSize = fontSize
+        self.fontFamily = fontFamily
         self.isFilled = isFilled
         self.isDashed = isDashed
         self.hasArrow = hasArrow
@@ -100,6 +103,7 @@ struct ScreenshotAnnotationStyle: Equatable {
         lhs.color.isEqual(rhs.color)
             && lhs.lineWidth == rhs.lineWidth
             && lhs.fontSize == rhs.fontSize
+            && lhs.fontFamily == rhs.fontFamily
             && lhs.isFilled == rhs.isFilled
             && lhs.isDashed == rhs.isDashed
             && lhs.hasArrow == rhs.hasArrow
@@ -485,13 +489,23 @@ enum ScreenshotAnnotationRenderer {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
         }
-        var font = NSFont.systemFont(
-            ofSize: max(1, style.fontSize * scale),
-            weight: style.isBold ? .bold : .medium
-        )
+        let effectiveSize = max(1, style.fontSize * scale)
+        var font: NSFont
+        if !style.fontFamily.isEmpty, let customFont = NSFont(name: style.fontFamily, size: effectiveSize) {
+            font = customFont
+        } else {
+            font = NSFont.systemFont(
+                ofSize: effectiveSize,
+                weight: style.isBold ? .bold : .medium
+            )
+        }
         if style.isItalic {
             let fontDescriptor = font.fontDescriptor.withSymbolicTraits(.italic)
-            font = NSFont(descriptor: fontDescriptor, size: max(1, style.fontSize * scale)) ?? font
+            font = NSFont(descriptor: fontDescriptor, size: effectiveSize) ?? font
+        }
+        if style.isBold && !style.fontFamily.isEmpty {
+            let fontDescriptor = font.fontDescriptor.withSymbolicTraits(.bold)
+            font = NSFont(descriptor: fontDescriptor, size: effectiveSize) ?? font
         }
         let attributedText = NSAttributedString(
             string: text,

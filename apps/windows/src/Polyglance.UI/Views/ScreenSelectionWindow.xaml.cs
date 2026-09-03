@@ -760,6 +760,7 @@ public partial class ScreenSelectionWindow : Window
                     BorderBrush = brush,
                     BorderThickness = new Thickness(1),
                     Foreground = brush,
+                    FontFamily = !string.IsNullOrEmpty(Toolbar.CurrentFontFamily) ? new System.Windows.Media.FontFamily(Toolbar.CurrentFontFamily) : new System.Windows.Media.FontFamily("Segoe UI, Microsoft YaHei"),
                     FontSize = Toolbar.FontSizeValue,
                     FontWeight = Toolbar.IsBold ? FontWeights.Bold : FontWeights.Normal,
                     FontStyle = Toolbar.IsItalic ? FontStyles.Italic : FontStyles.Normal,

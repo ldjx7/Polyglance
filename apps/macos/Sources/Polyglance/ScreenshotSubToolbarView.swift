@@ -14,7 +14,7 @@ final class ScreenshotSubToolbarView: NSView {
     private let colorStack = NSStackView()
 
     private var colorButtons: [ColorDotButton] = []
-    private var lineWidthButtons: [LineWidthButton] = []
+    private var sizeDropdownButton: DropdownPillButton?
 
     static let presetColors: [NSColor] = [
         NSColor(srgbRed: 0.94, green: 0.27, blue: 0.27, alpha: 1.0), // Red (#EF4444)
@@ -25,6 +25,21 @@ final class ScreenshotSubToolbarView: NSView {
         NSColor(srgbRed: 0.55, green: 0.36, blue: 0.96, alpha: 1.0), // Purple (#8B5CF6)
         NSColor(srgbRed: 0.12, green: 0.16, blue: 0.22, alpha: 1.0), // Dark (#1F2937)
         NSColor(srgbRed: 1.00, green: 1.00, blue: 1.00, alpha: 1.0)  // White (#FFFFFF)
+    ]
+
+    static let presetLineWidths: [CGFloat] = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32]
+    static let presetFontSizes: [CGFloat] = [12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72]
+
+    static let fontFamilies: [(title: String, name: String)] = [
+        ("系统默认", ""),
+        ("苹方", "PingFangSC-Regular"),
+        ("宋体", "Songti SC"),
+        ("黑体", "Heiti SC"),
+        ("楷体", "Kaiti SC"),
+        ("Arial", "Arial"),
+        ("Georgia", "Georgia"),
+        ("Courier", "Courier"),
+        ("Times New Roman", "TimesNewRomanPSMT")
     ]
 
     override init(frame frameRect: NSRect) {
@@ -66,7 +81,7 @@ final class ScreenshotSubToolbarView: NSView {
 
         controlStack.orientation = .horizontal
         controlStack.alignment = .centerY
-        controlStack.spacing = 3
+        controlStack.spacing = 5
 
         colorStack.orientation = .horizontal
         colorStack.alignment = .centerY
@@ -85,6 +100,32 @@ final class ScreenshotSubToolbarView: NSView {
         ])
 
         buildColorPalette()
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let delta = event.scrollingDeltaY
+        guard abs(delta) > 0.1 else {
+            super.scrollWheel(with: event)
+            return
+        }
+
+        if currentTool == .text {
+            let step: CGFloat = delta > 0 ? 2 : -2
+            let newSize = min(96, max(8, currentStyle.fontSize + step))
+            if newSize != currentStyle.fontSize {
+                currentStyle.fontSize = newSize
+                notifyStyleChanged()
+                updateSizeDisplay()
+            }
+        } else {
+            let step: CGFloat = delta > 0 ? 1 : -1
+            let newWidth = min(50, max(1, currentStyle.lineWidth + step))
+            if newWidth != currentStyle.lineWidth {
+                currentStyle.lineWidth = newWidth
+                notifyStyleChanged()
+                updateSizeDisplay()
+            }
+        }
     }
 
     func update(tool: ScreenshotAnnotationTool, style: ScreenshotAnnotationStyle) {
@@ -123,80 +164,54 @@ final class ScreenshotSubToolbarView: NSView {
             controlStack.removeArrangedSubview($0)
             $0.removeFromSuperview()
         }
-        lineWidthButtons.removeAll()
+        sizeDropdownButton = nil
 
         switch tool {
         case .rectangle, .ellipse:
-            let rectBtn = makeIconButton(symbol: "rectangle", tooltip: "矩形", selected: tool == .rectangle) { [weak self] in
-                self?.onToolChanged?(.rectangle)
+            // 样式下拉框 (描边实线 / 描边虚线 / 填充实心)
+            let currentStyleTitle: String
+            if currentStyle.isFilled {
+                currentStyleTitle = "填充实心"
+            } else if currentStyle.isDashed {
+                currentStyleTitle = "描边虚线"
+            } else {
+                currentStyleTitle = "描边实线"
             }
-            let ellipseBtn = makeIconButton(symbol: "circle", tooltip: "椭圆", selected: tool == .ellipse) { [weak self] in
-                self?.onToolChanged?(.ellipse)
+            let styleDropdown = DropdownPillButton(title: currentStyleTitle, iconSymbol: "square.dashed") { [weak self] btn in
+                self?.showRectStyleMenu(for: btn)
             }
-            controlStack.addArrangedSubview(rectBtn)
-            controlStack.addArrangedSubview(ellipseBtn)
+            controlStack.addArrangedSubview(styleDropdown)
 
-            let fillBtn = makeIconButton(
-                symbol: currentStyle.isFilled ? "square.fill" : "square",
-                tooltip: currentStyle.isFilled ? "实心填充" : "空心轮廓",
-                selected: currentStyle.isFilled
-            ) { [weak self] in
-                guard let self else { return }
-                self.currentStyle.isFilled.toggle()
-                self.notifyStyleChanged()
-                self.rebuildControls(for: self.currentTool)
-            }
-            controlStack.addArrangedSubview(fillBtn)
-
-            let dashBtn = makeIconButton(
-                symbol: "line.horizontal.3.decrease",
-                tooltip: currentStyle.isDashed ? "虚线" : "实线",
-                selected: currentStyle.isDashed
-            ) { [weak self] in
-                guard let self else { return }
-                self.currentStyle.isDashed.toggle()
-                self.notifyStyleChanged()
-                self.rebuildControls(for: self.currentTool)
-            }
-            controlStack.addArrangedSubview(dashBtn)
-            addLineWidthButtons()
+            // 粗细下拉框 (数字)
+            addLineWidthDropdown()
 
         case .freehand:
-            addLineWidthButtons()
+            // 粗细下拉框
+            addLineWidthDropdown()
 
-        case .line:
-            let lineBtn = makeIconButton(symbol: "line.diagonal", tooltip: "直线", selected: !currentStyle.hasArrow) { [weak self] in
-                guard let self else { return }
-                self.currentStyle.hasArrow = false
-                self.notifyStyleChanged()
-                self.rebuildControls(for: self.currentTool)
+        case .line, .arrow:
+            // 样式下拉框 (实线 / 虚线)
+            let styleTitle = currentStyle.isDashed ? "虚线" : "实线"
+            let styleDropdown = DropdownPillButton(title: styleTitle, iconSymbol: "line.horizontal.3.decrease") { [weak self] btn in
+                self?.showLineStyleMenu(for: btn)
             }
-            let arrowBtn = makeIconButton(symbol: "arrow.up.right", tooltip: "箭头", selected: currentStyle.hasArrow) { [weak self] in
-                guard let self else { return }
-                self.currentStyle.hasArrow = true
-                self.notifyStyleChanged()
-                self.rebuildControls(for: self.currentTool)
-            }
-            controlStack.addArrangedSubview(lineBtn)
-            controlStack.addArrangedSubview(arrowBtn)
+            controlStack.addArrangedSubview(styleDropdown)
 
-            let dashBtn = makeIconButton(
-                symbol: "line.horizontal.3.decrease",
-                tooltip: currentStyle.isDashed ? "虚线" : "实线",
-                selected: currentStyle.isDashed
-            ) { [weak self] in
-                guard let self else { return }
-                self.currentStyle.isDashed.toggle()
-                self.notifyStyleChanged()
-                self.rebuildControls(for: self.currentTool)
-            }
-            controlStack.addArrangedSubview(dashBtn)
-            addLineWidthButtons()
-
-        case .arrow:
-            addLineWidthButtons()
+            // 粗细下拉框
+            addLineWidthDropdown()
 
         case .text:
+            // 字体下拉框
+            let currentFontTitle = Self.fontFamilies.first(where: { $0.name == currentStyle.fontFamily })?.title ?? "系统默认"
+            let fontDropdown = DropdownPillButton(title: currentFontTitle, iconSymbol: "textformat") { [weak self] btn in
+                self?.showFontFamilyMenu(for: btn)
+            }
+            controlStack.addArrangedSubview(fontDropdown)
+
+            // 字号下拉框 (数字)
+            addFontSizeDropdown()
+
+            // 加粗 / 斜体 / 边框背景
             let boldBtn = makeTextFormatButton(title: "B", tooltip: "加粗", isBold: true, selected: currentStyle.isBold) { [weak self] in
                 guard let self else { return }
                 self.currentStyle.isBold.toggle()
@@ -222,87 +237,262 @@ final class ScreenshotSubToolbarView: NSView {
             controlStack.addArrangedSubview(boldBtn)
             controlStack.addArrangedSubview(italicBtn)
             controlStack.addArrangedSubview(borderBtn)
-            addFontSizeButtons()
 
         case .number:
-            let filledBtn = makeIconButton(symbol: "1.circle.fill", tooltip: "实心序号", selected: currentStyle.numberStyle == 0) { [weak self] in
-                guard let self else { return }
-                self.currentStyle.numberStyle = 0
-                self.notifyStyleChanged()
-                self.rebuildControls(for: self.currentTool)
+            // 样式下拉框 (实心序号 / 空心序号)
+            let styleTitle = currentStyle.numberStyle == 1 ? "空心序号" : "实心序号"
+            let styleDropdown = DropdownPillButton(title: styleTitle, iconSymbol: "1.circle") { [weak self] btn in
+                self?.showNumberStyleMenu(for: btn)
             }
-            let outlineBtn = makeIconButton(symbol: "1.circle", tooltip: "空心序号", selected: currentStyle.numberStyle == 1) { [weak self] in
-                guard let self else { return }
-                self.currentStyle.numberStyle = 1
-                self.notifyStyleChanged()
-                self.rebuildControls(for: self.currentTool)
-            }
-            controlStack.addArrangedSubview(filledBtn)
-            controlStack.addArrangedSubview(outlineBtn)
-            addLineWidthButtons()
+            controlStack.addArrangedSubview(styleDropdown)
+
+            // 尺寸/粗细下拉框
+            addLineWidthDropdown()
 
         case .mosaic:
-            let brushBtn = makeIconButton(symbol: "scribble", tooltip: "涂抹马赛克", selected: currentStyle.shapeType == 0) { [weak self] in
-                guard let self else { return }
-                self.currentStyle.shapeType = 0
-                self.notifyStyleChanged()
-                self.rebuildControls(for: self.currentTool)
+            // 模式与类型下拉框 (涂抹像素 / 涂抹模糊 / 矩形像素 / 矩形模糊)
+            let modeTitle: String
+            switch (currentStyle.shapeType, currentStyle.hasBorder) {
+            case (0, false): modeTitle = "涂抹 · 像素"
+            case (0, true):  modeTitle = "涂抹 · 模糊"
+            case (1, false): modeTitle = "矩形 · 像素"
+            case (1, true):  modeTitle = "矩形 · 模糊"
+            default:         modeTitle = "涂抹 · 像素"
             }
-            let rectBtn = makeIconButton(symbol: "rectangle.dashed", tooltip: "矩形马赛克", selected: currentStyle.shapeType == 1) { [weak self] in
-                guard let self else { return }
-                self.currentStyle.shapeType = 1
-                self.notifyStyleChanged()
-                self.rebuildControls(for: self.currentTool)
+            let modeDropdown = DropdownPillButton(title: modeTitle, iconSymbol: "square.grid.3x3.fill") { [weak self] btn in
+                self?.showMosaicModeMenu(for: btn)
             }
-            controlStack.addArrangedSubview(brushBtn)
-            controlStack.addArrangedSubview(rectBtn)
+            controlStack.addArrangedSubview(modeDropdown)
 
-            let pixelBtn = makeIconButton(symbol: "square.grid.3x3.fill", tooltip: "像素颗粒", selected: !currentStyle.hasBorder) { [weak self] in
-                guard let self else { return }
-                self.currentStyle.hasBorder = false
-                self.notifyStyleChanged()
-                self.rebuildControls(for: self.currentTool)
-            }
-            let blurBtn = makeIconButton(symbol: "sparkles", tooltip: "高斯模糊", selected: currentStyle.hasBorder) { [weak self] in
-                guard let self else { return }
-                self.currentStyle.hasBorder = true
-                self.notifyStyleChanged()
-                self.rebuildControls(for: self.currentTool)
-            }
-            controlStack.addArrangedSubview(pixelBtn)
-            controlStack.addArrangedSubview(blurBtn)
-            addLineWidthButtons()
+            // 粗细/颗粒度下拉框
+            addLineWidthDropdown()
         }
     }
 
-    private func addLineWidthButtons() {
-        let sizes: [CGFloat] = [2, 4, 8]
-        for size in sizes {
-            let isSelected = abs(currentStyle.lineWidth - size) < 0.5
-            let btn = LineWidthButton(dotSize: size, isSelected: isSelected) { [weak self] in
-                guard let self else { return }
-                self.currentStyle.lineWidth = size
+    private func addLineWidthDropdown() {
+        let sizeVal = Int(currentStyle.lineWidth)
+        let btn = DropdownPillButton(title: "\(sizeVal)", iconSymbol: "scribble") { [weak self] sender in
+            self?.showLineWidthMenu(for: sender)
+        }
+        btn.toolTip = "线条粗细（滚轮可调节）"
+        btn.onScroll = { [weak self] delta in
+            guard let self else { return }
+            let step: CGFloat = delta > 0 ? 1 : -1
+            let newWidth = min(50, max(1, self.currentStyle.lineWidth + step))
+            if newWidth != self.currentStyle.lineWidth {
+                self.currentStyle.lineWidth = newWidth
                 self.notifyStyleChanged()
-                self.rebuildControls(for: self.currentTool)
+                self.updateSizeDisplay()
             }
-            lineWidthButtons.append(btn)
-            controlStack.addArrangedSubview(btn)
+        }
+        sizeDropdownButton = btn
+        controlStack.addArrangedSubview(btn)
+    }
+
+    private func addFontSizeDropdown() {
+        let sizeVal = Int(currentStyle.fontSize)
+        let btn = DropdownPillButton(title: "\(sizeVal)", iconSymbol: "text.cursor") { [weak self] sender in
+            self?.showFontSizeMenu(for: sender)
+        }
+        btn.toolTip = "字号大小（滚轮可调节）"
+        btn.onScroll = { [weak self] delta in
+            guard let self else { return }
+            let step: CGFloat = delta > 0 ? 2 : -2
+            let newSize = min(96, max(8, self.currentStyle.fontSize + step))
+            if newSize != self.currentStyle.fontSize {
+                self.currentStyle.fontSize = newSize
+                self.notifyStyleChanged()
+                self.updateSizeDisplay()
+            }
+        }
+        sizeDropdownButton = btn
+        controlStack.addArrangedSubview(btn)
+    }
+
+    private func updateSizeDisplay() {
+        if currentTool == .text {
+            sizeDropdownButton?.title = "\(Int(currentStyle.fontSize))"
+        } else {
+            sizeDropdownButton?.title = "\(Int(currentStyle.lineWidth))"
         }
     }
 
-    private func addFontSizeButtons() {
-        let fontSizes: [(String, CGFloat)] = [("小", 14), ("中", 18), ("大", 26)]
-        for (label, size) in fontSizes {
-            let isSelected = abs(currentStyle.fontSize - size) < 1.0
-            let btn = TextPillButton(title: label, isSelected: isSelected) { [weak self] in
-                guard let self else { return }
-                self.currentStyle.fontSize = size
-                self.notifyStyleChanged()
-                self.rebuildControls(for: self.currentTool)
+    // MARK: - Dropdown Menus
+
+    private func showRectStyleMenu(for sender: NSView) {
+        let menu = NSMenu()
+        let items: [(title: String, isFilled: Bool, isDashed: Bool)] = [
+            ("描边实线", false, false),
+            ("描边虚线", false, true),
+            ("填充实心", true, false)
+        ]
+        for item in items {
+            let menuItem = NSMenuItem(title: item.title, action: #selector(onRectStyleSelected(_:)), keyEquivalent: "")
+            menuItem.target = self
+            menuItem.representedObject = item
+            if currentStyle.isFilled == item.isFilled && currentStyle.isDashed == item.isDashed {
+                menuItem.state = .on
             }
-            controlStack.addArrangedSubview(btn)
+            menu.addItem(menuItem)
         }
+        showMenu(menu, for: sender)
     }
+
+    @objc private func onRectStyleSelected(_ sender: NSMenuItem) {
+        guard let tuple = sender.representedObject as? (title: String, isFilled: Bool, isDashed: Bool) else { return }
+        currentStyle.isFilled = tuple.isFilled
+        currentStyle.isDashed = tuple.isDashed
+        notifyStyleChanged()
+        rebuildControls(for: currentTool)
+    }
+
+    private func showLineStyleMenu(for sender: NSView) {
+        let menu = NSMenu()
+        let items: [(title: String, isDashed: Bool)] = [
+            ("实线", false),
+            ("虚线", true)
+        ]
+        for item in items {
+            let menuItem = NSMenuItem(title: item.title, action: #selector(onLineStyleSelected(_:)), keyEquivalent: "")
+            menuItem.target = self
+            menuItem.representedObject = item.isDashed
+            if currentStyle.isDashed == item.isDashed {
+                menuItem.state = .on
+            }
+            menu.addItem(menuItem)
+        }
+        showMenu(menu, for: sender)
+    }
+
+    @objc private func onLineStyleSelected(_ sender: NSMenuItem) {
+        guard let isDashed = sender.representedObject as? Bool else { return }
+        currentStyle.isDashed = isDashed
+        notifyStyleChanged()
+        rebuildControls(for: currentTool)
+    }
+
+    private func showNumberStyleMenu(for sender: NSView) {
+        let menu = NSMenu()
+        let items: [(title: String, style: Int)] = [
+            ("实心序号", 0),
+            ("空心序号", 1)
+        ]
+        for item in items {
+            let menuItem = NSMenuItem(title: item.title, action: #selector(onNumberStyleSelected(_:)), keyEquivalent: "")
+            menuItem.target = self
+            menuItem.representedObject = item.style
+            if currentStyle.numberStyle == item.style {
+                menuItem.state = .on
+            }
+            menu.addItem(menuItem)
+        }
+        showMenu(menu, for: sender)
+    }
+
+    @objc private func onNumberStyleSelected(_ sender: NSMenuItem) {
+        guard let style = sender.representedObject as? Int else { return }
+        currentStyle.numberStyle = style
+        notifyStyleChanged()
+        rebuildControls(for: currentTool)
+    }
+
+    private func showMosaicModeMenu(for sender: NSView) {
+        let menu = NSMenu()
+        let items: [(title: String, shape: Int, isBlur: Bool)] = [
+            ("涂抹 · 像素", 0, false),
+            ("涂抹 · 模糊", 0, true),
+            ("矩形 · 像素", 1, false),
+            ("矩形 · 模糊", 1, true)
+        ]
+        for item in items {
+            let menuItem = NSMenuItem(title: item.title, action: #selector(onMosaicModeSelected(_:)), keyEquivalent: "")
+            menuItem.target = self
+            menuItem.representedObject = (item.shape, item.isBlur)
+            if currentStyle.shapeType == item.shape && currentStyle.hasBorder == item.isBlur {
+                menuItem.state = .on
+            }
+            menu.addItem(menuItem)
+        }
+        showMenu(menu, for: sender)
+    }
+
+    @objc private func onMosaicModeSelected(_ sender: NSMenuItem) {
+        guard let tuple = sender.representedObject as? (shape: Int, isBlur: Bool) else { return }
+        currentStyle.shapeType = tuple.shape
+        currentStyle.hasBorder = tuple.isBlur
+        notifyStyleChanged()
+        rebuildControls(for: currentTool)
+    }
+
+    private func showLineWidthMenu(for sender: NSView) {
+        let menu = NSMenu()
+        for width in Self.presetLineWidths {
+            let menuItem = NSMenuItem(title: "\(Int(width)) px", action: #selector(onLineWidthSelected(_:)), keyEquivalent: "")
+            menuItem.target = self
+            menuItem.representedObject = width
+            if abs(currentStyle.lineWidth - width) < 0.5 {
+                menuItem.state = .on
+            }
+            menu.addItem(menuItem)
+        }
+        showMenu(menu, for: sender)
+    }
+
+    @objc private func onLineWidthSelected(_ sender: NSMenuItem) {
+        guard let width = sender.representedObject as? CGFloat else { return }
+        currentStyle.lineWidth = width
+        notifyStyleChanged()
+        updateSizeDisplay()
+    }
+
+    private func showFontFamilyMenu(for sender: NSView) {
+        let menu = NSMenu()
+        for font in Self.fontFamilies {
+            let menuItem = NSMenuItem(title: font.title, action: #selector(onFontFamilySelected(_:)), keyEquivalent: "")
+            menuItem.target = self
+            menuItem.representedObject = font.name
+            if currentStyle.fontFamily == font.name {
+                menuItem.state = .on
+            }
+            menu.addItem(menuItem)
+        }
+        showMenu(menu, for: sender)
+    }
+
+    @objc private func onFontFamilySelected(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        currentStyle.fontFamily = name
+        notifyStyleChanged()
+        rebuildControls(for: currentTool)
+    }
+
+    private func showFontSizeMenu(for sender: NSView) {
+        let menu = NSMenu()
+        for size in Self.presetFontSizes {
+            let menuItem = NSMenuItem(title: "\(Int(size)) pt", action: #selector(onFontSizeSelected(_:)), keyEquivalent: "")
+            menuItem.target = self
+            menuItem.representedObject = size
+            if abs(currentStyle.fontSize - size) < 0.5 {
+                menuItem.state = .on
+            }
+            menu.addItem(menuItem)
+        }
+        showMenu(menu, for: sender)
+    }
+
+    @objc private func onFontSizeSelected(_ sender: NSMenuItem) {
+        guard let size = sender.representedObject as? CGFloat else { return }
+        currentStyle.fontSize = size
+        notifyStyleChanged()
+        updateSizeDisplay()
+    }
+
+    private func showMenu(_ menu: NSMenu, for view: NSView) {
+        let location = NSPoint(x: 0, y: view.bounds.height + 4)
+        menu.popUp(positioning: menu.item(at: 0), at: location, in: view)
+    }
+
+    // MARK: - Color Palette
 
     private func buildColorPalette() {
         colorStack.arrangedSubviews.forEach {
@@ -322,15 +512,6 @@ final class ScreenshotSubToolbarView: NSView {
             colorButtons.append(btn)
             colorStack.addArrangedSubview(btn)
         }
-
-        let pickerBtn = makeIconButton(symbol: "paintpalette", tooltip: "自定义颜色", selected: false) { [weak self] in
-            guard let self else { return }
-            NSColorPanel.shared.color = self.currentStyle.color
-            NSColorPanel.shared.setTarget(self)
-            NSColorPanel.shared.setAction(#selector(self.onCustomColorPanelChanged(_:)))
-            NSColorPanel.shared.orderFront(nil)
-        }
-        colorStack.addArrangedSubview(pickerBtn)
     }
 
     private func updateColorSelection() {
@@ -362,14 +543,62 @@ final class ScreenshotSubToolbarView: NSView {
         return btn
     }
 
-    @objc private func onCustomColorPanelChanged(_ sender: NSColorPanel) {
-        currentStyle.color = sender.color
-        notifyStyleChanged()
-        updateColorSelection()
-    }
-
     private func notifyStyleChanged() {
         onStyleChanged?(currentStyle)
+    }
+}
+
+// MARK: - Dropdown Pill Button
+
+final class DropdownPillButton: NSButton {
+    private let clickAction: (NSView) -> Void
+    var onScroll: ((CGFloat) -> Void)?
+
+    init(title: String, iconSymbol: String? = nil, action: @escaping (NSView) -> Void) {
+        self.clickAction = action
+        super.init(frame: .zero)
+        self.title = title
+        self.isBordered = false
+        self.wantsLayer = true
+        self.layer?.cornerRadius = 5
+        self.layer?.backgroundColor = NSColor(white: 0.0, alpha: 0.06).cgColor
+        self.font = .systemFont(ofSize: 11.5, weight: .medium)
+        self.contentTintColor = NSColor(white: 0.18, alpha: 1.0)
+        self.alignment = .center
+
+        let chevronConfig = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
+        self.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)?.withSymbolConfiguration(chevronConfig)
+        self.imagePosition = .imageRight
+        self.imageScaling = .scaleProportionallyDown
+
+        translatesAutoresizingMaskIntoConstraints = false
+        let titleWidth = (title as NSString).size(withAttributes: [.font: font!]).width
+        let minW: CGFloat = max(34, titleWidth + 24)
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(greaterThanOrEqualToConstant: minW),
+            heightAnchor.constraint(equalToConstant: 24)
+        ])
+        target = self
+        self.action = #selector(handleClick)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func handleClick() {
+        clickAction(self)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        if let onScroll {
+            onScroll(event.scrollingDeltaY)
+        } else {
+            super.scrollWheel(with: event)
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
     }
 }
 
@@ -473,110 +702,6 @@ final class TextFormatButton: NSButton {
             layer?.backgroundColor = NSColor.clear.cgColor
             contentTintColor = NSColor(white: 0.25, alpha: 1.0)
         }
-    }
-}
-
-final class TextPillButton: NSButton {
-    private let actionClosure: () -> Void
-    var isSelectedState: Bool {
-        didSet { updateAppearance() }
-    }
-
-    init(title: String, isSelected: Bool, action: @escaping () -> Void) {
-        self.actionClosure = action
-        self.isSelectedState = isSelected
-        super.init(frame: .zero)
-        self.title = title
-        self.isBordered = false
-        self.wantsLayer = true
-        self.layer?.cornerRadius = 4
-        self.font = .systemFont(ofSize: 11, weight: isSelected ? .bold : .regular)
-
-        translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: 22),
-            heightAnchor.constraint(equalToConstant: 22)
-        ])
-        target = self
-        self.action = #selector(handleClick)
-        updateAppearance()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    @objc private func handleClick() {
-        actionClosure()
-    }
-
-    private func updateAppearance() {
-        if isSelectedState {
-            layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.16).cgColor
-            contentTintColor = .systemBlue
-        } else {
-            layer?.backgroundColor = NSColor.clear.cgColor
-            contentTintColor = NSColor(white: 0.25, alpha: 1.0)
-        }
-    }
-}
-
-final class LineWidthButton: NSButton {
-    let dotSize: CGFloat
-    private let actionClosure: () -> Void
-    var isSelectedState: Bool {
-        didSet { needsDisplay = true }
-    }
-
-    init(dotSize: CGFloat, isSelected: Bool, action: @escaping () -> Void) {
-        self.dotSize = dotSize
-        self.isSelectedState = isSelected
-        self.actionClosure = action
-        super.init(frame: .zero)
-        self.title = ""
-        self.attributedTitle = NSAttributedString()
-        self.isBordered = false
-        self.imagePosition = .noImage
-        self.toolTip = "粗细 \(Int(dotSize))px"
-        self.wantsLayer = true
-        self.layer?.cornerRadius = 4
-
-        translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: 22),
-            heightAnchor.constraint(equalToConstant: 22)
-        ])
-        target = self
-        self.action = #selector(handleClick)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    @objc private func handleClick() {
-        actionClosure()
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        if isSelectedState {
-            let bgRect = bounds.insetBy(dx: 1, dy: 1)
-            let bgPath = NSBezierPath(roundedRect: bgRect, xRadius: 4, yRadius: 4)
-            NSColor.systemBlue.withAlphaComponent(0.16).setFill()
-            bgPath.fill()
-        }
-
-        let dotRect = CGRect(
-            x: (bounds.width - dotSize) / 2,
-            y: (bounds.height - dotSize) / 2,
-            width: dotSize,
-            height: dotSize
-        )
-        let dotPath = NSBezierPath(ovalIn: dotRect)
-        if isSelectedState {
-            NSColor.systemBlue.setFill()
-        } else {
-            NSColor(white: 0.3, alpha: 1.0).setFill()
-        }
-        dotPath.fill()
     }
 }
 

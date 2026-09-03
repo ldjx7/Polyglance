@@ -58,6 +58,19 @@
             </Setter>
         </Style>
 
+        <Style x:Key="ToolbarComboBoxStyle" TargetType="ComboBox">
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Margin" Value="2,0"/>
+            <Setter Property="Padding" Value="6,1,4,1"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="Foreground" Value="#222222"/>
+            <Setter Property="Background" Value="#0F000000"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+
         <Style x:Key="DividerStyle" TargetType="Rectangle">
             <Setter Property="Width" Value="1"/>
             <Setter Property="Height" Value="18"/>
@@ -77,102 +90,100 @@
                 Padding="8,4"
                 Margin="0,0,0,6"
                 HorizontalAlignment="Center"
-                Visibility="Collapsed">
+                Visibility="Collapsed"
+                PreviewMouseWheel="OnSubToolbarMouseWheel">
             <Border.Effect>
                 <DropShadowEffect Color="#000000" Opacity="0.12" BlurRadius="12" ShadowDepth="2" Direction="270"/>
             </Border.Effect>
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <!-- 矩形 / 椭圆属性组 -->
+                <!-- 矩形 / 椭圆属性组 (下拉框) -->
                 <StackPanel x:Name="PanelRectControls" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed">
-                    <Button x:Name="BtnShapeRect" Style="{StaticResource ToolbarButtonStyle}" Width="28" Height="26" ToolTip="矩形" Click="OnSubToolActionClicked" Tag="ShapeRect">
-                        <Path Data="M3,3 H18 V18 H3 Z" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.5" Width="12" Height="12" Stretch="Uniform"/>
-                    </Button>
-                    <Button x:Name="BtnShapeEllipse" Style="{StaticResource ToolbarButtonStyle}" Width="28" Height="26" ToolTip="椭圆" Click="OnSubToolActionClicked" Tag="ShapeEllipse">
-                        <Ellipse Width="12" Height="12" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.5"/>
-                    </Button>
-                    <Button x:Name="BtnToggleFill" Style="{StaticResource ToolbarButtonStyle}" Width="28" Height="26" ToolTip="实心填充/空心" Click="OnSubToolActionClicked" Tag="ToggleFill">
-                        <Rectangle Width="12" Height="12" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
-                    </Button>
-                    <Button x:Name="BtnToggleDash" Style="{StaticResource ToolbarButtonStyle}" Width="28" Height="26" ToolTip="虚线/实线" Click="OnSubToolActionClicked" Tag="ToggleDash">
-                        <Path Data="M1,6 H4 M7,6 H10 M13,6 H16" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" StrokeDashArray="2 1"/>
-                    </Button>
+                    <ComboBox x:Name="CmbRectStyle" Style="{StaticResource ToolbarComboBoxStyle}" Width="88" SelectionChanged="OnRectStyleChanged">
+                        <ComboBoxItem Content="描边实线" IsSelected="True"/>
+                        <ComboBoxItem Content="描边虚线"/>
+                        <ComboBoxItem Content="填充实心"/>
+                    </ComboBox>
                 </StackPanel>
 
-                <!-- 线条属性组 -->
+                <!-- 线条属性组 (下拉框) -->
                 <StackPanel x:Name="PanelLineControls" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed">
-                    <Button x:Name="BtnLineStraight" Style="{StaticResource ToolbarButtonStyle}" Width="28" Height="26" ToolTip="直线" Click="OnSubToolActionClicked" Tag="LineStraight">
-                        <Path Data="M3,15 L15,3" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Width="12" Height="12" Stretch="Uniform"/>
-                    </Button>
-                    <Button x:Name="BtnLineArrow" Style="{StaticResource ToolbarButtonStyle}" Width="28" Height="26" ToolTip="箭头" Click="OnSubToolActionClicked" Tag="LineArrow">
-                        <Path Data="M3,15 L15,3 M15,3 L8,3 M15,3 L15,10" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="12" Height="12" Stretch="Uniform"/>
-                    </Button>
-                    <Button x:Name="BtnLineDash" Style="{StaticResource ToolbarButtonStyle}" Width="28" Height="26" ToolTip="虚线/实线" Click="OnSubToolActionClicked" Tag="ToggleDash">
-                        <Path Data="M1,6 H4 M7,6 H10 M13,6 H16" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" StrokeDashArray="2 1"/>
-                    </Button>
+                    <ComboBox x:Name="CmbLineStyle" Style="{StaticResource ToolbarComboBoxStyle}" Width="66" SelectionChanged="OnLineStyleChanged">
+                        <ComboBoxItem Content="实线" IsSelected="True"/>
+                        <ComboBoxItem Content="虚线"/>
+                    </ComboBox>
                 </StackPanel>
 
-                <!-- 文字属性组 -->
+                <!-- 文字属性组 (字体/字号下拉框 + 粗斜体) -->
                 <StackPanel x:Name="PanelTextControls" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed">
+                    <ComboBox x:Name="CmbFontFamily" Style="{StaticResource ToolbarComboBoxStyle}" Width="86" SelectionChanged="OnFontFamilyChanged">
+                        <ComboBoxItem Content="系统默认" Tag="" IsSelected="True"/>
+                        <ComboBoxItem Content="微软雅黑" Tag="Microsoft YaHei"/>
+                        <ComboBoxItem Content="宋体" Tag="SimSun"/>
+                        <ComboBoxItem Content="黑体" Tag="SimHei"/>
+                        <ComboBoxItem Content="楷体" Tag="KaiTi"/>
+                        <ComboBoxItem Content="Segoe UI" Tag="Segoe UI"/>
+                        <ComboBoxItem Content="Arial" Tag="Arial"/>
+                        <ComboBoxItem Content="Georgia" Tag="Georgia"/>
+                        <ComboBoxItem Content="Courier New" Tag="Courier New"/>
+                        <ComboBoxItem Content="Times New Roman" Tag="Times New Roman"/>
+                    </ComboBox>
+                    <ComboBox x:Name="CmbFontSize" Style="{StaticResource ToolbarComboBoxStyle}" Width="62" SelectionChanged="OnFontSizeChanged">
+                        <ComboBoxItem Content="12 pt" Tag="12"/>
+                        <ComboBoxItem Content="14 pt" Tag="14"/>
+                        <ComboBoxItem Content="16 pt" Tag="16" IsSelected="True"/>
+                        <ComboBoxItem Content="18 pt" Tag="18"/>
+                        <ComboBoxItem Content="20 pt" Tag="20"/>
+                        <ComboBoxItem Content="24 pt" Tag="24"/>
+                        <ComboBoxItem Content="28 pt" Tag="28"/>
+                        <ComboBoxItem Content="32 pt" Tag="32"/>
+                        <ComboBoxItem Content="36 pt" Tag="36"/>
+                        <ComboBoxItem Content="48 pt" Tag="48"/>
+                        <ComboBoxItem Content="64 pt" Tag="64"/>
+                        <ComboBoxItem Content="72 pt" Tag="72"/>
+                    </ComboBox>
                     <Button x:Name="BtnTextBold" Style="{StaticResource ToolbarButtonStyle}" Width="28" Height="26" ToolTip="加粗" Click="OnSubToolActionClicked" Tag="TextBold">
                         <TextBlock Text="B" FontSize="13" FontWeight="Bold" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" FontFamily="Segoe UI, Arial"/>
                     </Button>
                     <Button x:Name="BtnTextItalic" Style="{StaticResource ToolbarButtonStyle}" Width="28" Height="26" ToolTip="斜体" Click="OnSubToolActionClicked" Tag="TextItalic">
                         <TextBlock Text="I" FontSize="13" FontStyle="Italic" FontWeight="SemiBold" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" FontFamily="Segoe UI, Arial"/>
                     </Button>
-                    <RadioButton GroupName="FontSizeGroup" Margin="2,0" VerticalAlignment="Center" Cursor="Hand" Checked="OnFontSizeChecked" Tag="12">
-                        <TextBlock Text="小" FontSize="11" Foreground="#333333"/>
-                    </RadioButton>
-                    <RadioButton GroupName="FontSizeGroup" Margin="2,0" IsChecked="True" VerticalAlignment="Center" Cursor="Hand" Checked="OnFontSizeChecked" Tag="16">
-                        <TextBlock Text="中" FontSize="12" Foreground="#333333"/>
-                    </RadioButton>
-                    <RadioButton GroupName="FontSizeGroup" Margin="2,0" VerticalAlignment="Center" Cursor="Hand" Checked="OnFontSizeChecked" Tag="22">
-                        <TextBlock Text="大" FontSize="13" Foreground="#333333"/>
-                    </RadioButton>
                 </StackPanel>
 
-                <!-- 序号属性组 -->
+                <!-- 序号属性组 (下拉框) -->
                 <StackPanel x:Name="PanelNumberControls" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed">
-                    <Button x:Name="BtnNumFilled" Style="{StaticResource ToolbarButtonStyle}" Width="28" Height="26" ToolTip="实心序号" Click="OnSubToolActionClicked" Tag="NumFilled">
-                        <Grid Width="14" Height="14">
-                            <Ellipse Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
-                            <TextBlock Text="1" FontSize="9" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#FFFFFF"/>
-                        </Grid>
-                    </Button>
-                    <Button x:Name="BtnNumOutline" Style="{StaticResource ToolbarButtonStyle}" Width="28" Height="26" ToolTip="空心序号" Click="OnSubToolActionClicked" Tag="NumOutline">
-                        <Grid Width="14" Height="14">
-                            <Ellipse Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.5"/>
-                            <TextBlock Text="1" FontSize="9" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
-                        </Grid>
-                    </Button>
+                    <ComboBox x:Name="CmbNumberStyle" Style="{StaticResource ToolbarComboBoxStyle}" Width="88" SelectionChanged="OnNumberStyleChanged">
+                        <ComboBoxItem Content="实心序号" IsSelected="True"/>
+                        <ComboBoxItem Content="空心序号"/>
+                    </ComboBox>
                 </StackPanel>
 
-                <!-- 马赛克属性组 -->
+                <!-- 马赛克属性组 (下拉框) -->
                 <StackPanel x:Name="PanelMosaicControls" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed">
-                    <Button x:Name="BtnMosaicBrush" Style="{StaticResource ToolbarButtonStyle}" Width="28" Height="26" ToolTip="涂抹马赛克" Click="OnSubToolActionClicked" Tag="MosaicBrush">
-                        <Path Data="M3,17.25 V21 H6.75 L17.81,9.94 L14.06,6.19 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="12" Height="12" Stretch="Uniform"/>
-                    </Button>
-                    <Button x:Name="BtnMosaicRect" Style="{StaticResource ToolbarButtonStyle}" Width="28" Height="26" ToolTip="矩形马赛克" Click="OnSubToolActionClicked" Tag="MosaicRect">
-                        <Path Data="M2,2 H8 V8 H2 Z M9,2 H15 V8 H9 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="12" Height="12" Stretch="Uniform"/>
-                    </Button>
-                    <Button x:Name="BtnMosaicPixel" Style="{StaticResource ToolbarButtonStyle}" Width="28" Height="26" ToolTip="像素颗粒" Click="OnSubToolActionClicked" Tag="MosaicPixel">
-                        <Path Data="M2,2 H6 V6 H2 Z M7,2 H11 V6 H7 Z M2,7 H6 V11 H2 Z M7,7 H11 V11 H7 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="12" Height="12" Stretch="Uniform"/>
-                    </Button>
-                    <Button x:Name="BtnMosaicBlur" Style="{StaticResource ToolbarButtonStyle}" Width="28" Height="26" ToolTip="高斯模糊" Click="OnSubToolActionClicked" Tag="MosaicBlur">
-                        <Ellipse Width="12" Height="12" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Opacity="0.5"/>
-                    </Button>
+                    <ComboBox x:Name="CmbMosaicStyle" Style="{StaticResource ToolbarComboBoxStyle}" Width="98" SelectionChanged="OnMosaicStyleChanged">
+                        <ComboBoxItem Content="涂抹 · 像素" IsSelected="True"/>
+                        <ComboBoxItem Content="涂抹 · 模糊"/>
+                        <ComboBoxItem Content="矩形 · 像素"/>
+                        <ComboBoxItem Content="矩形 · 模糊"/>
+                    </ComboBox>
                 </StackPanel>
 
-                <!-- 线宽/粗细选择 -->
+                <!-- 线宽/粗细选择 (数字下拉框) -->
                 <StackPanel x:Name="PanelStrokeSizes" Orientation="Horizontal" VerticalAlignment="Center">
-                    <RadioButton GroupName="StrokeSize" Margin="2,0" VerticalAlignment="Center" Cursor="Hand" Checked="OnStrokeSizeChecked" Tag="2">
-                        <Ellipse Width="4" Height="4" Fill="#333333"/>
-                    </RadioButton>
-                    <RadioButton GroupName="StrokeSize" Margin="4,0" IsChecked="True" VerticalAlignment="Center" Cursor="Hand" Checked="OnStrokeSizeChecked" Tag="4">
-                        <Ellipse Width="8" Height="8" Fill="#333333"/>
-                    </RadioButton>
-                    <RadioButton GroupName="StrokeSize" Margin="2,0" VerticalAlignment="Center" Cursor="Hand" Checked="OnStrokeSizeChecked" Tag="8">
-                        <Ellipse Width="12" Height="12" Fill="#333333"/>
-                    </RadioButton>
+                    <ComboBox x:Name="CmbStrokeSize" Style="{StaticResource ToolbarComboBoxStyle}" Width="62" SelectionChanged="OnStrokeSizeComboChanged">
+                        <ComboBoxItem Content="1 px" Tag="1"/>
+                        <ComboBoxItem Content="2 px" Tag="2"/>
+                        <ComboBoxItem Content="3 px" Tag="3"/>
+                        <ComboBoxItem Content="4 px" Tag="4" IsSelected="True"/>
+                        <ComboBoxItem Content="5 px" Tag="5"/>
+                        <ComboBoxItem Content="6 px" Tag="6"/>
+                        <ComboBoxItem Content="8 px" Tag="8"/>
+                        <ComboBoxItem Content="10 px" Tag="10"/>
+                        <ComboBoxItem Content="12 px" Tag="12"/>
+                        <ComboBoxItem Content="16 px" Tag="16"/>
+                        <ComboBoxItem Content="20 px" Tag="20"/>
+                        <ComboBoxItem Content="24 px" Tag="24"/>
+                        <ComboBoxItem Content="32 px" Tag="32"/>
+                    </ComboBox>
                 </StackPanel>
 
                 <!-- 调色盘与分隔线（马赛克时不显示） -->

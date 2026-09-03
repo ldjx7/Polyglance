@@ -1,7 +1,10 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
+using ComboBox = System.Windows.Controls.ComboBox;
+using ComboBoxItem = System.Windows.Controls.ComboBoxItem;
 
 namespace Polyglance.UI.Controls;
 
@@ -18,6 +21,7 @@ public partial class ScreenshotToolbar : UserControl
 
     public double CurrentStrokeSize { get; private set; } = 4;
     public Color CurrentColor { get; private set; } = Color.FromRgb(0xEF, 0x44, 0x44);
+    public string CurrentFontFamily { get; private set; } = "";
     public bool IsFilled { get; private set; } = false;
     public bool IsDashed { get; private set; } = false;
     public bool HasArrow { get; private set; } = false;
@@ -91,32 +95,8 @@ public partial class ScreenshotToolbar : UserControl
 
     public void UpdateSubToolButtonStates(string? currentTool = null)
     {
-        currentTool ??= _selectedToolButton?.Tag as string ?? "";
-
-        // Rect / Ellipse
-        SetButtonActiveState(BtnShapeRect, currentTool == "Rect");
-        SetButtonActiveState(BtnShapeEllipse, currentTool == "Ellipse");
-        SetButtonActiveState(BtnToggleFill, IsFilled);
-        SetButtonActiveState(BtnToggleDash, IsDashed);
-
-        // Line / Arrow
-        SetButtonActiveState(BtnLineStraight, !HasArrow && (currentTool == "Line" || currentTool == "Straight"));
-        SetButtonActiveState(BtnLineArrow, HasArrow || currentTool == "Arrow");
-        SetButtonActiveState(BtnLineDash, IsDashed);
-
-        // Text
         SetButtonActiveState(BtnTextBold, IsBold);
         SetButtonActiveState(BtnTextItalic, IsItalic);
-
-        // Number
-        SetButtonActiveState(BtnNumFilled, NumberStyle == 0);
-        SetButtonActiveState(BtnNumOutline, NumberStyle == 1);
-
-        // Mosaic
-        SetButtonActiveState(BtnMosaicBrush, MosaicShapeType == 0);
-        SetButtonActiveState(BtnMosaicRect, MosaicShapeType == 1);
-        SetButtonActiveState(BtnMosaicPixel, !MosaicIsBlur);
-        SetButtonActiveState(BtnMosaicBlur, MosaicIsBlur);
     }
 
     private void UpdateSubToolbar(string tool)
@@ -126,6 +106,7 @@ public partial class ScreenshotToolbar : UserControl
         PanelTextControls.Visibility = Visibility.Collapsed;
         PanelNumberControls.Visibility = Visibility.Collapsed;
         PanelMosaicControls.Visibility = Visibility.Collapsed;
+        PanelStrokeSizes.Visibility = Visibility.Visible;
         PanelColorPalette.Visibility = Visibility.Visible;
 
         switch (tool)
@@ -140,6 +121,7 @@ public partial class ScreenshotToolbar : UserControl
                 break;
             case "Text":
                 PanelTextControls.Visibility = Visibility.Visible;
+                PanelStrokeSizes.Visibility = Visibility.Collapsed;
                 break;
             case "Number":
                 PanelNumberControls.Visibility = Visibility.Visible;
@@ -153,67 +135,147 @@ public partial class ScreenshotToolbar : UserControl
         UpdateSubToolButtonStates(tool);
     }
 
+    private void OnSubToolbarMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        string currentTool = _selectedToolButton?.Tag as string ?? "";
+        if (currentTool == "Text")
+        {
+            int step = e.Delta > 0 ? 2 : -2;
+            double newSize = Math.Clamp(FontSizeValue + step, 8, 96);
+            if (Math.Abs(newSize - FontSizeValue) > 0.1)
+            {
+                FontSizeValue = newSize;
+                SelectComboItemByTag(CmbFontSize, ((int)newSize).ToString());
+                e.Handled = true;
+            }
+        }
+        else
+        {
+            int step = e.Delta > 0 ? 1 : -1;
+            double newSize = Math.Clamp(CurrentStrokeSize + step, 1, 50);
+            if (Math.Abs(newSize - CurrentStrokeSize) > 0.1)
+            {
+                CurrentStrokeSize = newSize;
+                StrokeSizeChanged?.Invoke(newSize);
+                SelectComboItemByTag(CmbStrokeSize, ((int)newSize).ToString());
+                e.Handled = true;
+            }
+        }
+    }
+
+    private void SelectComboItemByTag(ComboBox combo, string tag)
+    {
+        foreach (var item in combo.Items)
+        {
+            if (item is ComboBoxItem cbi && cbi.Tag is string t && t == tag)
+            {
+                combo.SelectedItem = cbi;
+                return;
+            }
+        }
+        // If not matching preset tags, update text
+        if (combo == CmbStrokeSize)
+        {
+            combo.Text = $"{tag} px";
+        }
+        else if (combo == CmbFontSize)
+        {
+            combo.Text = $"{tag} pt";
+        }
+    }
+
+    private void OnRectStyleChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (CmbRectStyle.SelectedIndex == 0) // 描边实线
+        {
+            IsFilled = false;
+            IsDashed = false;
+        }
+        else if (CmbRectStyle.SelectedIndex == 1) // 描边虚线
+        {
+            IsFilled = false;
+            IsDashed = true;
+        }
+        else if (CmbRectStyle.SelectedIndex == 2) // 填充实心
+        {
+            IsFilled = true;
+            IsDashed = false;
+        }
+    }
+
+    private void OnLineStyleChanged(object sender, SelectionChangedEventArgs e)
+    {
+        IsDashed = CmbLineStyle.SelectedIndex == 1;
+    }
+
+    private void OnFontFamilyChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (CmbFontFamily.SelectedItem is ComboBoxItem item && item.Tag is string tag)
+        {
+            CurrentFontFamily = tag;
+        }
+    }
+
+    private void OnFontSizeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (CmbFontSize.SelectedItem is ComboBoxItem item && item.Tag is string tag && double.TryParse(tag, out double size))
+        {
+            FontSizeValue = size;
+        }
+    }
+
+    private void OnNumberStyleChanged(object sender, SelectionChangedEventArgs e)
+    {
+        NumberStyle = CmbNumberStyle.SelectedIndex;
+    }
+
+    private void OnMosaicStyleChanged(object sender, SelectionChangedEventArgs e)
+    {
+        switch (CmbMosaicStyle.SelectedIndex)
+        {
+            case 0: // 涂抹像素
+                MosaicShapeType = 0;
+                MosaicIsBlur = false;
+                break;
+            case 1: // 涂抹模糊
+                MosaicShapeType = 0;
+                MosaicIsBlur = true;
+                break;
+            case 2: // 矩形像素
+                MosaicShapeType = 1;
+                MosaicIsBlur = false;
+                break;
+            case 3: // 矩形模糊
+                MosaicShapeType = 1;
+                MosaicIsBlur = true;
+                break;
+        }
+    }
+
+    private void OnStrokeSizeComboChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (CmbStrokeSize.SelectedItem is ComboBoxItem item && item.Tag is string tag && double.TryParse(tag, out double size))
+        {
+            CurrentStrokeSize = size;
+            StrokeSizeChanged?.Invoke(size);
+        }
+    }
+
     private void OnSubToolActionClicked(object sender, RoutedEventArgs e)
     {
         if (sender is Button btn && btn.Tag is string action)
         {
             switch (action)
             {
-                case "ShapeRect":
-                    OnToolClicked(BtnRect, e);
-                    break;
-                case "ShapeEllipse":
-                    OnToolClicked(BtnEllipse, e);
-                    break;
-                case "ToggleFill":
-                    IsFilled = !IsFilled;
-                    break;
-                case "ToggleDash":
-                    IsDashed = !IsDashed;
-                    break;
-                case "LineStraight":
-                    HasArrow = false;
-                    OnToolClicked(BtnLine, e);
-                    break;
-                case "LineArrow":
-                    HasArrow = true;
-                    OnToolClicked(BtnArrow, e);
-                    break;
                 case "TextBold":
                     IsBold = !IsBold;
                     break;
                 case "TextItalic":
                     IsItalic = !IsItalic;
                     break;
-                case "NumFilled":
-                    NumberStyle = 0;
-                    break;
-                case "NumOutline":
-                    NumberStyle = 1;
-                    break;
-                case "MosaicBrush":
-                    MosaicShapeType = 0;
-                    break;
-                case "MosaicRect":
-                    MosaicShapeType = 1;
-                    break;
-                case "MosaicPixel":
-                    MosaicIsBlur = false;
-                    break;
-                case "MosaicBlur":
-                    MosaicIsBlur = true;
-                    break;
             }
             UpdateSubToolButtonStates();
             SubToolActionTriggered?.Invoke(action);
-        }
-    }
-
-    private void OnFontSizeChecked(object sender, RoutedEventArgs e)
-    {
-        if (sender is RadioButton rb && rb.Tag is string sizeStr && double.TryParse(sizeStr, out double size))
-        {
-            FontSizeValue = size;
         }
     }
 
@@ -222,15 +284,6 @@ public partial class ScreenshotToolbar : UserControl
         if (sender is Button btn && btn.Tag is string action)
         {
             ActionTriggered?.Invoke(action);
-        }
-    }
-
-    private void OnStrokeSizeChecked(object sender, RoutedEventArgs e)
-    {
-        if (sender is RadioButton rb && rb.Tag is string sizeStr && double.TryParse(sizeStr, out double size))
-        {
-            CurrentStrokeSize = size;
-            StrokeSizeChanged?.Invoke(size);
         }
     }
 
@@ -260,9 +313,6 @@ public partial class ScreenshotToolbar : UserControl
     public void SetAnnotationMode(bool enabled)
     {
         _isAnnotationMode = enabled;
-        // Selecting a markup tool must not reshape the screenshot toolbar. This
-        // mirrors macOS: the active tool is highlighted in place and every
-        // screenshot action stays at the same position.
         SetScreenshotActionVisibility(Visibility.Visible);
         BtnFinish.Visibility = Visibility.Collapsed;
         if (!enabled)
