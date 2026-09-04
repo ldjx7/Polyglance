@@ -16,7 +16,7 @@ struct SettingsView: View {
         Bool
     ) throws -> Void
 
-    @State private var selectedTab = "general"
+    @State private var selectedTab: SettingsTab = .general
     @State private var endpoint = ""
     @State private var apiKey = ""
     @State private var model = ""
@@ -33,49 +33,79 @@ struct SettingsView: View {
     @State private var statusMessage: String?
 
     var body: some View {
-        VStack(spacing: 0) {
-            TabView(selection: $selectedTab) {
-                generalTab
-                    .tabItem {
-                        Label("通用", systemImage: "gearshape")
-                    }
-                    .tag("general")
-
-                translationServicesTab
-                    .tabItem {
-                        Label("翻译服务", systemImage: "character.book.closed")
-                    }
-                    .tag("services")
-
-                shortcutsTab
-                    .tabItem {
-                        Label("快捷键", systemImage: "keyboard")
-                    }
-                    .tag("shortcuts")
-
-                recordingTab
-                    .tabItem {
-                        Label("截图与录屏", systemImage: "camera")
-                    }
-                    .tag("recording")
-
-                toolbarTab
-                    .tabItem {
-                        Label("工具栏", systemImage: "wrench.and.screwdriver")
-                    }
-                    .tag("toolbar")
-
-                aboutTab
-                    .tabItem {
-                        Label("关于", systemImage: "info.circle")
-                    }
-                    .tag("about")
-            }
-            .padding(16)
+        HStack(spacing: 0) {
+            sidebar
 
             Divider()
 
-            // 底部操作栏
+            detailView
+        }
+        .frame(width: 840, height: 580)
+        .task { load() }
+    }
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Color.clear
+                .frame(height: 38)
+
+            VStack(spacing: 3) {
+                ForEach(SettingsTab.allCases) { tab in
+                    SidebarNavItem(
+                        tab: tab,
+                        isSelected: selectedTab == tab
+                    ) {
+                        selectedTab = tab
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+
+            Spacer()
+        }
+        .frame(width: 190)
+        .background(Color(NSColor.windowBackgroundColor))
+    }
+
+    private var detailView: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(selectedTab.title)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(Color.primary)
+                    Text(selectedTab.subtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 12)
+
+            Divider()
+
+            Group {
+                switch selectedTab {
+                case .general:
+                    generalTab
+                case .services:
+                    translationServicesTab
+                case .shortcuts:
+                    shortcutsTab
+                case .recording:
+                    recordingTab
+                case .toolbar:
+                    toolbarTab
+                case .about:
+                    aboutTab
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Divider()
+
             HStack {
                 if let statusMessage {
                     Text(statusMessage)
@@ -91,11 +121,10 @@ struct SettingsView: View {
                 .keyboardShortcut(.defaultAction)
             }
             .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .background(Color.primary.opacity(0.02))
+            .padding(.vertical, 10)
+            .background(Color(NSColor.windowBackgroundColor))
         }
-        .frame(width: 720, height: 600)
-        .task { load() }
+        .background(Color(NSColor.controlBackgroundColor))
     }
 
     // MARK: - Tabs
@@ -468,19 +497,20 @@ struct SettingsView: View {
     private var aboutTab: some View {
         Form {
             Section {
-                HStack(spacing: 12) {
+                HStack(spacing: 16) {
                     Image(nsImage: NSApp.applicationIconImage)
                         .resizable()
                         .interpolation(.high)
-                        .frame(width: 44, height: 44)
+                        .frame(width: 52, height: 52)
+                        .shadow(color: .black.opacity(0.12), radius: 4, x: 0, y: 2)
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
                             Text("Polyglance")
-                                .font(.headline)
+                                .font(.system(size: 16, weight: .bold))
                             let isBeta = AppVersionInfo.versionString.contains("-beta")
                             Text(isBeta ? "Beta 尝鲜" : "正式版")
-                                .font(.system(size: 10.5, weight: .semibold))
+                                .font(.system(size: 10, weight: .semibold))
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(isBeta ? Color.purple.opacity(0.15) : Color.green.opacity(0.15))
@@ -488,38 +518,46 @@ struct SettingsView: View {
                                 .clipShape(Capsule())
                         }
 
-                        Text(AppVersionInfo.displayString)
-                            .font(.subheadline)
+                        Text("版本 \(AppVersionInfo.displayString)")
+                            .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
 
                     Spacer()
 
-                    Button("立即检查更新") {
+                    Button("检查更新") {
                         AppUpdater.shared.checkForUpdates()
                     }
-                    .controlSize(.regular)
                 }
-                .padding(.vertical, 2)
+                .padding(.vertical, 4)
             } header: {
                 Text("版本信息")
             }
 
             Section {
+                Toggle("启动时自动检查更新", isOn: $autoCheckUpdates)
                 Toggle("接收测试版更新 (Beta Channel)", isOn: $includeBetaUpdates)
                 Text("开启后优先接收包含实验性新特性的测试版本；关闭后仅接收经过充分测试的正式版本。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
-                Text("更新通道")
+                Text("更新设置")
             }
 
             Section {
+                LabeledContent("核心架构", value: "Rust (UniFFI)")
+                LabeledContent("用户界面", value: "Native SwiftUI")
+                LabeledContent("项目主页") {
+                    Link("GitHub 仓库", destination: URL(string: "https://github.com/ldjx7/Polyglance")!)
+                        .font(.system(size: 12))
+                }
+            } header: {
+                Text("技术架构")
+            } footer: {
                 Text("多语言内容，一眼看懂。基于 Rust 共享内核的原生跨平台翻译与截图工具。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            } header: {
-                Text("关于软件")
+                    .padding(.top, 4)
             }
         }
         .formStyle(.grouped)
@@ -726,4 +764,94 @@ private let toolbarItemInfos: [String: (title: String, icon: String)] = [
     "cancel": ("取消", "xmark.circle"),
     "copy": ("复制", "doc.on.doc")
 ]
+
+private enum SettingsTab: String, CaseIterable, Identifiable {
+    case general
+    case services
+    case shortcuts
+    case recording
+    case toolbar
+    case about
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .general: return "通用"
+        case .services: return "翻译服务"
+        case .shortcuts: return "快捷键"
+        case .recording: return "截图与录屏"
+        case .toolbar: return "工具栏"
+        case .about: return "关于"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .general: return "系统启动与基础偏好设置"
+        case .services: return "翻译引擎配置与 API 密钥"
+        case .shortcuts: return "全局快捷键自定义"
+        case .recording: return "录屏格式、帧率与存储目录"
+        case .toolbar: return "截图工具栏按钮及排序"
+        case .about: return "版本信息与关于软件"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .general: return "gearshape"
+        case .services: return "character.book.closed"
+        case .shortcuts: return "keyboard"
+        case .recording: return "camera"
+        case .toolbar: return "wrench.and.screwdriver"
+        case .about: return "info.circle"
+        }
+    }
+
+    var iconColor: Color {
+        switch self {
+        case .general: return .gray
+        case .services: return .blue
+        case .shortcuts: return .indigo
+        case .recording: return .orange
+        case .toolbar: return .teal
+        case .about: return .purple
+        }
+    }
+}
+
+private struct SidebarNavItem: View {
+    let tab: SettingsTab
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: tab.icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 22, height: 22)
+                    .background(tab.iconColor.gradient)
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+
+                Text(tab.title)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? Color.white : Color.primary)
+
+                Spacer()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isSelected ? Color.accentColor : (isHovered ? Color.primary.opacity(0.06) : Color.clear))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+}
 

@@ -335,12 +335,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         }
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 720, height: 600),
-            styleMask: [.titled, .closable],
+            contentRect: NSRect(x: 0, y: 0, width: 840, height: 580),
+            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "Polyglance 设置"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.contentViewController = NSHostingController(rootView: settingsView)
         window.center()
