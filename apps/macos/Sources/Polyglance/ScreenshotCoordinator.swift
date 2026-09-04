@@ -4,10 +4,31 @@ import PolyglanceKit
 import ScreenCaptureKit
 
 enum ScreenshotCapturePolicy {
+    enum CaptureBackend: Equatable {
+        case screenshotConfiguration
+        case streamConfiguration
+    }
+
     // The selection overlay is created only after this base image is captured,
     // so including our existing windows is safe and lets users capture the
     // translator/result panels themselves.
     static let includesCurrentApplicationWindows = true
+
+    static func captureBackend(macOSMajorVersion: Int) -> CaptureBackend {
+        macOSMajorVersion >= 26 ? .screenshotConfiguration : .streamConfiguration
+    }
+
+    @available(macOS 26.0, *)
+    static func makeScreenshotConfiguration(pixelSize: CGSize) -> SCScreenshotConfiguration {
+        let configuration = SCScreenshotConfiguration()
+        configuration.width = Int(pixelSize.width)
+        configuration.height = Int(pixelSize.height)
+        configuration.showsCursor = false
+        configuration.ignoreShadows = false
+        configuration.ignoreClipping = false
+        configuration.dynamicRange = .sdr
+        return configuration
+    }
 
     static func usesVirtualDesktop(
         screenCount: Int,
@@ -106,9 +127,7 @@ final class ScreenshotCoordinator {
             selectionSession = nil
             isCapturing = false
         }
-        guard let action = try await captureSelectionAction(
-            preferredAction: preferredAction
-        ) else {
+        guard let action = try await captureSelectionAction(preferredAction: preferredAction) else {
             return
         }
         keepsOverlayUntilHandoff = ScreenshotCapturePolicy
@@ -304,19 +323,36 @@ final class ScreenshotCoordinator {
             excludingApplications: excludedApplications,
             exceptingWindows: []
         )
-        let configuration = SCStreamConfiguration()
         let captureSize = CaptureGeometry.preferredCapturePixelSize(
             screenPointSize: screen.frame.size,
             backingScaleFactor: screen.backingScaleFactor,
             reportedPixelSize: CGSize(width: display.width, height: display.height)
         )
-        configuration.width = Int(captureSize.width)
-        configuration.height = Int(captureSize.height)
-        configuration.captureResolution = .best
-        configuration.showsCursor = false
-        configuration.backgroundColor = .black
-
         do {
+            if ScreenshotCapturePolicy.captureBackend(
+                macOSMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+            ) == .screenshotConfiguration,
+               #available(macOS 26.0, *) {
+                let configuration = ScreenshotCapturePolicy.makeScreenshotConfiguration(
+                    pixelSize: captureSize
+                )
+                let output = try await SCScreenshotManager.captureScreenshot(
+                    contentFilter: filter,
+                    configuration: configuration
+                )
+                guard let image = output.sdrImage else {
+                    throw ScreenshotError.captureFailed("截图没有返回 SDR 图像")
+                }
+                return image
+            }
+
+            let configuration = SCStreamConfiguration()
+            configuration.width = Int(captureSize.width)
+            configuration.height = Int(captureSize.height)
+            configuration.captureResolution = .best
+            configuration.showsCursor = false
+            configuration.backgroundColor = .black
+            configuration.ignoreShadowsDisplay = false
             return try await SCScreenshotManager.captureImage(
                 contentFilter: filter,
                 configuration: configuration

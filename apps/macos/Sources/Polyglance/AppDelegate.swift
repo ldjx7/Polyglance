@@ -26,9 +26,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var shortcutConfiguration = GlobalShortcutConfiguration.default
     private var translatorPanel: NSPanel?
     private var selectionCaptureTask: Task<Void, Never>?
+    private lazy var settingsWindowLifecycleDelegate = SettingsWindowLifecycleDelegate {
+        NSApp.setActivationPolicy(SettingsApplicationPresentation.backgroundActivationPolicy)
+    }
     private lazy var settingsWindowCoordinator = AuxiliaryWindowCoordinator<NSWindow>(
         makeWindow: { [unowned self] in makeSettingsWindow() },
-        present: { $0.makeKeyAndOrderFront(nil) },
+        present: { [unowned self] window in
+            SettingsWindowPlacement.center(window, on: settingsPresentationScreen())
+            window.makeKeyAndOrderFront(nil)
+        },
         close: { $0.close() }
     )
     private lazy var screenshotCoordinator = ScreenshotCoordinator(
@@ -80,6 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.mainMenu = PolyglanceApplicationMenu.make(settingsTarget: self)
         createTranslatorPanel()
         if let configuration = try? configurationStore.load() {
             apply(configuration)
@@ -131,11 +138,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showSettings() {
+        NSApp.setActivationPolicy(SettingsApplicationPresentation.visibleActivationPolicy)
         NSApp.activate(ignoringOtherApps: true)
         if let window = settingsWindowCoordinator.window, !window.isVisible {
             settingsWindowCoordinator.discard()
         }
         settingsWindowCoordinator.show()
+    }
+
+    @objc func showSettingsFromApplicationMenu() {
+        showSettings()
     }
 
     func checkForUpdates() {
@@ -345,9 +357,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
+        window.delegate = settingsWindowLifecycleDelegate
         window.contentViewController = NSHostingController(rootView: settingsView)
         window.center()
         return window
+    }
+
+    private func settingsPresentationScreen() -> NSScreen? {
+        let pointer = NSEvent.mouseLocation
+        return NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? NSScreen.main
     }
 
     private func saveSettings(

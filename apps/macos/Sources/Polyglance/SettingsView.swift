@@ -47,7 +47,32 @@ struct SettingsView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             Color.clear
-                .frame(height: 38)
+                .frame(height: 34)
+
+            HStack(spacing: 10) {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 34, height: 34)
+                    .shadow(color: .black.opacity(0.14), radius: 3, x: 0, y: 2)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(SettingsBranding.name)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.primary)
+                    Text(SettingsBranding.tagline)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(SettingsBranding.name)，\(SettingsBranding.tagline)")
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+
+            Divider()
+                .padding(.horizontal, 12)
 
             VStack(spacing: 3) {
                 ForEach(SettingsTab.allCases) { tab in
@@ -60,6 +85,7 @@ struct SettingsView: View {
                 }
             }
             .padding(.horizontal, 10)
+            .padding(.top, 9)
 
             Spacer()
         }
@@ -854,4 +880,3 @@ private struct SidebarNavItem: View {
         .onHover { isHovered = $0 }
     }
 }
-

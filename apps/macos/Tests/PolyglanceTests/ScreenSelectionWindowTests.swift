@@ -101,6 +101,16 @@ final class ScreenSelectionWindowTests: XCTestCase {
         XCTAssertTrue(window.contentView === window.selectionView)
     }
 
+    func testSelectionWindowDoesNotActivatePolyglanceOverTheCapturedApplication() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let window = ScreenSelectionWindow(image: try makeImage(), screen: screen)
+
+        XCTAssertTrue(window.styleMask.contains(.nonactivatingPanel))
+        XCTAssertTrue(window.canBecomeKey)
+        XCTAssertFalse(window.canBecomeMain)
+    }
+
     func testSelectionWaitsForExplicitCopyAction() throws {
         _ = NSApplication.shared
         let screen = try XCTUnwrap(NSScreen.main)

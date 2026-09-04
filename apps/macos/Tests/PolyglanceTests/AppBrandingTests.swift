@@ -38,4 +38,37 @@ final class AppBrandingTests: XCTestCase {
         XCTAssertGreaterThan(visiblePixelCount, 24)
         XCTAssertLessThan(visiblePixelCount, bitmap.pixelsWide * bitmap.pixelsHigh)
     }
+
+    func testApplicationMenuIdentifiesPolyglanceBesideTheAppleMenu() throws {
+        _ = NSApplication.shared
+
+        let menu = PolyglanceApplicationMenu.make(settingsTarget: nil)
+        let applicationItem = try XCTUnwrap(menu.items.first)
+        let applicationMenu = try XCTUnwrap(applicationItem.submenu)
+
+        XCTAssertEqual(applicationItem.title, "Polyglance")
+        XCTAssertNotNil(applicationMenu.items.first(where: { $0.title == "关于 Polyglance" }))
+        XCTAssertNotNil(applicationMenu.items.first(where: { $0.title == "偏好设置…" }))
+        XCTAssertNotNil(applicationMenu.items.first(where: { $0.title == "退出 Polyglance" }))
+    }
+
+    func testSettingsTemporarilyUseARegularApplicationMenu() {
+        XCTAssertEqual(SettingsApplicationPresentation.visibleActivationPolicy, .regular)
+        XCTAssertEqual(SettingsApplicationPresentation.backgroundActivationPolicy, .accessory)
+    }
+
+    func testSettingsWindowOriginUsesTheDisplayVisibleAreaCenter() {
+        let origin = SettingsWindowPlacement.centeredOrigin(
+            windowSize: CGSize(width: 840, height: 580),
+            visibleFrame: CGRect(x: -1728, y: 25, width: 1728, height: 1055)
+        )
+
+        XCTAssertEqual(origin.x, -1284, accuracy: 0.001)
+        XCTAssertEqual(origin.y, 262.5, accuracy: 0.001)
+    }
+
+    func testSettingsSidebarBrandingUsesTheApplicationIdentity() {
+        XCTAssertEqual(SettingsBranding.name, "Polyglance")
+        XCTAssertEqual(SettingsBranding.tagline, "原生翻译与截图工具")
+    }
 }

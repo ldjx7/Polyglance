@@ -571,7 +571,6 @@ final class ScreenSelectionSession {
         }
         inactiveDimmingWindows.forEach { $0.orderFrontRegardless() }
         window.orderFrontRegardless()
-        NSApp.activate(ignoringOtherApps: true)
         window.makeKey()
         window.makeFirstResponder(window.selectionView)
         crossScreenWindows.forEach { $0.orderFrontRegardless() }
@@ -686,12 +685,13 @@ private final class InactiveScreenDimmingView: NSView {
 }
 
 @MainActor
-final class ScreenSelectionWindow: NSWindow {
+final class ScreenSelectionWindow: NSPanel {
     let selectionView: ScreenSelectionView
     var onAction: ((ScreenshotSelectionAction) -> Void)?
     var onCancel: (() -> Void)?
 
     override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
 
     /// Screenshot selection is intentionally allowed to span the complete
     /// virtual desktop. AppKit may otherwise constrain a borderless window back
@@ -724,7 +724,7 @@ final class ScreenSelectionWindow: NSWindow {
         )
         super.init(
             contentRect: activeFrame,
-            styleMask: [.borderless],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -734,6 +734,7 @@ final class ScreenSelectionWindow: NSWindow {
         hasShadow = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         acceptsMouseMovedEvents = true
+        animationBehavior = .none
         contentView = selectionView
         isMovable = false
         isMovableByWindowBackground = false

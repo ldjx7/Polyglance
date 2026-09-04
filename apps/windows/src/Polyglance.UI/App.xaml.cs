@@ -132,7 +132,7 @@ public partial class App : Application
         {
             Icon = appIcon,
             Visible = true,
-            Text = versionStr
+            Text = TrayIconPresentation.TooltipText
         };
 
         var contextMenu = new ContextMenuStrip();
