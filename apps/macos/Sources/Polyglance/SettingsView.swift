@@ -331,7 +331,7 @@ struct SettingsView: View {
                     Spacer()
 
                     Button("立即检查更新") {
-                        (NSApp.delegate as? AppDelegate)?.checkForUpdates()
+                        AppUpdater.shared.checkForUpdates()
                     }
                     .controlSize(.regular)
                 }

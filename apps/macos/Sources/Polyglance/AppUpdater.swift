@@ -49,6 +49,8 @@ final class AppUpdaterDelegateHelper: NSObject, SPUUpdaterDelegate {
 
 @MainActor
 final class AppUpdater: NSObject {
+    static let shared = AppUpdater()
+
     private let configuration: AppUpdateConfiguration
     private let updaterDelegate: AppUpdaterDelegateHelper
     private let updaterController: SPUStandardUpdaterController
@@ -74,6 +76,7 @@ final class AppUpdater: NSObject {
     }
 
     func checkForUpdates() {
+        NSApp.activate(ignoringOtherApps: true)
         guard configuration.isConfigured else {
             let alert = NSAlert()
             alert.alertStyle = .informational

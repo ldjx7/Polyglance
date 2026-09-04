@@ -4,6 +4,13 @@ import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    static private(set) var shared: AppDelegate?
+
+    override init() {
+        super.init()
+        AppDelegate.shared = self
+    }
+
     let configurationStore = AppConfigurationStore()
     let shortcutStore = GlobalShortcutConfigurationStore()
     let recordingSettingsStore = RecordingSettingsStore()
@@ -15,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let hotKeyManager = GlobalHotKeyManager()
     private let pinWindowManager = PinWindowManager()
     private let operationErrorPresenter = OperationErrorPresenter()
-    private lazy var appUpdater = AppUpdater()
+    private var appUpdater: AppUpdater { AppUpdater.shared }
     private var shortcutConfiguration = GlobalShortcutConfiguration.default
     private var translatorPanel: NSPanel?
     private var selectionCaptureTask: Task<Void, Never>?
