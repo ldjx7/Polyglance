@@ -1199,6 +1199,12 @@ public partial class ScreenSelectionWindow : Window
                 break;
 
             case "OCRTranslate":
+                if (Toolbar.IsOcrTranslationBusy)
+                {
+                    return;
+                }
+                Toolbar.SetOcrTranslationBusy(true);
+                Cursor = Cursors.Wait;
                 try
                 {
                     var document = await WindowsMediaOcr.RecognizeDocumentAsync(cropped);
@@ -1228,6 +1234,11 @@ public partial class ScreenSelectionWindow : Window
                 catch (Exception error)
                 {
                     ShowCaptureError("OCR 翻译失败", error);
+                }
+                finally
+                {
+                    Toolbar.SetOcrTranslationBusy(false);
+                    Cursor = _activeTool == "None" ? Cursors.Arrow : Cursors.Cross;
                 }
                 break;
 
@@ -1264,9 +1275,11 @@ public partial class ScreenSelectionWindow : Window
         _selectionRect.Width,
         _selectionRect.Height);
 
-    private static void ShowCaptureError(string title, Exception error)
+    private void ShowCaptureError(string title, Exception error)
     {
-        MessageBox.Show(error.Message, title, MessageBoxButton.OK, MessageBoxImage.Warning);
+        // The capture overlay is topmost. An ownerless dialog can open behind it
+        // and make a failed OCR or translation request appear to do nothing.
+        MessageBox.Show(this, error.Message, title, MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     protected override void OnClosed(EventArgs e)

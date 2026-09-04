@@ -47,6 +47,15 @@ public partial class ScreenshotToolbar : UserControl
         BtnCancel.Visibility == Visibility.Visible &&
         BtnCopy.Visibility == Visibility.Visible;
     internal bool IsFinishActionVisible => BtnFinish.Visibility == Visibility.Visible;
+    internal bool IsOcrTranslationBusy { get; private set; }
+
+    internal void SetOcrTranslationBusy(bool isBusy)
+    {
+        IsOcrTranslationBusy = isBusy;
+        BtnTranslate.IsEnabled = !isBusy;
+        BtnTranslate.ToolTip = isBusy ? "正在识别并翻译…" : "识别并翻译";
+        BtnTranslate.Cursor = isBusy ? Cursors.Wait : null;
+    }
 
     private DateTime _popupStrokeClosedTime = DateTime.MinValue;
 
@@ -621,8 +630,14 @@ public partial class ScreenshotToolbar : UserControl
 
     public event Action<double, double>? ToolbarDragDelta;
 
-    private Point _toolbarDragStartScreen;
+    private Point _toolbarDragStartPosition;
     private bool _isDraggingToolbar;
+
+    internal static Vector CalculateDragDelta(Point startPosition, Point currentPosition) =>
+        currentPosition - startPosition;
+
+    private IInputElement DragCoordinateRoot() =>
+        Window.GetWindow(this) is { } owner ? owner : this;
 
     private void OnMainToolbarMouseDown(object sender, MouseButtonEventArgs e)
     {
@@ -633,7 +648,11 @@ public partial class ScreenshotToolbar : UserControl
              e.OriginalSource is Rectangle))
         {
             _isDraggingToolbar = true;
-            _toolbarDragStartScreen = PointToScreen(e.GetPosition(this));
+            // Canvas coordinates are WPF device-independent units. Keeping the
+            // drag points in the fixed overlay-window space avoids treating
+            // physical pixels as DIPs after crossing to a display with a
+            // different scale factor.
+            _toolbarDragStartPosition = e.GetPosition(DragCoordinateRoot());
             MainToolbarBorder.CaptureMouse();
             e.Handled = true;
         }
@@ -643,13 +662,12 @@ public partial class ScreenshotToolbar : UserControl
     {
         if (_isDraggingToolbar && e.LeftButton == MouseButtonState.Pressed)
         {
-            Point currentScreen = PointToScreen(e.GetPosition(this));
-            double deltaX = currentScreen.X - _toolbarDragStartScreen.X;
-            double deltaY = currentScreen.Y - _toolbarDragStartScreen.Y;
-            if (Math.Abs(deltaX) > 0.1 || Math.Abs(deltaY) > 0.1)
+            Point currentPosition = e.GetPosition(DragCoordinateRoot());
+            Vector delta = CalculateDragDelta(_toolbarDragStartPosition, currentPosition);
+            if (Math.Abs(delta.X) > 0.1 || Math.Abs(delta.Y) > 0.1)
             {
-                _toolbarDragStartScreen = currentScreen;
-                ToolbarDragDelta?.Invoke(deltaX, deltaY);
+                _toolbarDragStartPosition = currentPosition;
+                ToolbarDragDelta?.Invoke(delta.X, delta.Y);
             }
         }
     }

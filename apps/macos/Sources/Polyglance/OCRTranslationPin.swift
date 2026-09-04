@@ -80,6 +80,69 @@ enum OCRTranslationPresentationStyle: Equatable {
     case youdaoResultCard
 }
 
+struct OCRTranslationResizeEdges: OptionSet, Equatable {
+    let rawValue: Int
+
+    static let left = Self(rawValue: 1 << 0)
+    static let right = Self(rawValue: 1 << 1)
+    static let bottom = Self(rawValue: 1 << 2)
+    static let top = Self(rawValue: 1 << 3)
+}
+
+enum OCRTranslationResizeGeometry {
+    static func edges(
+        at point: CGPoint,
+        in bounds: CGRect,
+        tolerance: CGFloat
+    ) -> OCRTranslationResizeEdges {
+        guard bounds.contains(point), tolerance > 0 else { return [] }
+        var edges: OCRTranslationResizeEdges = []
+        if point.x <= bounds.minX + tolerance { edges.insert(.left) }
+        if point.x >= bounds.maxX - tolerance { edges.insert(.right) }
+        if point.y <= bounds.minY + tolerance { edges.insert(.bottom) }
+        if point.y >= bounds.maxY - tolerance { edges.insert(.top) }
+        return edges
+    }
+
+    static func resizedFrame(
+        startingFrame: CGRect,
+        dragDelta: CGPoint,
+        edges: OCRTranslationResizeEdges,
+        minimumSize: CGSize,
+        maximumSize: CGSize
+    ) -> CGRect {
+        guard !edges.isEmpty else { return startingFrame }
+        let minimumWidth = max(1, minimumSize.width)
+        let minimumHeight = max(1, minimumSize.height)
+        let maximumWidth = max(minimumWidth, maximumSize.width)
+        let maximumHeight = max(minimumHeight, maximumSize.height)
+
+        var width = startingFrame.width
+        var height = startingFrame.height
+        if edges.contains(.left) {
+            width = startingFrame.width - dragDelta.x
+        } else if edges.contains(.right) {
+            width = startingFrame.width + dragDelta.x
+        }
+        if edges.contains(.bottom) {
+            height = startingFrame.height - dragDelta.y
+        } else if edges.contains(.top) {
+            height = startingFrame.height + dragDelta.y
+        }
+        width = min(maximumWidth, max(minimumWidth, width))
+        height = min(maximumHeight, max(minimumHeight, height))
+
+        var origin = startingFrame.origin
+        if edges.contains(.left) {
+            origin.x = startingFrame.maxX - width
+        }
+        if edges.contains(.bottom) {
+            origin.y = startingFrame.maxY - height
+        }
+        return CGRect(origin: origin, size: CGSize(width: width, height: height))
+    }
+}
+
 struct OCRTranslationPresentationModel: Equatable {
     let sourceText: String
     private(set) var translatedText: String
@@ -161,7 +224,9 @@ final class OCRTranslationPinContentView: NSView {
     private var actionButtons: [NSButton] = []
     private var dragStartMouseLocation: CGPoint?
     private var dragStartWindowOrigin: CGPoint?
-    private var restoreResizableWhenUnlocked = true
+    private var resizeStartMouseLocation: CGPoint?
+    private var resizeStartWindowFrame: CGRect?
+    private var activeResizeEdges: OCRTranslationResizeEdges = []
     private var alignmentPairs: [TranslationSegmentPair]
 
     private(set) var mode: OCRTranslationDisplayMode = .translation
@@ -192,6 +257,7 @@ final class OCRTranslationPinContentView: NSView {
     var highlightedTranslationText: String? {
         alignmentPairs.first(where: { $0.id == highlightedPairID })?.targetText
     }
+    let usesCustomWindowResize = true
 
     init(
         image: NSImage,
@@ -254,10 +320,10 @@ final class OCRTranslationPinContentView: NSView {
         translationTextView.isRichText = false
         translationTextView.allowsUndo = false
         translationTextView.minSize = .zero
-        translationTextView.maxSize = CGSize(
-            width: CGFloat.greatestFiniteMagnitude,
-            height: CGFloat.greatestFiniteMagnitude
-        )
+        // AppKit feeds this value into NSRegion while the borderless panel is
+        // resized. CGFloat.greatestFiniteMagnitude overflows that internal
+        // dirty-region calculation and terminates the process with SIGTRAP.
+        translationTextView.maxSize = CGSize(width: 0, height: 10_000_000)
         translationTextView.isVerticallyResizable = true
         translationTextView.isHorizontallyResizable = false
         translationTextView.autoresizingMask = [.width]
@@ -326,6 +392,40 @@ final class OCRTranslationPinContentView: NSView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if !isLocked,
+           !OCRTranslationResizeGeometry.edges(
+               at: point,
+               in: bounds,
+               tolerance: 7
+           ).isEmpty {
+            return self
+        }
+        return super.hitTest(point)
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        guard !isLocked else { return }
+        let thickness: CGFloat = 7
+        addCursorRect(
+            CGRect(x: bounds.minX, y: bounds.minY, width: thickness, height: bounds.height),
+            cursor: .resizeLeftRight
+        )
+        addCursorRect(
+            CGRect(x: bounds.maxX - thickness, y: bounds.minY, width: thickness, height: bounds.height),
+            cursor: .resizeLeftRight
+        )
+        addCursorRect(
+            CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: thickness),
+            cursor: .resizeUpDown
+        )
+        addCursorRect(
+            CGRect(x: bounds.minX, y: bounds.maxY - thickness, width: bounds.width, height: thickness),
+            cursor: .resizeUpDown
+        )
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard let window else { return }
@@ -356,11 +456,42 @@ final class OCRTranslationPinContentView: NSView {
             return
         }
         guard !isLocked else { return }
+        let resizeEdges = OCRTranslationResizeGeometry.edges(
+            at: convert(event.locationInWindow, from: nil),
+            in: bounds,
+            tolerance: 7
+        )
+        if !resizeEdges.isEmpty, let window {
+            activeResizeEdges = resizeEdges
+            resizeStartMouseLocation = NSEvent.mouseLocation
+            resizeStartWindowFrame = window.frame
+            return
+        }
         dragStartMouseLocation = window?.convertPoint(toScreen: event.locationInWindow)
         dragStartWindowOrigin = window?.frame.origin
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if let window,
+           let resizeStartMouseLocation,
+           let resizeStartWindowFrame,
+           !activeResizeEdges.isEmpty {
+            let current = NSEvent.mouseLocation
+            let sizeLimits = PinResizeGeometry.sizeLimits(for: initialSize)
+            let frame = OCRTranslationResizeGeometry.resizedFrame(
+                startingFrame: resizeStartWindowFrame,
+                dragDelta: CGPoint(
+                    x: current.x - resizeStartMouseLocation.x,
+                    y: current.y - resizeStartMouseLocation.y
+                ),
+                edges: activeResizeEdges,
+                minimumSize: Self.minimumResultCardSize,
+                maximumSize: sizeLimits.maximum
+            )
+            window.setFrame(frame, display: false)
+            needsDisplay = true
+            return
+        }
         guard let window,
               !isLocked,
               let dragStartMouseLocation,
@@ -377,6 +508,10 @@ final class OCRTranslationPinContentView: NSView {
     override func mouseUp(with event: NSEvent) {
         dragStartMouseLocation = nil
         dragStartWindowOrigin = nil
+        resizeStartMouseLocation = nil
+        resizeStartWindowFrame = nil
+        activeResizeEdges = []
+        window?.displayIfNeeded()
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -845,14 +980,10 @@ final class OCRTranslationPinContentView: NSView {
 
     private func applyLockState() {
         guard let window else { return }
-        if isLocked {
-            if window.styleMask.contains(.resizable) {
-                restoreResizableWhenUnlocked = true
-            }
-            window.styleMask.remove(.resizable)
-        } else if restoreResizableWhenUnlocked {
-            window.styleMask.insert(.resizable)
-        }
+        activeResizeEdges = []
+        resizeStartMouseLocation = nil
+        resizeStartWindowFrame = nil
+        window.invalidateCursorRects(for: self)
     }
 
     @objc private func showOriginalAction() { showOriginal() }

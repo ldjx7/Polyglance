@@ -305,7 +305,10 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
         )
         let panel = OCRTranslationPinPanel(
             contentRect: usableFrame,
-            styleMask: [.borderless, .resizable, .nonactivatingPanel],
+            // AppKit 26 can terminate inside NSWindow's native border-resize
+            // path for this layered result card. Its content view supplies the
+            // same edge resize behavior without entering _resizeWithEvent.
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )

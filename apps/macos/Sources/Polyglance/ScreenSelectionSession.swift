@@ -236,6 +236,13 @@ fileprivate struct ScreenSelectionMirrorState {
     let dimsDesktop: Bool
     let showsHandles: Bool
     let annotations: [ScreenshotAnnotationElement]
+    let toolbar: ScreenSelectionMirrorControl?
+    let subToolbar: ScreenSelectionMirrorControl?
+}
+
+fileprivate struct ScreenSelectionMirrorControl {
+    let frame: CGRect
+    let image: NSImage
 }
 
 @MainActor
@@ -248,18 +255,31 @@ private final class CrossScreenSelectionMirrorView: NSView {
         selection: nil,
         dimsDesktop: false,
         showsHandles: false,
-        annotations: []
+        annotations: [],
+        toolbar: nil,
+        subToolbar: nil
     )
+    private weak var inputTarget: ScreenSelectionView?
 
     var displayedSelectionForTesting: CGRect? {
         localSelection(state.selection)
     }
 
-    init(image: CGImage, captureFrame: CGRect, displayFrame: CGRect) {
+    var displayedToolbarForTesting: CGRect? {
+        localControlFrame(state.toolbar)
+    }
+
+    init(
+        image: CGImage,
+        captureFrame: CGRect,
+        displayFrame: CGRect,
+        inputTarget: ScreenSelectionView
+    ) {
         capturedImage = image
         displayImage = NSImage(cgImage: image, size: captureFrame.size)
         self.captureFrame = captureFrame
         self.displayFrame = displayFrame
+        self.inputTarget = inputTarget
         super.init(frame: CGRect(origin: .zero, size: displayFrame.size))
     }
 
@@ -277,29 +297,63 @@ private final class CrossScreenSelectionMirrorView: NSView {
         super.draw(dirtyRect)
         drawCapturedDesktop()
 
-        guard state.dimsDesktop,
-              let selection = localSelection(state.selection),
-              selection.intersects(bounds) else {
-            return
+        if state.dimsDesktop,
+           let selection = localSelection(state.selection),
+           selection.intersects(bounds) {
+            NSColor.black.withAlphaComponent(0.46).setFill()
+            bounds.fill()
+
+            NSGraphicsContext.saveGraphicsState()
+            NSBezierPath(rect: selection).addClip()
+            drawCapturedDesktop()
+            drawAnnotations()
+            NSGraphicsContext.restoreGraphicsState()
+
+            NSColor.controlAccentColor.setStroke()
+            let border = NSBezierPath(rect: selection.insetBy(dx: 1, dy: 1))
+            border.lineWidth = 2
+            border.stroke()
+
+            if state.showsHandles {
+                drawHandles(for: selection)
+            }
         }
 
-        NSColor.black.withAlphaComponent(0.46).setFill()
-        bounds.fill()
+        drawControl(state.toolbar)
+        drawControl(state.subToolbar)
+    }
 
-        NSGraphicsContext.saveGraphicsState()
-        NSBezierPath(rect: selection).addClip()
-        drawCapturedDesktop()
-        drawAnnotations()
-        NSGraphicsContext.restoreGraphicsState()
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-        NSColor.controlAccentColor.setStroke()
-        let border = NSBezierPath(rect: selection.insetBy(dx: 1, dy: 1))
-        border.lineWidth = 2
-        border.stroke()
+    override func mouseMoved(with event: NSEvent) { forward(event) }
+    override func mouseDown(with event: NSEvent) { forward(event) }
+    override func mouseDragged(with event: NSEvent) { forward(event) }
+    override func mouseUp(with event: NSEvent) { forward(event) }
+    override func rightMouseDown(with event: NSEvent) { forward(event) }
 
-        if state.showsHandles {
-            drawHandles(for: selection)
-        }
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .arrow)
+    }
+
+    func forwardMouseForTesting(
+        _ type: NSEvent.EventType,
+        globalPoint: CGPoint,
+        clickCount: Int = 1
+    ) {
+        inputTarget?.handleCrossScreenMouse(
+            type,
+            globalPoint: globalPoint,
+            clickCount: clickCount
+        )
+    }
+
+    private func forward(_ event: NSEvent) {
+        guard let window else { return }
+        inputTarget?.handleCrossScreenMouse(
+            event.type,
+            globalPoint: window.convertPoint(toScreen: event.locationInWindow),
+            clickCount: event.clickCount
+        )
     }
 
     private func drawCapturedDesktop() {
@@ -314,6 +368,22 @@ private final class CrossScreenSelectionMirrorView: NSView {
             dx: captureFrame.minX - displayFrame.minX,
             dy: captureFrame.minY - displayFrame.minY
         )
+    }
+
+    private func localControlFrame(_ control: ScreenSelectionMirrorControl?) -> CGRect? {
+        control?.frame.offsetBy(
+            dx: captureFrame.minX - displayFrame.minX,
+            dy: captureFrame.minY - displayFrame.minY
+        )
+    }
+
+    private func drawControl(_ control: ScreenSelectionMirrorControl?) {
+        guard let control,
+              let frame = localControlFrame(control),
+              frame.intersects(bounds) else {
+            return
+        }
+        control.image.draw(in: frame)
     }
 
     private func drawAnnotations() {
@@ -367,11 +437,17 @@ private final class CrossScreenSelectionMirrorWindow: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
-    init(image: CGImage, captureFrame: CGRect, displayFrame: CGRect) {
+    init(
+        image: CGImage,
+        captureFrame: CGRect,
+        displayFrame: CGRect,
+        inputTarget: ScreenSelectionView
+    ) {
         mirrorView = CrossScreenSelectionMirrorView(
             image: image,
             captureFrame: captureFrame,
-            displayFrame: displayFrame
+            displayFrame: displayFrame,
+            inputTarget: inputTarget
         )
         super.init(
             contentRect: displayFrame,
@@ -383,7 +459,8 @@ private final class CrossScreenSelectionMirrorWindow: NSPanel {
         isOpaque = true
         backgroundColor = .black
         hasShadow = false
-        ignoresMouseEvents = true
+        ignoresMouseEvents = false
+        acceptsMouseMovedEvents = true
         animationBehavior = .none
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         contentView = mirrorView
@@ -418,6 +495,9 @@ final class ScreenSelectionSession {
     }
     var crossScreenSelectionsForTesting: [CGRect?] {
         crossScreenWindows.map { $0.mirrorView.displayedSelectionForTesting }
+    }
+    var crossScreenToolbarFramesForTesting: [CGRect?] {
+        crossScreenWindows.map { $0.mirrorView.displayedToolbarForTesting }
     }
 
     var selectionWindowForTesting: ScreenSelectionWindow { window }
@@ -461,7 +541,8 @@ final class ScreenSelectionSession {
             CrossScreenSelectionMirrorWindow(
                 image: image,
                 captureFrame: activeFrame,
-                displayFrame: frame
+                displayFrame: frame,
+                inputTarget: selectionView
             )
         }
         selectionView.onMirrorStateChange = { [weak self] state in
@@ -506,6 +587,17 @@ final class ScreenSelectionSession {
 
     func cancel() {
         finish(with: nil)
+    }
+
+    func forwardCrossScreenMouseForTesting(
+        _ type: NSEvent.EventType,
+        globalPoint: CGPoint,
+        clickCount: Int = 1
+    ) {
+        crossScreenWindows
+            .first(where: { $0.frame.contains(globalPoint) })?
+            .mirrorView
+            .forwardMouseForTesting(type, globalPoint: globalPoint, clickCount: clickCount)
     }
 
     func dismiss() {
@@ -712,6 +804,8 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     private var activeTextOrigin: CGPoint?
     private var movingText: (index: Int, grabOffset: CGPoint)?
     private var globalDragTimer: Timer?
+    private weak var crossScreenPressedControl: NSView?
+    private var crossScreenToolbarDragPoint: CGPoint?
 
     private(set) var activeTextField: NSTextField?
     private(set) var currentPixelSample: PixelSample?
@@ -753,6 +847,12 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     }
 
     var toolbarFrameForTesting: CGRect { toolbar.frame }
+
+    func toolbarButtonFrameForTesting(titled title: String) -> CGRect? {
+        toolbarButtons
+            .first(where: { $0.title == title })
+            .map { $0.convert($0.bounds, to: self) }
+    }
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -804,8 +904,25 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             dimsDesktop: dimsCurrentScreen,
             showsHandles: showsSelectionHandles,
             annotations: annotationHistory.elements
-                + (activeAnnotationElement.map { [$0] } ?? [])
+                + (activeAnnotationElement.map { [$0] } ?? []),
+            toolbar: mirrorControl(for: toolbar),
+            subToolbar: mirrorControl(for: subToolbar)
         ))
+    }
+
+    private func mirrorControl(for view: NSView?) -> ScreenSelectionMirrorControl? {
+        guard let view,
+              !view.isHidden,
+              view.bounds.width > 0,
+              view.bounds.height > 0,
+              let representation = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+            return nil
+        }
+        view.layoutSubtreeIfNeeded()
+        view.cacheDisplay(in: view.bounds, to: representation)
+        let image = NSImage(size: view.bounds.size)
+        image.addRepresentation(representation)
+        return ScreenSelectionMirrorControl(frame: view.frame, image: image)
     }
 
     init(
@@ -1259,7 +1376,162 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         cancelHoverRefinement()
         cancelActiveTextInput(restoringFirstResponder: false)
         activeSelectionEdit = nil
+        crossScreenPressedControl = nil
+        crossScreenToolbarDragPoint = nil
         hideMagnifier()
+    }
+
+    fileprivate func handleCrossScreenMouse(
+        _ type: NSEvent.EventType,
+        globalPoint: CGPoint,
+        clickCount: Int
+    ) {
+        let localPoint = CGPoint(
+            x: globalPoint.x - captureFrame.minX,
+            y: globalPoint.y - captureFrame.minY
+        )
+
+        switch type {
+        case .leftMouseDown:
+            if handleCrossScreenControlMouseDown(
+                localPoint: localPoint,
+                globalPoint: globalPoint,
+                clickCount: clickCount
+            ) {
+                return
+            }
+        case .leftMouseDragged:
+            if let previousPoint = crossScreenToolbarDragPoint {
+                moveToolbar(by: CGPoint(
+                    x: globalPoint.x - previousPoint.x,
+                    y: globalPoint.y - previousPoint.y
+                ))
+                crossScreenToolbarDragPoint = globalPoint
+                return
+            }
+            if crossScreenPressedControl != nil {
+                return
+            }
+        case .leftMouseUp:
+            if crossScreenToolbarDragPoint != nil {
+                crossScreenToolbarDragPoint = nil
+                return
+            }
+            if let pressedControl = crossScreenPressedControl {
+                crossScreenPressedControl = nil
+                if contains(localPoint, in: pressedControl),
+                   let button = pressedControl as? NSButton,
+                   button.isEnabled {
+                    button.performClick(nil)
+                }
+                return
+            }
+        default:
+            break
+        }
+
+        guard let event = forwardedMouseEvent(
+            type,
+            globalPoint: globalPoint,
+            clickCount: clickCount
+        ) else {
+            return
+        }
+        switch type {
+        case .mouseMoved:
+            mouseMoved(with: event)
+        case .leftMouseDown:
+            mouseDown(with: event)
+        case .leftMouseDragged:
+            mouseDragged(with: event)
+        case .leftMouseUp:
+            mouseUp(with: event)
+        case .rightMouseDown:
+            rightMouseDown(with: event)
+        default:
+            break
+        }
+    }
+
+    private func handleCrossScreenControlMouseDown(
+        localPoint: CGPoint,
+        globalPoint: CGPoint,
+        clickCount: Int
+    ) -> Bool {
+        if !toolbar.isHidden, toolbar.frame.contains(localPoint) {
+            if let button = buttonAt(localPoint, in: toolbar) {
+                crossScreenPressedControl = button
+            } else {
+                crossScreenToolbarDragPoint = globalPoint
+            }
+            return true
+        }
+        if !subToolbar.isHidden, subToolbar.frame.contains(localPoint) {
+            guard let event = forwardedMouseEvent(
+                .leftMouseDown,
+                globalPoint: globalPoint,
+                clickCount: clickCount
+            ) else {
+                return true
+            }
+            let point = subToolbar.convert(localPoint, from: self)
+            if let hitView = subToolbar.hitTest(point),
+               let button = ancestorButton(from: hitView, stoppingAt: subToolbar) {
+                crossScreenPressedControl = button
+            } else {
+                subToolbar.hitTest(point)?.mouseDown(with: event)
+            }
+            return true
+        }
+        return false
+    }
+
+    private func buttonAt(_ localPoint: CGPoint, in root: NSView) -> NSButton? {
+        if root === toolbar {
+            return toolbarButtons.reversed().first { button in
+                !button.isHidden && button.convert(button.bounds, to: self).contains(localPoint)
+            }
+        }
+        let point = root.convert(localPoint, from: self)
+        guard let hitView = root.hitTest(point) else { return nil }
+        return ancestorButton(from: hitView, stoppingAt: root)
+    }
+
+    private func ancestorButton(from view: NSView, stoppingAt root: NSView) -> NSButton? {
+        var candidate: NSView? = view
+        while let current = candidate {
+            if let button = current as? NSButton {
+                return button
+            }
+            if current === root {
+                return nil
+            }
+            candidate = current.superview
+        }
+        return nil
+    }
+
+    private func contains(_ localPoint: CGPoint, in view: NSView) -> Bool {
+        view.bounds.contains(view.convert(localPoint, from: self))
+    }
+
+    private func forwardedMouseEvent(
+        _ type: NSEvent.EventType,
+        globalPoint: CGPoint,
+        clickCount: Int
+    ) -> NSEvent? {
+        guard let window else { return nil }
+        return NSEvent.mouseEvent(
+            with: type,
+            location: window.convertPoint(fromScreen: globalPoint),
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: clickCount,
+            pressure: type == .leftMouseUp ? 0 : 1
+        )
     }
 
     private var displayedSelection: CGRect? {
@@ -1328,16 +1600,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         toolbar = container
         toolbarStack = stack
         container.onDragDelta = { [weak self] delta in
-            guard let self else { return }
-            self.isToolbarManuallyMoved = true
-            self.hideToolbarHelp()
-            var frame = self.toolbar.frame
-            frame.origin.x += delta.x
-            frame.origin.y += delta.y
-            frame.origin.x = max(10, min(frame.origin.x, self.bounds.maxX - frame.width - 10))
-            frame.origin.y = max(10, min(frame.origin.y, self.bounds.maxY - frame.height - 10))
-            self.toolbar.frame = frame
-            self.updateSubToolbarPosition()
+            self?.moveToolbar(by: delta)
         }
 
         let subBar = ScreenshotSubToolbarView(frame: .zero)
@@ -1360,6 +1623,23 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         updateToolbarLayout(force: true)
         updateToolbarButtonPresentation()
         updateAnnotationControls()
+    }
+
+    func moveToolbarForTesting(by delta: CGPoint) {
+        moveToolbar(by: delta)
+    }
+
+    private func moveToolbar(by delta: CGPoint) {
+        isToolbarManuallyMoved = true
+        hideToolbarHelp()
+        var frame = toolbar.frame
+        frame.origin.x += delta.x
+        frame.origin.y += delta.y
+        frame.origin.x = max(10, min(frame.origin.x, bounds.maxX - frame.width - 10))
+        frame.origin.y = max(10, min(frame.origin.y, bounds.maxY - frame.height - 10))
+        toolbar.frame = frame
+        updateSubToolbarPosition()
+        publishMirrorState()
     }
 
     private func configureMagnifier() {
@@ -1483,6 +1763,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         }
         toolbar.isHidden = false
         updateSubToolbar()
+        publishMirrorState()
     }
 
     private func updateSubToolbar() {
@@ -1493,6 +1774,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         subToolbar?.update(tool: selectedAnnotationTool, style: annotationStyle)
         subToolbar?.isHidden = false
         updateSubToolbarPosition()
+        publishMirrorState()
     }
 
     private func updateSubToolbarPosition() {
@@ -1532,6 +1814,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         }
 
         subToolbar.frame = CGRect(origin: CGPoint(x: originX, y: originY), size: subSize)
+        publishMirrorState()
     }
 
     private func beginNewSelection(at point: CGPoint) {

@@ -16,6 +16,53 @@ namespace Polyglance.UI.Tests;
 public sealed class AnnotationInteractionTests
 {
     [Fact]
+    public void TranslateButtonRaisesTheOcrTranslateAction()
+    {
+        RunInSta(() =>
+        {
+            var toolbar = new ScreenshotToolbar();
+            string? selectedAction = null;
+            toolbar.ActionTriggered += action => selectedAction = action;
+
+            toolbar.BtnTranslate.RaiseEvent(
+                new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+
+            Assert.Equal("OCRTranslate", selectedAction);
+        });
+    }
+
+    [Fact]
+    public void ToolbarDragDeltaUsesDeviceIndependentPositions()
+    {
+        Vector delta = ScreenshotToolbar.CalculateDragDelta(
+            new Point(120, 80),
+            new Point(185, 112));
+
+        Assert.Equal(new Vector(65, 32), delta);
+    }
+
+    [Fact]
+    public void OcrTranslationBusyStateProvidesImmediateVisibleFeedback()
+    {
+        RunInSta(() =>
+        {
+            var toolbar = new ScreenshotToolbar();
+
+            toolbar.SetOcrTranslationBusy(true);
+
+            Assert.True(toolbar.IsOcrTranslationBusy);
+            Assert.False(toolbar.BtnTranslate.IsEnabled);
+            Assert.Equal("正在识别并翻译…", toolbar.BtnTranslate.ToolTip);
+
+            toolbar.SetOcrTranslationBusy(false);
+
+            Assert.False(toolbar.IsOcrTranslationBusy);
+            Assert.True(toolbar.BtnTranslate.IsEnabled);
+            Assert.Equal("识别并翻译", toolbar.BtnTranslate.ToolTip);
+        });
+    }
+
+    [Fact]
     public void SelectingAMarkupToolDoesNotHideScreenshotActions()
     {
         RunInSta(() =>

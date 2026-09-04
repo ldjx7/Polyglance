@@ -146,6 +146,132 @@ final class ScreenSelectionSessionTests: XCTestCase {
         XCTAssertFalse(session.areCrossScreenOverlaysVisible)
     }
 
+    func testSecondDisplayMirrorForwardsSelectionEdgeResize() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let secondFrame = screen.frame.offsetBy(dx: screen.frame.width, dy: 0)
+        let captureFrame = screen.frame.union(secondFrame)
+        let session = ScreenSelectionSession(
+            image: try makeImage(width: 400, height: 120),
+            screen: screen,
+            captureFrame: captureFrame,
+            crossScreenFrames: [screen.frame, secondFrame]
+        )
+        session.present { _ in }
+        let window = session.selectionWindowForTesting
+        let selectionStart = CGPoint(x: 40, y: 100)
+        let selectionEnd = CGPoint(
+            x: secondFrame.minX - captureFrame.minX + 240,
+            y: 500
+        )
+        window.selectionView.mouseDown(
+            with: mouseEvent(.leftMouseDown, at: selectionStart, window: window)
+        )
+        window.selectionView.mouseDragged(
+            with: mouseEvent(.leftMouseDragged, at: selectionEnd, window: window)
+        )
+        window.selectionView.mouseUp(
+            with: mouseEvent(.leftMouseUp, at: selectionEnd, window: window)
+        )
+        let original = try XCTUnwrap(window.selectionView.confirmedSelection)
+        let edge = CGPoint(
+            x: captureFrame.minX + original.maxX,
+            y: captureFrame.minY + original.midY
+        )
+        let expandedEdge = CGPoint(x: edge.x + 120, y: edge.y)
+
+        session.forwardCrossScreenMouseForTesting(.leftMouseDown, globalPoint: edge)
+        session.forwardCrossScreenMouseForTesting(.leftMouseDragged, globalPoint: expandedEdge)
+        session.forwardCrossScreenMouseForTesting(.leftMouseUp, globalPoint: expandedEdge)
+
+        let resized = try XCTUnwrap(window.selectionView.confirmedSelection)
+        XCTAssertEqual(resized.maxX, original.maxX + 120, accuracy: 0.001)
+        session.cancel()
+    }
+
+    func testManuallyMovedToolbarIsMirroredOnTheSecondDisplay() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let secondFrame = screen.frame.offsetBy(dx: screen.frame.width, dy: 0)
+        let captureFrame = screen.frame.union(secondFrame)
+        let session = ScreenSelectionSession(
+            image: try makeImage(width: 400, height: 120),
+            screen: screen,
+            captureFrame: captureFrame,
+            crossScreenFrames: [screen.frame, secondFrame]
+        )
+        session.present { _ in }
+        let window = session.selectionWindowForTesting
+        let selectionStart = CGPoint(x: 40, y: 100)
+        let selectionEnd = CGPoint(x: 480, y: 500)
+        window.selectionView.mouseDown(
+            with: mouseEvent(.leftMouseDown, at: selectionStart, window: window)
+        )
+        window.selectionView.mouseDragged(
+            with: mouseEvent(.leftMouseDragged, at: selectionEnd, window: window)
+        )
+        window.selectionView.mouseUp(
+            with: mouseEvent(.leftMouseUp, at: selectionEnd, window: window)
+        )
+
+        window.selectionView.moveToolbarForTesting(
+            by: CGPoint(x: secondFrame.minX - screen.frame.minX + 120, y: 0)
+        )
+
+        let mirroredToolbar = try XCTUnwrap(
+            session.crossScreenToolbarFramesForTesting.first ?? nil
+        )
+        XCTAssertTrue(CGRect(origin: .zero, size: secondFrame.size).intersects(mirroredToolbar))
+        session.cancel()
+    }
+
+    func testSecondDisplayMirroredToolbarForwardsButtonClicks() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let secondFrame = screen.frame.offsetBy(dx: screen.frame.width, dy: 0)
+        let captureFrame = screen.frame.union(secondFrame)
+        var receivedOCRTranslation = false
+        let session = ScreenSelectionSession(
+            image: try makeImage(width: 400, height: 120),
+            screen: screen,
+            captureFrame: captureFrame,
+            crossScreenFrames: [screen.frame, secondFrame]
+        )
+        session.present { action in
+            if case .ocrTranslate = action {
+                receivedOCRTranslation = true
+            }
+        }
+        let window = session.selectionWindowForTesting
+        window.selectionView.mouseDown(
+            with: mouseEvent(.leftMouseDown, at: CGPoint(x: 40, y: 100), window: window)
+        )
+        window.selectionView.mouseDragged(
+            with: mouseEvent(.leftMouseDragged, at: CGPoint(x: 480, y: 500), window: window)
+        )
+        window.selectionView.mouseUp(
+            with: mouseEvent(.leftMouseUp, at: CGPoint(x: 480, y: 500), window: window)
+        )
+        window.selectionView.moveToolbarForTesting(
+            by: CGPoint(x: secondFrame.minX - screen.frame.minX + 120, y: 0)
+        )
+        let buttonFrame = try XCTUnwrap(
+            window.selectionView.toolbarButtonFrameForTesting(titled: "OCR翻译")
+        )
+        let buttonCenter = CGPoint(
+            x: captureFrame.minX + buttonFrame.midX,
+            y: captureFrame.minY + buttonFrame.midY
+        )
+
+        session.forwardCrossScreenMouseForTesting(.leftMouseDown, globalPoint: buttonCenter)
+        session.forwardCrossScreenMouseForTesting(.leftMouseUp, globalPoint: buttonCenter)
+
+        XCTAssertTrue(
+            receivedOCRTranslation,
+            "button=\(buttonFrame) global=\(buttonCenter) screen=\(secondFrame)"
+        )
+    }
+
     private func mouseEvent(
         _ type: NSEvent.EventType,
         at point: CGPoint,

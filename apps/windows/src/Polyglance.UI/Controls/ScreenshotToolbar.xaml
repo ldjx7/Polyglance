@@ -325,7 +325,7 @@
                     <Button x:Name="BtnOCR" Style="{StaticResource ToolbarButtonStyle}" ToolTip="文字识别 (OCR)" AutomationProperties.Name="文字识别 (OCR)" Click="OnActionClicked" Tag="OCR">
                         <Path Data="M3,5 V3 H5 M19,3 H21 V5 M3,19 V21 H5 M19,21 H21 V19 M7,7 H17 V9 H13 V17 H11 V9 H7 Z" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="14" Height="14" Stretch="Uniform"/>
                     </Button>
-                    <Button x:Name="BtnTranslate" Style="{StaticResource ToolbarButtonStyle}" ToolTip="识别并翻译" AutomationProperties.Name="识别并翻译" Click="OnActionClicked" Tag="Translate">
+                    <Button x:Name="BtnTranslate" Style="{StaticResource ToolbarButtonStyle}" ToolTip="识别并翻译" AutomationProperties.Name="识别并翻译" Click="OnActionClicked" Tag="OCRTranslate">
                         <Path Data="M12.87,15.07 L10.33,12.56 L10.36,12.53 C12.1,10.59 13.34,8.36 14.07,6 H17 V4 H10 V2 H8 V4 H1 V6 H12.17 C11.5,7.92 10.44,9.75 9,11.35 C8.07,10.32 7.3,9.19 6.69,8 H4.69 C5.42,9.63 6.42,11.17 7.67,12.56 L2.58,17.58 L4,19 L9,14 L12.11,17.11 L12.87,15.07 Z M18.5,10 H16.5 L12,22 H14 L15.12,19 H19.87 L21,22 H23 L18.5,10 Z M15.88,17 L17.5,12.67 L19.12,17 H15.88 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="14" Height="14" Stretch="Uniform"/>
                     </Button>
                     <Button x:Name="BtnBarcode" Style="{StaticResource ToolbarButtonStyle}" ToolTip="二维码/条形码识别" AutomationProperties.Name="二维码/条形码识别" Click="OnActionClicked" Tag="Barcode">

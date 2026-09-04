@@ -217,7 +217,7 @@ final class OCRTranslationPinTests: XCTestCase {
         XCTAssertEqual(content.displayMode, .sourceText)
     }
 
-    func testTranslationPinManagerCreatesFloatingResizablePanel() throws {
+    func testTranslationPinManagerCreatesFloatingPanelWithAppManagedResize() throws {
         _ = NSApplication.shared
         let manager = PinWindowManager()
 
@@ -229,11 +229,53 @@ final class OCRTranslationPinTests: XCTestCase {
         ))
 
         XCTAssertEqual(panel.level, .floating)
-        XCTAssertTrue(panel.styleMask.contains(.resizable))
+        XCTAssertFalse(panel.styleMask.contains(.resizable))
         XCTAssertTrue(panel.canBecomeKey)
-        XCTAssertTrue(panel.contentView is OCRTranslationPinContentView)
+        let contentView = try XCTUnwrap(panel.contentView as? OCRTranslationPinContentView)
+        XCTAssertTrue(contentView.usesCustomWindowResize)
         XCTAssertEqual(manager.state.activePinCount, 1)
         manager.destroyAllPins()
+    }
+
+    func testTranslationPinCustomResizeKeepsTheOppositeCornerAnchored() {
+        let resized = OCRTranslationResizeGeometry.resizedFrame(
+            startingFrame: CGRect(x: 100, y: 200, width: 400, height: 240),
+            dragDelta: CGPoint(x: -80, y: -60),
+            edges: [.left, .bottom],
+            minimumSize: CGSize(width: 360, height: 240),
+            maximumSize: CGSize(width: 900, height: 700)
+        )
+
+        XCTAssertEqual(resized, CGRect(x: 20, y: 140, width: 480, height: 300))
+    }
+
+    func testTranslationPinCustomResizeClampsSizeWithoutMovingTheAnchoredEdges() {
+        let resized = OCRTranslationResizeGeometry.resizedFrame(
+            startingFrame: CGRect(x: 100, y: 200, width: 400, height: 240),
+            dragDelta: CGPoint(x: 200, y: 180),
+            edges: [.left, .bottom],
+            minimumSize: CGSize(width: 360, height: 240),
+            maximumSize: CGSize(width: 900, height: 700)
+        )
+
+        XCTAssertEqual(resized, CGRect(x: 140, y: 200, width: 360, height: 240))
+    }
+
+    func testTranslationResultTextViewsUseFiniteAppKitLayoutLimits() {
+        _ = NSApplication.shared
+        let view = OCRTranslationPinContentView(
+            image: NSImage(size: CGSize(width: 400, height: 240)),
+            sourceText: "source",
+            translatedText: "translation"
+        )
+
+        let textViews = descendants(of: view).compactMap { $0 as? NSTextView }
+
+        XCTAssertEqual(textViews.count, 2)
+        for textView in textViews {
+            XCTAssertLessThanOrEqual(textView.maxSize.width, 10_000_000)
+            XCTAssertLessThanOrEqual(textView.maxSize.height, 10_000_000)
+        }
     }
 
     func testTranslationPinContextMenuPersistsOpacityAndTopmostStateThroughSharedHistory() throws {
@@ -319,6 +361,13 @@ final class OCRTranslationPinTests: XCTestCase {
         XCTAssertEqual(view.translationText, "你好，世界")
         XCTAssertFalse(view.isTranslating)
         XCTAssertEqual(view.translationStatusText, "截图翻译")
+    }
+}
+
+@MainActor
+private func descendants(of view: NSView) -> [NSView] {
+    view.subviews.flatMap { child in
+        [child] + descendants(of: child)
     }
 }
 
