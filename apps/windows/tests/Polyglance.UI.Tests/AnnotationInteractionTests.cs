@@ -34,7 +34,7 @@ public sealed class AnnotationInteractionTests
     {
         RunInSta(() =>
         {
-            var window = CreateSelectionWindow();
+            var window = CreateSelectionWindow(1920, 1080);
             window.Width = 1000;
             window.Height = 800;
             window.Show();
@@ -299,7 +299,7 @@ public sealed class AnnotationInteractionTests
             ExceptionDispatchInfo.Capture(failure).Throw();
     }
 
-    private static ScreenSelectionWindow CreateSelectionWindow(int width = 1920, int height = 1080)
+    private static ScreenSelectionWindow CreateSelectionWindow(int width = 200, int height = 140)
     {
         byte[] pixels = new byte[width * height * 4];
         for (int offset = 0; offset < pixels.Length; offset += 4)
