@@ -95,6 +95,7 @@ public partial class PinWindow : Window
         PinImage.Width = initialDisplaySize.Width;
         PinImage.Height = initialDisplaySize.Height;
 
+        AnnotationToolbar.ApplyItemsConfiguration(configuration?.ScreenshotToolbarItems);
         AnnotationToolbar.ToolSelected += OnAnnotationToolSelected;
         AnnotationToolbar.ActionTriggered += OnAnnotationActionTriggered;
 

@@ -7,8 +7,8 @@
         xmlns:controls="clr-namespace:Polyglance.UI.Controls"
         mc:Ignorable="d"
         Title="偏好设置 - Polyglance"
-        Width="740" Height="600"
-        MinWidth="700" MinHeight="540"
+        Width="940" Height="630"
+        MinWidth="900" MinHeight="580"
         WindowStartupLocation="CenterOwner"
         WindowBackdropType="Mica"
         ExtendsContentIntoTitleBar="True"
@@ -73,7 +73,7 @@
         <!-- 主体布局：左侧导航 + 右侧内容 -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="210"/>
+                <ColumnDefinition Width="180"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
@@ -112,6 +112,13 @@
                         </StackPanel>
                     </RadioButton>
 
+                    <RadioButton x:Name="NavToolbar" Style="{StaticResource NavItemStyle}" Tag="Toolbar" Click="OnNavChanged">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <ui:SymbolIcon Symbol="Toolbox24" FontSize="17" Margin="0,0,10,0"/>
+                            <TextBlock Text="工具栏" FontSize="13.5" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </RadioButton>
+
                     <RadioButton x:Name="NavAbout" Style="{StaticResource NavItemStyle}" Tag="About" Click="OnNavChanged">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <ui:SymbolIcon Symbol="Info24" FontSize="17" Margin="0,0,10,0"/>
@@ -122,7 +129,7 @@
             </Border>
 
             <!-- 右侧内容面板区 -->
-            <Grid Grid.Column="1" Margin="24,14,24,12">
+            <Grid Grid.Column="1" Margin="20,14,20,12">
                 <!-- 1. 通用 (General) -->
                 <Grid x:Name="PanelGeneral" Visibility="Visible">
                     <Grid.RowDefinitions>
@@ -463,7 +470,130 @@
                     </ScrollViewer>
                 </Grid>
 
-                <!-- 5. 更新与关于 (About) -->
+                <!-- 5. 工具栏自定义 (Toolbar) -->
+                <Grid x:Name="PanelToolbar" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <StackPanel Grid.Row="0" Margin="0,0,0,14">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="工具栏自定义" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                <TextBlock Text="拖拽调整工具按钮顺序，点击下方卡片即时启用或移除" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,3,0,0"/>
+                            </StackPanel>
+                            <ui:Button x:Name="BtnResetToolbarItems" Grid.Column="1" Appearance="Secondary" Content="恢复默认" Padding="14,6" Click="OnResetToolbarItemsClick" VerticalAlignment="Center"/>
+                        </Grid>
+                    </StackPanel>
+
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
+                        <StackPanel>
+                            <!-- 实时生效工具栏卡片 -->
+                            <ui:Card Margin="0,0,0,12" Padding="16,14">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,12">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="生效工具栏" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                            <TextBlock Text="（支持拖拽排序，点击右上角移除）" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <TextBlock x:Name="TxtActiveToolbarCount" Text="已启用 19 / 19" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                    </Grid>
+
+                                    <Border Background="#FFFFFF" BorderBrush="#14000000" BorderThickness="1" CornerRadius="18" Padding="8,5" HorizontalAlignment="Center">
+                                        <Border.Effect>
+                                            <DropShadowEffect Color="#000000" Opacity="0.10" BlurRadius="12" ShadowDepth="2" Direction="270"/>
+                                        </Border.Effect>
+                                        <ItemsControl x:Name="PreviewToolbarItems">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center"/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid x:Name="CapsuleItemRoot" Margin="1.5,0" Cursor="Hand" ToolTip="{Binding DisplayName}"
+                                                          PreviewMouseLeftButtonDown="OnCapsuleItemMouseDown"
+                                                          MouseMove="OnCapsuleItemMouseMove"
+                                                          MouseLeftButtonUp="OnCapsuleItemMouseUp"
+                                                          Tag="{Binding}"
+                                                          Opacity="{Binding CapsuleOpacity}">
+                                                        <Grid.RenderTransform>
+                                                            <ScaleTransform ScaleX="{Binding CapsuleScale}" ScaleY="{Binding CapsuleScale}" CenterX="13" CenterY="13"/>
+                                                        </Grid.RenderTransform>
+                                                        <Border Width="26" Height="26" Background="#0A000000" CornerRadius="5" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                                            <Path Data="{Binding IconData}" Width="12.5" Height="12.5" Stretch="Uniform" Fill="{Binding IconBrush}" Stroke="{Binding IconStrokeBrush}" StrokeThickness="{Binding StrokeThickness}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        </Border>
+                                                        <Button x:Name="BtnRemoveCapsule" Width="13" Height="13" Margin="0,-2,-2,0" HorizontalAlignment="Right" VerticalAlignment="Top" Padding="0" Background="#EF4444" BorderThickness="0" Click="OnRemoveToolbarItemClick" Tag="{Binding}" ToolTip="移除" Visibility="Collapsed">
+                                                            <Button.Template>
+                                                                <ControlTemplate TargetType="Button">
+                                                                    <Border Background="{TemplateBinding Background}" CornerRadius="6.5">
+                                                                        <Path Data="M3,3 L7,7 M7,3 L3,7" Stroke="#FFFFFF" StrokeThickness="1.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" HorizontalAlignment="Center" VerticalAlignment="Center" Width="8" Height="8" Stretch="Uniform"/>
+                                                                    </Border>
+                                                                </ControlTemplate>
+                                                            </Button.Template>
+                                                        </Button>
+                                                    </Grid>
+                                                    <DataTemplate.Triggers>
+                                                        <Trigger SourceName="CapsuleItemRoot" Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="BtnRemoveCapsule" Property="Visibility" Value="Visible"/>
+                                                        </Trigger>
+                                                    </DataTemplate.Triggers>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Border>
+                                </StackPanel>
+                            </ui:Card>
+
+                            <!-- 功能储备池卡片 -->
+                            <ui:Card Margin="0,0,0,10" Padding="16,14">
+                                <StackPanel>
+                                    <TextBlock Text="功能储备池" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}" Margin="0,0,0,4"/>
+                                    <TextBlock Text="点击卡片即可在工具栏中添加或移除该功能" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,0,0,12"/>
+
+                                    <ItemsControl x:Name="ListToolbarItems">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <UniformGrid Columns="4"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Margin="3,4" CornerRadius="8" BorderThickness="1"
+                                                        Background="{Binding CardBackgroundBrush}"
+                                                        BorderBrush="{Binding CardBorderBrush}"
+                                                        Padding="7,7" Cursor="Hand"
+                                                        MouseLeftButtonUp="OnToolbarCardClick"
+                                                        Tag="{Binding}">
+                                                    <Grid Height="28">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <Border Grid.Column="0" Width="24" Height="24" CornerRadius="5" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" VerticalAlignment="Center" Margin="0,0,5,0">
+                                                            <Path Data="{Binding IconData}" Width="12.5" Height="12.5" Stretch="Uniform" Fill="{Binding IconBrush}" Stroke="{Binding IconStrokeBrush}" StrokeThickness="{Binding StrokeThickness}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        </Border>
+                                                        <TextBlock Grid.Column="1" Text="{Binding DisplayName}" FontSize="12" FontWeight="Medium" VerticalAlignment="Center" Foreground="{Binding TextBrush}" TextTrimming="CharacterEllipsis"/>
+                                                        <Border Grid.Column="2" Width="15" Height="15" CornerRadius="3.5" Background="{Binding BadgeBackgroundBrush}" BorderBrush="{Binding BadgeBorderBrush}" BorderThickness="{Binding BadgeBorderThickness}" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="4,0,0,0">
+                                                            <Path Data="{Binding BadgeIconData}" Stroke="{Binding BadgeStrokeBrush}" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="9" Height="9" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        </Border>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </ui:Card>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+
+                <!-- 6. 更新与关于 (About) -->
                 <Grid x:Name="PanelAbout" Visibility="Collapsed">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>

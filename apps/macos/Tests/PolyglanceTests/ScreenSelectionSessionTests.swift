@@ -302,6 +302,25 @@ final class ScreenSelectionSessionTests: XCTestCase {
         throw NSError(domain: "ScreenSelectionSessionTests", code: 1)
     }
 
+    func testCustomizedToolbarItemsOrderAndVisibility() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let customItems: [ScreenshotToolbarItemConfig] = [
+            ScreenshotToolbarItemConfig(id: "copy", isVisible: true),
+            ScreenshotToolbarItemConfig(id: "pin", isVisible: true),
+            ScreenshotToolbarItemConfig(id: "rect", isVisible: false),
+        ]
+        let session = ScreenSelectionSession(
+            image: try makeImage(),
+            screen: screen,
+            toolbarItems: customItems
+        )
+        let view = session.selectionWindowForTesting.selectionView
+        XCTAssertNotNil(view.toolbarButtonFrameForTesting(titled: "复制"))
+        XCTAssertNotNil(view.toolbarButtonFrameForTesting(titled: "贴图"))
+        XCTAssertNil(view.toolbarButtonFrameForTesting(titled: "矩形"))
+    }
+
     private func makeImage(width: Int = 10, height: Int = 10) throws -> CGImage {
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         let pixelData = Data(repeating: 255, count: width * height * 4) as CFData

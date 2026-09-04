@@ -110,6 +110,7 @@ public partial class ScreenSelectionWindow : Window
 
         BackgroundImage.Source = fullScreenBitmap;
 
+        Toolbar.ApplyItemsConfiguration(_config?.ScreenshotToolbarItems);
         Toolbar.ToolSelected += OnToolSelected;
         Toolbar.ActionTriggered += OnActionTriggered;
         Toolbar.ToolbarDragDelta += OnToolbarDragDelta;
@@ -633,7 +634,7 @@ public partial class ScreenSelectionWindow : Window
 
     private void PositionToolbar()
     {
-        Toolbar.SetCompactLayout(OverlayViewSize().Width < 700);
+        Toolbar.SetCompactLayout(Toolbar.ShouldUseCompact(OverlayViewSize().Width));
         Toolbar.Visibility = Visibility.Visible;
 
         Size viewSize = OverlayViewSize();

@@ -199,6 +199,29 @@ public sealed class ConfigurationStoreTests : IDisposable
         Assert.Null(store.Load());
     }
 
+    [Fact]
+    public void SaveAndLoadPreservesCustomScreenshotToolbarItems()
+    {
+        var store = CreateStore(new InMemoryCredentialStore());
+        var config = new AppConfiguration
+        {
+            ScreenshotToolbarItems = new()
+            {
+                new("copy", isVisible: true),
+                new("pin", isVisible: false),
+            }
+        };
+
+        store.Save(config);
+        var loaded = store.Load();
+
+        Assert.Equal(19, loaded.ScreenshotToolbarItems.Count);
+        Assert.Equal("copy", loaded.ScreenshotToolbarItems[0].Id);
+        Assert.True(loaded.ScreenshotToolbarItems[0].IsVisible);
+        Assert.Equal("pin", loaded.ScreenshotToolbarItems[1].Id);
+        Assert.False(loaded.ScreenshotToolbarItems[1].IsVisible);
+    }
+
     private ConfigurationStore CreateStore(ICredentialStore credentials) =>
         new(Path.Combine(_directory, "config.json"), credentials);
 

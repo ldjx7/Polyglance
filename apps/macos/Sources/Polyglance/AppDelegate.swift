@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     private lazy var screenshotCoordinator = ScreenshotCoordinator(
         pinWindowManager: pinWindowManager,
+        configurationStore: configurationStore,
         onOCRTranslate: { [weak self] screenshot, text in
             guard let self else { return }
             try await translateOCRScreenshot(screenshot, sourceText: text)
@@ -334,14 +335,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         }
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 620, height: 780),
-            styleMask: [.titled, .closable, .resizable],
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 600),
+            styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
         window.title = "Polyglance 设置"
         window.isReleasedWhenClosed = false
-        window.contentMinSize = CGSize(width: 620, height: 680)
         window.contentViewController = NSHostingController(rootView: settingsView)
         window.center()
         return window

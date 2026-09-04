@@ -86,6 +86,7 @@ public sealed class ConfigurationStore
                     configuration.HotkeyRestoreMostRecentPin = "";
             }
 
+            configuration.ScreenshotToolbarItems = ScreenshotToolbarItemConfig.Normalize(configuration.ScreenshotToolbarItems);
             return configuration;
         }
         catch (Exception error) when (error is not ConfigurationStoreException)
@@ -100,6 +101,7 @@ public sealed class ConfigurationStore
 
         try
         {
+            configuration.ScreenshotToolbarItems = ScreenshotToolbarItemConfig.Normalize(configuration.ScreenshotToolbarItems);
             string apiKey = configuration.ApiKey.Trim();
             if (apiKey.Length == 0)
                 _credentials.Delete();

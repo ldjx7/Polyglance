@@ -1,9 +1,12 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using Polyglance.Core.Models;
 using ComboBox = System.Windows.Controls.ComboBox;
 using ComboBoxItem = System.Windows.Controls.ComboBoxItem;
 
@@ -19,6 +22,14 @@ public partial class ScreenshotToolbar : UserControl
     private Button? _selectedToolButton;
     private bool _isCompactLayout;
     private bool _isAnnotationMode;
+    private bool _isPinAnnotationMode;
+
+    private readonly Dictionary<string, Button> _buttonMap = new();
+    private readonly HashSet<string> _actionIds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ocr", "translate", "barcode", "pin", "longScreenshot", "screenRecording", "save", "cancel", "copy"
+    };
+    private List<ScreenshotToolbarItemConfig> _configuredItems = ScreenshotToolbarItemConfig.DefaultItems();
 
     public double CurrentStrokeSize { get; private set; } = 4;
     public Color CurrentColor { get; private set; } = Color.FromRgb(0xEF, 0x44, 0x44);
@@ -62,8 +73,33 @@ public partial class ScreenshotToolbar : UserControl
     public ScreenshotToolbar()
     {
         InitializeComponent();
+        InitializeButtonMap();
+        RebuildToolbarLayout();
         PopupStrokeSlider.Closed += (s, e) => _popupStrokeClosedTime = DateTime.UtcNow;
         Mouse.AddPreviewMouseDownOutsideCapturedElementHandler(this, OnMouseDownOutsideCaptured);
+    }
+
+    private void InitializeButtonMap()
+    {
+        _buttonMap["pen"] = BtnPen;
+        _buttonMap["rect"] = BtnRect;
+        _buttonMap["ellipse"] = BtnEllipse;
+        _buttonMap["line"] = BtnLine;
+        _buttonMap["arrow"] = BtnArrow;
+        _buttonMap["text"] = BtnText;
+        _buttonMap["mosaic"] = BtnMosaic;
+        _buttonMap["number"] = BtnNumber;
+        _buttonMap["undo"] = BtnUndo;
+        _buttonMap["redo"] = BtnRedo;
+        _buttonMap["ocr"] = BtnOCR;
+        _buttonMap["translate"] = BtnTranslate;
+        _buttonMap["barcode"] = BtnBarcode;
+        _buttonMap["pin"] = BtnPin;
+        _buttonMap["longScreenshot"] = BtnLongScreenshot;
+        _buttonMap["screenRecording"] = BtnScreenRecording;
+        _buttonMap["save"] = BtnSave;
+        _buttonMap["cancel"] = BtnCancel;
+        _buttonMap["copy"] = BtnCopy;
     }
 
     private void OnMouseDownOutsideCaptured(object sender, MouseButtonEventArgs e)
@@ -492,11 +528,121 @@ public partial class ScreenshotToolbar : UserControl
         BtnRedo.IsEnabled = canRedo;
     }
 
+    public void ApplyItemsConfiguration(List<ScreenshotToolbarItemConfig>? items)
+    {
+        _configuredItems = ScreenshotToolbarItemConfig.Normalize(items);
+        RebuildToolbarLayout();
+    }
+
+    private List<Button> GetVisibleButtons()
+    {
+        var effectiveConfigs = _configuredItems.Where(i => i.IsVisible).ToList();
+        if (effectiveConfigs.Count == 0)
+        {
+            effectiveConfigs = ScreenshotToolbarItemConfig.DefaultItems();
+        }
+
+        var visibleButtons = new List<Button>();
+        bool finishAdded = false;
+
+        foreach (var item in effectiveConfigs)
+        {
+            if (_buttonMap.TryGetValue(item.Id, out var btn))
+            {
+                if (_isPinAnnotationMode && _actionIds.Contains(item.Id))
+                {
+                    continue;
+                }
+                visibleButtons.Add(btn);
+
+                if (_isPinAnnotationMode && !finishAdded && (item.Id == "redo" || item.Id == "undo"))
+                {
+                    visibleButtons.Add(BtnFinish);
+                    finishAdded = true;
+                }
+            }
+        }
+
+        if (_isPinAnnotationMode && !finishAdded)
+        {
+            visibleButtons.Add(BtnFinish);
+        }
+
+        return visibleButtons;
+    }
+
+    private static void DetachFromParent(UIElement element)
+    {
+        if (element is FrameworkElement fe && fe.Parent is System.Windows.Controls.Panel parent)
+        {
+            parent.Children.Remove(element);
+        }
+    }
+
+    private void RebuildToolbarLayout()
+    {
+        var visibleButtons = GetVisibleButtons();
+
+        foreach (var kv in _buttonMap)
+        {
+            kv.Value.Visibility = visibleButtons.Contains(kv.Value) ? Visibility.Visible : Visibility.Collapsed;
+        }
+        BtnFinish.Visibility = _isPinAnnotationMode ? Visibility.Visible : Visibility.Collapsed;
+
+        foreach (var btn in _buttonMap.Values)
+        {
+            DetachFromParent(btn);
+        }
+        DetachFromParent(BtnFinish);
+
+        ToolRow.Children.Clear();
+        ActionRow.Children.Clear();
+        ToolbarRows.Children.Clear();
+
+        if (_isCompactLayout)
+        {
+            ToolbarRows.Orientation = Orientation.Vertical;
+            MainToolbarBorder.CornerRadius = new CornerRadius(12);
+
+            int mid = (visibleButtons.Count + 1) / 2;
+            for (int i = 0; i < mid; i++)
+            {
+                ToolRow.Children.Add(visibleButtons[i]);
+            }
+            for (int i = mid; i < visibleButtons.Count; i++)
+            {
+                ActionRow.Children.Add(visibleButtons[i]);
+            }
+
+            ToolRow.HorizontalAlignment = System.Windows.HorizontalAlignment.Left;
+            ActionRow.HorizontalAlignment = System.Windows.HorizontalAlignment.Left;
+
+            ToolbarRows.Children.Add(ToolRow);
+            if (ActionRow.Children.Count > 0)
+            {
+                ToolbarRows.Children.Add(ActionRow);
+            }
+        }
+        else
+        {
+            ToolbarRows.Orientation = Orientation.Horizontal;
+            MainToolbarBorder.CornerRadius = new CornerRadius(22);
+
+            foreach (var btn in visibleButtons)
+            {
+                ToolRow.Children.Add(btn);
+            }
+
+            ToolRow.HorizontalAlignment = System.Windows.HorizontalAlignment.Center;
+            ToolbarRows.Children.Add(ToolRow);
+        }
+    }
+
     public void SetAnnotationMode(bool enabled)
     {
         _isAnnotationMode = enabled;
-        SetScreenshotActionVisibility(Visibility.Visible);
-        BtnFinish.Visibility = Visibility.Collapsed;
+        _isPinAnnotationMode = false;
+        RebuildToolbarLayout();
         if (!enabled)
         {
             SubToolbarBorder.Visibility = Visibility.Collapsed;
@@ -506,23 +652,12 @@ public partial class ScreenshotToolbar : UserControl
     public void SetPinAnnotationMode(bool enabled)
     {
         _isAnnotationMode = enabled;
-        BtnFinish.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
-        SetScreenshotActionVisibility(enabled ? Visibility.Collapsed : Visibility.Visible);
+        _isPinAnnotationMode = enabled;
+        RebuildToolbarLayout();
         if (!enabled)
+        {
             SubToolbarBorder.Visibility = Visibility.Collapsed;
-    }
-
-    private void SetScreenshotActionVisibility(Visibility visibility)
-    {
-        BtnOCR.Visibility = visibility;
-        BtnTranslate.Visibility = visibility;
-        BtnBarcode.Visibility = visibility;
-        BtnLongScreenshot.Visibility = visibility;
-        BtnScreenRecording.Visibility = visibility;
-        BtnPin.Visibility = visibility;
-        BtnSave.Visibility = visibility;
-        BtnCancel.Visibility = visibility;
-        BtnCopy.Visibility = visibility;
+        }
     }
 
     public void ClearSelectedTool()
@@ -543,15 +678,24 @@ public partial class ScreenshotToolbar : UserControl
         }
 
         _isCompactLayout = compact;
-        ToolbarRows.Orientation = compact ? Orientation.Vertical : Orientation.Horizontal;
-        MainToolbarBorder.CornerRadius = compact ? new CornerRadius(12) : new CornerRadius(22);
+        RebuildToolbarLayout();
+    }
 
-        ToolRow.HorizontalAlignment = compact
-            ? System.Windows.HorizontalAlignment.Left
-            : System.Windows.HorizontalAlignment.Center;
-        ActionRow.HorizontalAlignment = compact
-            ? System.Windows.HorizontalAlignment.Left
-            : System.Windows.HorizontalAlignment.Center;
+    public double PreferredToolbarWidth
+    {
+        get
+        {
+            int count = Math.Max(1, GetVisibleButtons().Count);
+            return 22 + count * 40;
+        }
+    }
+
+    public bool ShouldUseCompact(double availableWidth)
+    {
+        int count = GetVisibleButtons().Count;
+        if (count >= 18)
+            return availableWidth < 700;
+        return availableWidth < PreferredToolbarWidth + 16;
     }
 
     public static readonly DependencyProperty PopupPlacementProperty =

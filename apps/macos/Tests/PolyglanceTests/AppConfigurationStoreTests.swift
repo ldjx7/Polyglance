@@ -37,6 +37,33 @@ final class AppConfigurationStoreTests: XCTestCase {
         XCTAssertEqual(credentials.loadCount, 0)
     }
 
+    func testScreenshotToolbarItemsRoundTripAndNormalization() throws {
+        let suite = "AppConfigurationStoreTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let credentials = InMemoryCredentialStore()
+        let store = AppConfigurationStore(defaults: defaults, credentials: credentials)
+
+        var config = try store.load()
+        XCTAssertEqual(config.screenshotToolbarItems, ScreenshotToolbarItemConfig.defaultItems)
+
+        // Reorder and hide some items
+        var customized = [
+            ScreenshotToolbarItemConfig(id: "pin", isVisible: true),
+            ScreenshotToolbarItemConfig(id: "rect", isVisible: false),
+        ]
+        config.screenshotToolbarItems = customized
+        try store.save(config)
+
+        let loaded = try store.load()
+        XCTAssertEqual(loaded.screenshotToolbarItems.first?.id, "pin")
+        XCTAssertEqual(loaded.screenshotToolbarItems.first?.isVisible, true)
+        XCTAssertEqual(loaded.screenshotToolbarItems[1].id, "rect")
+        XCTAssertEqual(loaded.screenshotToolbarItems[1].isVisible, false)
+        // All default items should be present (normalized)
+        XCTAssertEqual(loaded.screenshotToolbarItems.count, ScreenshotToolbarItemConfig.defaultItems.count)
+    }
+
     func testProviderChoiceRoundTripsAndKeepsAIKeyInCredentialStore() throws {
         let suite = "AppConfigurationStoreTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

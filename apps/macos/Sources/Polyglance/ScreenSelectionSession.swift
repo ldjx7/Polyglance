@@ -510,7 +510,8 @@ final class ScreenSelectionSession {
         crossScreenFrames: [CGRect]? = nil,
         regionProvider: ScreenshotRegionProvider? = nil,
         regionRefiner: ScreenshotRegionRefiner? = nil,
-        preferredAction: ScreenshotPreferredAction? = nil
+        preferredAction: ScreenshotPreferredAction? = nil,
+        toolbarItems: [ScreenshotToolbarItemConfig] = ScreenshotToolbarItemConfig.defaultItems
     ) {
         window = ScreenSelectionWindow(
             image: image,
@@ -518,7 +519,8 @@ final class ScreenSelectionSession {
             captureFrame: captureFrame,
             regionProvider: regionProvider,
             regionRefiner: regionRefiner,
-            preferredAction: preferredAction
+            preferredAction: preferredAction,
+            toolbarItems: toolbarItems
         )
         let activeFrame = (captureFrame ?? screen.frame).standardized
         let candidateFrames = inactiveScreenFrames ?? NSScreen.screens.map(\.frame)
@@ -706,7 +708,8 @@ final class ScreenSelectionWindow: NSWindow {
         regionProvider: ScreenshotRegionProvider? = nil,
         regionRefiner: ScreenshotRegionRefiner? = nil,
         colorPasteboard: NSPasteboard = .general,
-        preferredAction: ScreenshotPreferredAction? = nil
+        preferredAction: ScreenshotPreferredAction? = nil,
+        toolbarItems: [ScreenshotToolbarItemConfig] = ScreenshotToolbarItemConfig.defaultItems
     ) {
         let activeFrame = captureFrame ?? screen.frame
         selectionView = ScreenSelectionView(
@@ -716,7 +719,8 @@ final class ScreenSelectionWindow: NSWindow {
             regionProvider: regionProvider,
             regionRefiner: regionRefiner,
             colorPasteboard: colorPasteboard,
-            preferredAction: preferredAction
+            preferredAction: preferredAction,
+            toolbarItems: toolbarItems
         )
         super.init(
             contentRect: activeFrame,
@@ -787,6 +791,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     private var toolbarButtons: [NSButton] = []
     private var toolbarToolButtons: [NSButton] = []
     private var toolbarActionButtons: [NSButton] = []
+    private let toolbarItemsConfig: [ScreenshotToolbarItemConfig]
     private var toolbarHelpBubble: ScreenshotToolbarHelpBubble!
     private var toolbarHelpLabel: NSTextField!
     private weak var hoveredToolbarButton: NSButton?
@@ -827,8 +832,19 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
 
     private let dragThreshold: CGFloat = 4
 
+    private var preferredToolbarWidth: CGFloat {
+        let count = max(1, toolbarButtons.count)
+        if count >= 18 {
+            return 672
+        }
+        return max(160, CGFloat(20 + count * 34 + (count - 1) * 4))
+    }
+
     private var usesTwoRowToolbar: Bool {
-        toolbarPlacementBounds.width < 700
+        if toolbarButtons.count >= 18 {
+            return toolbarPlacementBounds.width < 700
+        }
+        return toolbarPlacementBounds.width < preferredToolbarWidth + 16
     }
 
     private var toolbarPlacementBounds: CGRect {
@@ -839,7 +855,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     private var toolbarSize: CGSize {
         CaptureGeometry.fittedToolbarSize(
             preferred: CGSize(
-                width: 672,
+                width: preferredToolbarWidth,
                 height: usesTwoRowToolbar ? 78 : 44
             ),
             bounds: toolbarPlacementBounds
@@ -932,9 +948,11 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         regionProvider: ScreenshotRegionProvider? = nil,
         regionRefiner: ScreenshotRegionRefiner? = nil,
         colorPasteboard: NSPasteboard = .general,
-        preferredAction: ScreenshotPreferredAction? = nil
+        preferredAction: ScreenshotPreferredAction? = nil,
+        toolbarItems: [ScreenshotToolbarItemConfig] = ScreenshotToolbarItemConfig.defaultItems
     ) {
         capturedImage = image
+        toolbarItemsConfig = ScreenshotToolbarItemConfig.normalize(toolbarItems)
         let activeFrame = captureFrame ?? screen.frame
         displayImage = NSImage(cgImage: image, size: activeFrame.size)
         self.captureFrame = activeFrame
@@ -1548,11 +1566,18 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     }
 
     private func configureToolbar() {
-        let container = ScreenshotToolbarContainerView(frame: CGRect(origin: .zero, size: toolbarSize))
-        container.cornerRadius = usesTwoRowToolbar ? 12 : 22
-        container.isHidden = true
-
-        let toolButtons = ScreenshotAnnotationTool.allCases.map { tool in
+        let toolMap: [(String, ScreenshotAnnotationTool)] = [
+            ("pen", .freehand),
+            ("rect", .rectangle),
+            ("ellipse", .ellipse),
+            ("line", .line),
+            ("arrow", .arrow),
+            ("text", .text),
+            ("mosaic", .mosaic),
+            ("number", .number)
+        ]
+        var buttonMap: [String: NSButton] = [:]
+        for (id, tool) in toolMap {
             let button = makeToolbarButton(
                 title: tool.title,
                 symbol: tool.symbolName,
@@ -1560,38 +1585,44 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             )
             button.tag = tool.rawValue
             annotationToolButtons[tool] = button
-            return button
+            buttonMap[id] = button
         }
         undoButton = makeToolbarButton(title: "撤销", symbol: "arrow.uturn.backward", action: #selector(undoAnnotation))
         redoButton = makeToolbarButton(title: "重做", symbol: "arrow.uturn.forward", action: #selector(redoAnnotation))
         let ocrCopyButton = makeToolbarButton(title: "OCR", symbol: "text.viewfinder", action: #selector(ocrCopySelection))
         let ocrTranslateButton = makeToolbarButton(title: "OCR翻译", symbol: "character.bubble", action: #selector(ocrTranslateSelection))
-        let barcodeButton = makeToolbarButton(title: "二维码", symbol: "qrcode.viewfinder", action: #selector(detectBarcodeSelection))
-        let longScreenshotButton = makeToolbarButton(title: "长截图", symbol: "scroll", action: #selector(longScreenshotSelection))
-        let screenRecordingButton = makeToolbarButton(title: "录屏", symbol: "record.circle", action: #selector(screenRecordingSelection))
+        let barcodeButton = makeToolbarButton(title: "二维码", symbol: "qrcode", action: #selector(detectBarcodeSelection))
+        let longScreenshotButton = makeToolbarButton(title: "长截图", symbol: "arrow.up.and.down.square", action: #selector(longScreenshotSelection))
+        let screenRecordingButton = makeToolbarButton(title: "录屏", symbol: "video", action: #selector(screenRecordingSelection))
         let pinButton = makeToolbarButton(title: "贴图", symbol: "pin.fill", action: #selector(pinSelection))
         let saveButton = makeToolbarButton(title: "保存", symbol: "square.and.arrow.down", action: #selector(saveSelection))
-        let cancelButton = makeToolbarButton(title: "取消", symbol: "xmark", action: #selector(cancelSelection))
+        let cancelButton = makeToolbarButton(title: "取消", symbol: "xmark.circle", action: #selector(cancelSelection))
         let copyButton = makeToolbarButton(title: "复制", symbol: "doc.on.doc", action: #selector(copySelection))
 
-        let actionButtons: [NSButton] = [
-            undoButton,
-            redoButton,
-            ocrCopyButton,
-            ocrTranslateButton,
-            barcodeButton,
-            longScreenshotButton,
-            screenRecordingButton,
-            pinButton,
-            saveButton,
-            cancelButton,
-            copyButton,
-        ]
-        toolbarToolButtons = toolButtons
-        toolbarActionButtons = actionButtons
-        toolbarButtons = toolButtons + actionButtons
+        buttonMap["undo"] = undoButton
+        buttonMap["redo"] = redoButton
+        buttonMap["ocr"] = ocrCopyButton
+        buttonMap["translate"] = ocrTranslateButton
+        buttonMap["barcode"] = barcodeButton
+        buttonMap["longScreenshot"] = longScreenshotButton
+        buttonMap["screenRecording"] = screenRecordingButton
+        buttonMap["pin"] = pinButton
+        buttonMap["save"] = saveButton
+        buttonMap["cancel"] = cancelButton
+        buttonMap["copy"] = copyButton
+
+        let visibleConfigs = toolbarItemsConfig.filter(\.isVisible)
+        let effectiveConfigs = visibleConfigs.isEmpty ? ScreenshotToolbarItemConfig.defaultItems : visibleConfigs
+        toolbarButtons = effectiveConfigs.compactMap { buttonMap[$0.id] }
+        let mid = (toolbarButtons.count + 1) / 2
+        toolbarToolButtons = Array(toolbarButtons.prefix(mid))
+        toolbarActionButtons = Array(toolbarButtons.suffix(from: mid))
         toolbarToolRow = makeToolbarRow([])
         toolbarActionRow = makeToolbarRow([])
+
+        let container = ScreenshotToolbarContainerView(frame: CGRect(origin: .zero, size: toolbarSize))
+        container.cornerRadius = usesTwoRowToolbar ? 12 : 22
+        container.isHidden = true
         let stack = NSStackView(frame: container.bounds.insetBy(dx: 10, dy: 5))
         stack.frame = container.bounds.insetBy(dx: 10, dy: 5)
         stack.autoresizingMask = [.width, .height]
@@ -2335,8 +2366,11 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         if usesTwoRows {
             toolbarStack.orientation = .vertical
             toolbarStack.alignment = .leading
-            toolbarToolButtons.forEach(toolbarToolRow.addArrangedSubview)
-            toolbarActionButtons.forEach(toolbarActionRow.addArrangedSubview)
+            let mid = (toolbarButtons.count + 1) / 2
+            let row1 = Array(toolbarButtons.prefix(mid))
+            let row2 = Array(toolbarButtons.suffix(from: mid))
+            row1.forEach(toolbarToolRow.addArrangedSubview)
+            row2.forEach(toolbarActionRow.addArrangedSubview)
             toolbarStack.addArrangedSubview(toolbarToolRow)
             toolbarStack.addArrangedSubview(toolbarActionRow)
         } else {

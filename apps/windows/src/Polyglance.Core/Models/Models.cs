@@ -106,6 +106,72 @@ public sealed class AppConfiguration
 
     [JsonPropertyName("default_recording_delay_seconds")]
     public int DefaultRecordingDelaySeconds { get; set; }
+
+    [JsonPropertyName("screenshot_toolbar_items")]
+    public List<ScreenshotToolbarItemConfig> ScreenshotToolbarItems { get; set; } = ScreenshotToolbarItemConfig.DefaultItems();
+}
+
+public sealed class ScreenshotToolbarItemConfig
+{
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = "";
+
+    [JsonPropertyName("is_visible")]
+    public bool IsVisible { get; set; } = true;
+
+    public ScreenshotToolbarItemConfig() { }
+
+    public ScreenshotToolbarItemConfig(string id, bool isVisible = true)
+    {
+        Id = id;
+        IsVisible = isVisible;
+    }
+
+    public static List<ScreenshotToolbarItemConfig> DefaultItems() => new()
+    {
+        new("pen"),
+        new("line"),
+        new("arrow"),
+        new("ellipse"),
+        new("rect"),
+        new("text"),
+        new("mosaic"),
+        new("number"),
+        new("undo"),
+        new("redo"),
+        new("longScreenshot"),
+        new("screenRecording"),
+        new("ocr"),
+        new("translate"),
+        new("barcode"),
+        new("save"),
+        new("cancel"),
+        new("pin"),
+        new("copy")
+    };
+
+    public static List<ScreenshotToolbarItemConfig> Normalize(List<ScreenshotToolbarItemConfig>? items)
+    {
+        var defaults = DefaultItems();
+        if (items == null || items.Count == 0) return defaults;
+        var result = new List<ScreenshotToolbarItemConfig>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in items)
+        {
+            if (defaults.Exists(d => string.Equals(d.Id, item.Id, StringComparison.OrdinalIgnoreCase)) && seen.Add(item.Id))
+            {
+                result.Add(new ScreenshotToolbarItemConfig(item.Id, item.IsVisible));
+            }
+        }
+        foreach (var d in defaults)
+        {
+            if (seen.Add(d.Id))
+            {
+                result.Add(new ScreenshotToolbarItemConfig(d.Id, d.IsVisible));
+            }
+        }
+        return result;
+    }
 }
 
 public static class GlobalShortcutDefaults

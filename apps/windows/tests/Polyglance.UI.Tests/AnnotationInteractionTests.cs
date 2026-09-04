@@ -325,6 +325,71 @@ public sealed class AnnotationInteractionTests
         });
     }
 
+    [Fact]
+    public void ApplyItemsConfigurationAppliesCustomOrderAndVisibility()
+    {
+        RunInSta(() =>
+        {
+            var toolbar = new ScreenshotToolbar();
+            var customConfig = new System.Collections.Generic.List<ScreenshotToolbarItemConfig>
+            {
+                new("save", true),
+                new("pen", true),
+                new("text", false),
+                new("ocr", false)
+            };
+
+            toolbar.ApplyItemsConfiguration(customConfig);
+
+            Assert.Equal(Visibility.Visible, toolbar.BtnSave.Visibility);
+            Assert.Equal(Visibility.Visible, toolbar.BtnPen.Visibility);
+            Assert.Equal(Visibility.Collapsed, toolbar.BtnText.Visibility);
+            Assert.Equal(Visibility.Collapsed, toolbar.BtnOCR.Visibility);
+
+            var toolRow = (System.Windows.Controls.StackPanel)toolbar.FindName("ToolRow");
+            Assert.Equal(toolbar.BtnSave, toolRow.Children[0]);
+            Assert.Equal(toolbar.BtnPen, toolRow.Children[1]);
+        });
+    }
+
+    [Fact]
+    public void ApplyItemsConfigurationEmptyOrAllHiddenFallsBackToDefaults()
+    {
+        RunInSta(() =>
+        {
+            var toolbar = new ScreenshotToolbar();
+            toolbar.ApplyItemsConfiguration(new System.Collections.Generic.List<ScreenshotToolbarItemConfig>());
+            Assert.True(toolbar.AreScreenshotActionsVisible);
+
+            var allHidden = ScreenshotToolbarItemConfig.DefaultItems();
+            foreach (var item in allHidden) item.IsVisible = false;
+            toolbar.ApplyItemsConfiguration(allHidden);
+            Assert.True(toolbar.AreScreenshotActionsVisible);
+        });
+    }
+
+    [Fact]
+    public void SetCompactLayoutTogglesBetweenSingleAndTwoRows()
+    {
+        RunInSta(() =>
+        {
+            var toolbar = new ScreenshotToolbar();
+            var rows = (System.Windows.Controls.StackPanel)toolbar.FindName("ToolbarRows");
+
+            toolbar.SetCompactLayout(false);
+            Assert.Equal(System.Windows.Controls.Orientation.Horizontal, rows.Orientation);
+            Assert.Single(rows.Children);
+
+            toolbar.SetCompactLayout(true);
+            Assert.Equal(System.Windows.Controls.Orientation.Vertical, rows.Orientation);
+            Assert.Equal(2, rows.Children.Count);
+
+            toolbar.SetCompactLayout(false);
+            Assert.Equal(System.Windows.Controls.Orientation.Horizontal, rows.Orientation);
+            Assert.Single(rows.Children);
+        });
+    }
+
     private static void RunInSta(Action action)
     {
         Exception? failure = null;

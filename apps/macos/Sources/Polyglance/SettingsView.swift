@@ -2,6 +2,7 @@ import ApplicationServices
 import CoreGraphics
 import PolyglanceKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     let store: AppConfigurationStore
@@ -27,6 +28,8 @@ struct SettingsView: View {
     @State private var launchAtLoginEnabled = false
     @State private var includeBetaUpdates = false
     @State private var autoCheckUpdates = true
+    @State private var screenshotToolbarItems = ScreenshotToolbarItemConfig.defaultItems
+    @State private var draggingItemID: String? = nil
     @State private var statusMessage: String?
 
     var body: some View {
@@ -55,6 +58,12 @@ struct SettingsView: View {
                         Label("截图与录屏", systemImage: "camera")
                     }
                     .tag("recording")
+
+                toolbarTab
+                    .tabItem {
+                        Label("工具栏", systemImage: "wrench.and.screwdriver")
+                    }
+                    .tag("toolbar")
 
                 aboutTab
                     .tabItem {
@@ -85,7 +94,7 @@ struct SettingsView: View {
             .padding(.vertical, 12)
             .background(Color.primary.opacity(0.02))
         }
-        .frame(width: 560, height: 480)
+        .frame(width: 720, height: 600)
         .task { load() }
     }
 
@@ -300,6 +309,162 @@ struct SettingsView: View {
         .formStyle(.grouped)
     }
 
+    private var toolbarTab: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("生效工具栏")
+                                .font(.headline)
+                            Text("实时展示当前截图工具栏排布。支持直接拖拽图标排序，点击可快速移除。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("恢复默认设置") {
+                            screenshotToolbarItems = ScreenshotToolbarItemConfig.defaultItems
+                        }
+                        .font(.caption)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.accentColor)
+                    }
+
+                    HStack {
+                        Spacer()
+                        let visibleItems = screenshotToolbarItems.filter(\.isVisible)
+                        if visibleItems.isEmpty {
+                            Text("未启用任何工具（截图时将自动回退为默认全量工具栏）")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color(NSColor.controlBackgroundColor))
+                                .clipShape(Capsule())
+                                .overlay(
+                                    Capsule().stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                                )
+                        } else {
+                            HStack(spacing: 3) {
+                                ForEach(visibleItems, id: \.id) { item in
+                                    let info = toolbarItemInfos[item.id] ?? (item.id, "circle")
+                                    ToolbarCapsuleItemView(
+                                        item: item,
+                                        info: info,
+                                        isDragging: draggingItemID == item.id
+                                    ) {
+                                        if let idx = screenshotToolbarItems.firstIndex(where: { $0.id == item.id }) {
+                                            screenshotToolbarItems[idx].isVisible = false
+                                        }
+                                    }
+                                    .onDrag {
+                                        self.draggingItemID = item.id
+                                        return NSItemProvider(object: item.id as NSString)
+                                    } preview: {
+                                        Image(systemName: info.icon)
+                                            .font(.system(size: 12.5, weight: .medium))
+                                            .frame(width: 26, height: 26)
+                                            .background(Color(NSColor.controlBackgroundColor))
+                                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 6)
+                                                    .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+                                            )
+                                            .shadow(color: .black.opacity(0.12), radius: 3, x: 0, y: 1)
+                                    }
+                                    .onDrop(of: [.text], delegate: ToolbarDropDelegate(
+                                        targetItem: item,
+                                        items: $screenshotToolbarItems,
+                                        draggingItem: $draggingItemID
+                                    ))
+                                }
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(Color(NSColor.controlBackgroundColor))
+                            .clipShape(Capsule())
+                            .overlay(
+                                Capsule().stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                            )
+                            .shadow(color: .black.opacity(0.08), radius: 6, x: 0, y: 2)
+                        }
+                        Spacer()
+                    }
+                    .frame(height: 46)
+                    .padding(.vertical, 4)
+                }
+            }
+
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("功能储备池")
+                        .font(.headline)
+                    Text("点击卡片快速启用或停用工具栏按钮。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    LazyVGrid(columns: [
+                        GridItem(.flexible(), spacing: 8),
+                        GridItem(.flexible(), spacing: 8),
+                        GridItem(.flexible(), spacing: 8),
+                        GridItem(.flexible(), spacing: 8)
+                    ], spacing: 8) {
+                        ForEach(screenshotToolbarItems, id: \.id) { item in
+                            let info = toolbarItemInfos[item.id] ?? (item.id, "circle")
+                            let isEnabled = item.isVisible
+                            Button {
+                                if let idx = screenshotToolbarItems.firstIndex(where: { $0.id == item.id }) {
+                                    screenshotToolbarItems[idx].isVisible.toggle()
+                                }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: info.icon)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .frame(width: 24, height: 24)
+                                        .foregroundStyle(isEnabled ? Color.accentColor : Color.secondary)
+
+                                    Text(info.title)
+                                        .font(.system(size: 12, weight: isEnabled ? .medium : .regular))
+                                        .foregroundStyle(isEnabled ? Color.primary : Color.secondary)
+                                        .lineLimit(1)
+
+                                    Spacer(minLength: 2)
+
+                                    if isEnabled {
+                                        Image(systemName: "checkmark.square.fill")
+                                            .font(.system(size: 14, weight: .medium))
+                                            .foregroundStyle(Color.accentColor)
+                                    } else {
+                                        Image(systemName: "square")
+                                            .font(.system(size: 14))
+                                            .foregroundStyle(Color.secondary.opacity(0.4))
+                                    }
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(isEnabled ? Color.accentColor.opacity(0.09) : Color.primary.opacity(0.03))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(isEnabled ? Color.accentColor.opacity(0.28) : Color.primary.opacity(0.08), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+        .formStyle(.grouped)
+        .onDrop(of: [.text], isTargeted: nil) { _ in
+            draggingItemID = nil
+            return false
+        }
+    }
+
     private var aboutTab: some View {
         Form {
             Section {
@@ -387,6 +552,7 @@ struct SettingsView: View {
             aiStreamingEnabled = configuration.aiStreamingEnabled
             includeBetaUpdates = configuration.includeBetaUpdates
             autoCheckUpdates = configuration.autoCheckUpdates
+            screenshotToolbarItems = configuration.screenshotToolbarItems
             shortcuts = shortcutStore.load()
             recordingSettings = recordingSettingsStore.load()
             launchAtLoginEnabled = launchAtLoginManager.isEnabled
@@ -409,7 +575,8 @@ struct SettingsView: View {
                 targetLanguage: targetLanguage,
                 aiStreamingEnabled: aiStreamingEnabled,
                 includeBetaUpdates: includeBetaUpdates,
-                autoCheckUpdates: autoCheckUpdates
+                autoCheckUpdates: autoCheckUpdates,
+                screenshotToolbarItems: screenshotToolbarItems
             )
             try onSave(configuration, shortcuts, recordingSettings, launchAtLoginEnabled)
             statusMessage = "设置已保存"
@@ -479,3 +646,84 @@ struct SettingsView: View {
         recordingSettings.saveDirectoryPath = url.path
     }
 }
+
+private struct ToolbarCapsuleItemView: View {
+    let item: ScreenshotToolbarItemConfig
+    let info: (title: String, icon: String)
+    let isDragging: Bool
+    let onRemove: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button {
+            onRemove()
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: info.icon)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .frame(width: 26, height: 26)
+                    .background(Color.primary.opacity(isHovered && !isDragging ? 0.12 : 0.06))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                if isHovered && !isDragging {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color.red)
+                        .background(Color.white.clipShape(Circle()))
+                        .offset(x: 3, y: -3)
+                }
+            }
+            .opacity(isDragging ? 0.2 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help("\(info.title)（点击移除，拖拽调整顺序）")
+    }
+}
+
+private struct ToolbarDropDelegate: DropDelegate {
+    let targetItem: ScreenshotToolbarItemConfig
+    @Binding var items: [ScreenshotToolbarItemConfig]
+    @Binding var draggingItem: String?
+
+    func dropEntered(info: DropInfo) {
+        guard let draggingItem, draggingItem != targetItem.id else { return }
+        guard let fromIndex = items.firstIndex(where: { $0.id == draggingItem }),
+              let toIndex = items.firstIndex(where: { $0.id == targetItem.id }) else { return }
+        if fromIndex != toIndex {
+            items.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+        }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggingItem = nil
+        return true
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+}
+
+private let toolbarItemInfos: [String: (title: String, icon: String)] = [
+    "pen": ("画笔", "pencil"),
+    "rect": ("矩形", "rectangle"),
+    "ellipse": ("椭圆", "circle"),
+    "line": ("线条", "line.diagonal"),
+    "arrow": ("箭头", "arrow.right"),
+    "text": ("文字", "t.square"),
+    "mosaic": ("马赛克", "checkerboard.rectangle"),
+    "number": ("序号", "1.circle"),
+    "undo": ("撤销", "arrow.uturn.backward"),
+    "redo": ("重做", "arrow.uturn.forward"),
+    "ocr": ("文字识别", "text.viewfinder"),
+    "translate": ("识别并翻译", "character.bubble"),
+    "barcode": ("二维码", "qrcode"),
+    "pin": ("贴图", "pin.fill"),
+    "longScreenshot": ("长截图", "arrow.up.and.down.square"),
+    "screenRecording": ("录屏", "video"),
+    "save": ("保存", "square.and.arrow.down"),
+    "cancel": ("取消", "xmark.circle"),
+    "copy": ("复制", "doc.on.doc")
+]
+

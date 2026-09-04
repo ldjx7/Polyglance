@@ -25,6 +25,57 @@ enum TranslationProvider: String, CaseIterable, Codable, Sendable {
     }
 }
 
+struct ScreenshotToolbarItemConfig: Codable, Equatable, Hashable, Sendable {
+    var id: String
+    var isVisible: Bool
+
+    init(id: String, isVisible: Bool = true) {
+        self.id = id
+        self.isVisible = isVisible
+    }
+
+    static let defaultItems: [ScreenshotToolbarItemConfig] = [
+        ScreenshotToolbarItemConfig(id: "pen"),
+        ScreenshotToolbarItemConfig(id: "line"),
+        ScreenshotToolbarItemConfig(id: "arrow"),
+        ScreenshotToolbarItemConfig(id: "ellipse"),
+        ScreenshotToolbarItemConfig(id: "rect"),
+        ScreenshotToolbarItemConfig(id: "text"),
+        ScreenshotToolbarItemConfig(id: "mosaic"),
+        ScreenshotToolbarItemConfig(id: "number"),
+        ScreenshotToolbarItemConfig(id: "undo"),
+        ScreenshotToolbarItemConfig(id: "redo"),
+        ScreenshotToolbarItemConfig(id: "longScreenshot"),
+        ScreenshotToolbarItemConfig(id: "screenRecording"),
+        ScreenshotToolbarItemConfig(id: "ocr"),
+        ScreenshotToolbarItemConfig(id: "translate"),
+        ScreenshotToolbarItemConfig(id: "barcode"),
+        ScreenshotToolbarItemConfig(id: "save"),
+        ScreenshotToolbarItemConfig(id: "cancel"),
+        ScreenshotToolbarItemConfig(id: "pin"),
+        ScreenshotToolbarItemConfig(id: "copy"),
+    ]
+
+    static func normalize(_ items: [ScreenshotToolbarItemConfig]?) -> [ScreenshotToolbarItemConfig] {
+        guard let items else { return defaultItems }
+        var result: [ScreenshotToolbarItemConfig] = []
+        var seen = Set<String>()
+        for item in items {
+            if defaultItems.contains(where: { $0.id == item.id }) && !seen.contains(item.id) {
+                result.append(item)
+                seen.insert(item.id)
+            }
+        }
+        for item in defaultItems {
+            if !seen.contains(item.id) {
+                result.append(item)
+                seen.insert(item.id)
+            }
+        }
+        return result
+    }
+}
+
 struct AppConfiguration: Equatable, Sendable {
     var provider: TranslationProvider
     var endpoint: String
@@ -34,6 +85,7 @@ struct AppConfiguration: Equatable, Sendable {
     var aiStreamingEnabled: Bool
     var includeBetaUpdates: Bool
     var autoCheckUpdates: Bool
+    var screenshotToolbarItems: [ScreenshotToolbarItemConfig]
 
     init(
         provider: TranslationProvider,
@@ -43,7 +95,8 @@ struct AppConfiguration: Equatable, Sendable {
         targetLanguage: String,
         aiStreamingEnabled: Bool = true,
         includeBetaUpdates: Bool = false,
-        autoCheckUpdates: Bool = true
+        autoCheckUpdates: Bool = true,
+        screenshotToolbarItems: [ScreenshotToolbarItemConfig] = ScreenshotToolbarItemConfig.defaultItems
     ) {
         self.provider = provider
         self.endpoint = endpoint
@@ -53,6 +106,7 @@ struct AppConfiguration: Equatable, Sendable {
         self.aiStreamingEnabled = aiStreamingEnabled
         self.includeBetaUpdates = includeBetaUpdates
         self.autoCheckUpdates = autoCheckUpdates
+        self.screenshotToolbarItems = ScreenshotToolbarItemConfig.normalize(screenshotToolbarItems)
     }
 }
 
@@ -101,6 +155,7 @@ final class AppConfigurationStore: @unchecked Sendable {
         static let aiStreamingEnabled = "translation.ai-streaming-enabled"
         static let includeBetaUpdates = "updater.include-beta-updates"
         static let autoCheckUpdates = "updater.auto-check-updates"
+        static let screenshotToolbarItems = "screenshot.toolbar-items"
     }
 
     private let defaults: UserDefaults
@@ -130,6 +185,11 @@ final class AppConfigurationStore: @unchecked Sendable {
         } else {
             migratedProvider = storedProvider ?? (apiKey.isEmpty ? .microsoft : .openAICompatible)
         }
+        var toolbarItems = ScreenshotToolbarItemConfig.defaultItems
+        if let data = defaults.data(forKey: Key.screenshotToolbarItems),
+           let decoded = try? JSONDecoder().decode([ScreenshotToolbarItemConfig].self, from: data) {
+            toolbarItems = ScreenshotToolbarItemConfig.normalize(decoded)
+        }
         return AppConfiguration(
             provider: migratedProvider,
             endpoint: defaults.string(forKey: Key.endpoint) ?? "https://api.openai.com/v1",
@@ -138,7 +198,8 @@ final class AppConfigurationStore: @unchecked Sendable {
             targetLanguage: defaults.string(forKey: Key.targetLanguage) ?? "zh-CN",
             aiStreamingEnabled: defaults.object(forKey: Key.aiStreamingEnabled) as? Bool ?? true,
             includeBetaUpdates: defaults.bool(forKey: Key.includeBetaUpdates),
-            autoCheckUpdates: defaults.object(forKey: Key.autoCheckUpdates) as? Bool ?? true
+            autoCheckUpdates: defaults.object(forKey: Key.autoCheckUpdates) as? Bool ?? true,
+            screenshotToolbarItems: toolbarItems
         )
     }
 
@@ -163,6 +224,9 @@ final class AppConfigurationStore: @unchecked Sendable {
         defaults.set(configuration.aiStreamingEnabled, forKey: Key.aiStreamingEnabled)
         defaults.set(configuration.includeBetaUpdates, forKey: Key.includeBetaUpdates)
         defaults.set(configuration.autoCheckUpdates, forKey: Key.autoCheckUpdates)
+        if let encoded = try? JSONEncoder().encode(configuration.screenshotToolbarItems) {
+            defaults.set(encoded, forKey: Key.screenshotToolbarItems)
+        }
     }
 }
 

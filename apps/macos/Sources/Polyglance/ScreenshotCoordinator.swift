@@ -52,12 +52,14 @@ final class ScreenshotCoordinator {
     private let onLongScreenshot: @MainActor (CGRect) async throws -> Void
     private let onScreenRecording: @MainActor (CGRect) async throws -> Void
     private let onScreenTranslate: @MainActor (ScreenTranslationSelection) async throws -> Void
+    private let configurationStore: AppConfigurationStore
     private var selectionSession: ScreenSelectionSession?
     private let barcodeResultWindows = BarcodeResultWindowStore()
     private var isCapturing = false
 
     init(
         pinWindowManager: PinWindowManager,
+        configurationStore: AppConfigurationStore = AppConfigurationStore(),
         ocrService: OCRService = OCRService(),
         barcodeService: BarcodeService = BarcodeService(),
         onOCRTranslate: @escaping @MainActor (SelectedScreenshot, String) async throws -> Void = { _, _ in },
@@ -66,6 +68,7 @@ final class ScreenshotCoordinator {
         onScreenTranslate: @escaping @MainActor (ScreenTranslationSelection) async throws -> Void = { _ in }
     ) {
         self.pinWindowManager = pinWindowManager
+        self.configurationStore = configurationStore
         fileSaver = ScreenshotFileSaver()
         self.ocrService = ocrService
         self.barcodeService = barcodeService
@@ -78,6 +81,7 @@ final class ScreenshotCoordinator {
     init(pinWindowManager: PinWindowManager, fileSaver: ScreenshotFileSaver) {
         self.pinWindowManager = pinWindowManager
         self.fileSaver = fileSaver
+        configurationStore = AppConfigurationStore()
         ocrService = OCRService()
         barcodeService = BarcodeService()
         onOCRTranslate = { _, _ in }
@@ -218,6 +222,8 @@ final class ScreenshotCoordinator {
                     }
                 }
             )
+            let toolbarItems = (try? configurationStore.load())?.screenshotToolbarItems
+                ?? ScreenshotToolbarItemConfig.defaultItems
             let session = ScreenSelectionSession(
                 image: desktop.image,
                 screen: screen,
@@ -225,7 +231,8 @@ final class ScreenshotCoordinator {
                 inactiveScreenFrames: [],
                 regionProvider: { point in detector.windowRegion(at: point) },
                 regionRefiner: { point in detector.refinedElementRegion(at: point) },
-                preferredAction: preferredAction
+                preferredAction: preferredAction,
+                toolbarItems: toolbarItems
             )
             selectionSession = session
             return await withCheckedContinuation { continuation in
@@ -235,6 +242,8 @@ final class ScreenshotCoordinator {
             }
         }
 
+        let toolbarItems = (try? configurationStore.load())?.screenshotToolbarItems
+            ?? ScreenshotToolbarItemConfig.defaultItems
         let image = try await capture(screen: screen)
         let regionDetector = ScreenshotRegionDetector.capture(for: screen)
         let regionProvider: ScreenshotRegionProvider? = regionDetector.map { detector in
@@ -253,7 +262,8 @@ final class ScreenshotCoordinator {
             screen: screen,
             regionProvider: regionProvider,
             regionRefiner: regionRefiner,
-            preferredAction: preferredAction
+            preferredAction: preferredAction,
+            toolbarItems: toolbarItems
         )
         selectionSession = session
         let action = await withCheckedContinuation { continuation in
