@@ -18,15 +18,17 @@ enum ScreenshotCapturePolicy {
         macOSMajorVersion >= 26 ? .screenshotConfiguration : .streamConfiguration
     }
 
-    @available(macOS 26.0, *)
-    static func makeScreenshotConfiguration(pixelSize: CGSize) -> SCScreenshotConfiguration {
-        let configuration = SCScreenshotConfiguration()
-        configuration.width = Int(pixelSize.width)
-        configuration.height = Int(pixelSize.height)
-        configuration.showsCursor = false
-        configuration.ignoreShadows = false
-        configuration.ignoreClipping = false
-        configuration.dynamicRange = .sdr
+    static func makeScreenshotConfiguration(pixelSize: CGSize) -> NSObject? {
+        guard let configClass = NSClassFromString("SCScreenshotConfiguration") as? NSObject.Type else {
+            return nil
+        }
+        let configuration = configClass.init()
+        configuration.setValue(Int(pixelSize.width), forKey: "width")
+        configuration.setValue(Int(pixelSize.height), forKey: "height")
+        configuration.setValue(false, forKey: "showsCursor")
+        configuration.setValue(false, forKey: "ignoreShadows")
+        configuration.setValue(false, forKey: "ignoreClipping")
+        configuration.setValue(0, forKey: "dynamicRange")
         return configuration
     }
 
@@ -338,18 +340,38 @@ final class ScreenshotCoordinator {
             if ScreenshotCapturePolicy.captureBackend(
                 macOSMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion
             ) == .screenshotConfiguration,
-               #available(macOS 26.0, *) {
-                let configuration = ScreenshotCapturePolicy.makeScreenshotConfiguration(
-                    pixelSize: captureSize
-                )
-                let output = try await SCScreenshotManager.captureScreenshot(
-                    contentFilter: filter,
-                    configuration: configuration
-                )
-                guard let image = output.sdrImage else {
-                    throw ScreenshotError.captureFailed("截图没有返回 SDR 图像")
+               let configuration = ScreenshotCapturePolicy.makeScreenshotConfiguration(pixelSize: captureSize),
+               let managerClass = NSClassFromString("SCScreenshotManager") {
+                let selector = NSSelectorFromString("captureScreenshotWithFilter:configuration:completionHandler:")
+                if managerClass.responds(to: selector) {
+                    let image: CGImage? = try await withCheckedThrowingContinuation { continuation in
+                        typealias Completion = @convention(block) (AnyObject?, Error?) -> Void
+                        let block: Completion = { output, error in
+                            if let error {
+                                continuation.resume(throwing: error)
+                                return
+                            }
+                            guard let output else {
+                                continuation.resume(returning: nil)
+                                return
+                            }
+                            let sel = NSSelectorFromString("sdrImage")
+                            if output.responds(to: sel), let unmanaged = output.perform(sel) {
+                                let img = unmanaged.takeUnretainedValue() as! CGImage
+                                continuation.resume(returning: img)
+                            } else {
+                                continuation.resume(returning: nil)
+                            }
+                        }
+                        typealias Method = @convention(c) (AnyObject, Selector, SCContentFilter, AnyObject, AnyObject) -> Void
+                        let imp = managerClass.method(for: selector)
+                        let fn = unsafeBitCast(imp, to: Method.self)
+                        fn(managerClass, selector, filter, configuration, unsafeBitCast(block, to: AnyObject.self))
+                    }
+                    if let image {
+                        return image
+                    }
                 }
-                return image
             }
 
             let configuration = SCStreamConfiguration()

@@ -19,18 +19,19 @@ final class ScreenshotCapturePolicyTests: XCTestCase {
         )
     }
 
-    @available(macOS 26.0, *)
     func testScreenshotConfigurationPreservesWindowFramingAndShadows() {
-        let configuration = ScreenshotCapturePolicy.makeScreenshotConfiguration(
+        guard let configuration = ScreenshotCapturePolicy.makeScreenshotConfiguration(
             pixelSize: CGSize(width: 2560, height: 1440)
-        )
+        ) else {
+            return
+        }
 
-        XCTAssertEqual(configuration.width, 2560)
-        XCTAssertEqual(configuration.height, 1440)
-        XCTAssertFalse(configuration.showsCursor)
-        XCTAssertFalse(configuration.ignoreShadows)
-        XCTAssertFalse(configuration.ignoreClipping)
-        XCTAssertEqual(configuration.dynamicRange, .sdr)
+        XCTAssertEqual(configuration.value(forKey: "width") as? Int, 2560)
+        XCTAssertEqual(configuration.value(forKey: "height") as? Int, 1440)
+        XCTAssertEqual(configuration.value(forKey: "showsCursor") as? Bool, false)
+        XCTAssertEqual(configuration.value(forKey: "ignoreShadows") as? Bool, false)
+        XCTAssertEqual(configuration.value(forKey: "ignoreClipping") as? Bool, false)
+        XCTAssertEqual(configuration.value(forKey: "dynamicRange") as? Int, 0)
     }
 
     func testMultipleDisplaysUseOneVirtualDesktopForScreenshotAndTranslation() {
