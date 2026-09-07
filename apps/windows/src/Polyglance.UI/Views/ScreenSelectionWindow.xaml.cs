@@ -19,6 +19,7 @@ using Polyglance.Platform.Capture;
 using Polyglance.Platform.Dpi;
 using Polyglance.Platform.Interop;
 using Polyglance.Platform.Ocr;
+using Polyglance.Platform.Pin;
 using Polyglance.UI.Controls;
 
 namespace Polyglance.UI.Views;
@@ -1095,6 +1096,10 @@ public partial class ScreenSelectionWindow : Window
 
             case "Copy":
                 Clipboard.SetImage(cropped);
+                if (_config?.SaveCompletedScreenshotsToHistory == true)
+                {
+                    PinArchiveRecording.Record(cropped, PinArchiveSource.Screenshot);
+                }
                 Close();
                 break;
 
@@ -1128,6 +1133,10 @@ public partial class ScreenSelectionWindow : Window
                     encoder.Frames.Add(BitmapFrame.Create(cropped));
                     using var stream = File.Create(dlg.FileName);
                     encoder.Save(stream);
+                    if (_config?.SaveCompletedScreenshotsToHistory == true)
+                    {
+                        PinArchiveRecording.Record(cropped, PinArchiveSource.Screenshot);
+                    }
                 }
                 Close();
                 break;

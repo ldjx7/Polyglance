@@ -86,6 +86,7 @@ struct AppConfiguration: Equatable, Sendable {
     var includeBetaUpdates: Bool
     var autoCheckUpdates: Bool
     var screenshotToolbarItems: [ScreenshotToolbarItemConfig]
+    var saveCompletedScreenshotsToHistory: Bool
 
     init(
         provider: TranslationProvider,
@@ -96,7 +97,8 @@ struct AppConfiguration: Equatable, Sendable {
         aiStreamingEnabled: Bool = true,
         includeBetaUpdates: Bool = false,
         autoCheckUpdates: Bool = true,
-        screenshotToolbarItems: [ScreenshotToolbarItemConfig] = ScreenshotToolbarItemConfig.defaultItems
+        screenshotToolbarItems: [ScreenshotToolbarItemConfig] = ScreenshotToolbarItemConfig.defaultItems,
+        saveCompletedScreenshotsToHistory: Bool = false
     ) {
         self.provider = provider
         self.endpoint = endpoint
@@ -107,6 +109,7 @@ struct AppConfiguration: Equatable, Sendable {
         self.includeBetaUpdates = includeBetaUpdates
         self.autoCheckUpdates = autoCheckUpdates
         self.screenshotToolbarItems = ScreenshotToolbarItemConfig.normalize(screenshotToolbarItems)
+        self.saveCompletedScreenshotsToHistory = saveCompletedScreenshotsToHistory
     }
 }
 
@@ -156,6 +159,7 @@ final class AppConfigurationStore: @unchecked Sendable {
         static let includeBetaUpdates = "updater.include-beta-updates"
         static let autoCheckUpdates = "updater.auto-check-updates"
         static let screenshotToolbarItems = "screenshot.toolbar-items"
+        static let saveCompletedScreenshotsToHistory = "screenshot.save-completed-to-history"
     }
 
     private let defaults: UserDefaults
@@ -199,7 +203,8 @@ final class AppConfigurationStore: @unchecked Sendable {
             aiStreamingEnabled: defaults.object(forKey: Key.aiStreamingEnabled) as? Bool ?? true,
             includeBetaUpdates: defaults.bool(forKey: Key.includeBetaUpdates),
             autoCheckUpdates: defaults.object(forKey: Key.autoCheckUpdates) as? Bool ?? true,
-            screenshotToolbarItems: toolbarItems
+            screenshotToolbarItems: toolbarItems,
+            saveCompletedScreenshotsToHistory: defaults.bool(forKey: Key.saveCompletedScreenshotsToHistory)
         )
     }
 
@@ -227,6 +232,7 @@ final class AppConfigurationStore: @unchecked Sendable {
         if let encoded = try? JSONEncoder().encode(configuration.screenshotToolbarItems) {
             defaults.set(encoded, forKey: Key.screenshotToolbarItems)
         }
+        defaults.set(configuration.saveCompletedScreenshotsToHistory, forKey: Key.saveCompletedScreenshotsToHistory)
     }
 }
 

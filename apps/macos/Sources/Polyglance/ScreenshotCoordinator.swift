@@ -135,8 +135,14 @@ final class ScreenshotCoordinator {
         switch action {
         case let .copy(result):
             try ImagePasteboard.write(result.image)
+            if (try? configurationStore.load())?.saveCompletedScreenshotsToHistory == true {
+                pinWindowManager.archiveStore.record(image: result.image, source: .screenshot)
+            }
         case let .save(result):
-            _ = try fileSaver.save(result.image)
+            let saved = try fileSaver.save(result.image)
+            if saved, (try? configurationStore.load())?.saveCompletedScreenshotsToHistory == true {
+                pinWindowManager.archiveStore.record(image: result.image, source: .screenshot)
+            }
         case let .pin(result):
             pinWindowManager.pin(
                 result.image,

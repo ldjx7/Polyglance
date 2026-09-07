@@ -7,7 +7,7 @@ final class GlobalShortcutConfigurationTests: XCTestCase {
         let configuration = GlobalShortcutConfiguration.default
 
         XCTAssertNoThrow(try configuration.validate())
-        XCTAssertEqual(Set(configuration.allShortcuts).count, 4)
+        XCTAssertEqual(Set(configuration.allShortcuts).count, 5)
         XCTAssertEqual(
             configuration.screenshotAndPin,
             RecordedShortcut(keyCode: 18, modifiers: [.control, .shift])
@@ -24,9 +24,12 @@ final class GlobalShortcutConfigurationTests: XCTestCase {
             configuration.screenTranslation,
             RecordedShortcut(keyCode: 21, modifiers: [.control, .shift])
         )
+        XCTAssertEqual(
+            configuration.restoreMostRecentPin,
+            RecordedShortcut(keyCode: 23, modifiers: [.control, .shift])
+        )
         XCTAssertNil(configuration.longScreenshot)
         XCTAssertNil(configuration.screenRecording)
-        XCTAssertNil(configuration.restoreMostRecentPin)
         XCTAssertNil(configuration.openTranslator)
     }
 
@@ -102,7 +105,7 @@ final class GlobalShortcutConfigurationTests: XCTestCase {
         configuration[.longScreenshot] = nil
 
         XCTAssertNoThrow(try configuration.validate())
-        XCTAssertEqual(configuration.allShortcuts.count, 4)
+        XCTAssertEqual(configuration.allShortcuts.count, 5)
     }
 
     func testStoreRoundTripsCustomConfiguration() throws {

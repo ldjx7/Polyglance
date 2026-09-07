@@ -115,7 +115,7 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
         pinClipboardImage: RecordedShortcut(keyCode: 19, modifiers: [.control, .shift]),
         longScreenshot: nil,
         screenRecording: nil,
-        restoreMostRecentPin: nil,
+        restoreMostRecentPin: RecordedShortcut(keyCode: 23, modifiers: [.control, .shift]),
         screenTranslation: RecordedShortcut(keyCode: 21, modifiers: [.control, .shift]),
         openTranslator: nil
     )
@@ -185,12 +185,29 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
         pinClipboardImage = try container.decodeIfPresent(RecordedShortcut.self, forKey: .pinClipboardImage)
         longScreenshot = try container.decodeIfPresent(RecordedShortcut.self, forKey: .longScreenshot)
         screenRecording = try container.decodeIfPresent(RecordedShortcut.self, forKey: .screenRecording)
-        restoreMostRecentPin = try container.decodeIfPresent(
-            RecordedShortcut.self,
-            forKey: .restoreMostRecentPin
-        )
+        if container.contains(.restoreMostRecentPin) {
+            restoreMostRecentPin = try container.decodeIfPresent(
+                RecordedShortcut.self,
+                forKey: .restoreMostRecentPin
+            )
+        } else {
+            restoreMostRecentPin = Self.default.restoreMostRecentPin
+        }
         screenTranslation = try container.decodeIfPresent(RecordedShortcut.self, forKey: .screenTranslation)
         openTranslator = try container.decodeIfPresent(RecordedShortcut.self, forKey: .openTranslator)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(translateSelection, forKey: .translateSelection)
+        try container.encodeIfPresent(captureSelection, forKey: .captureSelection)
+        try container.encodeIfPresent(screenshotAndPin, forKey: .screenshotAndPin)
+        try container.encodeIfPresent(pinClipboardImage, forKey: .pinClipboardImage)
+        try container.encodeIfPresent(longScreenshot, forKey: .longScreenshot)
+        try container.encodeIfPresent(screenRecording, forKey: .screenRecording)
+        try container.encode(restoreMostRecentPin, forKey: .restoreMostRecentPin)
+        try container.encodeIfPresent(screenTranslation, forKey: .screenTranslation)
+        try container.encodeIfPresent(openTranslator, forKey: .openTranslator)
     }
 
     public func validate() throws {

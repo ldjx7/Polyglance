@@ -13,6 +13,7 @@ using Polyglance.Core.Models;
 using Polyglance.Core.Services;
 using Polyglance.Platform.Capture;
 using Polyglance.Platform.Ocr;
+using Polyglance.Platform.Pin;
 
 namespace Polyglance.UI.Views;
 
@@ -211,7 +212,12 @@ public partial class InPlaceTranslationOverlayWindow : Window
         var rendered = RenderMergedBitmap();
         if (rendered != null)
         {
-            var pin = new PinWindow(rendered, _translationService, _config);
+            var pin = new PinWindow(
+                rendered,
+                _translationService,
+                _config,
+                source: PinArchiveSource.Translation,
+                saveToHistory: true);
             pin.Left = Left;
             pin.Top = Top;
             pin.Show();

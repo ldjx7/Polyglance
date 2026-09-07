@@ -339,6 +339,131 @@ final class ScreenSelectionSessionTests: XCTestCase {
             intent: .defaultIntent
         ))
     }
+
+    func testMirrorWindowCreatedForSecondaryScreenEvenWhenScreenMatchesSecondary() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let secondFrame = screen.frame.offsetBy(dx: screen.frame.width, dy: 0)
+        let captureFrame = screen.frame.union(secondFrame)
+        let session = ScreenSelectionSession(
+            image: try makeImage(width: 400, height: 120),
+            screen: screen,
+            captureFrame: captureFrame,
+            crossScreenFrames: [screen.frame, secondFrame]
+        )
+        session.present { _ in }
+        XCTAssertEqual(session.crossScreenOverlayFrames, [secondFrame])
+        session.cancel()
+    }
+
+    func testStartingSelectionOnMirrorWindowLiveUpdatesSelection() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let secondFrame = screen.frame.offsetBy(dx: screen.frame.width, dy: 0)
+        let captureFrame = screen.frame.union(secondFrame)
+        let session = ScreenSelectionSession(
+            image: try makeImage(width: 400, height: 120),
+            screen: screen,
+            captureFrame: captureFrame,
+            crossScreenFrames: [screen.frame, secondFrame]
+        )
+        session.present { _ in }
+        let startPoint = CGPoint(x: secondFrame.minX + 30, y: secondFrame.minY + 40)
+        let dragPoint = CGPoint(x: secondFrame.minX + 150, y: secondFrame.minY + 120)
+
+        session.forwardCrossScreenMouseForTesting(.leftMouseDown, globalPoint: startPoint)
+        session.selectionWindowForTesting.selectionView.advanceGlobalDragForTesting(
+            globalPoint: dragPoint,
+            leftButtonPressed: true
+        )
+
+        let selection = try XCTUnwrap(session.crossScreenSelectionsForTesting.first ?? nil)
+        XCTAssertGreaterThan(selection.width, 0)
+        XCTAssertGreaterThan(selection.height, 0)
+
+        session.selectionWindowForTesting.selectionView.advanceGlobalDragForTesting(
+            globalPoint: dragPoint,
+            leftButtonPressed: false
+        )
+        XCTAssertNotNil(session.selectionWindowForTesting.selectionView.confirmedSelection)
+        session.cancel()
+    }
+
+    func testSecondDisplayShowsMagnifierWhenMouseMovesOverSecondDisplay() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let secondFrame = screen.frame.offsetBy(dx: screen.frame.width, dy: 0)
+        let captureFrame = screen.frame.union(secondFrame)
+        let session = ScreenSelectionSession(
+            image: try makeImage(width: 400, height: 120),
+            screen: screen,
+            captureFrame: captureFrame,
+            crossScreenFrames: [screen.frame, secondFrame]
+        )
+        session.present { _ in }
+        let window = session.selectionWindowForTesting
+        let hostMagnifier = try XCTUnwrap(
+            window.selectionView.subviews.compactMap { $0 as? ScreenshotMagnifierView }.first
+        )
+
+        window.selectionView.mouseMoved(
+            with: mouseEvent(.mouseMoved, at: CGPoint(x: 50, y: 50), window: window)
+        )
+        XCTAssertFalse(hostMagnifier.isHidden)
+        XCTAssertEqual(session.crossScreenMagnifierStatesForTesting, [false])
+
+        let pointOnSecondDisplay = CGPoint(x: secondFrame.minX + 60, y: secondFrame.minY + 70)
+        session.forwardCrossScreenMouseForTesting(.mouseMoved, globalPoint: pointOnSecondDisplay)
+
+        XCTAssertTrue(hostMagnifier.isHidden)
+        XCTAssertEqual(session.crossScreenMagnifierStatesForTesting, [true])
+        let displayText = try XCTUnwrap(session.crossScreenMagnifierDisplayTextsForTesting.first)
+        XCTAssertFalse(displayText.isEmpty)
+
+        window.selectionView.mouseMoved(
+            with: mouseEvent(.mouseMoved, at: CGPoint(x: 50, y: 50), window: window)
+        )
+        XCTAssertFalse(hostMagnifier.isHidden)
+        XCTAssertEqual(session.crossScreenMagnifierStatesForTesting, [false])
+
+        session.cancel()
+    }
+
+    func testSecondDisplayShowsInstructionsAndCandidateHoverBox() throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let secondFrame = screen.frame.offsetBy(dx: screen.frame.width, dy: 0)
+        let captureFrame = screen.frame.union(secondFrame)
+        let candidate = CGRect(x: secondFrame.minX - captureFrame.minX + 20, y: 30, width: 200, height: 150)
+        let session = ScreenSelectionSession(
+            image: try makeImage(width: 400, height: 120),
+            screen: screen,
+            captureFrame: captureFrame,
+            crossScreenFrames: [screen.frame, secondFrame],
+            regionProvider: { point in
+                candidate.contains(point) ? candidate : nil
+            }
+        )
+        session.present { _ in }
+
+        XCTAssertEqual(session.crossScreenInstructionStatesForTesting, [true])
+
+        let pointOnCandidate = CGPoint(x: secondFrame.minX + 30, y: secondFrame.minY + 40)
+        session.forwardCrossScreenMouseForTesting(.mouseMoved, globalPoint: pointOnCandidate)
+
+        let displayed = try XCTUnwrap(session.crossScreenSelectionsForTesting.first ?? nil)
+        XCTAssertEqual(displayed, CGRect(x: 20, y: 30, width: 200, height: 150))
+
+        // Confirm selection by clicking candidate
+        session.forwardCrossScreenMouseForTesting(.leftMouseDown, globalPoint: pointOnCandidate)
+        session.forwardCrossScreenMouseForTesting(.leftMouseUp, globalPoint: pointOnCandidate)
+
+        XCTAssertEqual(session.crossScreenInstructionStatesForTesting, [false])
+        let toolbarFrame = try XCTUnwrap(session.crossScreenToolbarFramesForTesting.first ?? nil)
+        XCTAssertTrue(CGRect(origin: .zero, size: secondFrame.size).intersects(toolbarFrame))
+
+        session.cancel()
+    }
 }
 
 private struct RectKey: Hashable {

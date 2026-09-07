@@ -34,6 +34,7 @@ public partial class App : Application
     private CancellationTokenSource? _updateCts;
     private ToolStripMenuItem? _dynamicUpdateMenuItem;
     private ToolStripSeparator? _dynamicUpdateSeparator;
+    private PinHistoryWindow? _pinHistoryWindow;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -73,6 +74,7 @@ public partial class App : Application
         RegisterDynamicHotKeys();
 
         var config = LoadConfigurationOrDefault();
+        _ = PinSessionController.For().Restore(true, _translationService, config);
         if (config.AutoCheckUpdates)
         {
             _updateCts = new CancellationTokenSource();
@@ -155,13 +157,15 @@ public partial class App : Application
 
         // Group 3: 贴图管理
         var pinMenu = new ToolStripMenuItem("贴图管理");
-        pinMenu.DropDownItems.Add("贴出剪贴板图片", null, (s, e) => PinClipboardImage());
-        pinMenu.DropDownItems.Add("恢复最近贴图", null, (s, e) => RestoreMostRecentPin());
+        pinMenu.DropDownItems.Add("贴出剪贴板内容", null, (s, e) => PinClipboardImage());
+        pinMenu.DropDownItems.Add("恢复最近关闭的贴图", null, (s, e) => RestoreMostRecentPin());
+        pinMenu.DropDownItems.Add("贴图历史…", null, (s, e) => ShowPinHistory());
         pinMenu.DropDownItems.Add(new ToolStripSeparator());
         pinMenu.DropDownItems.Add("隐藏全部贴图", null, (s, e) => HideAllPins());
         pinMenu.DropDownItems.Add("显示全部贴图", null, (s, e) => ShowAllPins());
         pinMenu.DropDownItems.Add(new ToolStripSeparator());
         pinMenu.DropDownItems.Add("关闭全部贴图", null, (s, e) => CloseAllPins());
+        pinMenu.DropDownItems.Add("销毁全部贴图及对应历史", null, (s, e) => Dispatcher.Invoke(async () => await PinSessionController.For().DestroyAll()));
         contextMenu.Items.Add(pinMenu);
 
         contextMenu.Items.Add(new ToolStripSeparator());
@@ -312,57 +316,37 @@ public partial class App : Application
 
     public void PinClipboardImage()
     {
-        Dispatcher.Invoke(() =>
+        Dispatcher.Invoke(async () =>
         {
-            if (System.Windows.Clipboard.ContainsImage())
+            try
             {
-                var image = System.Windows.Clipboard.GetImage();
-                if (image != null)
-                {
-                    var pin = new PinWindow(
-                        image,
-                        _translationService,
-                        LoadConfigurationOrDefault());
-                    pin.Show();
-                }
+                await PinSessionController.For().PinNextClipboardContent(null, null, _translationService, LoadConfigurationOrDefault());
             }
-            else
-            {
-                System.Windows.MessageBox.Show("剪贴板中没有图片。", "贴图", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
+            catch (Exception error) { PinSessionController.Report($"无法读取剪贴板：{error.Message}"); }
         });
     }
 
     public void RestoreMostRecentPin()
     {
+        Dispatcher.Invoke(async () =>
+        {
+            await PinSessionController.For().Restore(false, _translationService, LoadConfigurationOrDefault());
+        });
+    }
+
+    public void ShowPinHistory()
+    {
         Dispatcher.Invoke(() =>
         {
-            string? recentPath = PinHistoryManager.GetRecentPins().FirstOrDefault()?.FilePath;
-            if (string.IsNullOrWhiteSpace(recentPath) || !File.Exists(recentPath))
+            if (_pinHistoryWindow == null)
             {
-                System.Windows.MessageBox.Show(
-                    "没有可恢复的贴图。",
-                    "恢复贴图",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
-                return;
+                _pinHistoryWindow = new PinHistoryWindow(_translationService, LoadConfigurationOrDefault());
             }
-
-            var bitmap = new System.Windows.Media.Imaging.BitmapImage();
-            bitmap.BeginInit();
-            bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
-            bitmap.UriSource = new Uri(recentPath, UriKind.Absolute);
-            bitmap.EndInit();
-            bitmap.Freeze();
-
-            var pin = new PinWindow(
-                bitmap,
-                _translationService!,
-                LoadConfigurationOrDefault(),
-                Clipboard.SetText,
-                capturedDisplaySize: null,
-                saveToHistory: false);
-            pin.Show();
+            _ = _pinHistoryWindow.RefreshItems();
+            _pinHistoryWindow.Show();
+            _pinHistoryWindow.Activate();
+            if (_pinHistoryWindow.WindowState == WindowState.Minimized)
+                _pinHistoryWindow.WindowState = WindowState.Normal;
         });
     }
 
@@ -372,9 +356,9 @@ public partial class App : Application
         {
             foreach (Window window in Application.Current.Windows)
             {
-                if (window is PinWindow pin)
+                if (window is PinWindow or TextPinWindow)
                 {
-                    pin.Hide();
+                    window.Hide();
                 }
             }
         });
@@ -386,9 +370,9 @@ public partial class App : Application
         {
             foreach (Window window in Application.Current.Windows)
             {
-                if (window is PinWindow pin)
+                if (window is PinWindow or TextPinWindow)
                 {
-                    pin.Show();
+                    window.Show();
                 }
             }
         });
@@ -398,11 +382,11 @@ public partial class App : Application
     {
         Dispatcher.Invoke(() =>
         {
-            foreach (Window window in Application.Current.Windows)
+            foreach (Window window in Application.Current.Windows.Cast<Window>().ToArray())
             {
-                if (window is PinWindow pin)
+                if (window is PinWindow or TextPinWindow)
                 {
-                    pin.Close();
+                    window.Close();
                 }
             }
         });
@@ -566,16 +550,22 @@ public partial class App : Application
         );
     }
 
-    private void ShutdownApp()
+    private bool _shuttingDown;
+
+    private async void ShutdownApp()
     {
+        if (_shuttingDown) return;
+        _shuttingDown = true;
+        _hotKeyManager?.Dispose();
+        await PinSessionController.For().PrepareForTermination();
         _updateCts?.Cancel();
         _updateCts?.Dispose();
         _updateCts = null;
         _notifyIcon?.Dispose();
-        _hotKeyManager?.Dispose();
         _translationService?.Dispose();
         _hiddenHwndSource?.Dispose();
         _mutex?.Dispose();
+        _pinHistoryWindow?.ExplicitClose();
         Shutdown();
     }
 

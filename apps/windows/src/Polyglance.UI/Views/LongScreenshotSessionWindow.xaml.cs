@@ -10,6 +10,7 @@ using Polyglance.Core.Models;
 using Polyglance.Core.Services;
 using Polyglance.Platform.Capture;
 using Polyglance.Platform.Interop;
+using Polyglance.Platform.Pin;
 
 namespace Polyglance.UI.Views;
 
@@ -296,7 +297,12 @@ public partial class LongScreenshotSessionWindow : Window
             BitmapSource finalBitmap = CreateBitmapSource(_stitcher.Render());
             if (pin)
             {
-                var pinWindow = new PinWindow(finalBitmap, _translationService, _configuration)
+                var pinWindow = new PinWindow(
+                    finalBitmap,
+                    _translationService,
+                    _configuration,
+                    source: PinArchiveSource.LongScreenshot,
+                    saveToHistory: true)
                 {
                     Left = Left + _cropRect.X,
                     Top = Top + _cropRect.Y
@@ -306,6 +312,10 @@ public partial class LongScreenshotSessionWindow : Window
             else
             {
                 Clipboard.SetImage(finalBitmap);
+                if (_configuration?.SaveCompletedScreenshotsToHistory == true)
+                {
+                    PinArchiveRecording.Record(finalBitmap, PinArchiveSource.LongScreenshot);
+                }
             }
             CloseSession();
         }

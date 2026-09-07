@@ -29,14 +29,18 @@ struct SettingsView: View {
     @State private var includeBetaUpdates = false
     @State private var autoCheckUpdates = true
     @State private var screenshotToolbarItems = ScreenshotToolbarItemConfig.defaultItems
+    @State private var saveCompletedScreenshotsToHistory = false
     @State private var draggingItemID: String? = nil
     @State private var statusMessage: String?
+    @State private var isStatusError = false
+    @State private var permissionsRefreshTrigger = 0
 
     var body: some View {
         HStack(spacing: 0) {
             sidebar
 
             Divider()
+                .opacity(0.4)
 
             detailView
         }
@@ -44,21 +48,24 @@ struct SettingsView: View {
         .task { load() }
     }
 
+    // MARK: - Sidebar
+
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             Color.clear
-                .frame(height: 34)
+                .frame(height: 38)
 
             HStack(spacing: 10) {
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable()
                     .interpolation(.high)
-                    .frame(width: 34, height: 34)
-                    .shadow(color: .black.opacity(0.14), radius: 3, x: 0, y: 2)
+                    .frame(width: 32, height: 32)
+                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                    .shadow(color: .black.opacity(0.12), radius: 3, x: 0, y: 1.5)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 1) {
                     Text(SettingsBranding.name)
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.primary)
                     Text(SettingsBranding.tagline)
                         .font(.system(size: 10))
@@ -69,12 +76,13 @@ struct SettingsView: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(SettingsBranding.name)，\(SettingsBranding.tagline)")
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.bottom, 12)
 
             Divider()
-                .padding(.horizontal, 12)
+                .opacity(0.4)
+                .padding(.horizontal, 10)
 
-            VStack(spacing: 3) {
+            VStack(spacing: 2) {
                 ForEach(SettingsTab.allCases) { tab in
                     SidebarNavItem(
                         tab: tab,
@@ -84,33 +92,32 @@ struct SettingsView: View {
                     }
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.top, 9)
+            .padding(.horizontal, 8)
+            .padding(.top, 8)
 
             Spacer()
+
+            HStack {
+                Text("版本 \(AppVersionInfo.displayString)")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.tertiary)
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 12)
         }
-        .frame(width: 190)
-        .background(Color(NSColor.windowBackgroundColor))
+        .frame(width: 200)
+        .background(VisualEffectBackground(material: .sidebar))
     }
+
+    // MARK: - Detail View
 
     private var detailView: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(selectedTab.title)
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(Color.primary)
-                    Text(selectedTab.subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 24)
-            .padding(.bottom, 12)
+            headerBar
 
             Divider()
+                .opacity(0.4)
 
             Group {
                 switch selectedTab {
@@ -129,28 +136,45 @@ struct SettingsView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            Divider()
-
-            HStack {
-                if let statusMessage {
-                    Text(statusMessage)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button("保存设置") {
-                    save()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
-                .keyboardShortcut(.defaultAction)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 10)
-            .background(Color(NSColor.windowBackgroundColor))
         }
         .background(Color(NSColor.controlBackgroundColor))
+    }
+
+    private var headerBar: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(selectedTab.title)
+                    .font(.system(size: 19, weight: .bold))
+                    .foregroundStyle(.primary)
+                Text(selectedTab.subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            if let statusMessage {
+                HStack(spacing: 4) {
+                    Image(systemName: isStatusError ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(isStatusError ? Color.red : Color.green)
+                    Text(statusMessage)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(isStatusError ? Color.red : Color.secondary)
+                }
+                .transition(.opacity)
+            }
+
+            Button("保存设置") {
+                save()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.regular)
+            .keyboardShortcut("s", modifiers: .command)
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
     }
 
     // MARK: - Tabs
@@ -165,14 +189,55 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Button("打开登录项设置") {
+                    Button("打开系统设置") {
                         launchAtLoginManager.openSystemSettings()
                     }
                     .controlSize(.small)
                 }
             } header: {
-                Text("启动")
+                Text("常规与启动")
             }
+
+            Section {
+                HStack {
+                    Label("辅助功能权限", systemImage: "hand.raised.fill")
+                    Spacer()
+                    PermissionBadge(isGranted: isAccessibilityGranted)
+                    Button("检查/请求") {
+                        SelectedTextReader().requestAccessibilityPermission()
+                        permissionsRefreshTrigger += 1
+                    }
+                    .controlSize(.small)
+                }
+
+                HStack {
+                    Label("屏幕录制权限", systemImage: "rectangle.inset.filled.and.cursorarrow")
+                    Spacer()
+                    PermissionBadge(isGranted: isScreenRecordingGranted)
+                    Button("检查/请求") {
+                        _ = CGRequestScreenCaptureAccess()
+                        permissionsRefreshTrigger += 1
+                    }
+                    .controlSize(.small)
+                }
+            } header: {
+                Text("系统权限")
+            } footer: {
+                Text("划词读取需要辅助功能权限；区域截图与录屏需要屏幕录制权限。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("保存已完成截图到历史记录", isOn: $saveCompletedScreenshotsToHistory)
+            } header: {
+                Text("截图历史")
+            } footer: {
+                Text("开启后，成功复制或另存为的截图与长截图将自动存入历史记录。历史记录只保存在本机，最多保留 30 条 / 512 MiB。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
         }
         .formStyle(.grouped)
     }
@@ -204,38 +269,81 @@ struct SettingsView: View {
 
             Section {
                 switch provider {
-                case .google:
-                    Text("无需配置 API Key。使用 Google 免费接口，直接发起翻译。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                case .microsoft:
-                    Text("无需配置 API Key。使用 Microsoft Edge 免费翻译接口，稳定可靠。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                case .freeAI:
-                    if BundledFreeAIConfiguration() == nil {
-                        Text("当前配置的免费 AI 服务地址不可用。")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    } else {
-                        Text("无需配置 API Key。使用内置分发的免费 AI 翻译服务。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                case .openAICompatible:
-                    TextField("Endpoint", text: $endpoint)
-                        .textFieldStyle(.roundedBorder)
-                    SecureField("API Key", text: $apiKey)
-                        .textFieldStyle(.roundedBorder)
-                    TextField("模型名称 (如 deepseek-chat)", text: $model)
-                        .textFieldStyle(.roundedBorder)
-                }
+                case .google, .microsoft:
+                    HStack(spacing: 12) {
+                        Image(systemName: provider == .google ? "globe" : "text.bubble")
+                            .font(.system(size: 18))
+                            .foregroundStyle(Color.accentColor)
+                            .frame(width: 32, height: 32)
+                            .background(Color.accentColor.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 7))
 
-                if provider == .freeAI || provider == .openAICompatible {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(provider.displayName)
+                                .font(.system(size: 13, weight: .semibold))
+                            Text(provider == .google
+                                ? "使用 Google 翻译公共接口，开箱即用，无需配置 API Key。"
+                                : "使用 Microsoft Edge 翻译公共接口，稳定高效，无需配置 API Key。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 3)
+
+                case .freeAI:
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 18))
+                                .foregroundStyle(Color.purple)
+                                .frame(width: 32, height: 32)
+                                .background(Color.purple.opacity(0.1))
+                                .clipShape(RoundedRectangle(cornerRadius: 7))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(provider.displayName)
+                                    .font(.system(size: 13, weight: .semibold))
+                                if BundledFreeAIConfiguration() == nil {
+                                    Text("当前配置的免费 AI 服务地址不可用。")
+                                        .font(.caption)
+                                        .foregroundStyle(.orange)
+                                } else {
+                                    Text("无需配置 API Key。使用内置分发的免费 AI 翻译服务。")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                        }
+                    }
+                    .padding(.vertical, 3)
+
+                    Toggle("开启 AI 流式逐字输出", isOn: $aiStreamingEnabled)
+
+                case .openAICompatible:
+                    LabeledContent("服务地址 (Endpoint)") {
+                        TextField("https://api.openai.com/v1", text: $endpoint)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    LabeledContent("API 密钥 (API Key)") {
+                        SecureField("sk-...", text: $apiKey)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    LabeledContent("模型名称") {
+                        TextField("例如 deepseek-chat, gpt-4o-mini", text: $model)
+                            .textFieldStyle(.roundedBorder)
+                    }
                     Toggle("开启 AI 流式逐字输出", isOn: $aiStreamingEnabled)
                 }
             } header: {
                 Text("服务详情配置")
+            } footer: {
+                if provider == .openAICompatible {
+                    Text("支持 OpenAI、DeepSeek、SiliconFlow 等任何兼容 OpenAI 接口规范的服务。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .formStyle(.grouped)
@@ -245,6 +353,7 @@ struct SettingsView: View {
         Form {
             Section {
                 ForEach(GlobalShortcutAction.allCases, id: \.self) { action in
+                    let info = shortcutActionInfo(action)
                     LabeledContent {
                         ShortcutRecorder(
                             shortcut: Binding(
@@ -254,7 +363,17 @@ struct SettingsView: View {
                         )
                         .frame(width: 140, height: 26)
                     } label: {
-                        Label(action.title, systemImage: iconForShortcutAction(action))
+                        HStack(spacing: 8) {
+                            Image(systemName: info.icon)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(info.color)
+                                .frame(width: 22, height: 22)
+                                .background(info.color.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 5))
+
+                            Text(action.title)
+                                .font(.system(size: 13))
+                        }
                     }
                 }
             } header: {
@@ -272,9 +391,23 @@ struct SettingsView: View {
             }
 
             Section {
-                LabeledContent("翻译输入内容", value: "⌘ ↩︎")
-                LabeledContent("复制译文", value: "⇧ ⌘ C")
-                LabeledContent("清空并聚焦原文", value: "⌘ K")
+                LabeledContent {
+                    KeycapBadge("⌘ ↩︎")
+                } label: {
+                    Text("翻译输入内容")
+                }
+
+                LabeledContent {
+                    KeycapBadge("⇧ ⌘ C")
+                } label: {
+                    Text("复制译文")
+                }
+
+                LabeledContent {
+                    KeycapBadge("⌘ K")
+                } label: {
+                    Text("清空并聚焦原文")
+                }
             } header: {
                 Text("主窗口内快捷键（固定）")
             }
@@ -284,28 +417,6 @@ struct SettingsView: View {
 
     private var recordingTab: some View {
         Form {
-            Section {
-                HStack {
-                    Label("辅助功能权限", systemImage: "hand.raised")
-                    Spacer()
-                    Button("检查/请求权限") {
-                        SelectedTextReader().requestAccessibilityPermission()
-                    }
-                    .controlSize(.small)
-                }
-
-                HStack {
-                    Label("屏幕录制权限", systemImage: "rectangle.inset.filled.and.cursorarrow")
-                    Spacer()
-                    Button("检查/请求权限") {
-                        _ = CGRequestScreenCaptureAccess()
-                    }
-                    .controlSize(.small)
-                }
-            } header: {
-                Text("系统权限")
-            }
-
             Section {
                 Picker("默认格式", selection: recordingFormatBinding) {
                     ForEach(ScreenRecordingFormat.allCases, id: \.self) { format in
@@ -333,14 +444,34 @@ struct SettingsView: View {
                         Text(delay.displayName).tag(delay)
                     }
                 }
+            } header: {
+                Text("视频与格式")
+            }
 
+            Section {
+                Toggle("录制系统声音", isOn: $recordingSettings.capturesSystemAudio)
+                    .disabled(!recordingSettings.format.supportsAudio)
+                Toggle("录制麦克风", isOn: $recordingSettings.capturesMicrophone)
+                    .disabled(!recordingSettings.format.supportsAudio)
+                Toggle("显示鼠标指针", isOn: $recordingSettings.showsCursor)
+            } header: {
+                Text("音频与鼠标")
+            } footer: {
+                if !recordingSettings.format.supportsAudio {
+                    Text("GIF 格式不支持录制音频。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section {
                 Toggle(
                     RecordingSettingsPresentation.saveLocationToggleTitle,
                     isOn: $recordingSettings.asksForSaveLocation
                 )
 
                 LabeledContent("保存目录") {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 8) {
                         Text(recordingDirectoryDisplayName)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -351,14 +482,8 @@ struct SettingsView: View {
                         .controlSize(.small)
                     }
                 }
-
-                Toggle("录制系统声音", isOn: $recordingSettings.capturesSystemAudio)
-                    .disabled(!recordingSettings.format.supportsAudio)
-                Toggle("录制麦克风", isOn: $recordingSettings.capturesMicrophone)
-                    .disabled(!recordingSettings.format.supportsAudio)
-                Toggle("显示鼠标指针", isOn: $recordingSettings.showsCursor)
             } header: {
-                Text("录屏参数")
+                Text("存储与导出")
             }
         }
         .formStyle(.grouped)
@@ -527,19 +652,20 @@ struct SettingsView: View {
                     Image(nsImage: NSApp.applicationIconImage)
                         .resizable()
                         .interpolation(.high)
-                        .frame(width: 52, height: 52)
-                        .shadow(color: .black.opacity(0.12), radius: 4, x: 0, y: 2)
+                        .frame(width: 56, height: 56)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .shadow(color: .black.opacity(0.14), radius: 4, x: 0, y: 2)
 
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 8) {
                             Text("Polyglance")
-                                .font(.system(size: 16, weight: .bold))
+                                .font(.system(size: 17, weight: .bold))
                             let isBeta = AppVersionInfo.versionString.contains("-beta")
                             Text(isBeta ? "Beta 尝鲜" : "正式版")
-                                .font(.system(size: 10, weight: .semibold))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(isBeta ? Color.purple.opacity(0.15) : Color.green.opacity(0.15))
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2.5)
+                                .background(isBeta ? Color.purple.opacity(0.14) : Color.green.opacity(0.14))
                                 .foregroundStyle(isBeta ? Color.purple : Color.green)
                                 .clipShape(Capsule())
                         }
@@ -547,6 +673,10 @@ struct SettingsView: View {
                         Text("版本 \(AppVersionInfo.displayString)")
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
+
+                        Text("原生跨平台翻译与截图工具")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
                     }
 
                     Spacer()
@@ -555,9 +685,9 @@ struct SettingsView: View {
                         AppUpdater.shared.checkForUpdates()
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, 6)
             } header: {
-                Text("版本信息")
+                Text("关于应用")
             }
 
             Section {
@@ -589,17 +719,29 @@ struct SettingsView: View {
         .formStyle(.grouped)
     }
 
-    private func iconForShortcutAction(_ action: GlobalShortcutAction) -> String {
+    // MARK: - Helpers
+
+    private var isAccessibilityGranted: Bool {
+        _ = permissionsRefreshTrigger
+        return AXIsProcessTrusted()
+    }
+
+    private var isScreenRecordingGranted: Bool {
+        _ = permissionsRefreshTrigger
+        return CGPreflightScreenCaptureAccess()
+    }
+
+    private func shortcutActionInfo(_ action: GlobalShortcutAction) -> (icon: String, color: Color) {
         switch action {
-        case .translateSelection: return "character.book.closed"
-        case .captureSelection: return "text.viewfinder"
-        case .screenshotAndPin: return "viewfinder"
-        case .pinClipboardImage: return "doc.on.clipboard"
-        case .longScreenshot: return "rectangle.stack.badge.plus"
-        case .screenRecording: return "record.circle"
-        case .restoreMostRecentPin: return "arrow.uturn.backward"
-        case .screenTranslation: return "text.viewfinder"
-        case .openTranslator: return "character.cursor.ibeam"
+        case .translateSelection: return ("character.book.closed", .blue)
+        case .captureSelection: return ("text.viewfinder", .teal)
+        case .screenshotAndPin: return ("viewfinder", .orange)
+        case .pinClipboardImage: return ("doc.on.clipboard", .green)
+        case .longScreenshot: return ("rectangle.stack.badge.plus", .purple)
+        case .screenRecording: return ("record.circle", .red)
+        case .restoreMostRecentPin: return ("arrow.uturn.backward", .indigo)
+        case .screenTranslation: return ("character.bubble", .cyan)
+        case .openTranslator: return ("character.cursor.ibeam", .mint)
         }
     }
 
@@ -617,6 +759,7 @@ struct SettingsView: View {
             includeBetaUpdates = configuration.includeBetaUpdates
             autoCheckUpdates = configuration.autoCheckUpdates
             screenshotToolbarItems = configuration.screenshotToolbarItems
+            saveCompletedScreenshotsToHistory = configuration.saveCompletedScreenshotsToHistory
             shortcuts = shortcutStore.load()
             recordingSettings = recordingSettingsStore.load()
             launchAtLoginEnabled = launchAtLoginManager.isEnabled
@@ -625,6 +768,7 @@ struct SettingsView: View {
                 for: recordingSettings.format
             )
         } catch {
+            isStatusError = true
             statusMessage = error.localizedDescription
         }
     }
@@ -640,11 +784,21 @@ struct SettingsView: View {
                 aiStreamingEnabled: aiStreamingEnabled,
                 includeBetaUpdates: includeBetaUpdates,
                 autoCheckUpdates: autoCheckUpdates,
-                screenshotToolbarItems: screenshotToolbarItems
+                screenshotToolbarItems: screenshotToolbarItems,
+                saveCompletedScreenshotsToHistory: saveCompletedScreenshotsToHistory
             )
             try onSave(configuration, shortcuts, recordingSettings, launchAtLoginEnabled)
+            isStatusError = false
             statusMessage = "设置已保存"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                if statusMessage == "设置已保存" {
+                    withAnimation {
+                        statusMessage = nil
+                    }
+                }
+            }
         } catch {
+            isStatusError = true
             statusMessage = error.localizedDescription
         }
     }
@@ -710,6 +864,78 @@ struct SettingsView: View {
         recordingSettings.saveDirectoryPath = url.path
     }
 }
+
+// MARK: - Visual Effect View
+
+private struct VisualEffectBackground: NSViewRepresentable {
+    var material: NSVisualEffectView.Material = .sidebar
+    var blendingMode: NSVisualEffectView.BlendingMode = .behindWindow
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = material
+        view.blendingMode = blendingMode
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.material = material
+        nsView.blendingMode = blendingMode
+    }
+}
+
+// MARK: - Permission Badge
+
+private struct PermissionBadge: View {
+    let isGranted: Bool
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(isGranted ? Color.green : Color.orange)
+                .frame(width: 6, height: 6)
+            Text(isGranted ? "已授权" : "未授权")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(isGranted ? Color.green : Color.orange)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background((isGranted ? Color.green : Color.orange).opacity(0.12))
+        .clipShape(Capsule())
+    }
+}
+
+// MARK: - Keycap Badge
+
+private struct KeycapBadge: View {
+    let keys: [String]
+
+    init(_ shortcutText: String) {
+        self.keys = shortcutText.split(separator: " ").map(String.init)
+    }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(keys, id: \.self) { key in
+                Text(key)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2.5)
+                    .background(Color(NSColor.controlBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+                    )
+                    .shadow(color: .black.opacity(0.04), radius: 1, x: 0, y: 1)
+            }
+        }
+    }
+}
+
+// MARK: - Toolbar Item View
 
 private struct ToolbarCapsuleItemView: View {
     let item: ScreenshotToolbarItemConfig
@@ -814,12 +1040,12 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .general: return "系统启动与基础偏好设置"
+        case .general: return "系统权限、启动与基础偏好"
         case .services: return "翻译引擎配置与 API 密钥"
         case .shortcuts: return "全局快捷键自定义"
-        case .recording: return "录屏格式、帧率与存储目录"
-        case .toolbar: return "截图工具栏按钮及排序"
-        case .about: return "版本信息与关于软件"
+        case .recording: return "录屏格式、画质与存储目录"
+        case .toolbar: return "截图工具栏按钮自定义与排序"
+        case .about: return "版本信息与技术架构"
         }
     }
 
@@ -854,13 +1080,13 @@ private struct SidebarNavItem: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
+            HStack(spacing: 9) {
                 Image(systemName: tab.icon)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 22, height: 22)
                     .background(tab.iconColor.gradient)
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                    .clipShape(RoundedRectangle(cornerRadius: 5.5))
 
                 Text(tab.title)
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
@@ -868,10 +1094,10 @@ private struct SidebarNavItem: View {
 
                 Spacer()
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 9)
             .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: 7)
                     .fill(isSelected ? Color.accentColor : (isHovered ? Color.primary.opacity(0.06) : Color.clear))
             )
             .contentShape(Rectangle())

@@ -3,6 +3,7 @@ using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using Polyglance.Core.Models;
 using Polyglance.Core.Services;
+using Polyglance.Platform.Pin;
 
 namespace Polyglance.UI.Views;
 
@@ -46,7 +47,12 @@ public partial class ScreenTranslationWindow : Window
 
     private void OnPinOriginalClick(object sender, RoutedEventArgs e)
     {
-        var pinWin = new PinWindow(_originalBitmap, _translationService, _configuration);
+        var pinWin = new PinWindow(
+            _originalBitmap,
+            _translationService,
+            _configuration,
+            source: PinArchiveSource.Translation,
+            saveToHistory: true);
         pinWin.Left = Left;
         pinWin.Top = Top;
         pinWin.Show();

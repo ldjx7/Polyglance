@@ -17,15 +17,37 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
     private var panels: [ObjectIdentifier: NSPanel] = [:]
     private var panelOrder: [ObjectIdentifier] = []
     private var destroyingPanels: Set<ObjectIdentifier> = []
+    private var sessions: [ObjectIdentifier: PinSessionRecord] = [:]
+    private var archivedPanelIDs: [ObjectIdentifier: String] = [:]
+    private var sessionTimer: Timer?
+    private var isTerminating = false
+    private var hasRestoredSession = false
+    private var pendingDestructions: [String: Task<Void, Never>] = [:]
     private let historyStore: PinHistoryStore
+    let archiveStore: PinArchiveStore
+    private static let isRunningTests: Bool = {
+        NSClassFromString("XCTestCase") != nil
+            || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }()
+
+    private static func makeDefaultArchiveStore() -> PinArchiveStore {
+        if isRunningTests {
+            let tempDir = FileManager.default.temporaryDirectory
+                .appendingPathComponent("PolyglanceTestArchive-\(UUID().uuidString)", isDirectory: true)
+            return PinArchiveStore(directoryURL: tempDir)
+        }
+        return PinArchiveStore()
+    }
 
     override init() {
         historyStore = PinHistoryStore()
+        archiveStore = Self.makeDefaultArchiveStore()
         super.init()
     }
 
-    init(historyStore: PinHistoryStore) {
+    init(historyStore: PinHistoryStore, archiveStore: PinArchiveStore? = nil) {
         self.historyStore = historyStore
+        self.archiveStore = archiveStore ?? Self.makeDefaultArchiveStore()
         super.init()
     }
 
@@ -42,17 +64,143 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
     var canRestoreMostRecentPin: Bool { historyStore.canRestore }
 
     func pinClipboardImage() throws {
-        guard let image = ImagePasteboard.read() else {
-            throw PinImageError.clipboardHasNoImage
+        if let image = ImagePasteboard.read() {
+            try validate(image)
+        } else if let text = NSPasteboard.general.string(forType: .string), !text.isEmpty {
+            guard text.utf8.count <= 1_048_576 else { throw PinImageError.textTooLarge }
+        } else {
+            return
         }
-        try validate(image)
-        pin(image, sourceFrame: nil)
+        Task { @MainActor in
+            try? await self.pinNextClipboardContent()
+        }
+    }
+
+    func pinNextClipboardContent(image: NSImage? = nil, text: String? = nil) async throws {
+        var candidateImage = image
+        var candidateText = text
+        if candidateImage == nil && candidateText == nil {
+            if let img = ImagePasteboard.read() {
+                try validate(img)
+                candidateImage = img
+            } else if let txt = NSPasteboard.general.string(forType: .string), !txt.isEmpty {
+                guard txt.utf8.count <= 1_048_576 else { throw PinImageError.textTooLarge }
+                candidateText = txt
+            } else {
+                return
+            }
+        }
+
+        if let candidateText {
+            guard candidateText.utf8.count <= 1_048_576 else { throw PinImageError.textTooLarge }
+        }
+        if let candidateImage {
+            try validate(candidateImage)
+        }
+
+        var isCandidateActive = false
+        if let candidateText {
+            isCandidateActive = isTextActive(candidateText)
+        } else if let candidateImage {
+            isCandidateActive = isImageActive(candidateImage)
+        }
+
+        if !isCandidateActive {
+            if let candidateText {
+                let allSessions = await archiveStore.perform { $0.loadSessions() }
+                let existing = allSessions.last { $0.text == candidateText }
+                if let archiveID = existing?.archiveID {
+                    historyStore.remove(archiveID: archiveID)
+                }
+                historyStore.remove { $0.session?.text == candidateText }
+                pinText(candidateText, archiveID: existing?.archiveID)
+            } else if let candidateImage {
+                let historyItems = await archiveStore.perform { $0.list() }
+                var existingID: String?
+                if let cg = candidateImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                    for item in historyItems where item.pixelWidth == cg.width && item.pixelHeight == cg.height {
+                        if let stored = await archiveStore.perform({ $0.loadImage(id: item.id) }),
+                           imagesMatch(stored, candidateImage) {
+                            existingID = item.id
+                            break
+                        }
+                    }
+                }
+                if let existingID {
+                    historyStore.remove(archiveID: existingID)
+                }
+                historyStore.remove { self.imagesMatch($0.image, candidateImage) }
+                pin(candidateImage, sourceFrame: nil, preferredDisplaySize: nil, source: .clipboard,
+                    recordInArchive: existingID == nil, archiveID: existingID)
+            }
+            return
+        }
+
+        let history = await archiveStore.perform { $0.list() }
+        let allSessions = await archiveStore.perform { $0.loadSessions() }
+        let activeIDs = Set(panels.keys.compactMap { archivedPanelIDs[$0] })
+        let activeTexts = Set(orderedPanels.compactMap { ($0.contentView as? TextPinContentView)?.text })
+
+        for item in history {
+            if activeIDs.contains(item.id) { continue }
+            let session = allSessions.last { $0.archiveID == item.id }
+            if let text = session?.text, !text.isEmpty {
+                if activeTexts.contains(text) || isTextActive(text) { continue }
+                historyStore.remove(archiveID: item.id)
+                historyStore.remove { $0.session?.text == text }
+                pinText(text, archiveID: item.id)
+                return
+            } else {
+                guard let img = await archiveStore.perform({ $0.loadImage(id: item.id) }) else { continue }
+                if isImageActive(img) { continue }
+                historyStore.remove(archiveID: item.id)
+                historyStore.remove { self.imagesMatch($0.image, img) }
+                pin(img, sourceFrame: nil, preferredDisplaySize: nil, source: item.source, recordInArchive: false, archiveID: item.id)
+                return
+            }
+        }
+    }
+
+    private func isTextActive(_ text: String) -> Bool {
+        for panel in orderedPanels {
+            if let contentView = panel.contentView as? TextPinContentView, contentView.text == text {
+                return true
+            }
+            if let session = sessions[ObjectIdentifier(panel)], session.text == text {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func isImageActive(_ image: NSImage) -> Bool {
+        for panel in orderedPanels {
+            if let contentView = panel.contentView as? PinContentView, imagesMatch(contentView.sourceImage, image) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func imagesMatch(_ a: NSImage, _ b: NSImage) -> Bool {
+        if a === b { return true }
+        guard let cgA = a.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let cgB = b.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return false
+        }
+        guard cgA.width == cgB.width, cgA.height == cgB.height else { return false }
+        guard let dataA = cgA.dataProvider?.data,
+              let dataB = cgB.dataProvider?.data else { return false }
+        return CFEqual(dataA, dataB)
     }
 
     func pin(
         _ image: NSImage,
         sourceFrame: CGRect?,
-        preferredDisplaySize: CGSize? = nil
+        preferredDisplaySize: CGSize? = nil,
+        source: PinArchiveSource = .screenshot,
+        recordInArchive: Bool = true,
+        archiveID: String? = nil
     ) {
         guard let screen = targetScreen(for: sourceFrame) else {
             return
@@ -75,7 +223,7 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
             size: size,
             visibleFrame: screen.visibleFrame
         )
-        createPinWindow(
+        let panel = createPinWindow(
             image: image,
             initialSize: size,
             frame: CGRect(origin: origin, size: size),
@@ -83,6 +231,131 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
             isLocked: false,
             isAlwaysOnTop: true
         )
+        if recordInArchive, image.cgImage(forProposedRect: nil, context: nil, hints: nil) != nil {
+            attach(panel, archiveID: archiveStore.record(image: image, source: source))
+        } else if let archiveID {
+            attach(panel, archiveID: archiveID)
+        }
+    }
+
+    @discardableResult
+    func pinText(_ text: String, session: PinSessionRecord? = nil, archiveID: String? = nil) -> NSPanel? {
+        guard !text.isEmpty, text.utf8.count <= 1_048_576, let screen = targetScreen(for: nil) else { return nil }
+        let size = TextPinContentView.fittedSize(text, maximumSize: screen.visibleFrame.size)
+        let frame = session.map { frameForRestoration($0.frame) }
+            ?? CGRect(x: screen.visibleFrame.midX - size.width / 2, y: screen.visibleFrame.midY - size.height / 2,
+                width: size.width, height: size.height)
+        let panel = PinPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.title = "Polyglance · 文本贴图"
+        panel.isReleasedWhenClosed = false
+        panel.hidesOnDeactivate = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.level = session?.isAlwaysOnTop == false ? .normal : .floating
+        panel.alphaValue = session?.opacity ?? 1
+        panel.minSize = NSSize(width: 80, height: 44)
+        panel.hasShadow = true
+        panel.backgroundColor = .white
+        panel.delegate = self
+        let view = TextPinContentView(text: text, actions: makeActions(for: panel))
+        view.isLocked = session?.isLocked ?? false
+        panel.isMovable = !view.isLocked
+        panel.contentView = view
+        panel.setFrame(frame, display: false)
+        view.updateFontForFrame(frame)
+        panels[ObjectIdentifier(panel)] = panel
+        panelOrder.append(ObjectIdentifier(panel))
+        panel.orderFrontRegardless()
+        panel.makeKey()
+        let id = session?.archiveID ?? archiveID ?? archiveStore.record(image: TextPinContentView.preview(text), source: .clipboard)
+        attach(panel, archiveID: id, text: text, existing: session)
+        return panel
+    }
+
+    private func attach(_ panel: NSPanel, archiveID: String, text: String? = nil, existing: PinSessionRecord? = nil) {
+        var record = existing ?? PinSessionRecord(archiveID: archiveID, text: text, frame: panel.frame)
+        record.status = .active
+        sessions[ObjectIdentifier(panel)] = record
+        archivedPanelIDs[ObjectIdentifier(panel)] = archiveID
+        archiveStore.enqueueSession(record)
+        if sessionTimer == nil {
+            sessionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.saveActiveSessions() }
+            }
+        }
+    }
+
+    func saveActiveSessions() {
+        guard !isTerminating else { return }
+        for panel in orderedPanels {
+            let key = ObjectIdentifier(panel)
+            guard !destroyingPanels.contains(key), var record = sessions[key] else { continue }
+            record.frame = panel.frame
+            record.opacity = panel.alphaValue
+            record.isAlwaysOnTop = panel.level == .floating
+            record.isLocked = (panel.contentView as? PinContentView)?.isLocked
+                ?? (panel.contentView as? TextPinContentView)?.isLocked ?? false
+            if record != sessions[key] {
+                sessions[key] = record
+                archiveStore.enqueueSession(record)
+            }
+        }
+    }
+
+    func prepareForTermination() async {
+        await waitForPendingOperations()
+        saveActiveSessions()
+        for panel in orderedPanels { saveAnnotatedImage(panel) }
+        isTerminating = true
+        sessionTimer?.invalidate()
+        await archiveStore.perform { _ in () }
+    }
+
+    func restoreSessionWindows() async {
+        guard !hasRestoredSession else { return }
+        hasRestoredSession = true
+        let saved = await archiveStore.perform { store in
+            let items = Dictionary(uniqueKeysWithValues: store.list().map { ($0.id, $0) })
+            return store.loadSessions().filter { $0.status != .archived }.compactMap { record -> (PinSessionRecord, Int64)? in
+                guard let item = items[record.archiveID] else { return nil }
+                return (record, Int64(item.pixelWidth) * Int64(item.pixelHeight) * 4)
+            }
+        }
+        var remainingBytes: Int64 = 512 * 1_024 * 1_024
+        var skipped = false
+        for (record, bytes) in saved {
+            guard !isTerminating else { return }
+            guard bytes <= remainingBytes else { skipped = true; continue }
+            guard let image = await archiveStore.perform({ $0.loadImage(id: record.archiveID) }),
+                  !archiveStore.wasDeleted(record.archiveID), !isTerminating else { continue }
+            remainingBytes -= bytes
+            if record.status == .active {
+                _ = restoreSession(record, image: image)
+            } else {
+                var snapshot = PinWindowSnapshot(image: image, frame: record.frame, initialSize: record.frame.size,
+                    opacity: record.opacity, isLocked: record.isLocked, isAlwaysOnTop: record.isAlwaysOnTop)
+                snapshot.session = record
+                historyStore.append(snapshot)
+            }
+        }
+        if skipped {
+            let alert = NSAlert(); alert.messageText = "部分贴图未自动恢复"
+            alert.informativeText = "自动恢复的图片内存预算为 512 MiB。其余记录仍在贴图历史中，可以手动贴出。"
+            alert.runModal()
+        }
+    }
+
+    private func restoreSession(_ record: PinSessionRecord, image: NSImage) -> NSPanel? {
+        if let text = record.text { return pinText(text, session: record) }
+        let frame = frameForRestoration(record.frame)
+        let panel = createPinWindow(image: image, initialSize: frame.size, frame: frame, opacity: record.opacity,
+            isLocked: record.isLocked, isAlwaysOnTop: record.isAlwaysOnTop)
+        attach(panel, archiveID: record.archiveID, existing: record)
+        return panel
+    }
+
+    func pinHistoryItem(_ image: NSImage, id: String, text: String?) {
+        if let text { pinText(text, archiveID: id) }
+        else { pin(image, sourceFrame: nil, recordInArchive: false, archiveID: id) }
     }
 
     /// A normal screenshot carries its selection size in screen points. Using
@@ -118,7 +391,8 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
         sourceText: String,
         translatedText: String,
         sourceFrame: CGRect?,
-        isTranslating: Bool = false
+        isTranslating: Bool = false,
+        recordInArchive: Bool = true
     ) -> NSPanel? {
         guard image.size.width > 0,
               image.size.height > 0,
@@ -155,7 +429,7 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
             cardSize: resultCardSize,
             visibleFrame: screen.visibleFrame
         )
-        return createTranslationPinWindow(
+        let panel = createTranslationPinWindow(
             image: image,
             sourceText: sourceText,
             translatedText: translatedText,
@@ -167,6 +441,10 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
             isAlwaysOnTop: true,
             isTranslating: isTranslating
         )
+        if recordInArchive, image.cgImage(forProposedRect: nil, context: nil, hints: nil) != nil {
+            archivedPanelIDs[ObjectIdentifier(panel)] = archiveStore.record(image: image, source: .translation)
+        }
+        return panel
     }
 
     @discardableResult
@@ -174,7 +452,8 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
         image: NSImage,
         document: OCRDocument,
         sourceFrame: CGRect?,
-        translateHandler: @escaping @MainActor (String) -> Void
+        translateHandler: @escaping @MainActor (String) -> Void,
+        recordInArchive: Bool = true
     ) -> NSPanel? {
         guard image.size.width > 0,
               image.size.height > 0,
@@ -217,7 +496,7 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
             size: size,
             visibleFrame: screen.visibleFrame
         )
-        return createOCRSelectionPinWindow(
+        let panel = createOCRSelectionPinWindow(
             image: image,
             document: document,
             translateHandler: translateHandler,
@@ -225,6 +504,10 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
             frame: CGRect(origin: origin, size: size),
             opacity: 1
         )
+        if recordInArchive, image.cgImage(forProposedRect: nil, context: nil, hints: nil) != nil {
+            archivedPanelIDs[ObjectIdentifier(panel)] = archiveStore.record(image: image, source: .ocr)
+        }
+        return panel
     }
 
     @discardableResult
@@ -405,13 +688,64 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
         panel.close()
     }
 
+    private func normalizeText(_ text: String) -> String {
+        text.replacingOccurrences(of: "\r\n", with: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     func destroyPin(_ panel: NSPanel) {
         let identifier = ObjectIdentifier(panel)
         guard panels[identifier] != nil else {
             return
         }
-        destroyingPanels.insert(identifier)
-        panel.close()
+        if let text = (panel.contentView as? TextPinContentView)?.text {
+            historyStore.remove { $0.session?.text == text }
+        }
+        if let pinView = panel.contentView as? PinContentView {
+            historyStore.remove { self.imagesMatch($0.image, pinView.sourceImage) }
+        }
+        guard let archiveID = archivedPanelIDs[identifier] else {
+            destroyingPanels.insert(identifier)
+            clearClipboardIfMatching(panels: [panel])
+            panel.close()
+            return
+        }
+        guard !destroyingPanels.contains(identifier) else { return }
+        let related = orderedPanels.filter { archivedPanelIDs[ObjectIdentifier($0)] == archiveID }
+        related.forEach { destroyingPanels.insert(ObjectIdentifier($0)) }
+        historyStore.remove(archiveID: archiveID)
+        self.clearClipboardIfMatching(panels: related)
+        pendingDestructions[archiveID] = Task { @MainActor in
+            defer { pendingDestructions.removeValue(forKey: archiveID) }
+            let result = await archiveStore.perform { store in store.delete(id: archiveID) }
+            if result.isSuccess {
+                related.forEach { $0.close() }
+            } else {
+                related.forEach { destroyingPanels.remove(ObjectIdentifier($0)) }
+                let alert = NSAlert(); alert.messageText = "未能销毁贴图"
+                if case let .failed(message) = result { alert.informativeText = message }
+                alert.runModal()
+            }
+        }
+    }
+
+    private func clearClipboardIfMatching(panels: [NSPanel]) {
+        for panel in panels {
+            if let textPin = panel.contentView as? TextPinContentView {
+                if let currentText = NSPasteboard.general.string(forType: .string),
+                   normalizeText(currentText) == normalizeText(textPin.text) {
+                    NSPasteboard.general.clearContents()
+                }
+            } else if let pinView = panel.contentView as? PinContentView {
+                if let currentImage = ImagePasteboard.read(), imagesMatch(currentImage, pinView.sourceImage) {
+                    NSPasteboard.general.clearContents()
+                }
+            }
+        }
+    }
+
+    func waitForPendingOperations() async {
+        for task in Array(pendingDestructions.values) { await task.value }
+        await archiveStore.perform { _ in () }
     }
 
     func closeAllPins() {
@@ -419,7 +753,9 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
     }
 
     func destroyAllPins() {
-        orderedPanels.forEach(destroyPin)
+        let allPanels = orderedPanels
+        clearClipboardIfMatching(panels: allPanels)
+        allPanels.forEach(destroyPin)
     }
 
     func hideAllPins() {
@@ -442,10 +778,16 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
         guard let snapshot = historyStore.popMostRecent() else {
             return nil
         }
+        if let id = snapshot.archiveID, archiveStore.wasDeleted(id) { return restoreMostRecentPin() }
+        if let record = snapshot.session {
+            guard !archiveStore.wasDeleted(record.archiveID) else { return restoreMostRecentPin() }
+            return restoreSession(record, image: snapshot.image)
+        }
         let frame = frameForRestoration(snapshot.frame)
+        let restored: NSPanel
         switch snapshot.content {
         case let .image(image):
-            return createPinWindow(
+            restored = createPinWindow(
                 image: image,
                 initialSize: snapshot.initialSize,
                 frame: frame,
@@ -454,7 +796,7 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
                 isAlwaysOnTop: snapshot.isAlwaysOnTop
             )
         case let .ocrSelection(content):
-            return createOCRSelectionPinWindow(
+            restored = createOCRSelectionPinWindow(
                 image: content.image,
                 document: content.document,
                 translateHandler: content.translateHandler,
@@ -463,7 +805,7 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
                 opacity: snapshot.opacity
             )
         case let .ocrTranslation(content):
-            return createTranslationPinWindow(
+            restored = createTranslationPinWindow(
                 image: content.image,
                 sourceText: content.sourceText,
                 translatedText: content.translatedText,
@@ -475,6 +817,8 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
                 isAlwaysOnTop: snapshot.isAlwaysOnTop
             )
         }
+        if let id = snapshot.archiveID { archivedPanelIDs[ObjectIdentifier(restored)] = id }
+        return restored
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -482,8 +826,10 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
             return
         }
         let identifier = ObjectIdentifier(panel)
-        if destroyingPanels.remove(identifier) == nil {
-            let snapshot: PinWindowSnapshot?
+        saveActiveSessions()
+        if destroyingPanels.remove(identifier) == nil && !isTerminating {
+            saveAnnotatedImage(panel)
+            var snapshot: PinWindowSnapshot?
             if let contentView = panel.contentView as? PinContentView {
                 snapshot = contentView.snapshot(frame: panel.frame, opacity: panel.alphaValue)
             } else if let contentView = panel.contentView as? OCRSelectionResultView {
@@ -494,14 +840,26 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
                 )
             } else if let contentView = panel.contentView as? OCRTranslationPinContentView {
                 snapshot = contentView.snapshot(frame: panel.frame, opacity: panel.alphaValue)
+            } else if let contentView = panel.contentView as? TextPinContentView {
+                snapshot = PinWindowSnapshot(image: TextPinContentView.preview(contentView.text), frame: panel.frame,
+                    initialSize: contentView.initialSize, opacity: panel.alphaValue, isLocked: contentView.isLocked,
+                    isAlwaysOnTop: panel.level == .floating)
             } else {
                 snapshot = nil
             }
+            if var record = sessions[identifier] {
+                record.status = .closed
+                snapshot?.session = record
+                archiveStore.enqueueSession(record)
+            }
+            snapshot?.archiveID = archivedPanelIDs[identifier]
             if let snapshot {
                 historyStore.append(snapshot)
             }
         }
         panels.removeValue(forKey: identifier)
+        sessions.removeValue(forKey: identifier)
+        archivedPanelIDs.removeValue(forKey: identifier)
         panelOrder.removeAll { $0 == identifier }
     }
 
@@ -519,6 +877,13 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
 
     private var orderedPanels: [NSPanel] {
         panelOrder.compactMap { panels[$0] }
+    }
+
+    private func saveAnnotatedImage(_ panel: NSPanel) {
+        guard let record = sessions[ObjectIdentifier(panel)],
+              let content = panel.contentView as? PinContentView,
+              !content.annotationEditor.elements.isEmpty else { return }
+        archiveStore.updateRecordedImage(content.annotationEditor.compositedImage(), id: record.archiveID)
     }
 
     private func makeActions(for panel: NSPanel) -> PinWindowActions {
@@ -735,15 +1100,18 @@ enum ImagePasteboard {
 private enum PinImageError: LocalizedError {
     case clipboardHasNoImage
     case imageTooLarge
+    case textTooLarge
     case imageEncodingFailed
     case clipboardWriteFailed
 
     var errorDescription: String? {
         switch self {
         case .clipboardHasNoImage:
-            return "剪贴板中没有可贴出的图片"
+            return "剪贴板中没有可贴出的图片或文本"
         case .imageTooLarge:
             return "图片尺寸过大，无法安全贴图"
+        case .textTooLarge:
+            return "剪贴板文本超过 1 MB，无法贴出"
         case .imageEncodingFailed:
             return "无法将图片编码为 PNG"
         case .clipboardWriteFailed:
@@ -808,6 +1176,7 @@ final class PinContentView: NSView {
     typealias PresentError = @MainActor (Error) -> Void
 
     private let image: NSImage
+    var sourceImage: NSImage { image }
     private let initialSize: CGSize
     private let copyImage: CopyImage
     private let saveImage: SaveImage
@@ -817,6 +1186,7 @@ final class PinContentView: NSView {
     private let closeButton: NSButton
     private let colorMagnifierView: ScreenshotMagnifierView
     let annotationEditor: PinAnnotationOverlayView
+    private let zoomIndicator = PinZoomIndicatorView()
     private var trackingAreaReference: NSTrackingArea?
     private var dragStartMouseLocation: CGPoint?
     private var dragStartWindowOrigin: CGPoint?
@@ -877,6 +1247,7 @@ final class PinContentView: NSView {
         closeButton.isHidden = true
         addSubview(closeButton)
         addSubview(annotationEditor)
+        addSubview(zoomIndicator)
         configureColorMagnifier()
     }
 
@@ -1312,6 +1683,8 @@ final class PinContentView: NSView {
             maximumSize: window.contentMaxSize
         )
         window.setFrame(frame, display: true)
+        let percent = Int(round((frame.width / initialSize.width) * 100))
+        zoomIndicator.show(percent: percent, in: bounds)
     }
 
     private func restoreInitialSize() {
@@ -1326,6 +1699,7 @@ final class PinContentView: NSView {
             height: initialSize.height
         )
         window.setFrame(frame, display: true)
+        zoomIndicator.show(percent: 100, in: bounds)
     }
 
     @objc private func copyPin() {

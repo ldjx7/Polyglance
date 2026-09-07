@@ -115,7 +115,7 @@ public sealed class ConfigurationStoreTests : IDisposable
         Assert.Equal("Ctrl+Shift+D4", configuration.HotkeyScreenTranslate);
         Assert.Equal(string.Empty, configuration.HotkeyLongScreenshot);
         Assert.Equal(string.Empty, configuration.HotkeyScreenRecording);
-        Assert.Equal(string.Empty, configuration.HotkeyRestoreMostRecentPin);
+        Assert.Equal("Ctrl+Shift+D5", configuration.HotkeyRestoreMostRecentPin);
         Assert.Equal(string.Empty, configuration.HotkeyMainTranslator);
     }
 
@@ -220,6 +220,20 @@ public sealed class ConfigurationStoreTests : IDisposable
         Assert.True(loaded.ScreenshotToolbarItems[0].IsVisible);
         Assert.Equal("pin", loaded.ScreenshotToolbarItems[1].Id);
         Assert.False(loaded.ScreenshotToolbarItems[1].IsVisible);
+    }
+
+    [Fact]
+    public void SaveCompletedScreenshotsToHistory_DefaultsToFalse_AndPersists()
+    {
+        var store = CreateStore(new InMemoryCredentialStore());
+        var defaultConfig = store.Load();
+        Assert.False(defaultConfig.SaveCompletedScreenshotsToHistory);
+
+        defaultConfig.SaveCompletedScreenshotsToHistory = true;
+        store.Save(defaultConfig);
+
+        var reloaded = store.Load();
+        Assert.True(reloaded.SaveCompletedScreenshotsToHistory);
     }
 
     private ConfigurationStore CreateStore(ICredentialStore credentials) =>

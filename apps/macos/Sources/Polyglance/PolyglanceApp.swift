@@ -51,13 +51,19 @@ struct PolyglanceApp: App {
                 Button {
                     appDelegate.pinClipboardImage()
                 } label: {
-                    Label("贴出剪贴板图片", systemImage: "doc.on.clipboard")
+                    Label("贴出剪贴板内容", systemImage: "doc.on.clipboard")
                 }
 
                 Button {
                     appDelegate.restoreMostRecentPin()
                 } label: {
                     Label("恢复最近关闭的贴图", systemImage: "arrow.uturn.backward")
+                }
+
+                Button {
+                    appDelegate.showPinHistory()
+                } label: {
+                    Label("贴图历史…", systemImage: "clock.arrow.circlepath")
                 }
 
                 Divider()

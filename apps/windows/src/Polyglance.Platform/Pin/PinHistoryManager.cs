@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.IO;
 using System.Windows.Media.Imaging;
 
@@ -15,84 +16,34 @@ public sealed class PinHistoryItem
 
 public static class PinHistoryManager
 {
-    private static readonly string HistoryDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "Polyglance",
-        "PinHistory"
-    );
-
-    static PinHistoryManager()
+    private static PinArchiveStore? _overrideStore;
+    private static readonly Lazy<PinArchiveStore> _defaultStore = new(() =>
     {
-        try
-        {
-            if (!Directory.Exists(HistoryDir))
-            {
-                Directory.CreateDirectory(HistoryDir);
-            }
-        }
-        catch { }
-    }
+        // Existing UI tests create pins without supplying a store; never write to real history.
+        bool testing = AppDomain.CurrentDomain.GetAssemblies().Any(assembly =>
+            assembly.GetName().Name?.StartsWith("xunit", StringComparison.OrdinalIgnoreCase) == true);
+        return testing
+            ? new PinArchiveStore(Path.Combine(Path.GetTempPath(), "PolyglanceTestArchive-" + Guid.NewGuid().ToString("N")))
+            : PinArchiveStore.Shared;
+    });
+    public static PinArchiveStore DefaultStore => _overrideStore ?? _defaultStore.Value;
 
-    public static void SavePinToHistory(BitmapSource bitmap)
+    public static void SetOverrideStore(PinArchiveStore? store) => _overrideStore = store;
+
+    public static void SavePinToHistory(BitmapSource bitmap, PinArchiveSource source = PinArchiveSource.Screenshot)
     {
-        try
-        {
-            string fileName = $"pin_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}.png";
-            string filePath = Path.Combine(HistoryDir, fileName);
-
-            var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(bitmap));
-            using var stream = File.Create(filePath);
-            encoder.Save(stream);
-
-            // Clean old pins (keep latest 30)
-            CleanupOldPins(30);
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Failed to save pin history: {ex.Message}");
-        }
+        DefaultStore.Append(bitmap, source);
     }
 
     public static List<PinHistoryItem> GetRecentPins()
     {
-        var list = new List<PinHistoryItem>();
-        try
+        var store = DefaultStore;
+        return store.List().Select(item => new PinHistoryItem
         {
-            if (!Directory.Exists(HistoryDir))
-                return list;
-
-            var files = new DirectoryInfo(HistoryDir).GetFiles("*.png");
-            Array.Sort(files, (a, b) => b.CreationTime.CompareTo(a.CreationTime));
-
-            foreach (var file in files)
-            {
-                list.Add(new PinHistoryItem
-                {
-                    FilePath = file.FullName,
-                    CreatedAt = file.CreationTime
-                });
-            }
-        }
-        catch { }
-
-        return list;
-    }
-
-    private static void CleanupOldPins(int maxCount)
-    {
-        try
-        {
-            var files = new DirectoryInfo(HistoryDir).GetFiles("*.png");
-            if (files.Length > maxCount)
-            {
-                Array.Sort(files, (a, b) => a.CreationTime.CompareTo(b.CreationTime));
-                for (int i = 0; i < files.Length - maxCount; i++)
-                {
-                    files[i].Delete();
-                }
-            }
-        }
-        catch { }
+            FilePath = store.GetImagePath(item),
+            CreatedAt = item.CreatedAt.ToLocalTime(),
+            Width = item.PixelWidth,
+            Height = item.PixelHeight
+        }).ToList();
     }
 }

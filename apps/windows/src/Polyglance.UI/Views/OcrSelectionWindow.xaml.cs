@@ -9,6 +9,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using Polyglance.Core.Models;
 using Polyglance.Core.Services;
+using Polyglance.Platform.Pin;
 
 namespace Polyglance.UI.Views;
 
@@ -316,7 +317,12 @@ public partial class OcrSelectionWindow : Window
             return;
         }
 
-        var pin = new PinWindow(_bitmap, _translationService, _configuration)
+        var pin = new PinWindow(
+            _bitmap,
+            _translationService,
+            _configuration,
+            source: PinArchiveSource.Ocr,
+            saveToHistory: true)
         {
             Left = Left,
             Top = Top

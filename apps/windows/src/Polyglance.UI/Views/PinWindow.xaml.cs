@@ -23,12 +23,14 @@ public partial class PinWindow : Window
     // that participates in WPF layout before the image content begins.
     internal const double ContentInset = 9;
     private readonly BitmapSource _bitmap;
+    internal BitmapSource Bitmap => _bitmap;
     private readonly TranslationService? _translationService;
     private readonly AppConfiguration? _configuration;
     private readonly Action<string> _colorClipboardWriter;
     private readonly MagnifierControl _colorMagnifier = new();
     private readonly Window _colorMagnifierWindow;
     private double _scale = 1.0;
+    private readonly System.Windows.Threading.DispatcherTimer _zoomBadgeTimer = new() { Interval = TimeSpan.FromMilliseconds(800) };
     private readonly List<UIElement> _annotationHistory = new();
     private readonly List<UIElement> _annotationRedoStack = new();
     private FrameworkElement? _currentDrawingShape;
@@ -37,6 +39,8 @@ public partial class PinWindow : Window
     private Point _drawingStart;
     private string _activeAnnotationTool = "None";
     private int _nextNumber = 1;
+    private bool _isLocked;
+    private readonly PinSessionController _sessions;
 
     internal bool IsColorPicking { get; private set; }
     internal bool IsAnnotationEditing { get; private set; }
@@ -53,8 +57,10 @@ public partial class PinWindow : Window
         BitmapSource bitmap,
         TranslationService? translationService = null,
         AppConfiguration? configuration = null,
-        Size? capturedDisplaySize = null)
-        : this(bitmap, translationService, configuration, Clipboard.SetText, capturedDisplaySize)
+        Size? capturedDisplaySize = null,
+        PinArchiveSource source = PinArchiveSource.Screenshot,
+        bool saveToHistory = true)
+        : this(bitmap, translationService, configuration, Clipboard.SetText, capturedDisplaySize, source, saveToHistory)
     {
     }
 
@@ -64,7 +70,11 @@ public partial class PinWindow : Window
         AppConfiguration? configuration,
         Action<string> colorClipboardWriter,
         Size? capturedDisplaySize = null,
-        bool saveToHistory = true)
+        PinArchiveSource source = PinArchiveSource.Screenshot,
+        bool saveToHistory = true,
+        PinArchiveStore? archiveStore = null,
+        string? archiveId = null,
+        PinSessionRecord? session = null)
     {
         InitializeComponent();
         _bitmap = bitmap;
@@ -99,8 +109,28 @@ public partial class PinWindow : Window
         AnnotationToolbar.ToolSelected += OnAnnotationToolSelected;
         AnnotationToolbar.ActionTriggered += OnAnnotationActionTriggered;
 
-        if (saveToHistory)
-            PinHistoryManager.SavePinToHistory(bitmap);
+        _sessions = PinSessionController.For(archiveStore);
+        _isLocked = session?.IsLocked ?? false;
+        Opacity = session?.Opacity ?? 1;
+        Topmost = session?.IsAlwaysOnTop ?? true;
+        _sessions.Register(this, bitmap, source, saveToHistory, archiveId, session, null, state => state with
+        {
+            X = double.IsFinite(Left) ? Left : 0, Y = double.IsFinite(Top) ? Top : 0,
+            Width = PinImage.Width, Height = PinImage.Height, Opacity = Opacity,
+            IsLocked = _isLocked, IsAlwaysOnTop = Topmost
+        }, () => _annotationHistory.Count > 0 ? CompositedBitmap() : null);
+        var destroyItem = new MenuItem { Header = "销毁贴图及历史" };
+        destroyItem.Click += async (_, _) => await _sessions.Destroy(this);
+        var destroyAllItem = new MenuItem { Header = "销毁全部贴图及对应历史" };
+        destroyAllItem.Click += async (_, _) => await _sessions.DestroyAll();
+        var lockItem = new MenuItem { Header = "锁定／解锁贴图" };
+        lockItem.Click += (_, _) => _isLocked = !_isLocked;
+        var restoreItem = new MenuItem { Header = "恢复最近关闭的贴图" };
+        restoreItem.Click += async (_, _) => await _sessions.Restore(false, _translationService, _configuration);
+        ContainerBorder.ContextMenu.Items.Add(lockItem);
+        ContainerBorder.ContextMenu.Items.Add(destroyItem);
+        ContainerBorder.ContextMenu.Items.Add(destroyAllItem);
+        ContainerBorder.ContextMenu.Items.Add(restoreItem);
 
         OcrMenuItem.IsEnabled = true;
         TranslateMenuItem.IsEnabled = translationService != null && configuration != null;
@@ -108,6 +138,7 @@ public partial class PinWindow : Window
         // selection. Apply its selected appearance before the first render so
         // there is no inactive-to-active flash after Show().
         SetSelectionHighlight(true);
+        _zoomBadgeTimer.Tick += (_, _) => { ZoomBadge.Visibility = Visibility.Collapsed; _zoomBadgeTimer.Stop(); };
     }
 
     private void OnActivated(object? sender, EventArgs e) => SetSelectionHighlight(true);
@@ -165,6 +196,16 @@ public partial class PinWindow : Window
 
     private void OnMouseDown(object sender, MouseButtonEventArgs e)
     {
+        if (_isLocked) return;
+        if (e.ChangedButton == MouseButton.Middle)
+        {
+            _scale = 1.0;
+            PinImage.Width = _bitmap.PixelWidth;
+            PinImage.Height = _bitmap.PixelHeight;
+            ShowZoomBadge(100);
+            e.Handled = true;
+            return;
+        }
         if (IsColorPicking)
         {
             UpdateColorAt(e.GetPosition(PinImage));
@@ -215,6 +256,7 @@ public partial class PinWindow : Window
 
     private void OnMouseWheel(object sender, MouseWheelEventArgs e)
     {
+        if (_isLocked) return;
         if (_activeAnnotationTool != "None" && !string.IsNullOrEmpty(_activeAnnotationTool))
         {
             if (_activeAnnotationTool == "Text")
@@ -247,7 +289,17 @@ public partial class PinWindow : Window
 
             PinImage.Width = _bitmap.PixelWidth * _scale;
             PinImage.Height = _bitmap.PixelHeight * _scale;
+            ShowZoomBadge((int)Math.Round(_scale * 100));
+            e.Handled = true;
         }
+    }
+
+    private void ShowZoomBadge(int percent)
+    {
+        ZoomBadgeText.Text = $"{percent}%";
+        ZoomBadge.Visibility = Visibility.Visible;
+        _zoomBadgeTimer.Stop();
+        _zoomBadgeTimer.Start();
     }
 
     private void OnMouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -265,6 +317,7 @@ public partial class PinWindow : Window
 
     private void OnKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape && !IsColorPicking) { Close(); e.Handled = true; return; }
         if (e.Key == Key.Escape && IsColorPicking)
         {
             FinishColorPicking();

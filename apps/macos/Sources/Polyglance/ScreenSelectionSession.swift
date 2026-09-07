@@ -235,6 +235,8 @@ fileprivate struct ScreenSelectionMirrorState {
     let selection: CGRect?
     let dimsDesktop: Bool
     let showsHandles: Bool
+    let showsInstructions: Bool
+    let sizeLabel: String?
     let annotations: [ScreenshotAnnotationElement]
     let toolbar: ScreenSelectionMirrorControl?
     let subToolbar: ScreenSelectionMirrorControl?
@@ -245,21 +247,43 @@ fileprivate struct ScreenSelectionMirrorControl {
     let image: NSImage
 }
 
+fileprivate struct ScreenSelectionMagnifierState {
+    let sampler: PixelSampler
+    let sample: PixelSample
+    let format: ScreenshotColorDisplayFormat
+    let point: CGPoint
+}
+
 @MainActor
 private final class CrossScreenSelectionMirrorView: NSView {
     private let capturedImage: CGImage
     private let displayImage: NSImage
     private let captureFrame: CGRect
-    private let displayFrame: CGRect
+    let displayFrame: CGRect
     private var state = ScreenSelectionMirrorState(
         selection: nil,
         dimsDesktop: false,
         showsHandles: false,
+        showsInstructions: true,
+        sizeLabel: nil,
         annotations: [],
         toolbar: nil,
         subToolbar: nil
     )
     private weak var inputTarget: ScreenSelectionView?
+    private let magnifierView: ScreenshotMagnifierView
+
+    var showsInstructionsForTesting: Bool {
+        state.showsInstructions
+    }
+
+    var isMagnifierHiddenForTesting: Bool {
+        magnifierView.isHidden
+    }
+
+    var magnifierDisplayTextForTesting: String {
+        magnifierView.displayText
+    }
 
     var displayedSelectionForTesting: CGRect? {
         localSelection(state.selection)
@@ -280,7 +304,12 @@ private final class CrossScreenSelectionMirrorView: NSView {
         self.captureFrame = captureFrame
         self.displayFrame = displayFrame
         self.inputTarget = inputTarget
+        magnifierView = ScreenshotMagnifierView(frame: CGRect(
+            origin: .zero,
+            size: ScreenshotMagnifierView.preferredSize
+        ))
         super.init(frame: CGRect(origin: .zero, size: displayFrame.size))
+        addSubview(magnifierView)
     }
 
     @available(*, unavailable)
@@ -297,17 +326,21 @@ private final class CrossScreenSelectionMirrorView: NSView {
         super.draw(dirtyRect)
         drawCapturedDesktop()
 
-        if state.dimsDesktop,
-           let selection = localSelection(state.selection),
-           selection.intersects(bounds) {
+        if state.dimsDesktop {
             NSColor.black.withAlphaComponent(0.46).setFill()
             bounds.fill()
+        }
 
-            NSGraphicsContext.saveGraphicsState()
-            NSBezierPath(rect: selection).addClip()
-            drawCapturedDesktop()
-            drawAnnotations()
-            NSGraphicsContext.restoreGraphicsState()
+        if let selection = localSelection(state.selection),
+           CaptureGeometry.isUsable(selection),
+           selection.intersects(bounds) {
+            if state.dimsDesktop {
+                NSGraphicsContext.saveGraphicsState()
+                NSBezierPath(rect: selection.intersection(bounds)).addClip()
+                drawCapturedDesktop()
+                drawAnnotations()
+                NSGraphicsContext.restoreGraphicsState()
+            }
 
             NSColor.controlAccentColor.setStroke()
             let border = NSBezierPath(rect: selection.insetBy(dx: 1, dy: 1))
@@ -317,22 +350,91 @@ private final class CrossScreenSelectionMirrorView: NSView {
             if state.showsHandles {
                 drawHandles(for: selection)
             }
+
+            if let sizeLabel = state.sizeLabel {
+                drawSizeLabel(sizeLabel, for: selection)
+            }
+        }
+
+        if state.showsInstructions {
+            drawInstructions()
         }
 
         drawControl(state.toolbar)
         drawControl(state.subToolbar)
     }
 
+    private var pointerTrackingArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let pointerTrackingArea {
+            removeTrackingArea(pointerTrackingArea)
+        }
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .cursorUpdate, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+        pointerTrackingArea = trackingArea
+    }
+
+    func updateMagnifier(
+        sampler: PixelSampler,
+        sample: PixelSample,
+        format: ScreenshotColorDisplayFormat,
+        at localPoint: CGPoint
+    ) {
+        magnifierView.frame = ScreenshotMagnifierView.positionedFrame(
+            near: localPoint,
+            in: bounds
+        )
+        magnifierView.update(
+            sampler: sampler,
+            sample: sample,
+            format: format
+        )
+        magnifierView.isHidden = false
+    }
+
+    func hideMagnifier() {
+        magnifierView.isHidden = true
+    }
+
+    func showMagnifierCopyConfirmation(_ copied: String) {
+        magnifierView.showCopyConfirmation(copied)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { self }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    override func mouseMoved(with event: NSEvent) { forward(event) }
+    override func cursorUpdate(with event: NSEvent) {
+        updateCursor()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        updateCursor()
+        forward(event)
+    }
+
     override func mouseDown(with event: NSEvent) { forward(event) }
     override func mouseDragged(with event: NSEvent) { forward(event) }
     override func mouseUp(with event: NSEvent) { forward(event) }
     override func rightMouseDown(with event: NSEvent) { forward(event) }
 
     override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .arrow)
+        addCursorRect(bounds, cursor: (inputTarget?.cursorMode ?? .crosshair) == .crosshair ? .crosshair : .arrow)
+    }
+
+    private func updateCursor() {
+        if (inputTarget?.cursorMode ?? .crosshair) == .crosshair {
+            NSCursor.crosshair.set()
+        } else {
+            NSCursor.arrow.set()
+        }
     }
 
     func forwardMouseForTesting(
@@ -428,6 +530,30 @@ private final class CrossScreenSelectionMirrorView: NSView {
             NSBezierPath(rect: handle).stroke()
         }
     }
+
+    private func drawInstructions() {
+        let text = "移动鼠标自动选择 · C 复制色值 · ⇧C 切换 HEX/RGB · 右键返回 · Esc 退出"
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 15, weight: .medium),
+            .foregroundColor: NSColor.white,
+            .backgroundColor: NSColor.black.withAlphaComponent(0.68),
+        ]
+        let size = text.size(withAttributes: attributes)
+        let point = CGPoint(x: bounds.midX - size.width / 2, y: bounds.maxY - size.height - 36)
+        text.draw(at: point, withAttributes: attributes)
+    }
+
+    private func drawSizeLabel(_ text: String, for selection: CGRect) {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
+            .foregroundColor: NSColor.white,
+            .backgroundColor: NSColor.black.withAlphaComponent(0.72),
+        ]
+        let size = text.size(withAttributes: attributes)
+        let x = max(6, min(selection.minX, bounds.maxX - size.width - 6))
+        let y = max(4, min(bounds.maxY - size.height - 4, selection.maxY + 6))
+        text.draw(at: CGPoint(x: x, y: y), withAttributes: attributes)
+    }
 }
 
 @MainActor
@@ -499,6 +625,15 @@ final class ScreenSelectionSession {
     var crossScreenToolbarFramesForTesting: [CGRect?] {
         crossScreenWindows.map { $0.mirrorView.displayedToolbarForTesting }
     }
+    var crossScreenMagnifierStatesForTesting: [Bool] {
+        crossScreenWindows.map { !$0.mirrorView.isMagnifierHiddenForTesting }
+    }
+    var crossScreenMagnifierDisplayTextsForTesting: [String] {
+        crossScreenWindows.map { $0.mirrorView.magnifierDisplayTextForTesting }
+    }
+    var crossScreenInstructionStatesForTesting: [Bool] {
+        crossScreenWindows.map { $0.mirrorView.showsInstructionsForTesting }
+    }
 
     var selectionWindowForTesting: ScreenSelectionWindow { window }
 
@@ -534,11 +669,13 @@ final class ScreenSelectionSession {
         }
         inactiveDimmingWindows = uniqueFrames.map(InactiveScreenDimmingWindow.init(frame:))
         let selectionView = window.selectionView
-        let participatingFrames = (crossScreenFrames ?? NSScreen.screens.map(\.frame))
-            .map(\.standardized)
-            .filter { frame in
-                frame.intersects(activeFrame) && !frame.equalTo(screen.frame.standardized)
-            }
+        let rawFrames = (crossScreenFrames ?? NSScreen.screens.map(\.frame)).map(\.standardized)
+        selectionView.participatingScreenFrames = rawFrames
+        let hostScreen = NSScreen.screens.first(where: { $0.frame.contains(activeFrame.origin) }) ?? screen
+        let hostFrame = (window.screen?.frame ?? hostScreen.frame).standardized
+        let participatingFrames = rawFrames.filter { frame in
+            frame.intersects(activeFrame) && !frame.equalTo(hostFrame)
+        }
         crossScreenWindows = participatingFrames.map { frame in
             CrossScreenSelectionMirrorWindow(
                 image: image,
@@ -549,6 +686,49 @@ final class ScreenSelectionSession {
         }
         selectionView.onMirrorStateChange = { [weak self] state in
             self?.crossScreenWindows.forEach { $0.mirrorView.update(state) }
+        }
+        selectionView.onMagnifierStateChange = { [weak self, weak selectionView] state in
+            guard let self, let selectionView else { return }
+            guard let state else {
+                self.crossScreenWindows.forEach { $0.mirrorView.hideMagnifier() }
+                return
+            }
+            var matchedMirror: CrossScreenSelectionMirrorWindow?
+            for window in self.crossScreenWindows {
+                let mirrorFrame = window.mirrorView.displayFrame
+                let mirrorRect = mirrorFrame.offsetBy(dx: -activeFrame.minX, dy: -activeFrame.minY)
+                if mirrorRect.contains(state.point) {
+                    matchedMirror = window
+                    break
+                }
+            }
+
+            if let matchedMirror {
+                selectionView.hideHostMagnifier()
+                for window in self.crossScreenWindows {
+                    if window === matchedMirror {
+                        let mirrorFrame = window.mirrorView.displayFrame
+                        let mirrorRect = mirrorFrame.offsetBy(dx: -activeFrame.minX, dy: -activeFrame.minY)
+                        let localPoint = CGPoint(
+                            x: state.point.x - mirrorRect.minX,
+                            y: state.point.y - mirrorRect.minY
+                        )
+                        window.mirrorView.updateMagnifier(
+                            sampler: state.sampler,
+                            sample: state.sample,
+                            format: state.format,
+                            at: localPoint
+                        )
+                    } else {
+                        window.mirrorView.hideMagnifier()
+                    }
+                }
+            } else {
+                self.crossScreenWindows.forEach { $0.mirrorView.hideMagnifier() }
+            }
+        }
+        selectionView.onMagnifierCopyConfirmation = { [weak self] copied in
+            self?.crossScreenWindows.forEach { $0.mirrorView.showMagnifierCopyConfirmation(copied) }
         }
         selectionView.publishMirrorState()
         inactiveDimmingWindows.forEach { dimmingWindow in
@@ -769,6 +949,9 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     var onAction: ((ScreenshotSelectionAction) -> Void)?
     var onCancel: (() -> Void)?
     fileprivate var onMirrorStateChange: ((ScreenSelectionMirrorState) -> Void)?
+    fileprivate var onMagnifierStateChange: ((ScreenSelectionMagnifierState?) -> Void)?
+    fileprivate var onMagnifierCopyConfirmation: ((String) -> Void)?
+    private var lastMagnifierPoint: CGPoint?
 
     private let capturedImage: CGImage
     private let displayImage: NSImage
@@ -848,7 +1031,29 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         return toolbarPlacementBounds.width < preferredToolbarWidth + 16
     }
 
+    var participatingScreenFrames: [CGRect] = []
+
+    private func screenFrame(for selection: CGRect) -> CGRect {
+        let globalSelection = selection.offsetBy(dx: captureFrame.minX, dy: captureFrame.minY)
+        let center = CGPoint(x: globalSelection.midX, y: globalSelection.midY)
+        let candidateFrames = participatingScreenFrames.isEmpty ? NSScreen.screens.map(\.frame) : participatingScreenFrames
+        if let matchingFrame = candidateFrames.first(where: { $0.contains(center) }) {
+            return matchingFrame.offsetBy(dx: -captureFrame.minX, dy: -captureFrame.minY)
+        }
+        if let matchingFrame = candidateFrames.first(where: { $0.intersects(globalSelection) }) {
+            return matchingFrame.offsetBy(dx: -captureFrame.minX, dy: -captureFrame.minY)
+        }
+        return toolbarPlacementFrame
+    }
+
     private var toolbarPlacementBounds: CGRect {
+        if let selection = confirmedSelection ?? displayedSelection {
+            let localFrame = screenFrame(for: selection)
+            let placement = localFrame.intersection(bounds)
+            if !placement.isNull && !placement.isEmpty {
+                return placement
+            }
+        }
         let placementBounds = toolbarPlacementFrame.intersection(bounds)
         return placementBounds.isNull || placementBounds.isEmpty ? bounds : placementBounds
     }
@@ -916,10 +1121,13 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     var showsSelectionHandles: Bool { confirmedSelection != nil }
 
     fileprivate func publishMirrorState() {
+        let sizeText = displayedSelection.map { sizeLabelText(for: $0) }
         onMirrorStateChange?(ScreenSelectionMirrorState(
             selection: displayedSelection,
             dimsDesktop: dimsCurrentScreen,
             showsHandles: showsSelectionHandles,
+            showsInstructions: confirmedSelection == nil,
+            sizeLabel: sizeText,
             annotations: annotationHistory.elements
                 + (activeAnnotationElement.map { [$0] } ?? []),
             toolbar: mirrorControl(for: toolbar),
@@ -1866,6 +2074,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         updateAnnotationControls()
         updateCursor()
         needsDisplay = true
+        publishMirrorState()
         startGlobalDragTracking()
     }
 
@@ -1930,6 +2139,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             return
         }
         needsDisplay = true
+        publishMirrorState()
     }
 
     private func finishInitialSelection(at point: CGPoint) {
@@ -1987,6 +2197,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         hideToolbarHelp()
         setSelectionCursor(for: edit.target, isDragging: true)
         needsDisplay = true
+        publishMirrorState()
     }
 
     @discardableResult
@@ -2321,6 +2532,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         }
         updateCursor()
         needsDisplay = true
+        publishMirrorState()
     }
 
     private func resetAnnotationControls() {
@@ -2416,6 +2628,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
                 return true
             }
             magnifierView.showCopyConfirmation(copied)
+            onMagnifierCopyConfirmation?(copied)
         } else {
             NSSound.beep()
         }
@@ -2440,34 +2653,56 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         }
 
         currentPixelSample = sample
+        lastMagnifierPoint = point
+
+        let state = ScreenSelectionMagnifierState(
+            sampler: pixelSampler,
+            sample: sample,
+            format: colorDisplayFormat,
+            point: point
+        )
+        updateHostMagnifier(with: state)
+        onMagnifierStateChange?(state)
+    }
+
+    private func updateHostMagnifier(with state: ScreenSelectionMagnifierState) {
         magnifierView.frame = ScreenshotMagnifierView.positionedFrame(
-            near: point,
+            near: state.point,
             in: bounds
         )
         magnifierView.update(
-            sampler: pixelSampler,
-            sample: sample,
-            format: colorDisplayFormat
+            sampler: state.sampler,
+            sample: state.sample,
+            format: state.format
         )
         magnifierView.isHidden = false
     }
 
+    fileprivate func hideHostMagnifier() {
+        magnifierView.isHidden = true
+    }
+
     private func refreshMagnifierContent() {
-        guard !magnifierView.isHidden,
-              let pixelSampler,
-              let currentPixelSample else {
+        guard let pixelSampler,
+              let currentPixelSample,
+              let lastMagnifierPoint else {
             return
         }
-        magnifierView.update(
+        let state = ScreenSelectionMagnifierState(
             sampler: pixelSampler,
             sample: currentPixelSample,
-            format: colorDisplayFormat
+            format: colorDisplayFormat,
+            point: lastMagnifierPoint
         )
+        updateHostMagnifier(with: state)
+        onMagnifierStateChange?(state)
     }
 
     private func hideMagnifier() {
         currentPixelSample = nil
-        magnifierView?.isHidden = true
+        lastMagnifierPoint = nil
+        hideHostMagnifier()
+        onMagnifierStateChange?(nil)
     }
 
     private func beginTextEditing(at point: CGPoint, in selection: CGRect) {
@@ -2594,6 +2829,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         if candidate != hoveredCandidate {
             hoveredCandidate = candidate
             needsDisplay = true
+            publishMirrorState()
         }
         scheduleElementRefinement(at: point)
     }
@@ -2658,6 +2894,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         }
         hoveredCandidate = candidate
         needsDisplay = true
+        publishMirrorState()
     }
 
     private func cancelHoverRefinement() {
@@ -2743,17 +2980,23 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             .backgroundColor: NSColor.black.withAlphaComponent(0.68),
         ]
         let size = text.size(withAttributes: attributes)
-        let point = CGPoint(x: bounds.midX - size.width / 2, y: bounds.maxY - size.height - 36)
+        let hostBounds = toolbarPlacementFrame.intersection(bounds)
+        let targetBounds = (!hostBounds.isNull && !hostBounds.isEmpty) ? hostBounds : bounds
+        let point = CGPoint(x: targetBounds.midX - size.width / 2, y: targetBounds.maxY - size.height - 36)
         text.draw(at: point, withAttributes: attributes)
     }
 
-    private func drawSizeLabel(for selection: CGRect) {
+    private func sizeLabelText(for selection: CGRect) -> String {
         let outputSize = CaptureGeometry.outputPixelSize(
             selection: selection,
             viewSize: bounds.size,
             imagePixelSize: CGSize(width: capturedImage.width, height: capturedImage.height)
         )
-        let text = "\(Int(outputSize.width)) × \(Int(outputSize.height)) px"
+        return "\(Int(outputSize.width)) × \(Int(outputSize.height)) px"
+    }
+
+    private func drawSizeLabel(for selection: CGRect) {
+        let text = sizeLabelText(for: selection)
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
             .foregroundColor: NSColor.white,

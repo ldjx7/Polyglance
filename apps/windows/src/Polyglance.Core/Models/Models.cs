@@ -86,6 +86,9 @@ public sealed class AppConfiguration
     [JsonPropertyName("hotkey_restore_most_recent_pin")]
     public string HotkeyRestoreMostRecentPin { get; set; } = GlobalShortcutDefaults.RestoreMostRecentPin;
 
+    [JsonPropertyName("save_completed_screenshots_to_history")]
+    public bool SaveCompletedScreenshotsToHistory { get; set; } = false;
+
     [JsonPropertyName("auto_check_updates")]
     public bool AutoCheckUpdates { get; set; } = true;
 
@@ -182,7 +185,7 @@ public static class GlobalShortcutDefaults
     public const string ScreenTranslate = "Ctrl+Shift+D4";
     public const string LongScreenshot = "";
     public const string ScreenRecording = "";
-    public const string RestoreMostRecentPin = "";
+    public const string RestoreMostRecentPin = "Ctrl+Shift+D5";
     public const string MainTranslator = "";
 
     public static bool IsCompleteLegacyDefaultSet(AppConfiguration configuration) =>

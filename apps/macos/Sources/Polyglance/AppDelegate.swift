@@ -26,12 +26,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var shortcutConfiguration = GlobalShortcutConfiguration.default
     private var translatorPanel: NSPanel?
     private var selectionCaptureTask: Task<Void, Never>?
-    private lazy var settingsWindowLifecycleDelegate = SettingsWindowLifecycleDelegate {
-        NSApp.setActivationPolicy(SettingsApplicationPresentation.backgroundActivationPolicy)
+    private lazy var settingsWindowLifecycleDelegate = SettingsWindowLifecycleDelegate { [weak self] in
+        guard let self else { return }
+        if self.pinHistoryWindowCoordinator.window?.isVisible != true {
+            NSApp.setActivationPolicy(SettingsApplicationPresentation.backgroundActivationPolicy)
+        }
     }
     private lazy var settingsWindowCoordinator = AuxiliaryWindowCoordinator<NSWindow>(
         makeWindow: { [unowned self] in makeSettingsWindow() },
         present: { [unowned self] window in
+            SettingsWindowPlacement.center(window, on: settingsPresentationScreen())
+            window.makeKeyAndOrderFront(nil)
+        },
+        close: { $0.close() }
+    )
+    private lazy var pinHistoryViewModel = PinHistoryViewModel(
+        archiveStore: pinWindowManager.archiveStore,
+        onPinItem: { [weak self] image in
+            self?.pinWindowManager.pin(
+                image,
+                sourceFrame: nil,
+                preferredDisplaySize: nil,
+                source: .legacy,
+                recordInArchive: false
+            )
+        }
+    )
+    private lazy var pinHistoryWindowLifecycleDelegate = SettingsWindowLifecycleDelegate { [weak self] in
+        guard let self else { return }
+        if self.settingsWindowCoordinator.window?.isVisible != true {
+            NSApp.setActivationPolicy(SettingsApplicationPresentation.backgroundActivationPolicy)
+        }
+    }
+    private lazy var pinHistoryWindowCoordinator = AuxiliaryWindowCoordinator<NSWindow>(
+        makeWindow: { [unowned self] in makePinHistoryWindow() },
+        present: { [unowned self] window in
+            Task { await pinHistoryViewModel.reload() }
             SettingsWindowPlacement.center(window, on: settingsPresentationScreen())
             window.makeKeyAndOrderFront(nil)
         },
@@ -78,16 +108,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     private lazy var applicationTerminationCoordinator = ApplicationTerminationCoordinator(
         hasPendingWork: { [unowned self] in
-            screenRecordingCoordinator.isRecording
+            true // Archive writes may still be queued even when recording is idle.
         },
         prepare: { [unowned self] in
-            return await screenRecordingCoordinator.prepareForApplicationTermination()
+            guard await screenRecordingCoordinator.prepareForApplicationTermination() else { return false }
+            await pinWindowManager.prepareForTermination()
+            return true
         }
     )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NotificationCenter.default.addObserver(self, selector: #selector(showArchiveWriteFailure), name: PinArchiveStore.writeFailedNotification, object: nil)
         NSApp.mainMenu = PolyglanceApplicationMenu.make(settingsTarget: self)
         createTranslatorPanel()
+        pinHistoryViewModel.onPinContent = { [weak self] image, id, text in
+            self?.pinWindowManager.pinHistoryItem(image, id: id, text: text)
+        }
+        Task { await pinWindowManager.restoreSessionWindows() }
         if let configuration = try? configurationStore.load() {
             apply(configuration)
         }
@@ -125,6 +162,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showTranslator(capturingSelection: false, translateImmediately: false)
             viewModel.presentError(error.localizedDescription)
         }
+    }
+
+    @objc private func showArchiveWriteFailure() {
+        let alert = NSAlert()
+        alert.messageText = "未能保存到贴图历史"
+        alert.informativeText = "截图或贴图仍可使用。请检查历史目录的可用空间、写入权限或文件占用情况后重试。"
+        alert.alertStyle = .warning
+        alert.runModal()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -199,6 +244,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func restoreMostRecentPin() {
         _ = pinWindowManager.restoreMostRecentPin()
+    }
+
+    func showPinHistory() {
+        NSApp.setActivationPolicy(SettingsApplicationPresentation.visibleActivationPolicy)
+        NSApp.activate(ignoringOtherApps: true)
+        if let window = pinHistoryWindowCoordinator.window, !window.isVisible {
+            pinHistoryWindowCoordinator.discard()
+        }
+        pinHistoryWindowCoordinator.show()
     }
 
     func hideAllPins() {
@@ -363,6 +417,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return window
     }
 
+    private func makePinHistoryWindow() -> NSWindow {
+        let historyView = PinHistoryView(viewModel: pinHistoryViewModel)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 500),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "贴图历史"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
+        window.isReleasedWhenClosed = false
+        window.delegate = pinHistoryWindowLifecycleDelegate
+        window.contentViewController = NSHostingController(rootView: historyView)
+        window.center()
+        return window
+    }
+
     private func settingsPresentationScreen() -> NSScreen? {
         let pointer = NSEvent.mouseLocation
         return NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? NSScreen.main
@@ -401,7 +474,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         shortcutConfiguration = shortcuts
         apply(configuration)
-        settingsWindowCoordinator.close()
     }
 
     private func makeTranslationClient() -> any TranslationClient {

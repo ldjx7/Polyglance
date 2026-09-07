@@ -28,6 +28,21 @@
             <Grid x:Name="PinSurface">
                 <Image x:Name="PinImage" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
                 <Canvas x:Name="AnnotationCanvas" ClipToBounds="True"/>
+                <Border x:Name="ZoomBadge"
+                        Background="#BF000000"
+                        CornerRadius="8"
+                        Padding="12,6"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        IsHitTestVisible="False"
+                        Visibility="Collapsed">
+                    <TextBlock x:Name="ZoomBadgeText"
+                               Text="100%"
+                               Foreground="#FFFFFF"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Center"/>
+                </Border>
             </Grid>
             <controls:ScreenshotToolbar x:Name="AnnotationToolbar"
                                         Visibility="Collapsed"

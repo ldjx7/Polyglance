@@ -178,6 +178,7 @@ public partial class SettingsWindow : FluentWindow
             CmbDefaultRecordDelay,
             _config.DefaultRecordingDelaySeconds.ToString(),
             "0");
+        ToggleSaveCompletedScreenshotsToHistory.IsChecked = _config.SaveCompletedScreenshotsToHistory;
 
         try
         {
@@ -667,6 +668,7 @@ public partial class SettingsWindow : FluentWindow
             out int recordingDelay)
             ? recordingDelay
             : 0;
+        _config.SaveCompletedScreenshotsToHistory = ToggleSaveCompletedScreenshotsToHistory.IsChecked == true;
 
         _config.ScreenshotToolbarItems = _toolbarItems
             .Select(vm => new ScreenshotToolbarItemConfig(vm.Id, vm.IsVisible))

@@ -23,18 +23,29 @@ struct LongScreenshotOutputActions {
     )
 
     static func live(pinWindowManager: PinWindowManager) -> Self {
-        live(pinWindowManager: pinWindowManager, fileSaver: ScreenshotFileSaver())
+        live(pinWindowManager: pinWindowManager, fileSaver: ScreenshotFileSaver(), configurationStore: AppConfigurationStore())
     }
 
     static func live(
         pinWindowManager: PinWindowManager,
-        fileSaver: ScreenshotFileSaver
+        fileSaver: ScreenshotFileSaver,
+        configurationStore: AppConfigurationStore = AppConfigurationStore()
     ) -> Self {
         Self(
-            copy: { try ImagePasteboard.write($0) },
-            save: { _ = try fileSaver.save($0) },
+            copy: { image in
+                try ImagePasteboard.write(image)
+                if (try? configurationStore.load())?.saveCompletedScreenshotsToHistory == true {
+                    pinWindowManager.archiveStore.record(image: image, source: .longScreenshot)
+                }
+            },
+            save: { image in
+                let saved = try fileSaver.save(image)
+                if saved, (try? configurationStore.load())?.saveCompletedScreenshotsToHistory == true {
+                    pinWindowManager.archiveStore.record(image: image, source: .longScreenshot)
+                }
+            },
             pin: { image, sourceFrame in
-                pinWindowManager.pin(image, sourceFrame: sourceFrame)
+                pinWindowManager.pin(image, sourceFrame: sourceFrame, source: .longScreenshot)
             }
         )
     }

@@ -466,6 +466,21 @@
                                     </ComboBox>
                                 </Grid>
                             </ui:Card>
+
+                            <!-- 截图历史 -->
+                            <ui:Card Padding="16,14" Margin="0,0,0,10">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Text="保存已完成截图到历史记录" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock Text="复制或保存普通截图与长截图成功后，自动保存到贴图历史。数据仅保存在本机（最多 30 条 / 512 MiB）。" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                    <ui:ToggleSwitch x:Name="ToggleSaveCompletedScreenshotsToHistory" Grid.Column="1" VerticalAlignment="Center"/>
+                                </Grid>
+                            </ui:Card>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>

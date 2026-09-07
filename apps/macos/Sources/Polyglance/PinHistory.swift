@@ -46,6 +46,8 @@ enum PinWindowSnapshotContent {
 }
 
 struct PinWindowSnapshot {
+    var session: PinSessionRecord? = nil
+    var archiveID: String? = nil
     let content: PinWindowSnapshotContent
     let frame: CGRect
     let initialSize: CGSize
@@ -191,6 +193,15 @@ final class PinHistoryStore {
     func removeAll() {
         snapshots.removeAll(keepingCapacity: false)
         estimatedMemoryBytes = 0
+    }
+
+    func remove(archiveID: String) {
+        remove { $0.session?.archiveID == archiveID || $0.archiveID == archiveID }
+    }
+
+    func remove(where predicate: (PinWindowSnapshot) -> Bool) {
+        snapshots.removeAll(where: predicate)
+        estimatedMemoryBytes = snapshots.reduce(0) { $0 + $1.estimatedMemoryBytes }
     }
 
     private func removeOldest() {
