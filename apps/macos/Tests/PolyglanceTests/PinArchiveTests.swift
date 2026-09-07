@@ -111,17 +111,23 @@ final class PinArchiveTests: XCTestCase {
     }
 
     func testEvictionOnByteLimit() throws {
-        let store = PinArchiveStore(directoryURL: temporaryDirectory, maximumCount: 10, maximumTotalBytes: 900)
         let img = makeSolidImage(width: 10, height: 10)
-
+        let store = PinArchiveStore(directoryURL: temporaryDirectory, maximumCount: 10, maximumTotalBytes: 10 * 1024 * 1024)
         let item1 = try XCTUnwrap(store.append(image: img, source: .screenshot))
-        Thread.sleep(forTimeInterval: 0.02)
-        let item2 = try XCTUnwrap(store.append(image: img, source: .translation))
+        let file1URL = temporaryDirectory.appendingPathComponent(item1.imageFileName)
+        let fileSize = try XCTUnwrap(try FileManager.default.attributesOfItem(atPath: file1URL.path)[.size] as? Int64)
 
-        let items = store.list()
+        let storeWithLimit = PinArchiveStore(
+            directoryURL: temporaryDirectory,
+            maximumCount: 10,
+            maximumTotalBytes: Int64(Double(fileSize) * 1.5)
+        )
+        Thread.sleep(forTimeInterval: 0.02)
+        let item2 = try XCTUnwrap(storeWithLimit.append(image: img, source: .translation))
+
+        let items = storeWithLimit.list()
         XCTAssertEqual(items.count, 1)
         XCTAssertEqual(items[0].id, item2.id)
-        let file1URL = temporaryDirectory.appendingPathComponent(item1.imageFileName)
         XCTAssertFalse(FileManager.default.fileExists(atPath: file1URL.path))
     }
 
