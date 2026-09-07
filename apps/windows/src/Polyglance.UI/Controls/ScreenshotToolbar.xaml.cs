@@ -271,6 +271,28 @@ public partial class ScreenshotToolbar : UserControl
         }
     }
 
+    public void SetCurrentStrokeSize(double size)
+    {
+        double newSize = Math.Clamp(size, 1, 50);
+        CurrentStrokeSize = newSize;
+        if (TxtStrokeSize != null)
+            TxtStrokeSize.Text = ((int)newSize).ToString();
+        if (SliderStrokeSize != null)
+            SliderStrokeSize.Value = newSize;
+    }
+
+    public void SetCurrentColor(Color color)
+    {
+        CurrentColor = color;
+    }
+
+    public void SetFontSize(double size)
+    {
+        FontSizeValue = size;
+        if (CmbFontSize != null)
+            SelectComboItemByTag(CmbFontSize, ((int)size).ToString());
+    }
+
     public void AdjustFontSize(int step)
     {
         if (CmbFontSize == null || CmbFontSize.Items.Count == 0) return;
@@ -339,6 +361,7 @@ public partial class ScreenshotToolbar : UserControl
         {
             CmbLineDash.SelectedIndex = LineDashPattern;
         }
+        SubToolActionTriggered?.Invoke("DashChanged");
     }
 
     private void OnArrowStyleChanged(object sender, SelectionChangedEventArgs e)
@@ -346,6 +369,7 @@ public partial class ScreenshotToolbar : UserControl
         if (CmbArrowStyle == null) return;
         ArrowStyle = CmbArrowStyle.SelectedIndex;
         HasArrow = true;
+        SubToolActionTriggered?.Invoke("ArrowStyleChanged");
     }
 
     private void OnLineDashChanged(object sender, SelectionChangedEventArgs e)
@@ -357,6 +381,7 @@ public partial class ScreenshotToolbar : UserControl
         {
             CmbRectDash.SelectedIndex = LineDashPattern;
         }
+        SubToolActionTriggered?.Invoke("DashChanged");
     }
 
     private void OnFontFamilyChanged(object sender, SelectionChangedEventArgs e)
@@ -364,6 +389,7 @@ public partial class ScreenshotToolbar : UserControl
         if (CmbFontFamily.SelectedItem is ComboBoxItem item && item.Tag is string tag)
         {
             CurrentFontFamily = tag;
+            SubToolActionTriggered?.Invoke("FontFamilyChanged");
         }
     }
 
@@ -372,6 +398,7 @@ public partial class ScreenshotToolbar : UserControl
         if (CmbFontSize.SelectedItem is ComboBoxItem item && item.Tag is string tag && double.TryParse(tag, out double size))
         {
             FontSizeValue = size;
+            SubToolActionTriggered?.Invoke("FontSizeChanged");
         }
     }
 
@@ -397,6 +424,7 @@ public partial class ScreenshotToolbar : UserControl
                 MosaicIsBlur = true;
                 break;
         }
+        SubToolActionTriggered?.Invoke("MosaicStyleChanged");
     }
 
     public bool IsSubToolbarVisible => SubToolbarBorder != null && SubToolbarBorder.Visibility == Visibility.Visible;
@@ -668,6 +696,46 @@ public partial class ScreenshotToolbar : UserControl
             _selectedToolButton = null;
         }
         SubToolbarBorder.Visibility = Visibility.Collapsed;
+    }
+
+    public void SelectTool(string tool)
+    {
+        CloseAllPopups();
+        if (_selectedToolButton != null)
+        {
+            ClearSelectedAppearance(_selectedToolButton);
+            _selectedToolButton = null;
+        }
+
+        if (tool == "None" || string.IsNullOrEmpty(tool))
+        {
+            SubToolbarBorder.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var btn = tool switch
+        {
+            "Rect" => BtnRect,
+            "Ellipse" => BtnEllipse,
+            "Pen" => BtnPen,
+            "Line" => BtnLine,
+            "Arrow" => BtnArrow,
+            "Text" => BtnText,
+            "Mosaic" => BtnMosaic,
+            "Number" => BtnNumber,
+            _ => null
+        };
+
+        if (btn != null)
+        {
+            _selectedToolButton = btn;
+            var activeFg = TryFindResource("ToolbarActiveBrush") as Brush ?? new SolidColorBrush(Color.FromRgb(10, 132, 255));
+            var activeBg = TryFindResource("ToolbarActiveBackgroundBrush") as Brush ?? new SolidColorBrush(Color.FromArgb(31, 10, 132, 255));
+            btn.Foreground = activeFg;
+            btn.Background = activeBg;
+            UpdateSubToolbar(tool);
+            SubToolbarBorder.Visibility = Visibility.Visible;
+        }
     }
 
     public void SetCompactLayout(bool compact)

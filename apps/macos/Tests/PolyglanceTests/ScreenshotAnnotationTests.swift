@@ -356,6 +356,89 @@ final class ScreenshotAnnotationTests: XCTestCase {
         XCTAssertEqual(subToolbar.currentStyle, style)
     }
 
+    func testHitTestingAndHandlesForShapes() {
+        let style = ScreenshotAnnotationStyle(color: .systemRed, lineWidth: 4)
+        let rectElem = ScreenshotAnnotationElement.rectangle(
+            start: CGPoint(x: 20, y: 20),
+            end: CGPoint(x: 100, y: 80),
+            style: style
+        )
+        XCTAssertTrue(rectElem.hitTest(point: CGPoint(x: 20, y: 50), tolerance: 4))
+        XCTAssertTrue(rectElem.hitTest(point: CGPoint(x: 60, y: 20), tolerance: 4))
+        XCTAssertFalse(rectElem.hitTest(point: CGPoint(x: 60, y: 50), tolerance: 4))
+
+        let handles = rectElem.handles()
+        XCTAssertEqual(handles.count, 8)
+        XCTAssertEqual(rectElem.hitTestHandle(point: CGPoint(x: 20, y: 20), handleRadius: 6), .topLeft)
+        XCTAssertEqual(rectElem.hitTestHandle(point: CGPoint(x: 100, y: 80), handleRadius: 6), .bottomRight)
+
+        let resized = rectElem.resizing(handle: .bottomRight, to: CGPoint(x: 120, y: 90))
+        XCTAssertEqual(resized.boundingBox, CGRect(x: 20, y: 20, width: 100, height: 70))
+
+        let moved = rectElem.moving(by: CGPoint(x: 10, y: 15))
+        XCTAssertEqual(moved.boundingBox, CGRect(x: 30, y: 35, width: 80, height: 60))
+
+        let lineElem = ScreenshotAnnotationElement.line(
+            start: CGPoint(x: 10, y: 10),
+            end: CGPoint(x: 90, y: 10),
+            style: style
+        )
+        XCTAssertTrue(lineElem.hitTest(point: CGPoint(x: 50, y: 11), tolerance: 4))
+        XCTAssertFalse(lineElem.hitTest(point: CGPoint(x: 50, y: 30), tolerance: 4))
+        XCTAssertEqual(lineElem.handles().count, 2)
+        XCTAssertEqual(lineElem.hitTestHandle(point: CGPoint(x: 10, y: 10), handleRadius: 5), .start)
+        XCTAssertEqual(lineElem.hitTestHandle(point: CGPoint(x: 90, y: 10), handleRadius: 5), .end)
+    }
+
+    func testSecondaryEditingHistorySnapshotAndDeletion() {
+        let style = ScreenshotAnnotationStyle.default
+        var history = ScreenshotAnnotationHistory()
+        let first = ScreenshotAnnotationElement.rectangle(start: CGPoint(x: 10, y: 10), end: CGPoint(x: 40, y: 40), style: style)
+        let second = ScreenshotAnnotationElement.ellipse(start: CGPoint(x: 50, y: 50), end: CGPoint(x: 90, y: 90), style: style)
+
+        history.append(first)
+        history.append(second)
+        XCTAssertEqual(history.selectedIndex, 1)
+
+        history.beginInteractiveChange()
+        let modifiedSecond = second.moving(by: CGPoint(x: 5, y: 5))
+        history.updateSelected(to: modifiedSecond)
+        XCTAssertEqual(history.elements[1], modifiedSecond)
+
+        _ = history.undo()
+        XCTAssertEqual(history.elements[1], second)
+
+        _ = history.redo()
+        XCTAssertEqual(history.elements[1], modifiedSecond)
+
+        history.select(at: 0)
+        XCTAssertEqual(history.selectedIndex, 0)
+        let deleted = history.deleteSelected()
+        XCTAssertEqual(deleted, first)
+        XCTAssertEqual(history.elements, [modifiedSecond])
+
+        _ = history.undo()
+        XCTAssertEqual(history.elements.count, 2)
+        XCTAssertEqual(history.elements[0], first)
+        XCTAssertEqual(history.elements[1], modifiedSecond)
+    }
+
+    func testNumberAnnotationBoundingBoxAndStyleUpdate() {
+        var style = ScreenshotAnnotationStyle.default
+        style.lineWidth = 4
+        let numberElem = ScreenshotAnnotationElement.number(
+            origin: CGPoint(x: 50, y: 50),
+            value: 1,
+            style: style
+        )
+        XCTAssertEqual(numberElem.boundingBox, CGRect(x: 38, y: 38, width: 24, height: 24))
+
+        var newStyle = style
+        newStyle.lineWidth = 6
+        let updated = numberElem.withStyle(newStyle)
+        XCTAssertEqual(updated.boundingBox, CGRect(x: 32, y: 32, width: 36, height: 36))
+    }
+
     private func makeGradientImage(width: Int, height: Int) throws -> CGImage {
         var pixels = Data(count: width * height * 4)
         pixels.withUnsafeMutableBytes { rawBuffer in

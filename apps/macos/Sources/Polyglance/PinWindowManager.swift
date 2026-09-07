@@ -1464,6 +1464,10 @@ final class PinContentView: NSView {
     }
 
     override func scrollWheel(with event: NSEvent) {
+        if annotationEditor.isEditing {
+            annotationEditor.scrollWheel(with: event)
+            return
+        }
         guard let window else {
             return
         }

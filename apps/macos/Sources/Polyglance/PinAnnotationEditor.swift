@@ -12,8 +12,12 @@ final class PinAnnotationOverlayView: NSView {
     private var toolButtons: [ScreenshotAnnotationTool: NSButton] = [:]
     private var textField: NSTextField?
     private var textOrigin: CGPoint?
-    private var movingText: (index: Int, grabOffset: CGPoint)?
+    private var draggingHandle: AnnotationHandleType?
+    private var movingElement: (index: Int, lastPoint: CGPoint)?
+    private var trackingArea: NSTrackingArea?
     private weak var toolbarParentWindow: NSWindow?
+    private var isScrollingAnnotation = false
+    private var scrollEndWorkItem: DispatchWorkItem?
 
     private(set) var isEditing = false
     private(set) var toolbarPanel: NSPanel?
@@ -36,6 +40,65 @@ final class PinAnnotationOverlayView: NSView {
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: isEditing ? .crosshair : .arrow)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        guard isEditing else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        updateCursor(at: point)
+    }
+
+    private func updateCursor(at point: CGPoint) {
+        if let draggingHandle {
+            setHandleCursor(for: draggingHandle)
+            return
+        }
+        if movingElement != nil {
+            NSCursor.closedHand.set()
+            return
+        }
+        if activeElement == nil, let selected = history.selectedElement {
+            if let handle = selected.hitTestHandle(point: point) {
+                setHandleCursor(for: handle)
+                return
+            }
+            if selected.hitTest(point: point) {
+                NSCursor.openHand.set()
+                return
+            }
+        }
+        if activeElement == nil, history.elements.contains(where: { $0.hitTest(point: point) }) {
+            NSCursor.openHand.set()
+            return
+        }
+        NSCursor.crosshair.set()
+    }
+
+    private func setHandleCursor(for handle: AnnotationHandleType) {
+        switch handle {
+        case .left, .right:
+            NSCursor.resizeLeftRight.set()
+        case .top, .bottom:
+            NSCursor.resizeUpDown.set()
+        case .start, .end, .topLeft, .topRight, .bottomRight, .bottomLeft:
+            NSCursor.crosshair.set()
+        }
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -78,6 +141,9 @@ final class PinAnnotationOverlayView: NSView {
                 )
             }
         )
+        if isEditing, activeElement == nil, let selected = history.selectedElement {
+            ScreenshotAnnotationRenderer.drawSelection(for: selected, in: context)
+        }
     }
 
     func beginEditing() {
@@ -100,6 +166,7 @@ final class PinAnnotationOverlayView: NSView {
         guard isEditing else { return }
         commitTextIfNeeded()
         activeElement = nil
+        history.select(at: nil)
         isEditing = false
         window?.invalidateCursorRects(for: self)
         toolbar.isHidden = true
@@ -114,9 +181,11 @@ final class PinAnnotationOverlayView: NSView {
 
     func selectTool(_ tool: ScreenshotAnnotationTool) {
         activeTool = tool
+        history.select(at: nil)
         window?.invalidateCursorRects(for: self)
         NSCursor.crosshair.set()
         updateToolbarState()
+        needsDisplay = true
     }
 
     func beginStroke(at point: CGPoint) {
@@ -145,6 +214,7 @@ final class PinAnnotationOverlayView: NSView {
         let completed = activeElement.updating(to: point)
         if completed.isMeaningful {
             history.append(completed)
+            history.select(at: history.elements.count - 1)
         }
         self.activeElement = nil
         updateToolbarState()
@@ -172,33 +242,72 @@ final class PinAnnotationOverlayView: NSView {
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil)
-        if let index = textElementIndex(at: point),
-           case let .text(origin, _, _) = history.elements[index] {
-            movingText = (index, CGPoint(x: point.x - origin.x, y: point.y - origin.y))
+
+        if let selected = history.selectedElement,
+           let handle = selected.hitTestHandle(point: point) {
+            history.beginInteractiveChange()
+            draggingHandle = handle
             return
         }
+
+        if let hitIndex = history.elements.indices.reversed().first(where: { history.elements[$0].hitTest(point: point) }) {
+            if event.clickCount >= 2, case let .text(origin, text, _) = history.elements[hitIndex] {
+                history.select(at: hitIndex)
+                _ = history.deleteSelected()
+                beginTextInput(at: origin, initialText: text)
+                return
+            }
+
+            history.select(at: hitIndex)
+            let elem = history.elements[hitIndex]
+            activeTool = elem.tool
+            style = elem.style
+            updateToolbarState()
+
+            history.beginInteractiveChange()
+            movingElement = (hitIndex, point)
+            needsDisplay = true
+            return
+        }
+
+        if history.selectedIndex != nil {
+            history.select(at: nil)
+            needsDisplay = true
+        }
+
         beginStroke(at: point)
     }
 
     override func mouseDragged(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        if let movingText {
-            let origin = CGPoint(
-                x: min(max(point.x - movingText.grabOffset.x, 0), max(0, bounds.width - 8)),
-                y: min(max(point.y - movingText.grabOffset.y, 0), max(0, bounds.height - 8))
-            )
-            if history.moveText(at: movingText.index, to: origin) {
-                needsDisplay = true
-            }
+        if let handle = draggingHandle, let idx = history.selectedIndex {
+            let updated = history.elements[idx].resizing(handle: handle, to: point)
+            history.updateSelected(to: updated)
+            needsDisplay = true
+            return
+        }
+        if let (idx, lastPoint) = movingElement {
+            let delta = CGPoint(x: point.x - lastPoint.x, y: point.y - lastPoint.y)
+            let updated = history.elements[idx].moving(by: delta)
+            history.updateSelected(to: updated)
+            movingElement = (idx, point)
+            needsDisplay = true
             return
         }
         continueStroke(to: point)
     }
 
     override func mouseUp(with event: NSEvent) {
-        if movingText != nil {
-            movingText = nil
+        if draggingHandle != nil {
+            draggingHandle = nil
             updateToolbarState()
+            needsDisplay = true
+            return
+        }
+        if movingElement != nil {
+            movingElement = nil
+            updateToolbarState()
+            needsDisplay = true
             return
         }
         endStroke(at: convert(event.locationInWindow, from: nil))
@@ -208,10 +317,82 @@ final class PinAnnotationOverlayView: NSView {
         finishEditing()
     }
 
+    override func scrollWheel(with event: NSEvent) {
+        let delta = event.scrollingDeltaY
+        guard abs(delta) > 0.1, isEditing else {
+            super.scrollWheel(with: event)
+            return
+        }
+
+        let tool = history.selectedIndex.map { history.elements[$0].tool } ?? activeTool
+        if tool == .text {
+            let step: CGFloat = delta > 0 ? 2 : -2
+            let newSize = min(72, max(12, style.fontSize + step))
+            if newSize != style.fontSize {
+                if history.selectedIndex != nil, !isScrollingAnnotation {
+                    history.beginInteractiveChange()
+                    isScrollingAnnotation = true
+                }
+                scrollEndWorkItem?.cancel()
+                let workItem = DispatchWorkItem { [weak self] in
+                    self?.isScrollingAnnotation = false
+                }
+                scrollEndWorkItem = workItem
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: workItem)
+
+                style.fontSize = newSize
+                if let idx = history.selectedIndex {
+                    let updated = history.elements[idx].withStyle(style)
+                    history.updateSelected(to: updated)
+                }
+                needsDisplay = true
+            }
+        } else {
+            let step: CGFloat = delta > 0 ? 1 : -1
+            let newWidth = min(50, max(1, style.lineWidth + step))
+            if newWidth != style.lineWidth {
+                if history.selectedIndex != nil, !isScrollingAnnotation {
+                    history.beginInteractiveChange()
+                    isScrollingAnnotation = true
+                }
+                scrollEndWorkItem?.cancel()
+                let workItem = DispatchWorkItem { [weak self] in
+                    self?.isScrollingAnnotation = false
+                }
+                scrollEndWorkItem = workItem
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: workItem)
+
+                style.lineWidth = newWidth
+                if let idx = history.selectedIndex {
+                    let updated = history.elements[idx].withStyle(style)
+                    history.updateSelected(to: updated)
+                }
+                needsDisplay = true
+            }
+        }
+    }
+
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 {
+            if textField != nil {
+                commitTextIfNeeded()
+                return
+            }
+            if history.selectedIndex != nil {
+                history.select(at: nil)
+                needsDisplay = true
+                return
+            }
             finishEditing()
             return
+        }
+        if (event.keyCode == 51 || event.keyCode == 117), textField == nil {
+            if history.selectedIndex != nil {
+                _ = history.deleteSelected()
+                updateToolbarState()
+                needsDisplay = true
+                return
+            }
         }
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if event.charactersIgnoringModifiers?.lowercased() == "z", modifiers == .command {
@@ -240,22 +421,6 @@ final class PinAnnotationOverlayView: NSView {
         } + 1
     }
 
-    private func textElementIndex(at point: CGPoint) -> Int? {
-        history.elements.indices.reversed().first { index in
-            guard case let .text(origin, text, style) = history.elements[index] else {
-                return false
-            }
-            let size = (text as NSString).size(withAttributes: [
-                .font: NSFont.systemFont(ofSize: style.fontSize, weight: .semibold),
-            ])
-            return CGRect(
-                x: origin.x - 4,
-                y: origin.y - 6,
-                width: max(size.width, 24) + 8,
-                height: max(size.height, style.fontSize) + 12
-            ).contains(point)
-        }
-    }
 
     private func configureToolbar() {
         toolbar.material = .hudWindow
@@ -365,7 +530,7 @@ final class PinAnnotationOverlayView: NSView {
         toolbarPanel.setFrameOrigin(CGPoint(x: x, y: y))
     }
 
-    private func beginTextInput(at point: CGPoint) {
+    private func beginTextInput(at point: CGPoint, initialText: String? = nil) {
         commitTextIfNeeded()
         let field = NSTextField(frame: CGRect(x: point.x, y: point.y - 3, width: 180, height: 24))
         field.font = .systemFont(ofSize: style.fontSize, weight: .semibold)
@@ -373,6 +538,9 @@ final class PinAnnotationOverlayView: NSView {
         field.backgroundColor = .windowBackgroundColor.withAlphaComponent(0.92)
         field.target = self
         field.action = #selector(commitTextAction)
+        if let initialText {
+            field.stringValue = initialText
+        }
         textOrigin = point
         textField = field
         addSubview(field)

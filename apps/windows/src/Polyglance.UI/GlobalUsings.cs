@@ -7,6 +7,7 @@ global using RadioButton = System.Windows.Controls.RadioButton;
 global using Rectangle = System.Windows.Shapes.Rectangle;
 global using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 global using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+global using Cursor = System.Windows.Input.Cursor;
 global using Cursors = System.Windows.Input.Cursors;
 global using MenuItem = System.Windows.Controls.MenuItem;
 global using Orientation = System.Windows.Controls.Orientation;

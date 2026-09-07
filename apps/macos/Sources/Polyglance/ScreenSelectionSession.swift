@@ -238,6 +238,7 @@ fileprivate struct ScreenSelectionMirrorState {
     let showsInstructions: Bool
     let sizeLabel: String?
     let annotations: [ScreenshotAnnotationElement]
+    let selectedAnnotation: ScreenshotAnnotationElement?
     let toolbar: ScreenSelectionMirrorControl?
     let subToolbar: ScreenSelectionMirrorControl?
 }
@@ -267,6 +268,7 @@ private final class CrossScreenSelectionMirrorView: NSView {
         showsInstructions: true,
         sizeLabel: nil,
         annotations: [],
+        selectedAnnotation: nil,
         toolbar: nil,
         subToolbar: nil
     )
@@ -509,6 +511,15 @@ private final class CrossScreenSelectionMirrorView: NSView {
                 )
             }
         )
+        if let selected = state.selectedAnnotation {
+            ScreenshotAnnotationRenderer.drawSelection(
+                for: selected,
+                in: context,
+                pointTransform: { point in
+                    CGPoint(x: point.x + offset.x, y: point.y + offset.y)
+                }
+            )
+        }
     }
 
     private func drawHandles(for selection: CGRect) {
@@ -992,9 +1003,13 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     private var didLastClickExpandSelection = false
     private var activeTextOrigin: CGPoint?
     private var movingText: (index: Int, grabOffset: CGPoint)?
+    private var draggingAnnotationHandle: AnnotationHandleType?
+    private var movingAnnotation: (index: Int, lastPoint: CGPoint)?
     private var globalDragTimer: Timer?
     private weak var crossScreenPressedControl: NSView?
     private var crossScreenToolbarDragPoint: CGPoint?
+    private var isScrollingAnnotation = false
+    private var scrollEndWorkItem: DispatchWorkItem?
 
     private(set) var activeTextField: NSTextField?
     private(set) var currentPixelSample: PixelSample?
@@ -1130,6 +1145,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             sizeLabel: sizeText,
             annotations: annotationHistory.elements
                 + (activeAnnotationElement.map { [$0] } ?? []),
+            selectedAnnotation: activeAnnotationElement == nil ? annotationHistory.selectedElement : nil,
             toolbar: mirrorControl(for: toolbar),
             subToolbar: mirrorControl(for: subToolbar)
         ))
@@ -1301,11 +1317,40 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
                 return
             }
             guard selection.contains(point) else { return }
-            if let index = textElementIndex(at: point),
-               case let .text(origin, _, _) = annotationHistory.elements[index] {
-                movingText = (index, CGPoint(x: point.x - origin.x, y: point.y - origin.y))
+
+            if let selected = annotationHistory.selectedElement,
+               let handle = selected.hitTestHandle(point: point) {
+                annotationHistory.beginInteractiveChange()
+                draggingAnnotationHandle = handle
                 return
             }
+
+            if let hitIndex = annotationHistory.elements.indices.reversed().first(where: { annotationHistory.elements[$0].hitTest(point: point) }) {
+                if event.clickCount >= 2, case let .text(origin, text, _) = annotationHistory.elements[hitIndex] {
+                    annotationHistory.select(at: hitIndex)
+                    _ = annotationHistory.deleteSelected()
+                    beginTextEditing(at: origin, in: selection, initialText: text)
+                    return
+                }
+
+                annotationHistory.select(at: hitIndex)
+                let elem = annotationHistory.elements[hitIndex]
+                selectedAnnotationTool = elem.tool
+                annotationStyle = elem.style
+                subToolbar.update(tool: elem.tool, style: elem.style)
+                updateAnnotationControls()
+
+                annotationHistory.beginInteractiveChange()
+                movingAnnotation = (hitIndex, point)
+                needsDisplay = true
+                return
+            }
+
+            if annotationHistory.selectedIndex != nil {
+                annotationHistory.select(at: nil)
+                needsDisplay = true
+            }
+
             if selectedAnnotationTool == .text {
                 beginTextEditing(at: point, in: selection)
                 return
@@ -1362,26 +1407,42 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             applySelectionEdit(activeSelectionEdit, current: point)
             return
         }
-        if let movingText, case let .annotating(selection) = capturePhase {
-            let origin = clamp(
-                CGPoint(
-                    x: point.x - movingText.grabOffset.x,
-                    y: point.y - movingText.grabOffset.y
-                ),
-                to: selection
-            )
-            if annotationHistory.moveText(at: movingText.index, to: origin) {
+        if case let .annotating(selection) = capturePhase {
+            if let handle = draggingAnnotationHandle, let idx = annotationHistory.selectedIndex {
+                let clampedPoint = clamp(point, to: selection)
+                let updated = annotationHistory.elements[idx].resizing(handle: handle, to: clampedPoint)
+                annotationHistory.updateSelected(to: updated)
                 needsDisplay = true
+                return
             }
-            return
-        }
-        if case let .annotating(selection) = capturePhase,
-           let activeAnnotationElement {
-            self.activeAnnotationElement = activeAnnotationElement.updating(
-                to: clamp(point, to: selection)
-            )
-            needsDisplay = true
-            return
+            if let (idx, lastPoint) = movingAnnotation {
+                let delta = CGPoint(x: point.x - lastPoint.x, y: point.y - lastPoint.y)
+                let updated = annotationHistory.elements[idx].moving(by: delta)
+                annotationHistory.updateSelected(to: updated)
+                movingAnnotation = (idx, point)
+                needsDisplay = true
+                return
+            }
+            if let movingText {
+                let origin = clamp(
+                    CGPoint(
+                        x: point.x - movingText.grabOffset.x,
+                        y: point.y - movingText.grabOffset.y
+                    ),
+                    to: selection
+                )
+                if annotationHistory.moveText(at: movingText.index, to: origin) {
+                    needsDisplay = true
+                }
+                return
+            }
+            if let activeAnnotationElement {
+                self.activeAnnotationElement = activeAnnotationElement.updating(
+                    to: clamp(point, to: selection)
+                )
+                needsDisplay = true
+                return
+            }
         }
 
         continueInitialSelection(to: point)
@@ -1417,19 +1478,31 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             return
         }
 
-        if movingText != nil {
-            movingText = nil
-            updateAnnotationControls()
-            needsDisplay = true
-            return
-        }
-
         if case .annotating = capturePhase {
+            if draggingAnnotationHandle != nil {
+                draggingAnnotationHandle = nil
+                updateAnnotationControls()
+                needsDisplay = true
+                return
+            }
+            if movingAnnotation != nil {
+                movingAnnotation = nil
+                updateAnnotationControls()
+                needsDisplay = true
+                return
+            }
+            if movingText != nil {
+                movingText = nil
+                updateAnnotationControls()
+                needsDisplay = true
+                return
+            }
             guard let activeAnnotationElement else {
                 return
             }
             if activeAnnotationElement.isMeaningful {
                 annotationHistory.append(activeAnnotationElement)
+                annotationHistory.select(at: annotationHistory.elements.count - 1)
             }
             self.activeAnnotationElement = nil
             updateAnnotationControls()
@@ -1485,6 +1558,18 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             } else {
                 undoAnnotation()
             }
+            return
+        }
+        if (event.keyCode == 51 || event.keyCode == 117), activeTextField == nil {
+            if annotationHistory.deleteSelected() != nil {
+                updateAnnotationControls()
+                needsDisplay = true
+                return
+            }
+        }
+        if event.keyCode == 53, activeTextField == nil, annotationHistory.selectedIndex != nil {
+            annotationHistory.select(at: nil)
+            needsDisplay = true
             return
         }
         if applyKeyboardSelectionAdjustment(for: event, modifiers: modifiers) {
@@ -1848,6 +1933,11 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         subBar.onStyleChanged = { [weak self] newStyle in
             guard let self else { return }
             self.annotationStyle = newStyle
+            if let idx = self.annotationHistory.selectedIndex {
+                self.annotationHistory.beginInteractiveChange()
+                let updated = self.annotationHistory.elements[idx].withStyle(newStyle)
+                self.annotationHistory.updateSelected(to: updated)
+            }
             self.needsDisplay = true
         }
         subBar.onToolChanged = { [weak self] newTool in
@@ -2328,22 +2418,54 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             return
         }
 
-        let tool = selectedAnnotationTool
+        let tool = annotationHistory.selectedIndex.map { annotationHistory.elements[$0].tool } ?? selectedAnnotationTool
         if tool == .text {
             let step: CGFloat = delta > 0 ? 2 : -2
             let newSize = min(72, max(12, annotationStyle.fontSize + step))
             if newSize != annotationStyle.fontSize {
+                if annotationHistory.selectedIndex != nil, !isScrollingAnnotation {
+                    annotationHistory.beginInteractiveChange()
+                    isScrollingAnnotation = true
+                }
+                scrollEndWorkItem?.cancel()
+                let workItem = DispatchWorkItem { [weak self] in
+                    self?.isScrollingAnnotation = false
+                }
+                scrollEndWorkItem = workItem
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: workItem)
+
                 annotationStyle.fontSize = newSize
                 subToolbar?.update(tool: .text, style: annotationStyle)
+                if let idx = annotationHistory.selectedIndex {
+                    let updated = annotationHistory.elements[idx].withStyle(annotationStyle)
+                    annotationHistory.updateSelected(to: updated)
+                }
                 needsDisplay = true
+                publishMirrorState()
             }
         } else {
             let step: CGFloat = delta > 0 ? 1 : -1
             let newWidth = min(50, max(1, annotationStyle.lineWidth + step))
             if newWidth != annotationStyle.lineWidth {
+                if annotationHistory.selectedIndex != nil, !isScrollingAnnotation {
+                    annotationHistory.beginInteractiveChange()
+                    isScrollingAnnotation = true
+                }
+                scrollEndWorkItem?.cancel()
+                let workItem = DispatchWorkItem { [weak self] in
+                    self?.isScrollingAnnotation = false
+                }
+                scrollEndWorkItem = workItem
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: workItem)
+
                 annotationStyle.lineWidth = newWidth
                 subToolbar?.update(tool: tool, style: annotationStyle)
+                if let idx = annotationHistory.selectedIndex {
+                    let updated = annotationHistory.elements[idx].withStyle(annotationStyle)
+                    annotationHistory.updateSelected(to: updated)
+                }
                 needsDisplay = true
+                publishMirrorState()
             }
         }
     }
@@ -2465,6 +2587,9 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
                 )
             }
         )
+        if activeAnnotationElement == nil, let selected = annotationHistory.selectedElement {
+            ScreenshotAnnotationRenderer.drawSelection(for: selected, in: context)
+        }
     }
 
     private func confirmSelection(_ selection: CGRect) {
@@ -2705,7 +2830,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         onMagnifierStateChange?(nil)
     }
 
-    private func beginTextEditing(at point: CGPoint, in selection: CGRect) {
+    private func beginTextEditing(at point: CGPoint, in selection: CGRect, initialText: String = "") {
         cancelActiveTextInput(restoringFirstResponder: false)
         let fieldHeight: CGFloat = 26
         let fieldWidth = min(220, selection.width)
@@ -2739,11 +2864,17 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         field.action = #selector(commitTextAnnotation(_:))
         field.toolTip = "回车确认，Esc 取消"
         field.setAccessibilityLabel("截图文字标注输入")
+        if !initialText.isEmpty {
+            field.stringValue = initialText
+        }
 
         activeTextOrigin = origin
         activeTextField = field
         addSubview(field, positioned: .above, relativeTo: toolbar)
         window?.makeFirstResponder(field)
+        if !initialText.isEmpty {
+            field.selectText(nil)
+        }
     }
 
     private var nextNumberValue: Int {
@@ -2920,8 +3051,11 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
                 isDragging: activeSelectionEdit != nil
             )
         } else if case let .annotating(selection) = capturePhase {
-            if let point {
-                setAnnotationCursor(at: point, selection: selection)
+            let pointer = point ?? window.map { window in
+                convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+            }
+            if let pointer {
+                setAnnotationCursor(at: pointer, selection: selection)
             } else {
                 NSCursor.crosshair.set()
             }
@@ -2933,13 +3067,48 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     }
 
     private func setAnnotationCursor(at point: CGPoint, selection: CGRect) {
+        if let draggingAnnotationHandle {
+            setAnnotationHandleCursor(for: draggingAnnotationHandle)
+            return
+        }
+        if movingAnnotation != nil {
+            NSCursor.closedHand.set()
+            return
+        }
         if let target = CaptureGeometry.selectionEditTarget(at: point, selection: selection),
            target != .move {
             setSelectionCursor(for: target, isDragging: activeSelectionEdit != nil)
-        } else if !selection.contains(point),
-                  let target = CaptureGeometry.selectionExpansionTarget(at: point, selection: selection) {
+            return
+        }
+        if !selection.contains(point),
+           let target = CaptureGeometry.selectionExpansionTarget(at: point, selection: selection) {
             setSelectionCursor(for: target, isDragging: activeSelectionEdit != nil)
-        } else {
+            return
+        }
+        if activeAnnotationElement == nil, let selected = annotationHistory.selectedElement {
+            if let handle = selected.hitTestHandle(point: point) {
+                setAnnotationHandleCursor(for: handle)
+                return
+            }
+            if selected.hitTest(point: point) {
+                NSCursor.openHand.set()
+                return
+            }
+        }
+        if activeAnnotationElement == nil, annotationHistory.elements.contains(where: { $0.hitTest(point: point) }) {
+            NSCursor.openHand.set()
+            return
+        }
+        NSCursor.crosshair.set()
+    }
+
+    private func setAnnotationHandleCursor(for handle: AnnotationHandleType) {
+        switch handle {
+        case .left, .right:
+            NSCursor.resizeLeftRight.set()
+        case .top, .bottom:
+            NSCursor.resizeUpDown.set()
+        case .start, .end, .topLeft, .topRight, .bottomRight, .bottomLeft:
             NSCursor.crosshair.set()
         }
     }

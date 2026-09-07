@@ -11,6 +11,9 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
+using Path = System.Windows.Shapes.Path;
+using TextBox = System.Windows.Controls.TextBox;
+using FontFamily = System.Windows.Media.FontFamily;
 using Microsoft.Win32;
 using Polyglance.Core.Models;
 using Polyglance.Core.Services;
@@ -56,6 +59,10 @@ public partial class ScreenSelectionWindow : Window
 
     private readonly List<UIElement> _annotationHistory = new();
     private readonly List<UIElement> _redoStack = new();
+    private UIElement? _selectedAnnotationElement;
+    private AnnotationHandleType _draggingAnnotationHandle = AnnotationHandleType.None;
+    private Point _movingAnnotationLastPoint;
+    private bool _isMovingAnnotation;
     private FrameworkElement? _currentDrawingShape;
     private Canvas? _currentMosaicStroke;
     private Point _lastMosaicPoint;
@@ -98,11 +105,6 @@ public partial class ScreenSelectionWindow : Window
         _captureIntent = captureIntent;
         _colorClipboardWriter = colorClipboardWriter;
 
-        // screenBounds comes from GetSystemMetrics and is therefore physical
-        // pixels, while Left/Top/Width/Height are DIPs. Assigning it directly
-        // oversizes the overlay on any scaled display, so seed the values for the
-        // first layout pass and then place the window by physical pixels once it
-        // has a handle.
         Left = screenBounds.X;
         Top = screenBounds.Y;
         Width = screenBounds.Width;
@@ -115,6 +117,9 @@ public partial class ScreenSelectionWindow : Window
         Toolbar.ToolSelected += OnToolSelected;
         Toolbar.ActionTriggered += OnActionTriggered;
         Toolbar.ToolbarDragDelta += OnToolbarDragDelta;
+        Toolbar.ColorChanged += OnToolbarColorChanged;
+        Toolbar.StrokeSizeChanged += OnToolbarStrokeSizeChanged;
+        Toolbar.SubToolActionTriggered += OnToolbarSubToolActionTriggered;
 
         Cursor = Cursors.Cross;
         UpdateMask(Rect.Empty);
@@ -142,8 +147,6 @@ public partial class ScreenSelectionWindow : Window
             if (_activeTool != "None" && !_selectionRect.IsEmpty)
             {
                 // Resize/expand handles keep priority while a markup tool is active.
-                // The interior remains the drawing surface, so dragging there never
-                // accidentally moves the capture bounds.
                 if (TryBeginSelectionEdit(pt, allowsMove: false))
                     return;
 
@@ -152,6 +155,51 @@ public partial class ScreenSelectionWindow : Window
                     SystemSounds.Beep.Play();
                     return;
                 }
+
+                if (_selectedAnnotationElement != null)
+                {
+                    var handle = AnnotationSecondaryEditor.HitTestHandles(_selectedAnnotationElement, pt);
+                    if (handle != AnnotationHandleType.None)
+                    {
+                        _draggingAnnotationHandle = handle;
+                        CaptureMouse();
+                        return;
+                    }
+                }
+
+                UIElement? hitElement = null;
+                for (int i = _annotationHistory.Count - 1; i >= 0; i--)
+                {
+                    if (AnnotationSecondaryEditor.HitTestElement(_annotationHistory[i], pt))
+                    {
+                        hitElement = _annotationHistory[i];
+                        break;
+                    }
+                }
+
+                if (hitElement != null)
+                {
+                    if (e.ClickCount >= 2 && hitElement is TextBox tb)
+                    {
+                        SelectAnnotationElement(tb);
+                        tb.IsReadOnly = false;
+                        tb.Focus();
+                        tb.SelectAll();
+                        return;
+                    }
+
+                    SelectAnnotationElement(hitElement);
+                    _isMovingAnnotation = true;
+                    _movingAnnotationLastPoint = pt;
+                    CaptureMouse();
+                    return;
+                }
+
+                if (_selectedAnnotationElement != null)
+                {
+                    SelectAnnotationElement(null);
+                }
+
                 _drawingStart = pt;
                 StartAnnotationDrawing(pt);
                 CaptureMouse();
@@ -192,6 +240,34 @@ public partial class ScreenSelectionWindow : Window
     private void OnMouseMove(object sender, MouseEventArgs e)
     {
         Point pt = ClampPointToOverlay(e.GetPosition(this));
+
+        if (_draggingAnnotationHandle != AnnotationHandleType.None && _selectedAnnotationElement != null)
+        {
+            AnnotationSecondaryEditor.ResizeElement(
+                _selectedAnnotationElement,
+                _draggingAnnotationHandle,
+                pt,
+                rect => MosaicStrokeBuilder.CreateRectMosaic(
+                    _fullScreenBitmap,
+                    OverlayViewSize(),
+                    rect,
+                    Math.Max(4, Toolbar.CurrentStrokeSize * 2),
+                    Toolbar.MosaicIsBlur)?.Source as BitmapSource);
+            AnnotationSecondaryEditor.DrawSelection(AnnotationSelectionCanvas, _selectedAnnotationElement);
+            Cursor = AnnotationSecondaryEditor.GetCursorForHandle(_draggingAnnotationHandle);
+            return;
+        }
+
+        if (_isMovingAnnotation && _selectedAnnotationElement != null)
+        {
+            double dx = pt.X - _movingAnnotationLastPoint.X;
+            double dy = pt.Y - _movingAnnotationLastPoint.Y;
+            AnnotationSecondaryEditor.MoveElement(_selectedAnnotationElement, dx, dy);
+            _movingAnnotationLastPoint = pt;
+            AnnotationSecondaryEditor.DrawSelection(AnnotationSelectionCanvas, _selectedAnnotationElement);
+            Cursor = Cursors.SizeAll;
+            return;
+        }
 
         if (_currentDrawingShape != null || _currentMosaicStroke != null)
         {
@@ -305,6 +381,20 @@ public partial class ScreenSelectionWindow : Window
             _isCompletingMouseGesture = false;
         }
 
+        if (_draggingAnnotationHandle != AnnotationHandleType.None)
+        {
+            _draggingAnnotationHandle = AnnotationHandleType.None;
+            AnnotationSecondaryEditor.DrawSelection(AnnotationSelectionCanvas, _selectedAnnotationElement);
+            return;
+        }
+
+        if (_isMovingAnnotation)
+        {
+            _isMovingAnnotation = false;
+            AnnotationSecondaryEditor.DrawSelection(AnnotationSelectionCanvas, _selectedAnnotationElement);
+            return;
+        }
+
         if (_currentDrawingShape != null || _currentMosaicStroke != null)
         {
             UIElement finished = _currentDrawingShape is not null
@@ -315,6 +405,7 @@ public partial class ScreenSelectionWindow : Window
             _currentDrawingShape = null;
             _currentMosaicStroke = null;
             UpdateUndoRedoButtons();
+            SelectAnnotationElement(finished);
             return;
         }
 
@@ -384,6 +475,12 @@ public partial class ScreenSelectionWindow : Window
 
     private void HandleRightClick()
     {
+        if (_selectedAnnotationElement != null)
+        {
+            SelectAnnotationElement(null);
+            return;
+        }
+
         if (_activeTool != "None")
         {
             FinishAnnotationMode();
@@ -405,6 +502,7 @@ public partial class ScreenSelectionWindow : Window
     {
         if (IsMouseCaptured)
             ReleaseMouseCapture();
+        SelectAnnotationElement(null);
         _phase = SelectionPhase.Ready;
         _currentEditTarget = NativeSelectionEditTarget.None;
         _selectionRect = Rect.Empty;
@@ -477,6 +575,32 @@ public partial class ScreenSelectionWindow : Window
 
     private void UpdateHoverCursor(Point pt)
     {
+        if (_activeTool != "None")
+        {
+            if (_selectedAnnotationElement != null)
+            {
+                var handle = AnnotationSecondaryEditor.HitTestHandles(_selectedAnnotationElement, pt);
+                if (handle != AnnotationHandleType.None)
+                {
+                    Cursor = AnnotationSecondaryEditor.GetCursorForHandle(handle);
+                    return;
+                }
+                if (AnnotationSecondaryEditor.HitTestElement(_selectedAnnotationElement, pt))
+                {
+                    Cursor = Cursors.Hand;
+                    return;
+                }
+            }
+            for (int i = _annotationHistory.Count - 1; i >= 0; i--)
+            {
+                if (AnnotationSecondaryEditor.HitTestElement(_annotationHistory[i], pt))
+                {
+                    Cursor = Cursors.Hand;
+                    return;
+                }
+            }
+        }
+
         var target = DetectEditTarget(pt, _selectionRect, handleTolerance: 8);
         if (_activeTool != "None" && target == NativeSelectionEditTarget.Move)
         {
@@ -748,6 +872,7 @@ public partial class ScreenSelectionWindow : Window
     private void FinishAnnotationMode()
     {
         _activeTool = "None";
+        SelectAnnotationElement(null);
         Toolbar.ClearSelectedTool();
         SetAnnotationMode(false);
         Cursor = Cursors.Arrow;
@@ -827,6 +952,14 @@ public partial class ScreenSelectionWindow : Window
                 break;
 
             case "Arrow":
+                var arrowInfo = new ArrowInfo
+                {
+                    Start = pt,
+                    End = pt,
+                    StrokeSize = strokeSize,
+                    ArrowStyle = Toolbar.ArrowStyle,
+                    IsFilled = Toolbar.IsFilled
+                };
                 var arrowPath = new System.Windows.Shapes.Path
                 {
                     Stroke = brush,
@@ -836,7 +969,8 @@ public partial class ScreenSelectionWindow : Window
                     StrokeLineJoin = PenLineJoin.Round,
                     Fill = (Toolbar.ArrowStyle == 5 || Toolbar.ArrowStyle == 7 || Toolbar.ArrowStyle == 8 || Toolbar.IsFilled) ? brush : Brushes.Transparent,
                     StrokeDashArray = Toolbar.CurrentDashArray,
-                    Data = MakeArrowGeometry(pt, pt, strokeSize, Toolbar.ArrowStyle, Toolbar.IsFilled)
+                    Data = AnnotationSecondaryEditor.MakeArrowGeometry(pt, pt, strokeSize, Toolbar.ArrowStyle, Toolbar.IsFilled),
+                    Tag = arrowInfo
                 };
                 AnnotationCanvas.Children.Add(arrowPath);
                 _currentDrawingShape = arrowPath;
@@ -871,15 +1005,19 @@ public partial class ScreenSelectionWindow : Window
                     {
                         AnnotationCanvas.Children.Remove(tb);
                         _annotationHistory.Remove(tb);
+                        if (_selectedAnnotationElement == tb)
+                        {
+                            SelectAnnotationElement(null);
+                        }
                         UpdateUndoRedoButtons();
                     }
                     else
                     {
                         tb.BorderThickness = Toolbar.HasTextBorder ? new Thickness(1) : new Thickness(0);
                         tb.IsReadOnly = true;
+                        SelectAnnotationElement(tb);
                     }
                 };
-                MakeTextMovable(tb);
                 break;
 
             case "Mosaic":
@@ -939,6 +1077,7 @@ public partial class ScreenSelectionWindow : Window
                 _annotationHistory.Add(marker);
                 _redoStack.Clear();
                 UpdateUndoRedoButtons();
+                SelectAnnotationElement(marker);
                 break;
         }
     }
@@ -979,9 +1118,10 @@ public partial class ScreenSelectionWindow : Window
         {
             polyline.Points.Add(new Point(curX, curY));
         }
-        else if (_currentDrawingShape is System.Windows.Shapes.Path path && _activeTool == "Arrow")
+        else if (_currentDrawingShape is System.Windows.Shapes.Path path && _activeTool == "Arrow" && path.Tag is ArrowInfo info)
         {
-            path.Data = MakeArrowGeometry(_drawingStart, new Point(curX, curY), path.StrokeThickness, Toolbar.ArrowStyle, Toolbar.IsFilled);
+            info.End = new Point(curX, curY);
+            path.Data = AnnotationSecondaryEditor.MakeArrowGeometry(_drawingStart, new Point(curX, curY), path.StrokeThickness, Toolbar.ArrowStyle, Toolbar.IsFilled);
         }
         else if (_currentDrawingShape is System.Windows.Controls.Image mosaicImg && _activeTool == "Mosaic")
         {
@@ -1033,6 +1173,10 @@ public partial class ScreenSelectionWindow : Window
                     _annotationHistory.RemoveAt(_annotationHistory.Count - 1);
                     _redoStack.Add(last);
                     AnnotationCanvas.Children.Remove(last);
+                    if (_selectedAnnotationElement == last)
+                    {
+                        SelectAnnotationElement(null);
+                    }
                     UpdateUndoRedoButtons();
                 }
                 return;
@@ -1044,6 +1188,7 @@ public partial class ScreenSelectionWindow : Window
                     _redoStack.RemoveAt(_redoStack.Count - 1);
                     _annotationHistory.Add(last);
                     AnnotationCanvas.Children.Add(last);
+                    SelectAnnotationElement(last);
                     UpdateUndoRedoButtons();
                 }
                 return;
@@ -1425,8 +1570,31 @@ public partial class ScreenSelectionWindow : Window
 
     private void OnKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Escape)
+        if (e.Key == Key.Delete || e.Key == Key.Back)
         {
+            if (_selectedAnnotationElement != null)
+            {
+                if (_selectedAnnotationElement is TextBox tb && !tb.IsReadOnly)
+                {
+                    return;
+                }
+                _annotationHistory.Remove(_selectedAnnotationElement);
+                AnnotationCanvas.Children.Remove(_selectedAnnotationElement);
+                SelectAnnotationElement(null);
+                _redoStack.Clear();
+                UpdateUndoRedoButtons();
+                e.Handled = true;
+                return;
+            }
+        }
+        else if (e.Key == Key.Escape)
+        {
+            if (_selectedAnnotationElement != null)
+            {
+                SelectAnnotationElement(null);
+                e.Handled = true;
+                return;
+            }
             HandleRightClick();
         }
         else if (e.Key == Key.Enter)
@@ -1557,11 +1725,11 @@ public partial class ScreenSelectionWindow : Window
 
     protected override void OnPreviewMouseWheel(MouseWheelEventArgs e)
     {
-        if (_activeTool != "None" && !string.IsNullOrEmpty(_activeTool))
+        if (_selectedAnnotationElement != null || (_activeTool != "None" && !string.IsNullOrEmpty(_activeTool)))
         {
-            if (_activeTool == "Text")
+            if (_selectedAnnotationElement is TextBox || (_selectedAnnotationElement == null && _activeTool == "Text"))
             {
-                Toolbar.AdjustFontSize(e.Delta > 0 ? 2 : -2);
+                Toolbar.AdjustFontSize(e.Delta > 0 ? 1 : -1);
             }
             else
             {
@@ -1573,241 +1741,227 @@ public partial class ScreenSelectionWindow : Window
         base.OnPreviewMouseWheel(e);
     }
 
-    private static Geometry MakeArrowGeometry(Point start, Point end, double strokeSize, int arrowStyle, bool isFilled)
+    private void SelectAnnotationElement(UIElement? element)
     {
-        double dx = end.X - start.X;
-        double dy = end.Y - start.Y;
-        double length = Math.Sqrt(dx * dx + dy * dy);
-        if (length < 0.001)
+        if (_selectedAnnotationElement is TextBox prevTb && prevTb != element)
         {
-            return new LineGeometry(start, end);
+            prevTb.IsReadOnly = true;
         }
 
-        double angle = Math.Atan2(dy, dx);
-        double headLength = Math.Min(Math.Max(strokeSize * 3.0, 7), length * 0.38);
-        double perpAngle = angle + Math.PI / 2;
-
-        Point lineStart = start;
-        Point lineEnd = end;
-
-        if (arrowStyle == 7 || arrowStyle == 8)
+        _selectedAnnotationElement = element;
+        AnnotationSecondaryEditor.DrawSelection(AnnotationSelectionCanvas, element);
+        if (element != null)
         {
-            lineEnd = new Point(end.X - headLength * 0.75 * Math.Cos(angle), end.Y - headLength * 0.75 * Math.Sin(angle));
+            SyncElementStyleToToolbar(element);
         }
-        if (arrowStyle == 8)
-        {
-            lineStart = new Point(start.X + headLength * 0.75 * Math.Cos(angle), start.Y + headLength * 0.75 * Math.Sin(angle));
-        }
-
-        var geometry = new StreamGeometry();
-        using (StreamGeometryContext ctx = geometry.Open())
-        {
-            if (arrowStyle != 4 && arrowStyle != 5)
-            {
-                ctx.BeginFigure(lineStart, false, false);
-                ctx.LineTo(lineEnd, true, false);
-            }
-
-            switch (arrowStyle)
-            {
-                case 0: // Single open arrow: ——>
-                {
-                    double wingAngle = Math.PI / 6.5;
-                    Point h1 = new(end.X - headLength * Math.Cos(angle - wingAngle), end.Y - headLength * Math.Sin(angle - wingAngle));
-                    Point h2 = new(end.X - headLength * Math.Cos(angle + wingAngle), end.Y - headLength * Math.Sin(angle + wingAngle));
-                    ctx.BeginFigure(h1, false, false);
-                    ctx.LineTo(end, true, false);
-                    ctx.LineTo(h2, true, false);
-                    break;
-                }
-                case 1: // Double open arrow: <——>
-                {
-                    double wingAngle = Math.PI / 6.5;
-                    Point eh1 = new(end.X - headLength * Math.Cos(angle - wingAngle), end.Y - headLength * Math.Sin(angle - wingAngle));
-                    Point eh2 = new(end.X - headLength * Math.Cos(angle + wingAngle), end.Y - headLength * Math.Sin(angle + wingAngle));
-                    Point sh1 = new(start.X + headLength * Math.Cos(angle - wingAngle), start.Y + headLength * Math.Sin(angle - wingAngle));
-                    Point sh2 = new(start.X + headLength * Math.Cos(angle + wingAngle), start.Y + headLength * Math.Sin(angle + wingAngle));
-                    ctx.BeginFigure(eh1, false, false);
-                    ctx.LineTo(end, true, false);
-                    ctx.LineTo(eh2, true, false);
-                    ctx.BeginFigure(sh1, false, false);
-                    ctx.LineTo(start, true, false);
-                    ctx.LineTo(sh2, true, false);
-                    break;
-                }
-                case 2: // Bold single open arrow: ——>
-                {
-                    double wingAngle = Math.PI / 6.5;
-                    Point h1 = new(end.X - headLength * Math.Cos(angle - wingAngle), end.Y - headLength * Math.Sin(angle - wingAngle));
-                    Point h2 = new(end.X - headLength * Math.Cos(angle + wingAngle), end.Y - headLength * Math.Sin(angle + wingAngle));
-                    ctx.BeginFigure(h1, false, false);
-                    ctx.LineTo(end, true, false);
-                    ctx.LineTo(h2, true, false);
-                    break;
-                }
-                case 3: // Bold double open arrow: <——>
-                {
-                    double wingAngle = Math.PI / 6.5;
-                    Point eh1 = new(end.X - headLength * Math.Cos(angle - wingAngle), end.Y - headLength * Math.Sin(angle - wingAngle));
-                    Point eh2 = new(end.X - headLength * Math.Cos(angle + wingAngle), end.Y - headLength * Math.Sin(angle + wingAngle));
-                    Point sh1 = new(start.X + headLength * Math.Cos(angle - wingAngle), start.Y + headLength * Math.Sin(angle - wingAngle));
-                    Point sh2 = new(start.X + headLength * Math.Cos(angle + wingAngle), start.Y + headLength * Math.Sin(angle + wingAngle));
-                    ctx.BeginFigure(eh1, false, false);
-                    ctx.LineTo(end, true, false);
-                    ctx.LineTo(eh2, true, false);
-                    ctx.BeginFigure(sh1, false, false);
-                    ctx.LineTo(start, true, false);
-                    ctx.LineTo(sh2, true, false);
-                    break;
-                }
-                case 4: // Hollow tapered expanding arrow (左小右大空心 - DEFAULT)
-                {
-                    double startW = Math.Max(1.2, strokeSize * 0.35);
-                    double baseW = Math.Max(3.2, strokeSize * 1.5);
-                    double hLen = Math.Min(Math.Max(strokeSize * 3.2, 9), length * 0.4);
-                    double wingW = baseW * 1.6;
-                    Point baseCenter = new(end.X - hLen * Math.Cos(angle), end.Y - hLen * Math.Sin(angle));
-
-                    Point s1 = new(start.X + (startW / 2) * Math.Cos(perpAngle), start.Y + (startW / 2) * Math.Sin(perpAngle));
-                    Point s2 = new(start.X - (startW / 2) * Math.Cos(perpAngle), start.Y - (startW / 2) * Math.Sin(perpAngle));
-                    Point b1 = new(baseCenter.X + (baseW / 2) * Math.Cos(perpAngle), baseCenter.Y + (baseW / 2) * Math.Sin(perpAngle));
-                    Point b2 = new(baseCenter.X - (baseW / 2) * Math.Cos(perpAngle), baseCenter.Y - (baseW / 2) * Math.Sin(perpAngle));
-                    Point w1 = new(baseCenter.X + (wingW / 2) * Math.Cos(perpAngle), baseCenter.Y + (wingW / 2) * Math.Sin(perpAngle));
-                    Point w2 = new(baseCenter.X - (wingW / 2) * Math.Cos(perpAngle), baseCenter.Y - (wingW / 2) * Math.Sin(perpAngle));
-
-                    ctx.BeginFigure(s1, false, true);
-                    ctx.LineTo(b1, true, false);
-                    ctx.LineTo(w1, true, false);
-                    ctx.LineTo(end, true, false);
-                    ctx.LineTo(w2, true, false);
-                    ctx.LineTo(b2, true, false);
-                    ctx.LineTo(s2, true, false);
-                    break;
-                }
-                case 5: // Solid tapered expanding arrow (左小右大实心)
-                {
-                    double startW = Math.Max(1.2, strokeSize * 0.35);
-                    double baseW = Math.Max(3.2, strokeSize * 1.5);
-                    double hLen = Math.Min(Math.Max(strokeSize * 3.2, 9), length * 0.4);
-                    double wingW = baseW * 1.6;
-                    Point baseCenter = new(end.X - hLen * Math.Cos(angle), end.Y - hLen * Math.Sin(angle));
-
-                    Point s1 = new(start.X + (startW / 2) * Math.Cos(perpAngle), start.Y + (startW / 2) * Math.Sin(perpAngle));
-                    Point s2 = new(start.X - (startW / 2) * Math.Cos(perpAngle), start.Y - (startW / 2) * Math.Sin(perpAngle));
-                    Point b1 = new(baseCenter.X + (baseW / 2) * Math.Cos(perpAngle), baseCenter.Y + (baseW / 2) * Math.Sin(perpAngle));
-                    Point b2 = new(baseCenter.X - (baseW / 2) * Math.Cos(perpAngle), baseCenter.Y - (baseW / 2) * Math.Sin(perpAngle));
-                    Point w1 = new(baseCenter.X + (wingW / 2) * Math.Cos(perpAngle), baseCenter.Y + (wingW / 2) * Math.Sin(perpAngle));
-                    Point w2 = new(baseCenter.X - (wingW / 2) * Math.Cos(perpAngle), baseCenter.Y - (wingW / 2) * Math.Sin(perpAngle));
-
-                    ctx.BeginFigure(s1, true, true);
-                    ctx.LineTo(b1, true, false);
-                    ctx.LineTo(w1, true, false);
-                    ctx.LineTo(end, true, false);
-                    ctx.LineTo(w2, true, false);
-                    ctx.LineTo(b2, true, false);
-                    ctx.LineTo(s2, true, false);
-                    break;
-                }
-                case 6: // Double T-bar: |——|
-                {
-                    double barHalfLen = headLength * 0.65;
-                    Point st1 = new(start.X + barHalfLen * Math.Cos(perpAngle), start.Y + barHalfLen * Math.Sin(perpAngle));
-                    Point st2 = new(start.X - barHalfLen * Math.Cos(perpAngle), start.Y - barHalfLen * Math.Sin(perpAngle));
-                    Point et1 = new(end.X + barHalfLen * Math.Cos(perpAngle), end.Y + barHalfLen * Math.Sin(perpAngle));
-                    Point et2 = new(end.X - barHalfLen * Math.Cos(perpAngle), end.Y - barHalfLen * Math.Sin(perpAngle));
-                    ctx.BeginFigure(st1, false, false);
-                    ctx.LineTo(st2, true, false);
-                    ctx.BeginFigure(et1, false, false);
-                    ctx.LineTo(et2, true, false);
-                    break;
-                }
-                case 7: // Single filled triangle: ——▶
-                {
-                    double baseW = headLength * 0.6;
-                    Point b1 = new(end.X - headLength * Math.Cos(angle) + baseW * Math.Cos(perpAngle), end.Y - headLength * Math.Sin(angle) + baseW * Math.Sin(perpAngle));
-                    Point b2 = new(end.X - headLength * Math.Cos(angle) - baseW * Math.Cos(perpAngle), end.Y - headLength * Math.Sin(angle) - baseW * Math.Sin(perpAngle));
-                    ctx.BeginFigure(end, true, true);
-                    ctx.LineTo(b1, true, false);
-                    ctx.LineTo(b2, true, false);
-                    break;
-                }
-                case 8: // Double filled triangle: ◀——▶
-                {
-                    double baseW = headLength * 0.6;
-                    Point eb1 = new(end.X - headLength * Math.Cos(angle) + baseW * Math.Cos(perpAngle), end.Y - headLength * Math.Sin(angle) + baseW * Math.Sin(perpAngle));
-                    Point eb2 = new(end.X - headLength * Math.Cos(angle) - baseW * Math.Cos(perpAngle), end.Y - headLength * Math.Sin(angle) - baseW * Math.Sin(perpAngle));
-                    ctx.BeginFigure(end, true, true);
-                    ctx.LineTo(eb1, true, false);
-                    ctx.LineTo(eb2, true, false);
-
-                    Point sb1 = new(start.X + headLength * Math.Cos(angle) + baseW * Math.Cos(perpAngle), start.Y + headLength * Math.Sin(angle) + baseW * Math.Sin(perpAngle));
-                    Point sb2 = new(start.X + headLength * Math.Cos(angle) - baseW * Math.Cos(perpAngle), start.Y + headLength * Math.Sin(angle) - baseW * Math.Sin(perpAngle));
-                    ctx.BeginFigure(start, true, true);
-                    ctx.LineTo(sb1, true, false);
-                    ctx.LineTo(sb2, true, false);
-                    break;
-                }
-                case 9: // Double T-bar with arrows: |<——>|
-                {
-                    double barHalfLen = headLength * 0.65;
-                    Point st1 = new(start.X + barHalfLen * Math.Cos(perpAngle), start.Y + barHalfLen * Math.Sin(perpAngle));
-                    Point st2 = new(start.X - barHalfLen * Math.Cos(perpAngle), start.Y - barHalfLen * Math.Sin(perpAngle));
-                    Point et1 = new(end.X + barHalfLen * Math.Cos(perpAngle), end.Y + barHalfLen * Math.Sin(perpAngle));
-                    Point et2 = new(end.X - barHalfLen * Math.Cos(perpAngle), end.Y - barHalfLen * Math.Sin(perpAngle));
-                    ctx.BeginFigure(st1, false, false);
-                    ctx.LineTo(st2, true, false);
-                    ctx.BeginFigure(et1, false, false);
-                    ctx.LineTo(et2, true, false);
-
-                    double wingAngle = Math.PI / 6.5;
-                    Point eh1 = new(end.X - headLength * Math.Cos(angle - wingAngle), end.Y - headLength * Math.Sin(angle - wingAngle));
-                    Point eh2 = new(end.X - headLength * Math.Cos(angle + wingAngle), end.Y - headLength * Math.Sin(angle + wingAngle));
-                    Point sh1 = new(start.X + headLength * Math.Cos(angle - wingAngle), start.Y + headLength * Math.Sin(angle - wingAngle));
-                    Point sh2 = new(start.X + headLength * Math.Cos(angle + wingAngle), start.Y + headLength * Math.Sin(angle + wingAngle));
-                    ctx.BeginFigure(eh1, false, false);
-                    ctx.LineTo(end, true, false);
-                    ctx.LineTo(eh2, true, false);
-                    ctx.BeginFigure(sh1, false, false);
-                    ctx.LineTo(start, true, false);
-                    ctx.LineTo(sh2, true, false);
-                    break;
-                }
-            }
-        }
-        geometry.Freeze();
-        return geometry;
     }
 
-    private static void MakeTextMovable(System.Windows.Controls.TextBox textBox)
+    private void SyncElementStyleToToolbar(UIElement element)
     {
-        Point dragOffset = default;
-        bool isDragging = false;
-        textBox.PreviewMouseLeftButtonDown += (_, eventArgs) =>
+        string toolName = AnnotationSecondaryEditor.GetToolName(element);
+        if (toolName != "None")
         {
-            if (!textBox.IsReadOnly)
-                return;
-            Point point = eventArgs.GetPosition(textBox.Parent as IInputElement);
-            dragOffset = new Point(point.X - Canvas.GetLeft(textBox), point.Y - Canvas.GetTop(textBox));
-            isDragging = true;
-            textBox.CaptureMouse();
-            eventArgs.Handled = true;
-        };
-        textBox.PreviewMouseMove += (_, eventArgs) =>
+            _activeTool = toolName;
+            Toolbar.SelectTool(toolName);
+        }
+
+        if (element is Shape shape)
         {
-            if (!isDragging || eventArgs.LeftButton != MouseButtonState.Pressed)
-                return;
-            Point point = eventArgs.GetPosition(textBox.Parent as IInputElement);
-            Canvas.SetLeft(textBox, Math.Max(0, point.X - dragOffset.X));
-            Canvas.SetTop(textBox, Math.Max(0, point.Y - dragOffset.Y));
-            eventArgs.Handled = true;
-        };
-        textBox.PreviewMouseLeftButtonUp += (_, eventArgs) =>
+            if (shape.Stroke is SolidColorBrush sb)
+            {
+                Toolbar.SetCurrentColor(sb.Color);
+            }
+            Toolbar.SetCurrentStrokeSize(shape.StrokeThickness);
+            if (shape is Path path && path.Tag is ArrowInfo arrow)
+            {
+                Toolbar.SetCurrentStrokeSize(arrow.StrokeSize);
+            }
+        }
+        else if (element is TextBox tb)
         {
-            if (!isDragging)
-                return;
-            isDragging = false;
-            textBox.ReleaseMouseCapture();
-            eventArgs.Handled = true;
-        };
+            if (tb.Foreground is SolidColorBrush fb)
+            {
+                Toolbar.SetCurrentColor(fb.Color);
+            }
+            Toolbar.SetFontSize(tb.FontSize);
+        }
+        else if (element is Border border)
+        {
+            if (border.Background is SolidColorBrush bb && bb != Brushes.Transparent)
+            {
+                Toolbar.SetCurrentColor(bb.Color);
+            }
+            else if (border.BorderBrush is SolidColorBrush bbb)
+            {
+                Toolbar.SetCurrentColor(bbb.Color);
+            }
+            Toolbar.SetCurrentStrokeSize(Math.Max(1, Math.Round(border.Width / 5.0)));
+        }
+    }
+
+    private void OnToolbarColorChanged(Color color)
+    {
+        if (_selectedAnnotationElement == null) return;
+        var brush = new SolidColorBrush(color);
+
+        if (_selectedAnnotationElement is Shape shape)
+        {
+            shape.Stroke = brush;
+            if (shape is Path path && path.Tag is ArrowInfo arrow)
+            {
+                if (arrow.IsFilled || arrow.ArrowStyle == 5 || arrow.ArrowStyle == 7 || arrow.ArrowStyle == 8)
+                {
+                    path.Fill = brush;
+                }
+            }
+            else if (shape is Rectangle or Ellipse)
+            {
+                if (Toolbar.IsFilled)
+                {
+                    shape.Fill = brush;
+                }
+            }
+        }
+        else if (_selectedAnnotationElement is TextBox tb)
+        {
+            tb.Foreground = brush;
+            if (Toolbar.HasTextBorder)
+            {
+                tb.BorderBrush = brush;
+            }
+        }
+        else if (_selectedAnnotationElement is Border border)
+        {
+            if (Toolbar.NumberStyle == 0)
+            {
+                border.Background = brush;
+            }
+            else
+            {
+                border.BorderBrush = brush;
+                if (border.Child is TextBlock numTb)
+                {
+                    numTb.Foreground = brush;
+                }
+            }
+        }
+        AnnotationSecondaryEditor.DrawSelection(AnnotationSelectionCanvas, _selectedAnnotationElement);
+    }
+
+    private void OnToolbarStrokeSizeChanged(double size)
+    {
+        if (_selectedAnnotationElement == null) return;
+
+        if (_selectedAnnotationElement is Shape shape)
+        {
+            if (shape is Path path && path.Tag is ArrowInfo arrow)
+            {
+                arrow.StrokeSize = size;
+                path.StrokeThickness = (arrow.ArrowStyle == 2 || arrow.ArrowStyle == 3) ? Math.Max(size * 1.6, size + 2.0) : size;
+                path.Data = AnnotationSecondaryEditor.MakeArrowGeometry(arrow.Start, arrow.End, arrow.StrokeSize, arrow.ArrowStyle, arrow.IsFilled);
+            }
+            else
+            {
+                shape.StrokeThickness = size;
+            }
+        }
+        else if (_selectedAnnotationElement is Border border)
+        {
+            double newMarkerSize = Math.Max(18, size * 5);
+            double newRadius = newMarkerSize / 2.0;
+            double oldRadius = border.Width / 2.0;
+            double centerX = Canvas.GetLeft(border) + oldRadius;
+            double centerY = Canvas.GetTop(border) + oldRadius;
+
+            border.Width = newMarkerSize;
+            border.Height = newMarkerSize;
+            border.CornerRadius = new CornerRadius(newRadius);
+            Canvas.SetLeft(border, centerX - newRadius);
+            Canvas.SetTop(border, centerY - newRadius);
+
+            if (border.Child is TextBlock numTb)
+            {
+                numTb.FontSize = Math.Max(9, newMarkerSize * 0.55);
+            }
+        }
+        AnnotationSecondaryEditor.DrawSelection(AnnotationSelectionCanvas, _selectedAnnotationElement);
+    }
+
+    private void OnToolbarSubToolActionTriggered(string action)
+    {
+        if (_selectedAnnotationElement == null) return;
+
+        if (action == "FillChanged" && _selectedAnnotationElement is Shape shape)
+        {
+            var brush = new SolidColorBrush(Toolbar.CurrentColor);
+            if (shape is Rectangle or Ellipse)
+            {
+                shape.Fill = Toolbar.IsFilled ? brush : Brushes.Transparent;
+            }
+            else if (shape is Path path && path.Tag is ArrowInfo arrow)
+            {
+                arrow.IsFilled = Toolbar.IsFilled;
+                path.Fill = (arrow.ArrowStyle == 5 || arrow.ArrowStyle == 7 || arrow.ArrowStyle == 8 || arrow.IsFilled) ? brush : Brushes.Transparent;
+                path.Data = AnnotationSecondaryEditor.MakeArrowGeometry(arrow.Start, arrow.End, arrow.StrokeSize, arrow.ArrowStyle, arrow.IsFilled);
+            }
+        }
+        else if (action == "DashChanged" && _selectedAnnotationElement is Shape dashShape)
+        {
+            dashShape.StrokeDashArray = Toolbar.CurrentDashArray;
+        }
+        else if (action == "ArrowStyleChanged" && _selectedAnnotationElement is Path arrowPath && arrowPath.Tag is ArrowInfo arrow)
+        {
+            arrow.ArrowStyle = Toolbar.ArrowStyle;
+            arrowPath.StrokeThickness = (arrow.ArrowStyle == 2 || arrow.ArrowStyle == 3) ? Math.Max(arrow.StrokeSize * 1.6, arrow.StrokeSize + 2.0) : arrow.StrokeSize;
+            var brush = new SolidColorBrush(Toolbar.CurrentColor);
+            arrowPath.Fill = (arrow.ArrowStyle == 5 || arrow.ArrowStyle == 7 || arrow.ArrowStyle == 8 || arrow.IsFilled) ? brush : Brushes.Transparent;
+            arrowPath.Data = AnnotationSecondaryEditor.MakeArrowGeometry(arrow.Start, arrow.End, arrow.StrokeSize, arrow.ArrowStyle, arrow.IsFilled);
+        }
+        else if (_selectedAnnotationElement is TextBox tb)
+        {
+            if (action == "BoldChanged")
+            {
+                tb.FontWeight = Toolbar.IsBold ? FontWeights.Bold : FontWeights.Normal;
+            }
+            else if (action == "ItalicChanged")
+            {
+                tb.FontStyle = Toolbar.IsItalic ? FontStyles.Italic : FontStyles.Normal;
+            }
+            else if (action == "BorderChanged")
+            {
+                tb.Background = Toolbar.HasTextBorder ? new SolidColorBrush(Color.FromArgb(160, 0, 0, 0)) : Brushes.Transparent;
+                tb.BorderBrush = Toolbar.HasTextBorder ? new SolidColorBrush(Toolbar.CurrentColor) : Brushes.Transparent;
+            }
+            else if (action == "FontSizeChanged")
+            {
+                tb.FontSize = Toolbar.FontSizeValue;
+            }
+            else if (action == "FontFamilyChanged")
+            {
+                tb.FontFamily = new FontFamily(Toolbar.CurrentFontFamily);
+            }
+        }
+        else if (action.StartsWith("NumberStyle") && _selectedAnnotationElement is Border border)
+        {
+            var brush = new SolidColorBrush(Toolbar.CurrentColor);
+            if (Toolbar.NumberStyle == 0)
+            {
+                border.Background = brush;
+                border.BorderBrush = Brushes.Transparent;
+                border.BorderThickness = new Thickness(0);
+                if (border.Child is TextBlock ntb)
+                    ntb.Foreground = Brushes.White;
+            }
+            else
+            {
+                border.Background = Brushes.Transparent;
+                border.BorderBrush = brush;
+                border.BorderThickness = new Thickness(2);
+                if (border.Child is TextBlock ntb)
+                    ntb.Foreground = brush;
+            }
+        }
+
+        AnnotationSecondaryEditor.DrawSelection(AnnotationSelectionCanvas, _selectedAnnotationElement);
     }
 }

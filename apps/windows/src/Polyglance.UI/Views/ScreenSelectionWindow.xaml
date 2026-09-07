@@ -34,6 +34,7 @@
 
         <!-- 标注图层 -->
         <Canvas x:Name="AnnotationCanvas" ClipToBounds="True"/>
+        <Canvas x:Name="AnnotationSelectionCanvas" ClipToBounds="True" IsHitTestVisible="False"/>
 
         <!-- 选区边框与调节手柄 -->
         <Canvas x:Name="SelectionCanvas" ClipToBounds="False">

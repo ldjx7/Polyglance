@@ -390,6 +390,119 @@ public sealed class AnnotationInteractionTests
         });
     }
 
+    [Fact]
+    public void SecondaryEditorComputesBoundsAndHandlesCorrectly()
+    {
+        RunInSta(() =>
+        {
+            var rect = new System.Windows.Shapes.Rectangle
+            {
+                Width = 100,
+                Height = 60
+            };
+            System.Windows.Controls.Canvas.SetLeft(rect, 20);
+            System.Windows.Controls.Canvas.SetTop(rect, 30);
+
+            Rect bounds = AnnotationSecondaryEditor.GetElementBounds(rect);
+            Assert.Equal(new Rect(20, 30, 100, 60), bounds);
+
+            var handles = AnnotationSecondaryEditor.GetHandles(rect);
+            Assert.Equal(8, handles.Count);
+
+            var hitHandle = AnnotationSecondaryEditor.HitTestHandles(rect, new Point(20, 30));
+            Assert.Equal(AnnotationHandleType.TopLeft, hitHandle);
+
+            AnnotationSecondaryEditor.MoveElement(rect, 10, 15);
+            Assert.Equal(30, System.Windows.Controls.Canvas.GetLeft(rect));
+            Assert.Equal(45, System.Windows.Controls.Canvas.GetTop(rect));
+
+            AnnotationSecondaryEditor.ResizeElement(rect, AnnotationHandleType.BottomRight, new Point(150, 120));
+            Assert.Equal(30, System.Windows.Controls.Canvas.GetLeft(rect));
+            Assert.Equal(45, System.Windows.Controls.Canvas.GetTop(rect));
+            Assert.Equal(120, rect.Width);
+            Assert.Equal(75, rect.Height);
+        });
+    }
+
+    [Fact]
+    public void SecondaryEditorHandlesArrowGeometryAndResizing()
+    {
+        RunInSta(() =>
+        {
+            var arrowInfo = new ArrowInfo
+            {
+                Start = new Point(10, 10),
+                End = new Point(100, 10),
+                StrokeSize = 4,
+                ArrowStyle = 4,
+                IsFilled = false
+            };
+            var path = new System.Windows.Shapes.Path
+            {
+                Tag = arrowInfo,
+                Data = AnnotationSecondaryEditor.MakeArrowGeometry(arrowInfo.Start, arrowInfo.End, arrowInfo.StrokeSize, arrowInfo.ArrowStyle, arrowInfo.IsFilled)
+            };
+
+            Rect bounds = AnnotationSecondaryEditor.GetElementBounds(path);
+            Assert.Equal(10, bounds.Left);
+            Assert.Equal(100, bounds.Right);
+
+            var handles = AnnotationSecondaryEditor.GetHandles(path);
+            Assert.Equal(2, handles.Count);
+            Assert.Equal(AnnotationHandleType.Start, handles[0].Type);
+            Assert.Equal(AnnotationHandleType.End, handles[1].Type);
+
+            AnnotationSecondaryEditor.MoveElement(path, 5, 5);
+            Assert.Equal(new Point(15, 15), arrowInfo.Start);
+            Assert.Equal(new Point(105, 15), arrowInfo.End);
+
+            AnnotationSecondaryEditor.ResizeElement(path, AnnotationHandleType.End, new Point(120, 30));
+            Assert.Equal(new Point(120, 30), arrowInfo.End);
+        });
+    }
+
+    [Fact]
+    public void DrawSelectionRendersHandleVisuals()
+    {
+        RunInSta(() =>
+        {
+            var canvas = new System.Windows.Controls.Canvas();
+            var rect = new System.Windows.Shapes.Rectangle { Width = 80, Height = 40 };
+            System.Windows.Controls.Canvas.SetLeft(rect, 10);
+            System.Windows.Controls.Canvas.SetTop(rect, 10);
+
+            AnnotationSecondaryEditor.DrawSelection(canvas, rect);
+            Assert.Equal(9, canvas.Children.Count);
+
+            AnnotationSecondaryEditor.DrawSelection(canvas, null);
+            Assert.Empty(canvas.Children);
+        });
+    }
+
+    [Fact]
+    public void ResizingNumberBorderUpdatesCornerRadiusAndFontSize()
+    {
+        RunInSta(() =>
+        {
+            var textBlock = new System.Windows.Controls.TextBlock { Text = "1", FontSize = 12 };
+            var border = new System.Windows.Controls.Border
+            {
+                Width = 20,
+                Height = 20,
+                CornerRadius = new CornerRadius(10),
+                Child = textBlock
+            };
+            System.Windows.Controls.Canvas.SetLeft(border, 10);
+            System.Windows.Controls.Canvas.SetTop(border, 10);
+
+            AnnotationSecondaryEditor.ResizeElement(border, AnnotationHandleType.BottomRight, new Point(40, 40));
+            Assert.Equal(30, border.Width);
+            Assert.Equal(30, border.Height);
+            Assert.Equal(15, border.CornerRadius.TopLeft);
+            Assert.True(textBlock.FontSize >= 15 * 0.55);
+        });
+    }
+
     private static void RunInSta(Action action)
     {
         Exception? failure = null;

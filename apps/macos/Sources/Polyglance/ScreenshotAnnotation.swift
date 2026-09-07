@@ -273,41 +273,413 @@ enum ScreenshotAnnotationElement: Equatable {
             return true
         }
     }
+
+    var boundingBox: CGRect {
+        switch self {
+        case let .rectangle(start, end, _),
+             let .ellipse(start, end, _):
+            return CGRect(
+                x: min(start.x, end.x),
+                y: min(start.y, end.y),
+                width: max(abs(end.x - start.x), 1),
+                height: max(abs(end.y - start.y), 1)
+            )
+        case let .line(start, end, _),
+             let .arrow(start, end, _):
+            return CGRect(
+                x: min(start.x, end.x),
+                y: min(start.y, end.y),
+                width: max(abs(end.x - start.x), 1),
+                height: max(abs(end.y - start.y), 1)
+            )
+        case let .text(origin, text, style):
+            let effectiveSize = max(1, style.fontSize)
+            let font = NSFont.systemFont(ofSize: effectiveSize, weight: style.isBold ? .bold : .medium)
+            let size = (text as NSString).size(withAttributes: [.font: font])
+            return CGRect(
+                x: origin.x - 4,
+                y: origin.y - 2,
+                width: max(size.width + 8, 10),
+                height: max(size.height + 4, 10)
+            )
+        case let .number(origin, _, style):
+            let radius = max(18, style.lineWidth * 6) / 2.0
+            return CGRect(x: origin.x - radius, y: origin.y - radius, width: radius * 2, height: radius * 2)
+        case let .freehand(points, _):
+            guard let first = points.first else { return .zero }
+            var minX = first.x, maxX = first.x, minY = first.y, maxY = first.y
+            for pt in points {
+                minX = min(minX, pt.x)
+                maxX = max(maxX, pt.x)
+                minY = min(minY, pt.y)
+                maxY = max(maxY, pt.y)
+            }
+            return CGRect(x: minX, y: minY, width: max(maxX - minX, 1), height: max(maxY - minY, 1))
+        case let .mosaic(points, style):
+            if style.shapeType == 1, let first = points.first, let last = points.last {
+                return CGRect(
+                    x: min(first.x, last.x),
+                    y: min(first.y, last.y),
+                    width: max(abs(last.x - first.x), 1),
+                    height: max(abs(last.y - first.y), 1)
+                )
+            }
+            guard let first = points.first else { return .zero }
+            var minX = first.x, maxX = first.x, minY = first.y, maxY = first.y
+            for pt in points {
+                minX = min(minX, pt.x)
+                maxX = max(maxX, pt.x)
+                minY = min(minY, pt.y)
+                maxY = max(maxY, pt.y)
+            }
+            return CGRect(x: minX, y: minY, width: max(maxX - minX, 1), height: max(maxY - minY, 1))
+        }
+    }
+
+    func handles() -> [AnnotationHandle] {
+        switch self {
+        case let .line(start, end, _),
+             let .arrow(start, end, _):
+            return [
+                AnnotationHandle(type: .start, point: start),
+                AnnotationHandle(type: .end, point: end),
+            ]
+        case .rectangle, .ellipse:
+            let box = boundingBox
+            return [
+                AnnotationHandle(type: .topLeft, point: CGPoint(x: box.minX, y: box.minY)),
+                AnnotationHandle(type: .top, point: CGPoint(x: box.midX, y: box.minY)),
+                AnnotationHandle(type: .topRight, point: CGPoint(x: box.maxX, y: box.minY)),
+                AnnotationHandle(type: .right, point: CGPoint(x: box.maxX, y: box.midY)),
+                AnnotationHandle(type: .bottomRight, point: CGPoint(x: box.maxX, y: box.maxY)),
+                AnnotationHandle(type: .bottom, point: CGPoint(x: box.midX, y: box.maxY)),
+                AnnotationHandle(type: .bottomLeft, point: CGPoint(x: box.minX, y: box.maxY)),
+                AnnotationHandle(type: .left, point: CGPoint(x: box.minX, y: box.midY)),
+            ]
+        case let .mosaic(points, style):
+            if style.shapeType == 1, points.count >= 2 {
+                let box = boundingBox
+                return [
+                    AnnotationHandle(type: .topLeft, point: CGPoint(x: box.minX, y: box.minY)),
+                    AnnotationHandle(type: .top, point: CGPoint(x: box.midX, y: box.minY)),
+                    AnnotationHandle(type: .topRight, point: CGPoint(x: box.maxX, y: box.minY)),
+                    AnnotationHandle(type: .right, point: CGPoint(x: box.maxX, y: box.midY)),
+                    AnnotationHandle(type: .bottomRight, point: CGPoint(x: box.maxX, y: box.maxY)),
+                    AnnotationHandle(type: .bottom, point: CGPoint(x: box.midX, y: box.maxY)),
+                    AnnotationHandle(type: .bottomLeft, point: CGPoint(x: box.minX, y: box.maxY)),
+                    AnnotationHandle(type: .left, point: CGPoint(x: box.minX, y: box.midY)),
+                ]
+            }
+            return []
+        default:
+            return []
+        }
+    }
+
+    func hitTestHandle(point: CGPoint, handleRadius: CGFloat = 8) -> AnnotationHandleType? {
+        for handle in handles() {
+            if hypot(point.x - handle.point.x, point.y - handle.point.y) <= handleRadius {
+                return handle.type
+            }
+        }
+        return nil
+    }
+
+    func hitTest(point: CGPoint, tolerance: CGFloat = 6) -> Bool {
+        let tol = max(tolerance, 4)
+        switch self {
+        case let .line(start, end, style),
+             let .arrow(start, end, style):
+            let d = pointToSegmentDistance(point: point, start: start, end: end)
+            return d <= (tol + max(style.lineWidth, 4) / 2)
+
+        case let .rectangle(start, end, style):
+            let box = CGRect(
+                x: min(start.x, end.x),
+                y: min(start.y, end.y),
+                width: max(abs(end.x - start.x), 1),
+                height: max(abs(end.y - start.y), 1)
+            )
+            if style.isFilled {
+                return box.insetBy(dx: -tol, dy: -tol).contains(point)
+            }
+            let d1 = pointToSegmentDistance(point: point, start: CGPoint(x: box.minX, y: box.minY), end: CGPoint(x: box.maxX, y: box.minY))
+            let d2 = pointToSegmentDistance(point: point, start: CGPoint(x: box.maxX, y: box.minY), end: CGPoint(x: box.maxX, y: box.maxY))
+            let d3 = pointToSegmentDistance(point: point, start: CGPoint(x: box.maxX, y: box.maxY), end: CGPoint(x: box.minX, y: box.maxY))
+            let d4 = pointToSegmentDistance(point: point, start: CGPoint(x: box.minX, y: box.maxY), end: CGPoint(x: box.minX, y: box.minY))
+            let minD = min(d1, d2, d3, d4)
+            return minD <= (tol + style.lineWidth / 2)
+
+        case let .ellipse(start, end, style):
+            let box = CGRect(
+                x: min(start.x, end.x),
+                y: min(start.y, end.y),
+                width: max(abs(end.x - start.x), 1),
+                height: max(abs(end.y - start.y), 1)
+            )
+            let rx = box.width / 2
+            let ry = box.height / 2
+            guard rx > 0, ry > 0 else { return false }
+            let cx = box.midX
+            let cy = box.midY
+            let dx = point.x - cx
+            let dy = point.y - cy
+            let d = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry)
+            if style.isFilled {
+                return d <= 1.05
+            }
+            let normDist = sqrt(d)
+            let pixelDist = abs(normDist - 1.0) * min(rx, ry)
+            return pixelDist <= (tol + style.lineWidth / 2)
+
+        case .text, .number:
+            return boundingBox.insetBy(dx: -tol, dy: -tol).contains(point)
+
+        case let .freehand(points, style):
+            guard points.count > 1 else {
+                if let pt = points.first {
+                    return hypot(point.x - pt.x, point.y - pt.y) <= tol + style.lineWidth / 2
+                }
+                return false
+            }
+            for i in 0..<(points.count - 1) {
+                if pointToSegmentDistance(point: point, start: points[i], end: points[i + 1]) <= tol + style.lineWidth / 2 {
+                    return true
+                }
+            }
+            return false
+
+        case let .mosaic(points, style):
+            if style.shapeType == 1, let first = points.first, let last = points.last {
+                let box = CGRect(
+                    x: min(first.x, last.x),
+                    y: min(first.y, last.y),
+                    width: max(abs(last.x - first.x), 1),
+                    height: max(abs(last.y - first.y), 1)
+                )
+                return box.insetBy(dx: -tol, dy: -tol).contains(point)
+            }
+            guard points.count > 1 else { return false }
+            for i in 0..<(points.count - 1) {
+                if pointToSegmentDistance(point: point, start: points[i], end: points[i + 1]) <= tol + style.lineWidth * 4 {
+                    return true
+                }
+            }
+            return false
+        }
+    }
+
+    func moving(by delta: CGPoint) -> ScreenshotAnnotationElement {
+        switch self {
+        case let .freehand(points, style):
+            return .freehand(points: points.map { CGPoint(x: $0.x + delta.x, y: $0.y + delta.y) }, style: style)
+        case let .rectangle(start, end, style):
+            return .rectangle(start: CGPoint(x: start.x + delta.x, y: start.y + delta.y), end: CGPoint(x: end.x + delta.x, y: end.y + delta.y), style: style)
+        case let .ellipse(start, end, style):
+            return .ellipse(start: CGPoint(x: start.x + delta.x, y: start.y + delta.y), end: CGPoint(x: end.x + delta.x, y: end.y + delta.y), style: style)
+        case let .line(start, end, style):
+            return .line(start: CGPoint(x: start.x + delta.x, y: start.y + delta.y), end: CGPoint(x: end.x + delta.x, y: end.y + delta.y), style: style)
+        case let .arrow(start, end, style):
+            return .arrow(start: CGPoint(x: start.x + delta.x, y: start.y + delta.y), end: CGPoint(x: end.x + delta.x, y: end.y + delta.y), style: style)
+        case let .text(origin, text, style):
+            return .text(origin: CGPoint(x: origin.x + delta.x, y: origin.y + delta.y), text: text, style: style)
+        case let .mosaic(points, style):
+            return .mosaic(points: points.map { CGPoint(x: $0.x + delta.x, y: $0.y + delta.y) }, style: style)
+        case let .number(origin, value, style):
+            return .number(origin: CGPoint(x: origin.x + delta.x, y: origin.y + delta.y), value: value, style: style)
+        }
+    }
+
+    func resizing(handle: AnnotationHandleType, to point: CGPoint) -> ScreenshotAnnotationElement {
+        switch self {
+        case let .line(start, end, style):
+            if handle == .start {
+                return .line(start: point, end: end, style: style)
+            } else {
+                return .line(start: start, end: point, style: style)
+            }
+        case let .arrow(start, end, style):
+            if handle == .start {
+                return .arrow(start: point, end: end, style: style)
+            } else {
+                return .arrow(start: start, end: point, style: style)
+            }
+        case let .rectangle(start, end, style):
+            let (newStart, newEnd) = resizeRect(start: start, end: end, handle: handle, to: point)
+            return .rectangle(start: newStart, end: newEnd, style: style)
+        case let .ellipse(start, end, style):
+            let (newStart, newEnd) = resizeRect(start: start, end: end, handle: handle, to: point)
+            return .ellipse(start: newStart, end: newEnd, style: style)
+        case let .mosaic(points, style):
+            if style.shapeType == 1, let first = points.first, let last = points.last {
+                let (newStart, newEnd) = resizeRect(start: first, end: last, handle: handle, to: point)
+                return .mosaic(points: [newStart, newEnd], style: style)
+            }
+            return self
+        default:
+            return self
+        }
+    }
+
+    func withStyle(_ newStyle: ScreenshotAnnotationStyle) -> ScreenshotAnnotationElement {
+        switch self {
+        case let .freehand(points, _):
+            return .freehand(points: points, style: newStyle)
+        case let .rectangle(start, end, _):
+            return .rectangle(start: start, end: end, style: newStyle)
+        case let .ellipse(start, end, _):
+            return .ellipse(start: start, end: end, style: newStyle)
+        case let .line(start, end, _):
+            return .line(start: start, end: end, style: newStyle)
+        case let .arrow(start, end, _):
+            return .arrow(start: start, end: end, style: newStyle)
+        case let .text(origin, text, _):
+            return .text(origin: origin, text: text, style: newStyle)
+        case let .mosaic(points, _):
+            return .mosaic(points: points, style: newStyle)
+        case let .number(origin, value, _):
+            return .number(origin: origin, value: value, style: newStyle)
+        }
+    }
+}
+
+enum AnnotationHandleType: String, CaseIterable, Equatable {
+    case start
+    case end
+    case topLeft
+    case top
+    case topRight
+    case right
+    case bottomRight
+    case bottom
+    case bottomLeft
+    case left
+}
+
+struct AnnotationHandle: Equatable {
+    let type: AnnotationHandleType
+    let point: CGPoint
+}
+
+private func pointToSegmentDistance(point: CGPoint, start: CGPoint, end: CGPoint) -> CGFloat {
+    let dx = end.x - start.x
+    let dy = end.y - start.y
+    let lengthSquared = dx * dx + dy * dy
+    if lengthSquared == 0 {
+        return hypot(point.x - start.x, point.y - start.y)
+    }
+    let t = max(0, min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared))
+    let projX = start.x + t * dx
+    let projY = start.y + t * dy
+    return hypot(point.x - projX, point.y - projY)
+}
+
+private func resizeRect(start: CGPoint, end: CGPoint, handle: AnnotationHandleType, to point: CGPoint) -> (CGPoint, CGPoint) {
+    let x1 = min(start.x, end.x)
+    let x2 = max(start.x, end.x)
+    let y1 = min(start.y, end.y)
+    let y2 = max(start.y, end.y)
+
+    switch handle {
+    case .topLeft:
+        return (point, CGPoint(x: x2, y: y2))
+    case .top:
+        return (CGPoint(x: x1, y: point.y), CGPoint(x: x2, y: y2))
+    case .topRight:
+        return (CGPoint(x: x1, y: point.y), CGPoint(x: point.x, y: y2))
+    case .right:
+        return (CGPoint(x: x1, y: y1), CGPoint(x: point.x, y: y2))
+    case .bottomRight:
+        return (CGPoint(x: x1, y: y1), point)
+    case .bottom:
+        return (CGPoint(x: x1, y: y1), CGPoint(x: x2, y: point.y))
+    case .bottomLeft:
+        return (CGPoint(x: point.x, y: y1), CGPoint(x: x2, y: point.y))
+    case .left:
+        return (CGPoint(x: point.x, y: y1), CGPoint(x: x2, y: y2))
+    case .start, .end:
+        return (start, end)
+    }
 }
 
 struct ScreenshotAnnotationHistory {
     private(set) var elements: [ScreenshotAnnotationElement] = []
-    private var redoStack: [ScreenshotAnnotationElement] = []
+    private var undoStack: [[ScreenshotAnnotationElement]] = []
+    private var redoStack: [[ScreenshotAnnotationElement]] = []
+    var selectedIndex: Int? = nil
 
-    var canUndo: Bool { !elements.isEmpty }
+    var canUndo: Bool { !undoStack.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
 
+    var selectedElement: ScreenshotAnnotationElement? {
+        guard let idx = selectedIndex, elements.indices.contains(idx) else { return nil }
+        return elements[idx]
+    }
+
     mutating func append(_ element: ScreenshotAnnotationElement) {
+        undoStack.append(elements)
         elements.append(element)
+        selectedIndex = elements.count - 1
         redoStack.removeAll()
     }
 
     @discardableResult
     mutating func undo() -> ScreenshotAnnotationElement? {
-        guard let element = elements.popLast() else {
-            return nil
+        guard !undoStack.isEmpty else { return nil }
+        let currentLast = elements.last
+        redoStack.append(elements)
+        elements = undoStack.removeLast()
+        if let idx = selectedIndex, !elements.indices.contains(idx) {
+            selectedIndex = nil
         }
-        redoStack.append(element)
-        return element
+        return currentLast
     }
 
     @discardableResult
     mutating func redo() -> ScreenshotAnnotationElement? {
-        guard let element = redoStack.popLast() else {
-            return nil
+        guard !redoStack.isEmpty else { return nil }
+        undoStack.append(elements)
+        elements = redoStack.removeLast()
+        if let idx = selectedIndex, !elements.indices.contains(idx) {
+            selectedIndex = nil
         }
-        elements.append(element)
-        return element
+        return elements.last
     }
 
     mutating func removeAll() {
+        if !elements.isEmpty {
+            undoStack.append(elements)
+        }
         elements.removeAll()
         redoStack.removeAll()
+        selectedIndex = nil
+    }
+
+    mutating func select(at index: Int?) {
+        if let idx = index, elements.indices.contains(idx) {
+            selectedIndex = idx
+        } else {
+            selectedIndex = nil
+        }
+    }
+
+    mutating func beginInteractiveChange() {
+        undoStack.append(elements)
+        redoStack.removeAll()
+    }
+
+    mutating func updateSelected(to element: ScreenshotAnnotationElement) {
+        guard let idx = selectedIndex, elements.indices.contains(idx) else { return }
+        elements[idx] = element
+    }
+
+    mutating func deleteSelected() -> ScreenshotAnnotationElement? {
+        guard let idx = selectedIndex, elements.indices.contains(idx) else { return nil }
+        undoStack.append(elements)
+        let removed = elements.remove(at: idx)
+        selectedIndex = nil
+        redoStack.removeAll()
+        return removed
     }
 
     mutating func moveText(at index: Int, to origin: CGPoint) -> Bool {
@@ -323,7 +695,8 @@ struct ScreenshotAnnotationHistory {
     ) -> ScreenshotAnnotationHistory {
         var transformedHistory = self
         transformedHistory.elements = elements.map { $0.transformed(transform) }
-        transformedHistory.redoStack = redoStack.map { $0.transformed(transform) }
+        transformedHistory.undoStack = undoStack.map { $0.map { $0.transformed(transform) } }
+        transformedHistory.redoStack = redoStack.map { $0.map { $0.transformed(transform) } }
         return transformedHistory
     }
 }
@@ -1056,6 +1429,54 @@ enum ScreenshotAnnotationRenderer {
             width: abs(end.x - start.x),
             height: abs(end.y - start.y)
         )
+    }
+
+    static func drawSelection(
+        for element: ScreenshotAnnotationElement,
+        in context: CGContext,
+        pointTransform: (CGPoint) -> CGPoint = { $0 },
+        handleRadius: CGFloat = 5
+    ) {
+        context.saveGState()
+        defer { context.restoreGState() }
+
+        let selectionColor = NSColor(srgbRed: 0.12, green: 0.53, blue: 0.90, alpha: 1.0).cgColor
+        let handleFillColor = NSColor.white.cgColor
+
+        switch element {
+        case .line, .arrow:
+            break
+        default:
+            let box = element.boundingBox
+            let p1 = pointTransform(box.origin)
+            let p2 = pointTransform(CGPoint(x: box.maxX, y: box.maxY))
+            let transformedBox = CGRect(
+                x: min(p1.x, p2.x),
+                y: min(p1.y, p2.y),
+                width: max(abs(p2.x - p1.x), 2),
+                height: max(abs(p2.y - p1.y), 2)
+            )
+            context.setStrokeColor(selectionColor)
+            context.setLineWidth(1)
+            context.setLineDash(phase: 0, lengths: [4, 3])
+            context.stroke(transformedBox.insetBy(dx: -2, dy: -2))
+        }
+
+        for handle in element.handles() {
+            let pt = pointTransform(handle.point)
+            let handleRect = CGRect(
+                x: pt.x - handleRadius,
+                y: pt.y - handleRadius,
+                width: handleRadius * 2,
+                height: handleRadius * 2
+            )
+            context.setLineDash(phase: 0, lengths: [])
+            context.setFillColor(handleFillColor)
+            context.fillEllipse(in: handleRect)
+            context.setStrokeColor(selectionColor)
+            context.setLineWidth(1.5)
+            context.strokeEllipse(in: handleRect)
+        }
     }
 }
 
