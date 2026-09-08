@@ -338,6 +338,7 @@ const isEn = lang === 'en';
       <ul class="nav-menu">
         <li><a href={isEn ? "/en" : "/"} class="nav-link">{isEn ? "Home" : "首页"}</a></li>
         <li><a href={isEn ? "/en/download" : "/download"} class="nav-link">{isEn ? "Download" : "下载"}</a></li>
+        <li><a href={isEn ? "/en/guides/usage" : "/guides/usage"} class="nav-link">{isEn ? "User Guide" : "使用指南"}</a></li>
         <li><a href={isEn ? "/en/guides/shortcuts" : "/guides/shortcuts"} class="nav-link">{isEn ? "Shortcuts" : "快捷键"}</a></li>
         <li><a href={isEn ? "/en/guides/install" : "/guides/install"} class="nav-link">{isEn ? "Install Guide" : "安装指南"}</a></li>
         <li><a href={isEn ? "/en/changelog" : "/changelog"} class="nav-link">{isEn ? "Changelog" : "更新日志"}</a></li>
@@ -368,6 +369,7 @@ const isEn = lang === 'en';
       </div>
       <div>
         <a href="https://github.com/ldjx7/Polyglance" target="_blank" rel="noopener" style="margin-right: 1.5rem;">GitHub</a>
+        <a href={isEn ? "/en/guides/usage" : "/guides/usage"} style="margin-right: 1.5rem;">{isEn ? "Guide" : "使用指南"}</a>
         <a href={isEn ? "/en/guides/install" : "/guides/install"} style="margin-right: 1.5rem;">{isEn ? "Install" : "安装指南"}</a>
         <a href={isEn ? "/en/guides/shortcuts" : "/guides/shortcuts"} style="margin-right: 1.5rem;">{isEn ? "Shortcuts" : "快捷键"}</a>
         <a href={isEn ? "/en/changelog" : "/changelog"}>{isEn ? "Changelog" : "更新日志"}</a>

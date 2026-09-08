@@ -1,0 +1,208 @@
+---
+import PageLayout from '../../../layouts/PageLayout.astro';
+---
+
+<PageLayout title="User Guide" description="Comprehensive guide to Polyglance: Text translation, offline OCR, long screenshots, recording & pins" lang="en">
+  <div class="page-header">
+    <h1 class="page-title">User Guide</h1>
+    <p class="page-desc">Master Polyglance workflows, shortcuts, drawing controls, and provider configuration.</p>
+  </div>
+
+  <!-- 1. Text Translation -->
+  <div class="card">
+    <h2 class="card-title" style="display:flex; align-items:center; gap:0.6rem;">
+      <span style="font-size:1.4rem;">📖</span> Selected Text Translation
+    </h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7; margin-bottom:1.2rem;">
+      Translate text instantly in-place across PDFs, browsers, editors, and code without switching focus.
+    </p>
+
+    <div style="background:var(--bg-subtle); border-radius:10px; padding:1.2rem; margin-bottom:1.2rem; border:1px solid var(--border-subtle);">
+      <h3 style="font-size:0.98rem; font-weight:700; margin-bottom:0.6rem; color:var(--text-1);">Standard Workflow</h3>
+      <ol style="margin:0; padding-left:1.4rem; color:var(--text-2); font-size:0.92rem; line-height:1.8;">
+        <li>Select any text on screen with your mouse.</li>
+        <li>Press the default shortcut <kbd>Ctrl+Shift+3</kbd> (macOS: <kbd>⌃⇧3</kbd>).</li>
+        <li>A streaming translation popover appears near the cursor, auto-detecting the source language.</li>
+      </ol>
+    </div>
+
+    <h3 style="font-size:0.95rem; font-weight:700; margin-bottom:0.5rem; color:var(--text-1);">Highlights</h3>
+    <ul style="margin:0; padding-left:1.4rem; color:var(--text-2); font-size:0.92rem; line-height:1.8;">
+      <li><strong>Auto-Copy Result</strong>: Translations are copied to the clipboard automatically once completed.</li>
+      <li><strong>Pin Floating Window</strong>: Click the pin icon in the popover to keep it floating above all windows.</li>
+      <li><strong>Language Switcher</strong>: Quickly change the target language or retry translation on demand.</li>
+    </ul>
+  </div>
+
+  <!-- 2. Offline OCR & Screen Translation -->
+  <div class="card">
+    <h2 class="card-title" style="display:flex; align-items:center; gap:0.6rem;">
+      <span style="font-size:1.4rem;">🔍</span> Offline OCR &amp; Screen Translation
+    </h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7; margin-bottom:1.2rem;">
+      Extract text from non-selectable websites, images, charts, and video subtitles using on-device neural OCR.
+    </p>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:1rem; margin-bottom:1.2rem;">
+      <div style="background:var(--bg-subtle); border-radius:10px; padding:1.2rem; border:1px solid var(--border-subtle);">
+        <h3 style="font-size:0.95rem; font-weight:700; margin-bottom:0.5rem; color:var(--text-1);">Option A: Screen Translation</h3>
+        <p style="color:var(--text-2); font-size:0.9rem; line-height:1.6; margin-bottom:0.5rem;">
+          Press <kbd>Ctrl+Shift+4</kbd> (macOS: <kbd>⌃⇧4</kbd>) and drag to select any region with text.
+        </p>
+        <p style="color:var(--text-2); font-size:0.9rem; line-height:1.6;">
+          Release the mouse to see native side-by-side overlay translation right on your screen.
+        </p>
+      </div>
+
+      <div style="background:var(--bg-subtle); border-radius:10px; padding:1.2rem; border:1px solid var(--border-subtle);">
+        <h3 style="font-size:0.95rem; font-weight:700; margin-bottom:0.5rem; color:var(--text-1);">Option B: Word Selection &amp; Copy</h3>
+        <p style="color:var(--text-2); font-size:0.9rem; line-height:1.6; margin-bottom:0.5rem;">
+          Press <kbd>Ctrl+Shift+1</kbd> to capture, then click the OCR button on the toolbar.
+        </p>
+        <p style="color:var(--text-2); font-size:0.9rem; line-height:1.6;">
+          Click highlighted words to copy individual terms, or press <kbd>Shift+C</kbd> to copy all extracted text.
+        </p>
+      </div>
+    </div>
+
+    <p style="color:var(--text-3); font-size:0.85rem; line-height:1.6;">
+      Note: Powered by Apple Vision on macOS and Windows Media OCR on Windows. 100% on-device processing, zero network transmission.
+    </p>
+  </div>
+
+  <!-- 3. Screenshot & Annotation -->
+  <div class="card">
+    <h2 class="card-title" style="display:flex; align-items:center; gap:0.6rem;">
+      <span style="font-size:1.4rem;">✂️</span> Screenshot &amp; Annotation Toolkit
+    </h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7; margin-bottom:1.2rem;">
+      Equipped with smart window snapping, flexible selection, and full-featured drawing tools.
+    </p>
+
+    <div style="background:var(--bg-subtle); border-radius:10px; padding:1.2rem; margin-bottom:1.2rem; border:1px solid var(--border-subtle);">
+      <h3 style="font-size:0.98rem; font-weight:700; margin-bottom:0.6rem; color:var(--text-1);">Available Annotation Tools</h3>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; color:var(--text-2); font-size:0.9rem;">
+        <div>• <strong>Rectangle / Ellipse</strong>: Highlight key sections</div>
+        <div>• <strong>Arrow / Line</strong>: Point and direct focus</div>
+        <div>• <strong>Pen / Highlighter</strong>: Freehand drawings</div>
+        <div>• <strong>Text</strong>: Insert notes and remarks</div>
+        <div>• <strong>Mosaic / Blur</strong>: Obscure private details</div>
+        <div>• <strong>Numbered Badges</strong>: Auto-increment step numbers</div>
+      </div>
+    </div>
+
+    <ul style="margin:0; padding-left:1.4rem; color:var(--text-2); font-size:0.92rem; line-height:1.8;">
+      <li><strong>Instant Finish</strong>: Press <kbd>Enter</kbd> to copy the composed screenshot to your clipboard.</li>
+      <li><strong>Undo &amp; Redo</strong>: Press <kbd>Ctrl+Z</kbd> (<kbd>Cmd+Z</kbd>) to undo, and <kbd>Ctrl+Y</kbd> (<kbd>Cmd+Shift+Z</kbd>) to redo.</li>
+      <li><strong>Pixel Adjustment</strong>: Nudge selection borders using arrow keys for precise pixel alignment.</li>
+    </ul>
+  </div>
+
+  <!-- 4. Pinned Images on Desktop -->
+  <div class="card">
+    <h2 class="card-title" style="display:flex; align-items:center; gap:0.6rem;">
+      <span style="font-size:1.4rem;">📌</span> Desktop Pinned Images
+    </h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7; margin-bottom:1.2rem;">
+      Float reference images, screenshots, or clipboard items above all other desktop applications.
+    </p>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:1rem; margin-bottom:1.2rem;">
+      <div style="background:var(--bg-subtle); border-radius:10px; padding:1.2rem; border:1px solid var(--border-subtle);">
+        <h3 style="font-size:0.95rem; font-weight:700; margin-bottom:0.5rem; color:var(--text-1);">Triggering Pins</h3>
+        <ul style="margin:0; padding-left:1.2rem; color:var(--text-2); font-size:0.9rem; line-height:1.7;">
+          <li><strong>From Screenshot</strong>: Click the pin icon in the screenshot toolbar.</li>
+          <li><strong>From Clipboard</strong>: Press <kbd>Ctrl+Shift+2</kbd> to pin clipboard image at mouse position.</li>
+          <li><strong>Restore Closed Pin</strong>: Press <kbd>Ctrl+Shift+5</kbd> to reopen previously dismissed pins in order.</li>
+        </ul>
+      </div>
+
+      <div style="background:var(--bg-subtle); border-radius:10px; padding:1.2rem; border:1px solid var(--border-subtle);">
+        <h3 style="font-size:0.95rem; font-weight:700; margin-bottom:0.5rem; color:var(--text-1);">Controls &amp; Gestures</h3>
+        <ul style="margin:0; padding-left:1.2rem; color:var(--text-2); font-size:0.9rem; line-height:1.7;">
+          <li><strong>Smooth Zoom</strong>: Use mouse wheel to scale freely; double-click to reset size.</li>
+          <li><strong>Annotate on Pin</strong>: Press <kbd>Space</kbd> to toggle drawing tools on top of pinned images.</li>
+          <li><strong>Context Menu</strong>: Right-click to copy, save, pick color, or inspect pin history.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. Pixel Color Magnifier -->
+  <div class="card">
+    <h2 class="card-title" style="display:flex; align-items:center; gap:0.6rem;">
+      <span style="font-size:1.4rem;">🎨</span> Pixel Color Magnifier
+    </h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7; margin-bottom:1rem;">
+      Inspect and extract exact pixel color values across your screen for UI design and web development.
+    </p>
+
+    <ul style="margin:0; padding-left:1.4rem; color:var(--text-2); font-size:0.92rem; line-height:1.8;">
+      <li>In screenshot or color picker mode, the crosshair loupe magnifies pixels with live coordinates and RGB/HEX values.</li>
+      <li>Press <kbd>C</kbd>: Copy current crosshair pixel color to clipboard.</li>
+      <li>Press <kbd>Shift+C</kbd>: Toggle format between HEX (<code>#0066CC</code>) and RGB (<code>rgb(0, 102, 204)</code>).</li>
+    </ul>
+  </div>
+
+  <!-- 6. Long Screenshot Stitching -->
+  <div class="card">
+    <h2 class="card-title" style="display:flex; align-items:center; gap:0.6rem;">
+      <span style="font-size:1.4rem;">📜</span> Scrolling Long Screenshot
+    </h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7; margin-bottom:1.2rem;">
+      Capture entire web pages, document flows, and chat histories extending beyond single screen bounds.
+    </p>
+
+    <div style="background:var(--bg-subtle); border-radius:10px; padding:1.2rem; margin-bottom:1rem; border:1px solid var(--border-subtle);">
+      <ol style="margin:0; padding-left:1.4rem; color:var(--text-2); font-size:0.92rem; line-height:1.8;">
+        <li>Enter screenshot mode, select the scrollable window area, and click the Long Screenshot button.</li>
+        <li>Keep the cursor inside the window and steadily scroll down with your mouse wheel.</li>
+        <li>The stitching engine compares overlapping pixel features and stitches sections together automatically.</li>
+        <li>Click Finish when done, then crop, annotate, or export the resulting high-res composite image.</li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- 7. Region Screen Recording -->
+  <div class="card">
+    <h2 class="card-title" style="display:flex; align-items:center; gap:0.6rem;">
+      <span style="font-size:1.4rem;">🎥</span> Region Screen Recording (MP4 &amp; GIF)
+    </h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7; margin-bottom:1.2rem;">
+      Record crisp demonstrations and bug reproductions with minimal setup.
+    </p>
+
+    <ul style="margin:0; padding-left:1.4rem; color:var(--text-2); font-size:0.92rem; line-height:1.8;">
+      <li>Click the Record icon in the screenshot toolbar or invoke via a custom shortcut.</li>
+      <li>Choose export format: lightweight <strong>GIF animations</strong> or sharp <strong>MP4 videos</strong>.</li>
+      <li>Optionally capture internal system sound and microphone audio.</li>
+      <li>Once recording stops, export immediately or copy the result straight to your clipboard.</li>
+    </ul>
+  </div>
+
+  <!-- 8. Translation Provider Configuration -->
+  <div class="card">
+    <h2 class="card-title" style="display:flex; align-items:center; gap:0.6rem;">
+      <span style="font-size:1.4rem;">⚙️</span> Translation Services &amp; Provider Setup
+    </h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7; margin-bottom:1.2rem;">
+      Enjoy hassle-free out-of-the-box translation or connect high-capability LLM backends.
+    </p>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:1rem;">
+      <div style="background:var(--bg-subtle); border-radius:10px; padding:1.2rem; border:1px solid var(--border-subtle);">
+        <h3 style="font-size:0.95rem; font-weight:700; margin-bottom:0.5rem; color:var(--text-1);">Zero Setup (Default)</h3>
+        <p style="color:var(--text-2); font-size:0.9rem; line-height:1.6;">
+          Built-in free Microsoft and Google translation channels work out of the box. No account registration or API key required.
+        </p>
+      </div>
+
+      <div style="background:var(--bg-subtle); border-radius:10px; padding:1.2rem; border:1px solid var(--border-subtle);">
+        <h3 style="font-size:0.95rem; font-weight:700; margin-bottom:0.5rem; color:var(--text-1);">Custom LLM (OpenAI Compatible)</h3>
+        <p style="color:var(--text-2); font-size:0.9rem; line-height:1.6;">
+          In Preferences &rarr; Providers, select OpenAI-Compatible to connect DeepSeek, OpenAI, Groq, or local Ollama endpoints for contextual translation.
+        </p>
+      </div>
+    </div>
+  </div>
+</PageLayout>

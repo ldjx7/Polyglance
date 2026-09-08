@@ -1,0 +1,208 @@
+---
+import PageLayout from '../../layouts/PageLayout.astro';
+---
+
+<PageLayout title="使用指南" description="Polyglance 功能使用详解：划词翻译、截屏离线 OCR、长截图、区域录屏与贴图" lang="zh-CN">
+  <div class="page-header">
+    <h1 class="page-title">使用指南</h1>
+    <p class="page-desc">全面了解 Polyglance 各项功能的使用流程、交互技巧与配置方式。</p>
+  </div>
+
+  <!-- 1. 划词选区翻译 -->
+  <div class="card">
+    <h2 class="card-title" style="display:flex; align-items:center; gap:0.6rem;">
+      <span style="font-size:1.4rem;">📖</span> 划词选区翻译
+    </h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7; margin-bottom:1.2rem;">
+      在阅读文档、网页、PDF 或代码时，无需来回切换应用程序焦点，即可在屏幕原地获取流式翻译。
+    </p>
+
+    <div style="background:var(--bg-subtle); border-radius:10px; padding:1.2rem; margin-bottom:1.2rem; border:1px solid var(--border-subtle);">
+      <h3 style="font-size:0.98rem; font-weight:700; margin-bottom:0.6rem; color:var(--text-1);">标准使用步骤</h3>
+      <ol style="margin:0; padding-left:1.4rem; color:var(--text-2); font-size:0.92rem; line-height:1.8;">
+        <li>使用鼠标选中屏幕上需要翻译的一段或数行文字。</li>
+        <li>按下默认快捷键 <kbd>Ctrl+Shift+3</kbd>（macOS 对应 <kbd>⌃⇧3</kbd>）。</li>
+        <li>系统将在鼠标选区附近即刻弹出流式翻译气泡，自动检测原文语种并展示目标译文。</li>
+      </ol>
+    </div>
+
+    <h3 style="font-size:0.95rem; font-weight:700; margin-bottom:0.5rem; color:var(--text-1);">实用特性</h3>
+    <ul style="margin:0; padding-left:1.4rem; color:var(--text-2); font-size:0.92rem; line-height:1.8;">
+      <li><strong>自动复制译文</strong>：翻译输出完成后，系统默认自动将译文送入剪贴板，可在偏好设置中自由开启或关闭。</li>
+      <li><strong>窗口常驻置顶</strong>：点击气泡右上角的图钉按钮，可将翻译窗口固定在屏幕顶层，方便对比长文。</li>
+      <li><strong>快速切源与重试</strong>：可在弹窗中随时切换目标语种或即时重试请求。</li>
+    </ul>
+  </div>
+
+  <!-- 2. 截屏离线 OCR 与截屏翻译 -->
+  <div class="card">
+    <h2 class="card-title" style="display:flex; align-items:center; gap:0.6rem;">
+      <span style="font-size:1.4rem;">🔍</span> 截屏离线 OCR 与截屏翻译
+    </h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7; margin-bottom:1.2rem;">
+      针对网页防复制限制、图片图表、视频字幕或各类原生桌面软件，提供系统级离线文字识别与即时翻译。
+    </p>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:1rem; margin-bottom:1.2rem;">
+      <div style="background:var(--bg-subtle); border-radius:10px; padding:1.2rem; border:1px solid var(--border-subtle);">
+        <h3 style="font-size:0.95rem; font-weight:700; margin-bottom:0.5rem; color:var(--text-1);">方案 A：截屏直接翻译</h3>
+        <p style="color:var(--text-2); font-size:0.9rem; line-height:1.6; margin-bottom:0.5rem;">
+          按下快捷键 <kbd>Ctrl+Shift+4</kbd>（macOS 对应 <kbd>⌃⇧4</kbd>），框选屏幕包含文字的任意区域。
+        </p>
+        <p style="color:var(--text-2); font-size:0.9rem; line-height:1.6;">
+          松开鼠标后系统将直接在识别位置呈现原文与翻译浮层，支持原位对照查看。
+        </p>
+      </div>
+
+      <div style="background:var(--bg-subtle); border-radius:10px; padding:1.2rem; border:1px solid var(--border-subtle);">
+        <h3 style="font-size:0.95rem; font-weight:700; margin-bottom:0.5rem; color:var(--text-1);">方案 B：精准选词与复制</h3>
+        <p style="color:var(--text-2); font-size:0.9rem; line-height:1.6; margin-bottom:0.5rem;">
+          按下截图键 <kbd>Ctrl+Shift+1</kbd> 框选后，点击工具栏中的 OCR 按钮进入选词视图。
+        </p>
+        <p style="color:var(--text-2); font-size:0.9rem; line-height:1.6;">
+          鼠标单击高亮词汇即可复制特定单词；按 <kbd>Shift+C</kbd> 可一次性复制框选区域的全部提取文本。
+        </p>
+      </div>
+    </div>
+
+    <p style="color:var(--text-3); font-size:0.85rem; line-height:1.6;">
+      注：macOS 基于系统 Apple Vision 引擎，Windows 基于 Windows Media OCR 引擎，运算全程在本地设备硬件中运行，无网络传输。
+    </p>
+  </div>
+
+  <!-- 3. 截图与桌面标注 -->
+  <div class="card">
+    <h2 class="card-title" style="display:flex; align-items:center; gap:0.6rem;">
+      <span style="font-size:1.4rem;">✂️</span> 截图与桌面标注
+    </h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7; margin-bottom:1.2rem;">
+      集智能窗口吸附、自由框选与专业标注工具箱于一体的桌面截图工作流。
+    </p>
+
+    <div style="background:var(--bg-subtle); border-radius:10px; padding:1.2rem; margin-bottom:1.2rem; border:1px solid var(--border-subtle);">
+      <h3 style="font-size:0.98rem; font-weight:700; margin-bottom:0.6rem; color:var(--text-1);">标注工具箱说明</h3>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; color:var(--text-2); font-size:0.9rem;">
+        <div>• <strong>矩形 / 椭圆</strong>：线框圈出重点</div>
+        <div>• <strong>箭头 / 直线</strong>：精准引导视线</div>
+        <div>• <strong>画笔</strong>：自由手写与涂画</div>
+        <div>• <strong>文字输入</strong>：添加文字备注</div>
+        <div>• <strong>马赛克</strong>：模糊隐藏敏感数据</div>
+        <div>• <strong>自增序号标号</strong>：按点击顺序标记步骤序号</div>
+      </div>
+    </div>
+
+    <ul style="margin:0; padding-left:1.4rem; color:var(--text-2); font-size:0.92rem; line-height:1.8;">
+      <li><strong>快速完成</strong>：标注完成后直接按 <kbd>Enter</kbd> 即可将合成图像写入系统剪贴板。</li>
+      <li><strong>撤销与重做</strong>：使用 <kbd>Ctrl+Z</kbd>（macOS 为 <kbd>Cmd+Z</kbd>）回退错误标注，使用 <kbd>Ctrl+Y</kbd>（macOS 为 <kbd>Cmd+Shift+Z</kbd>）重做。</li>
+      <li><strong>精准微调</strong>：框选完成后，可使用上下左右方向键按像素微调选区边界。</li>
+    </ul>
+  </div>
+
+  <!-- 4. 桌面贴图与置顶管理 -->
+  <div class="card">
+    <h2 class="card-title" style="display:flex; align-items:center; gap:0.6rem;">
+      <span style="font-size:1.4rem;">📌</span> 桌面贴图与置顶管理
+    </h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7; margin-bottom:1.2rem;">
+      将参考图片、截图或剪贴板内容钉在屏幕所有软件窗口的最顶层，方便对比参照。
+    </p>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:1rem; margin-bottom:1.2rem;">
+      <div style="background:var(--bg-subtle); border-radius:10px; padding:1.2rem; border:1px solid var(--border-subtle);">
+        <h3 style="font-size:0.95rem; font-weight:700; margin-bottom:0.5rem; color:var(--text-1);">唤起方式</h3>
+        <ul style="margin:0; padding-left:1.2rem; color:var(--text-2); font-size:0.9rem; line-height:1.7;">
+          <li><strong>截图置顶</strong>：截屏后点击工具栏图钉图标，即可转化为独立贴图。</li>
+          <li><strong>贴出剪贴板</strong>：按下 <kbd>Ctrl+Shift+2</kbd>，直接将剪贴板内任意图片钉在当前鼠标位置。</li>
+          <li><strong>恢复最近贴图</strong>：误关贴图后，按下 <kbd>Ctrl+Shift+5</kbd> 即可按时间倒序重新唤出。</li>
+        </ul>
+      </div>
+
+      <div style="background:var(--bg-subtle); border-radius:10px; padding:1.2rem; border:1px solid var(--border-subtle);">
+        <h3 style="font-size:0.95rem; font-weight:700; margin-bottom:0.5rem; color:var(--text-1);">贴图操作技巧</h3>
+        <ul style="margin:0; padding-left:1.2rem; color:var(--text-2); font-size:0.9rem; line-height:1.7;">
+          <li><strong>无级缩放</strong>：使用鼠标滚轮可平滑放大或缩小贴图；双击贴图自适应原图比例。</li>
+          <li><strong>二次标注</strong>：按 <kbd>空格键</kbd> 可展开贴图标注工具栏，直接在贴图上涂鸦或添加文字。</li>
+          <li><strong>右键菜单</strong>：右键单击贴图可选择复制、保存图像文件或查看历史贴图。</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. 像素取色器 -->
+  <div class="card">
+    <h2 class="card-title" style="display:flex; align-items:center; gap:0.6rem;">
+      <span style="font-size:1.4rem;">🎨</span> 像素精准取色器
+    </h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7; margin-bottom:1rem;">
+      在进行 UI 设计、前端调试或图像分析时，随时提取屏幕任意坐标的高精度颜色值。
+    </p>
+
+    <ul style="margin:0; padding-left:1.4rem; color:var(--text-2); font-size:0.92rem; line-height:1.8;">
+      <li>在截图或取色模式下，屏幕放大镜十字准星会实时放大像素网格并显示当前色值。</li>
+      <li>按下 <kbd>C</kbd> 键：将当前准星指向的颜色值一键复制至剪贴板。</li>
+      <li>按下 <kbd>Shift+C</kbd>：在十六进制代码（HEX 如 <code>#0066CC</code>）与 RGB 代码（如 <code>rgb(0, 102, 204)</code>）之间快速切换。</li>
+    </ul>
+  </div>
+
+  <!-- 6. 智能长截图拼接 -->
+  <div class="card">
+    <h2 class="card-title" style="display:flex; align-items:center; gap:0.6rem;">
+      <span style="font-size:1.4rem;">📜</span> 智能滚动长截图
+    </h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7; margin-bottom:1.2rem;">
+      适用于长篇网页、完整代码段落、会话聊天记录等超出一屏视窗的内容拼接。
+    </p>
+
+    <div style="background:var(--bg-subtle); border-radius:10px; padding:1.2rem; margin-bottom:1rem; border:1px solid var(--border-subtle);">
+      <ol style="margin:0; padding-left:1.4rem; color:var(--text-2); font-size:0.92rem; line-height:1.8;">
+        <li>进入截图模式并框选目标滚动窗口或区域，点击工具栏的长截图图标（或使用自定义录制的长截图快捷键）。</li>
+        <li>保持鼠标指针在窗口内部，匀速向下滚动鼠标滚轮。</li>
+        <li>底层拼接算法将自动比对相邻帧的图像重叠区域，实时拼合为无缝单张大图。</li>
+        <li>滚动结束后点击完成按钮，可对整张拼接图进行二次裁剪、添加标注并导出为高分辨率图像文件。</li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- 7. 区域录屏与动图生成 -->
+  <div class="card">
+    <h2 class="card-title" style="display:flex; align-items:center; gap:0.6rem;">
+      <span style="font-size:1.4rem;">🎥</span> 区域屏幕录制（MP4 与 GIF）
+    </h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7; margin-bottom:1.2rem;">
+      告别臃肿的录屏软件，轻量框选即可生成高质量操作演示动图或教学视频。
+    </p>
+
+    <ul style="margin:0; padding-left:1.4rem; color:var(--text-2); font-size:0.92rem; line-height:1.8;">
+      <li>从截图工具栏点击录屏图标，或通过自定义绑定的录屏快捷键直接唤起。</li>
+      <li>在浮动控制条中选择导出格式：<strong>GIF 动图</strong>（适合文档插图与聊天分享）或 <strong>MP4 高清视频</strong>。</li>
+      <li>支持按需开启系统内部音频内录与外接麦克风录制。</li>
+      <li>录制完成后自动完成高效编码，支持一键复制到剪贴板或保存到指定文件夹。</li>
+    </ul>
+  </div>
+
+  <!-- 8. 翻译服务与引擎配置 -->
+  <div class="card">
+    <h2 class="card-title" style="display:flex; align-items:center; gap:0.6rem;">
+      <span style="font-size:1.4rem;">⚙️</span> 翻译服务与 API 引擎配置
+    </h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7; margin-bottom:1.2rem;">
+      Polyglance 既提供零配置开箱即用的公共服务通道，也支持接入专业大语言模型。
+    </p>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:1rem;">
+      <div style="background:var(--bg-subtle); border-radius:10px; padding:1.2rem; border:1px solid var(--border-subtle);">
+        <h3 style="font-size:0.95rem; font-weight:700; margin-bottom:0.5rem; color:var(--text-1);">开箱即用模式（默认）</h3>
+        <p style="color:var(--text-2); font-size:0.9rem; line-height:1.6;">
+          安装后直接内置 Microsoft 翻译通道与 Google 翻译通道。无需注册账号、无需申请 API Key、无需配置代理网络，即装即用。
+        </p>
+      </div>
+
+      <div style="background:var(--bg-subtle); border-radius:10px; padding:1.2rem; border:1px solid var(--border-subtle);">
+        <h3 style="font-size:0.95rem; font-weight:700; margin-bottom:0.5rem; color:var(--text-1);">自定义大模型（OpenAI 兼容）</h3>
+        <p style="color:var(--text-2); font-size:0.9rem; line-height:1.6;">
+          在 偏好设置 → 服务设置 中切换至 OpenAI 兼容通道，可填入任意兼容端点（如 DeepSeek、OpenAI、Groq 或本地部署的 Ollama），享受大语言模型的情境理解翻译能力。
+        </p>
+      </div>
+    </div>
+  </div>
+</PageLayout>

@@ -2,10 +2,10 @@
 import PageLayout from '../../layouts/PageLayout.astro';
 ---
 
-<PageLayout title="快捷键列表" description="Polyglance 全局默认快捷键一览，支持自定义" lang="zh-CN">
+<PageLayout title="快捷键列表" description="Polyglance 全局默认快捷键与交互操作一览，支持自定义" lang="zh-CN">
   <div class="page-header">
     <h1 class="page-title">快捷键列表</h1>
-    <p class="page-desc">所有全局快捷键均可在偏好设置中自定义修改。</p>
+    <p class="page-desc">所有全局快捷键均可在偏好设置中自由修改与绑定。</p>
   </div>
 
   <div class="card">
@@ -39,12 +39,17 @@ import PageLayout from '../../layouts/PageLayout.astro';
           <td><kbd>⌃ Control</kbd> + <kbd>⇧ Shift</kbd> + <kbd>4</kbd></td>
           <td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>4</kbd></td>
         </tr>
+        <tr>
+          <td><strong>恢复最近关闭的贴图</strong>（按顺序恢复关闭的贴图）</td>
+          <td><kbd>⌃ Control</kbd> + <kbd>⇧ Shift</kbd> + <kbd>5</kbd></td>
+          <td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>5</kbd></td>
+        </tr>
       </tbody>
     </table>
   </div>
 
   <div class="card">
-    <h2 class="card-title">可选扩展功能（支持自定义）</h2>
+    <h2 class="card-title">可选扩展快捷键（按需开启）</h2>
     <table class="data-table">
       <thead>
         <tr>
@@ -57,62 +62,147 @@ import PageLayout from '../../layouts/PageLayout.astro';
         <tr>
           <td><strong>唤起主翻译窗口</strong></td>
           <td><span style="color:var(--text-3);">未预设</span></td>
-          <td>可在“偏好设置 → 快捷键”中录制绑定任意按键</td>
+          <td>可在 偏好设置 → 快捷键 中录制绑定任意按键</td>
         </tr>
         <tr>
           <td><strong>智能滚动长截图</strong></td>
           <td><span style="color:var(--text-3);">未预设</span></td>
-          <td>可在“偏好设置 → 快捷键”中录制绑定任意按键</td>
+          <td>可在 偏好设置 → 快捷键 中录制绑定任意按键</td>
         </tr>
         <tr>
           <td><strong>区域屏幕录制（MP4 / GIF）</strong></td>
           <td><span style="color:var(--text-3);">未预设</span></td>
-          <td>可在“偏好设置 → 快捷键”中录制绑定任意按键</td>
-        </tr>
-        <tr>
-          <td><strong>恢复最近关闭的贴图</strong></td>
-          <td><span style="color:var(--text-3);">未预设</span></td>
-          <td>可在“偏好设置 → 快捷键”中录制绑定任意按键</td>
+          <td>可在 偏好设置 → 快捷键 中录制绑定任意按键</td>
         </tr>
         <tr>
           <td><strong>仅读取选区（不自动翻译）</strong></td>
           <td><span style="color:var(--text-3);">未预设</span></td>
-          <td>可在“偏好设置 → 快捷键”中录制绑定任意按键</td>
+          <td>可在 偏好设置 → 快捷键 中录制绑定任意按键</td>
         </tr>
       </tbody>
     </table>
   </div>
 
   <div class="card">
-    <h2 class="card-title">截图与 OCR 选区内部操作</h2>
+    <h2 class="card-title">截图选取与标注编辑操作</h2>
     <table class="data-table">
       <thead>
         <tr>
           <th>操作动作</th>
-          <th>快捷键</th>
+          <th>快捷键 / 鼠标</th>
           <th>功能作用</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>完成截图并复制</strong></td>
+          <td><kbd>Enter</kbd></td>
+          <td>将当前标注好的区域图像保存至剪贴板</td>
+        </tr>
+        <tr>
+          <td><strong>取消选区 / 退出</strong></td>
+          <td><kbd>Esc</kbd></td>
+          <td>退出截图或取消当前绘制中的选区</td>
+        </tr>
+        <tr>
+          <td><strong>删除选中断面</strong></td>
+          <td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td>
+          <td>删除选中的图元（如矩形、箭头、文字等）</td>
+        </tr>
+        <tr>
+          <td><strong>微调选区位置</strong></td>
+          <td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></td>
+          <td>以 1 像素微调选区（按住 <kbd>Shift</kbd> 为 10 像素）</td>
+        </tr>
+        <tr>
+          <td><strong>撤销标注</strong></td>
+          <td><kbd>⌘ Cmd</kbd> / <kbd>Ctrl</kbd> + <kbd>Z</kbd></td>
+          <td>回退一步标注图元操作</td>
+        </tr>
+        <tr>
+          <td><strong>重做标注</strong></td>
+          <td><kbd>⌘ Cmd</kbd> + <kbd>⇧ Shift</kbd> + <kbd>Z</kbd> / <kbd>Ctrl</kbd> + <kbd>Y</kbd></td>
+          <td>恢复已撤销的标注图元</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">像素取色与桌面贴图</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>场景</th>
+          <th>快捷键 / 交互</th>
+          <th>功能说明</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td><strong>像素取色</strong></td>
           <td><kbd>C</kbd></td>
-          <td>复制放大镜当前准星的像素颜色</td>
+          <td>放大镜十字准星处复制当前像素颜色值</td>
         </tr>
         <tr>
           <td><strong>切换颜色格式</strong></td>
           <td><kbd>⇧ Shift</kbd> + <kbd>C</kbd></td>
-          <td>在 HEX 与 RGB 颜色代码间切换</td>
+          <td>在 HEX 与 RGB 颜色代码格式之间切换</td>
         </tr>
         <tr>
-          <td><strong>复制选中 OCR 文字</strong></td>
-          <td><kbd>⌘ Cmd</kbd> / <kbd>Ctrl</kbd> + <kbd>C</kbd></td>
-          <td>复制框选区域中高亮的识别文本</td>
+          <td><strong>贴图标注编辑</strong></td>
+          <td><kbd>Space</kbd>（空格键）</td>
+          <td>开启或退出贴图的画板标注模式</td>
         </tr>
         <tr>
-          <td><strong>退出当前操作</strong></td>
+          <td><strong>贴图缩放</strong></td>
+          <td>鼠标滚轮 / 双击</td>
+          <td>滚轮无级缩放贴图；双击快速缩放或还原尺寸</td>
+        </tr>
+        <tr>
+          <td><strong>贴图上下文菜单</strong></td>
+          <td>鼠标右键</td>
+          <td>呼出菜单：复制、保存图像、历史贴图、关闭</td>
+        </tr>
+        <tr>
+          <td><strong>关闭贴图</strong></td>
           <td><kbd>Esc</kbd></td>
-          <td>关闭当前截图/选区/取色浮窗</td>
+          <td>非编辑状态下直接关闭当前活动贴图窗口</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">离线 OCR 选词交互</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>操作动作</th>
+          <th>快捷键 / 鼠标</th>
+          <th>功能说明</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>选词高亮</strong></td>
+          <td>鼠标框选 / 单击词块</td>
+          <td>选中特定文字行或单个词汇</td>
+        </tr>
+        <tr>
+          <td><strong>复制选中文字</strong></td>
+          <td><kbd>⌘ Cmd</kbd> / <kbd>Ctrl</kbd> + <kbd>C</kbd></td>
+          <td>将高亮文字提取并复制到系统剪贴板</td>
+        </tr>
+        <tr>
+          <td><strong>复制全部识别文本</strong></td>
+          <td><kbd>⇧ Shift</kbd> + <kbd>C</kbd></td>
+          <td>一键复制截屏框选范围内的完整识别文本</td>
+        </tr>
+        <tr>
+          <td><strong>退出 OCR 视图</strong></td>
+          <td><kbd>Esc</kbd></td>
+          <td>关闭文字识别浮窗</td>
         </tr>
       </tbody>
     </table>

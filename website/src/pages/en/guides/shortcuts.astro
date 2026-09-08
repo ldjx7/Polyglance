@@ -2,7 +2,7 @@
 import PageLayout from '../../../layouts/PageLayout.astro';
 ---
 
-<PageLayout title="Keyboard Shortcuts" description="Default global shortcut bindings in Polyglance" lang="en">
+<PageLayout title="Keyboard Shortcuts" description="Default global shortcut bindings and controls in Polyglance" lang="en">
   <div class="page-header">
     <h1 class="page-title">Keyboard Shortcuts</h1>
     <p class="page-desc">All global shortcuts can be customized in Preferences.</p>
@@ -39,6 +39,11 @@ import PageLayout from '../../../layouts/PageLayout.astro';
           <td><kbd>⌃ Control</kbd> + <kbd>⇧ Shift</kbd> + <kbd>4</kbd></td>
           <td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>4</kbd></td>
         </tr>
+        <tr>
+          <td><strong>Restore Recently Closed Pin</strong> (Recover closed pinned images)</td>
+          <td><kbd>⌃ Control</kbd> + <kbd>⇧ Shift</kbd> + <kbd>5</kbd></td>
+          <td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>5</kbd></td>
+        </tr>
       </tbody>
     </table>
   </div>
@@ -70,12 +75,7 @@ import PageLayout from '../../../layouts/PageLayout.astro';
           <td>Record and bind custom key in Preferences &rarr; Shortcuts</td>
         </tr>
         <tr>
-          <td><strong>Restore Recently Closed Pin</strong></td>
-          <td><span style="color:var(--text-3);">Unassigned</span></td>
-          <td>Record and bind custom key in Preferences &rarr; Shortcuts</td>
-        </tr>
-        <tr>
-          <td><strong>Inspect Selection Only</strong></td>
+          <td><strong>Read Selected Text Only (No Auto-Translate)</strong></td>
           <td><span style="color:var(--text-3);">Unassigned</span></td>
           <td>Record and bind custom key in Preferences &rarr; Shortcuts</td>
         </tr>
@@ -84,20 +84,65 @@ import PageLayout from '../../../layouts/PageLayout.astro';
   </div>
 
   <div class="card">
-    <h2 class="card-title">In-Session Capture Actions</h2>
+    <h2 class="card-title">Screenshot Selection &amp; Annotation</h2>
     <table class="data-table">
       <thead>
         <tr>
           <th>Action</th>
-          <th>Shortcut</th>
+          <th>Shortcut / Input</th>
           <th>Description</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td><strong>Pixel Color Picker</strong></td>
+          <td><strong>Confirm &amp; Copy</strong></td>
+          <td><kbd>Enter</kbd></td>
+          <td>Save annotated region to clipboard</td>
+        </tr>
+        <tr>
+          <td><strong>Cancel / Exit</strong></td>
+          <td><kbd>Esc</kbd></td>
+          <td>Exit screenshot or cancel active selection</td>
+        </tr>
+        <tr>
+          <td><strong>Delete Selected Element</strong></td>
+          <td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td>
+          <td>Remove selected annotation item</td>
+        </tr>
+        <tr>
+          <td><strong>Nudge Selection</strong></td>
+          <td><kbd>&uarr;</kbd> <kbd>&darr;</kbd> <kbd>&larr;</kbd> <kbd>&rarr;</kbd></td>
+          <td>Move selection by 1px (hold <kbd>Shift</kbd> for 10px)</td>
+        </tr>
+        <tr>
+          <td><strong>Undo Annotation</strong></td>
+          <td><kbd>⌘ Cmd</kbd> / <kbd>Ctrl</kbd> + <kbd>Z</kbd></td>
+          <td>Undo last drawing action</td>
+        </tr>
+        <tr>
+          <td><strong>Redo Annotation</strong></td>
+          <td><kbd>⌘ Cmd</kbd> + <kbd>⇧ Shift</kbd> + <kbd>Z</kbd> / <kbd>Ctrl</kbd> + <kbd>Y</kbd></td>
+          <td>Redo undone drawing action</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">Color Picker &amp; Pinned Images</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Context</th>
+          <th>Shortcut / Interaction</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Pick Color</strong></td>
           <td><kbd>C</kbd></td>
-          <td>Copy current loupe crosshair pixel color</td>
+          <td>Copy pixel color at crosshair</td>
         </tr>
         <tr>
           <td><strong>Toggle Color Format</strong></td>
@@ -105,14 +150,59 @@ import PageLayout from '../../../layouts/PageLayout.astro';
           <td>Switch between HEX and RGB formats</td>
         </tr>
         <tr>
-          <td><strong>Copy OCR Text</strong></td>
-          <td><kbd>⌘ Cmd</kbd> / <kbd>Ctrl</kbd> + <kbd>C</kbd></td>
-          <td>Copy highlighted recognized text in region</td>
+          <td><strong>Edit Pin Annotation</strong></td>
+          <td><kbd>Space</kbd></td>
+          <td>Toggle drawing toolbar on pinned image</td>
         </tr>
         <tr>
-          <td><strong>Dismiss / Exit</strong></td>
+          <td><strong>Zoom Pinned Image</strong></td>
+          <td>Mouse Wheel / Double Click</td>
+          <td>Zoom continuously or reset scale</td>
+        </tr>
+        <tr>
+          <td><strong>Context Menu</strong></td>
+          <td>Right Click</td>
+          <td>Open menu: Copy, Save, History, Close</td>
+        </tr>
+        <tr>
+          <td><strong>Close Pin</strong></td>
           <td><kbd>Esc</kbd></td>
-          <td>Close active overlay or window</td>
+          <td>Close active pin when not editing</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">Offline OCR Text Extraction</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Action</th>
+          <th>Shortcut / Input</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Select Text Blocks</strong></td>
+          <td>Drag / Click Word</td>
+          <td>Highlight specific line or single word</td>
+        </tr>
+        <tr>
+          <td><strong>Copy Selected Text</strong></td>
+          <td><kbd>⌘ Cmd</kbd> / <kbd>Ctrl</kbd> + <kbd>C</kbd></td>
+          <td>Copy selected words to clipboard</td>
+        </tr>
+        <tr>
+          <td><strong>Copy All Recognized Text</strong></td>
+          <td><kbd>⇧ Shift</kbd> + <kbd>C</kbd></td>
+          <td>Copy entire recognized text within region</td>
+        </tr>
+        <tr>
+          <td><strong>Exit OCR View</strong></td>
+          <td><kbd>Esc</kbd></td>
+          <td>Dismiss OCR results popover</td>
         </tr>
       </tbody>
     </table>

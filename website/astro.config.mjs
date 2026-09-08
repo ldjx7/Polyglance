@@ -42,8 +42,9 @@ export default defineConfig({
         {
           label: '使用指南',
           items: [
-            { label: '安装说明', slug: 'guides/install' },
+            { label: '使用说明', slug: 'guides/usage' },
             { label: '快捷键列表', slug: 'guides/shortcuts' },
+            { label: '安装说明', slug: 'guides/install' },
             { label: '常见问题', slug: 'guides/faq' },
           ],
         },
