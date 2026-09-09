@@ -203,8 +203,12 @@ pub(crate) fn starts_with_list_marker(text: &str) -> bool {
     let rest = text.trim_start_matches(is_pattern_whitespace);
     let mut characters = rest.chars();
     match characters.next() {
-        Some('•' | '·' | '●' | '○' | '◆' | '◇' | '■' | '□' | '▪' | '▫' | '❖' | '➢' | '➤') => true,
-        Some('-' | '*' | '+') => characters.next().is_some_and(|c| is_pattern_whitespace(c) || c == ' '),
+        Some('•' | '·' | '●' | '○' | '◆' | '◇' | '■' | '□' | '▪' | '▫' | '❖' | '➢' | '➤') => {
+            true
+        }
+        Some('-' | '*' | '+') => characters
+            .next()
+            .is_some_and(|c| is_pattern_whitespace(c) || c == ' '),
         Some(first) if first.is_ascii_digit() => {
             let mut after_digits = rest
                 .chars()
@@ -240,8 +244,12 @@ pub fn clean_icon_artifacts(text: &str) -> String {
             true
         } else {
             let prev = chars[i - 1];
-            matches!(prev, ':' | '：' | '•' | '·' | '-' | '*' | '|' | '(' | '（' | '[' | '【' | '\n' | '\r')
-                || (is_pattern_whitespace(prev) && i >= 2 && matches!(chars[i - 2], ':' | '：' | '•' | '·' | '\n' | '\r'))
+            matches!(
+                prev,
+                ':' | '：' | '•' | '·' | '-' | '*' | '|' | '(' | '（' | '[' | '【' | '\n' | '\r'
+            ) || (is_pattern_whitespace(prev)
+                && i >= 2
+                && matches!(chars[i - 2], ':' | '：' | '•' | '·' | '\n' | '\r'))
         };
 
         if is_prefix {
@@ -250,7 +258,9 @@ pub fn clean_icon_artifacts(text: &str) -> String {
                 s += 1;
             }
 
-            if s < chars.len() && (chars[s].is_ascii_alphabetic() || matches!(chars[s], '@' | '~' | '^' | '#')) {
+            if s < chars.len()
+                && (chars[s].is_ascii_alphabetic() || matches!(chars[s], '@' | '~' | '^' | '#'))
+            {
                 let next_s = s + 1;
                 if next_s < chars.len() && is_pattern_whitespace(chars[next_s]) {
                     let mut after_space = next_s;
@@ -261,7 +271,13 @@ pub fn clean_icon_artifacts(text: &str) -> String {
                         let target_char = chars[after_space];
                         let is_pascal_or_file = target_char.is_ascii_uppercase() || {
                             let mut w_end = after_space;
-                            while w_end < chars.len() && !is_pattern_whitespace(chars[w_end]) && chars[w_end] != '，' && chars[w_end] != '。' && chars[w_end] != ')' && chars[w_end] != '）' {
+                            while w_end < chars.len()
+                                && !is_pattern_whitespace(chars[w_end])
+                                && chars[w_end] != '，'
+                                && chars[w_end] != '。'
+                                && chars[w_end] != ')'
+                                && chars[w_end] != '）'
+                            {
                                 w_end += 1;
                             }
                             let word: String = chars[after_space..w_end].iter().collect();
@@ -569,7 +585,9 @@ mod tests {
     #[test]
     fn bullet_markers_keep_their_breaks() {
         assert_eq!(
-            smart_merge_lines("• 根因：OCRWorkspacePanel.swift 在加载约束时\n• 修复：将 loadingOverlay"),
+            smart_merge_lines(
+                "• 根因：OCRWorkspacePanel.swift 在加载约束时\n• 修复：将 loadingOverlay"
+            ),
             "• 根因：OCRWorkspacePanel.swift 在加载约束时\n• 修复：将 loadingOverlay"
         );
     }

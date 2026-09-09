@@ -112,7 +112,9 @@ struct StandardizedLine<'a> {
 fn standardize_lines<'a>(lines: &'a [TextLine]) -> Vec<StandardizedLine<'a>> {
     let non_empty: Vec<&'a TextLine> = lines
         .iter()
-        .filter(|l| !l.text.trim().is_empty() && l.bounding_box.width > 0.0 && l.bounding_box.height > 0.0)
+        .filter(|l| {
+            !l.text.trim().is_empty() && l.bounding_box.width > 0.0 && l.bounding_box.height > 0.0
+        })
         .collect();
     if non_empty.is_empty() {
         return Vec::new();
@@ -144,7 +146,12 @@ fn standardize_lines<'a>(lines: &'a [TextLine]) -> Vec<StandardizedLine<'a>> {
         .map(|l| {
             let std_box = l.bounding_box.standardized();
             let box_down = if is_y_up {
-                Rect::new(std_box.x, max_y - std_box.y - std_box.height, std_box.width, std_box.height)
+                Rect::new(
+                    std_box.x,
+                    max_y - std_box.y - std_box.height,
+                    std_box.width,
+                    std_box.height,
+                )
             } else {
                 std_box
             };
@@ -163,8 +170,14 @@ fn partition_into_columns<'a>(lines: Vec<StandardizedLine<'a>>) -> Vec<Vec<Stand
         return vec![col];
     }
 
-    let min_x = lines.iter().map(|l| l.box_down.min_x()).fold(f64::INFINITY, f64::min);
-    let max_x = lines.iter().map(|l| l.box_down.max_x()).fold(f64::NEG_INFINITY, f64::max);
+    let min_x = lines
+        .iter()
+        .map(|l| l.box_down.min_x())
+        .fold(f64::INFINITY, f64::min);
+    let max_x = lines
+        .iter()
+        .map(|l| l.box_down.max_x())
+        .fold(f64::NEG_INFINITY, f64::max);
     let total_width = max_x - min_x;
     let median_height = median(lines.iter().map(|l| l.box_down.height).collect());
 
@@ -182,8 +195,14 @@ fn partition_into_columns<'a>(lines: Vec<StandardizedLine<'a>>) -> Vec<Vec<Stand
     let mut max_gutter = 0.0;
 
     for i in 0..sorted_by_x.len() - 1 {
-        let left_max_x = sorted_by_x[0..=i].iter().map(|l| l.box_down.max_x()).fold(f64::NEG_INFINITY, f64::max);
-        let right_min_x = sorted_by_x[i+1..].iter().map(|l| l.box_down.min_x()).fold(f64::INFINITY, f64::min);
+        let left_max_x = sorted_by_x[0..=i]
+            .iter()
+            .map(|l| l.box_down.max_x())
+            .fold(f64::NEG_INFINITY, f64::max);
+        let right_min_x = sorted_by_x[i + 1..]
+            .iter()
+            .map(|l| l.box_down.min_x())
+            .fold(f64::INFINITY, f64::min);
         let gutter = right_min_x - left_max_x;
 
         if gutter >= min_gutter_width && gutter > max_gutter {
@@ -197,7 +216,9 @@ fn partition_into_columns<'a>(lines: Vec<StandardizedLine<'a>>) -> Vec<Vec<Stand
     }
 
     if let Some(split_x) = best_split_x {
-        let (left, right): (Vec<_>, Vec<_>) = lines.into_iter().partition(|l| l.box_down.mid_x() < split_x);
+        let (left, right): (Vec<_>, Vec<_>) = lines
+            .into_iter()
+            .partition(|l| l.box_down.mid_x() < split_x);
         let mut cols = Vec::new();
         if !left.is_empty() {
             cols.extend(partition_into_columns(left));
@@ -250,8 +271,14 @@ fn reflow_column(lines: &[StandardizedLine]) -> Vec<String> {
         return vec![lines[0].original.text.trim().to_owned()];
     }
 
-    let col_min_x = lines.iter().map(|l| l.box_down.min_x()).fold(f64::INFINITY, f64::min);
-    let col_max_x = lines.iter().map(|l| l.box_down.max_x()).fold(f64::NEG_INFINITY, f64::max);
+    let col_min_x = lines
+        .iter()
+        .map(|l| l.box_down.min_x())
+        .fold(f64::INFINITY, f64::min);
+    let col_max_x = lines
+        .iter()
+        .map(|l| l.box_down.max_x())
+        .fold(f64::NEG_INFINITY, f64::max);
     let col_width = col_max_x - col_min_x;
 
     let median_height = median(lines.iter().map(|l| l.box_down.height).collect());
@@ -263,7 +290,11 @@ fn reflow_column(lines: &[StandardizedLine]) -> Vec<String> {
             gaps.push(gap);
         }
     }
-    let median_gap = if gaps.is_empty() { median_height * 0.3 } else { median(gaps) };
+    let median_gap = if gaps.is_empty() {
+        median_height * 0.3
+    } else {
+        median(gaps)
+    };
 
     let mut paragraphs: Vec<String> = Vec::new();
     let mut current_para: Option<String> = None;
@@ -288,19 +319,22 @@ fn reflow_column(lines: &[StandardizedLine]) -> Vec<String> {
         let curr_left_indent = curr_line.box_down.min_x() - col_min_x;
 
         let prev_ends_clause = is_sentence_terminator_end(prev_text)
-            || prev_text.ends_with(':') || prev_text.ends_with('：');
+            || prev_text.ends_with(':')
+            || prev_text.ends_with('：');
 
         let is_continuation_indent = !prev_ends_clause
             && !starts_with_list_marker(line_text)
             && curr_left_indent > median_height * 0.8
             && curr_left_indent < col_width * 0.4;
 
-        let should_break =
-            starts_with_list_marker(line_text)
+        let should_break = starts_with_list_marker(line_text)
             || prev_ends_clause
             || v_gap > (median_gap * 1.5).max(median_height * 0.7)
-            || (col_width > median_height * 4.0 && prev_right_shortfall > (col_width * 0.22).max(median_height * 1.8))
-            || (!is_continuation_indent && curr_left_indent > median_height * 1.2 && curr_left_indent < col_width * 0.4)
+            || (col_width > median_height * 4.0
+                && prev_right_shortfall > (col_width * 0.22).max(median_height * 1.8))
+            || (!is_continuation_indent
+                && curr_left_indent > median_height * 1.2
+                && curr_left_indent < col_width * 0.4)
             || prev_line.box_down.height > median_height * 1.35
             || curr_line.box_down.height > median_height * 1.35;
 
@@ -327,7 +361,11 @@ pub fn layout_format(lines: &[TextLine], mode: TextFormattingMode) -> String {
 
     let std_lines = standardize_lines(lines);
     if std_lines.is_empty() {
-        let raw = lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join("\n");
+        let raw = lines
+            .iter()
+            .map(|l| l.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
         return formatting::format(&raw, mode);
     }
 
@@ -510,9 +548,21 @@ mod tests {
         // Line 4 starts a new paragraph
         let lines = vec![
             line("这是段落的第一行内容，很长很长，", 10.0, 10.0, 280.0, 18.0),
-            line("这是段落的第二行内容，也很长很长，", 10.0, 32.0, 285.0, 18.0),
+            line(
+                "这是段落的第二行内容，也很长很长，",
+                10.0,
+                32.0,
+                285.0,
+                18.0,
+            ),
             line("这是末尾短行。", 10.0, 54.0, 120.0, 18.0),
-            line("这是新的一段开头内容，也很长很长。", 10.0, 76.0, 280.0, 18.0),
+            line(
+                "这是新的一段开头内容，也很长很长。",
+                10.0,
+                76.0,
+                280.0,
+                18.0,
+            ),
         ];
 
         let formatted = layout_format(&lines, TextFormattingMode::SmartMerge);
