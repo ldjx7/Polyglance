@@ -31,4 +31,11 @@
     <ProjectReference Include="..\Polyglance.Core\Polyglance.Core.csproj" />
     <ProjectReference Include="..\Polyglance.Platform\Polyglance.Platform.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="models\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
 </Project>

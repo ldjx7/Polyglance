@@ -550,6 +550,14 @@ public partial class App : Application
         );
     }
 
+    public static void ShowNotification(string title, string text, ToolTipIcon icon = ToolTipIcon.Info, int timeoutMs = 2500)
+    {
+        if (Current is App app && app._notifyIcon != null)
+        {
+            app._notifyIcon.ShowBalloonTip(timeoutMs, title, text, icon);
+        }
+    }
+
     private bool _shuttingDown;
 
     private async void ShutdownApp()

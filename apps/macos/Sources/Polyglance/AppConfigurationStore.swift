@@ -87,6 +87,8 @@ struct AppConfiguration: Equatable, Sendable {
     var autoCheckUpdates: Bool
     var screenshotToolbarItems: [ScreenshotToolbarItemConfig]
     var saveCompletedScreenshotsToHistory: Bool
+    var ocrAutoCopyNextTime: Bool
+    var ocrDefaultFormatting: Int
 
     init(
         provider: TranslationProvider,
@@ -98,7 +100,9 @@ struct AppConfiguration: Equatable, Sendable {
         includeBetaUpdates: Bool = false,
         autoCheckUpdates: Bool = true,
         screenshotToolbarItems: [ScreenshotToolbarItemConfig] = ScreenshotToolbarItemConfig.defaultItems,
-        saveCompletedScreenshotsToHistory: Bool = false
+        saveCompletedScreenshotsToHistory: Bool = false,
+        ocrAutoCopyNextTime: Bool = false,
+        ocrDefaultFormatting: Int = 0
     ) {
         self.provider = provider
         self.endpoint = endpoint
@@ -110,6 +114,8 @@ struct AppConfiguration: Equatable, Sendable {
         self.autoCheckUpdates = autoCheckUpdates
         self.screenshotToolbarItems = ScreenshotToolbarItemConfig.normalize(screenshotToolbarItems)
         self.saveCompletedScreenshotsToHistory = saveCompletedScreenshotsToHistory
+        self.ocrAutoCopyNextTime = ocrAutoCopyNextTime
+        self.ocrDefaultFormatting = ocrDefaultFormatting
     }
 }
 
@@ -160,6 +166,8 @@ final class AppConfigurationStore: @unchecked Sendable {
         static let autoCheckUpdates = "updater.auto-check-updates"
         static let screenshotToolbarItems = "screenshot.toolbar-items"
         static let saveCompletedScreenshotsToHistory = "screenshot.save-completed-to-history"
+        static let ocrAutoCopyNextTime = "ocr.auto-copy-next-time"
+        static let ocrDefaultFormatting = "ocr.default-formatting"
     }
 
     private let defaults: UserDefaults
@@ -204,7 +212,9 @@ final class AppConfigurationStore: @unchecked Sendable {
             includeBetaUpdates: defaults.bool(forKey: Key.includeBetaUpdates),
             autoCheckUpdates: defaults.object(forKey: Key.autoCheckUpdates) as? Bool ?? true,
             screenshotToolbarItems: toolbarItems,
-            saveCompletedScreenshotsToHistory: defaults.bool(forKey: Key.saveCompletedScreenshotsToHistory)
+            saveCompletedScreenshotsToHistory: defaults.bool(forKey: Key.saveCompletedScreenshotsToHistory),
+            ocrAutoCopyNextTime: defaults.bool(forKey: Key.ocrAutoCopyNextTime),
+            ocrDefaultFormatting: defaults.integer(forKey: Key.ocrDefaultFormatting)
         )
     }
 
@@ -233,6 +243,8 @@ final class AppConfigurationStore: @unchecked Sendable {
             defaults.set(encoded, forKey: Key.screenshotToolbarItems)
         }
         defaults.set(configuration.saveCompletedScreenshotsToHistory, forKey: Key.saveCompletedScreenshotsToHistory)
+        defaults.set(configuration.ocrAutoCopyNextTime, forKey: Key.ocrAutoCopyNextTime)
+        defaults.set(configuration.ocrDefaultFormatting, forKey: Key.ocrDefaultFormatting)
     }
 }
 

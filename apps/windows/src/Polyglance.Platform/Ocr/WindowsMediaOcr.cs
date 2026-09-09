@@ -54,7 +54,8 @@ public static class WindowsMediaOcr
             throw new WindowsOcrException($"OCR 识别失败：{error.Message}", error);
         }
 
-        return new OcrTextDocument(lines);
+        var organizedLines = OcrLayoutService.OrganizeLines(lines, bitmap.PixelWidth, bitmap.PixelHeight);
+        return new OcrTextDocument(organizedLines);
     }
 
     public static async Task<List<LayoutTextLine>> RecognizeLinesAsync(BitmapSource bitmap) =>
@@ -68,16 +69,41 @@ public static class WindowsMediaOcr
             return engine;
         }
 
-        foreach (string languageTag in new[] { "zh-Hans", "zh-CN", "en-US" })
+        string[] candidateTags =
+        [
+            "zh-Hans", "zh-CN", "zh-Hans-CN",
+            "zh-Hant", "zh-TW", "zh-HK",
+            "en-US", "en-GB", "en",
+            "ja-JP", "ja",
+            "ko-KR", "ko"
+        ];
+
+        foreach (string languageTag in candidateTags)
         {
-            var language = new Windows.Globalization.Language(languageTag);
-            if (OcrEngine.IsLanguageSupported(language))
+            try
             {
-                var fallback = OcrEngine.TryCreateFromLanguage(language);
-                if (fallback != null)
+                var language = new Windows.Globalization.Language(languageTag);
+                if (OcrEngine.IsLanguageSupported(language))
                 {
-                    return fallback;
+                    var fallback = OcrEngine.TryCreateFromLanguage(language);
+                    if (fallback != null)
+                    {
+                        return fallback;
+                    }
                 }
+            }
+            catch
+            {
+                // Ignore unsupported language tag errors
+            }
+        }
+
+        foreach (var language in OcrEngine.AvailableRecognizerLanguages)
+        {
+            var fallback = OcrEngine.TryCreateFromLanguage(language);
+            if (fallback != null)
+            {
+                return fallback;
             }
         }
 
@@ -121,14 +147,13 @@ public static class WindowsMediaOcr
                 minY = Math.Min(minY, box.Y);
                 maxX = Math.Max(maxX, box.X + box.Width);
                 maxY = Math.Max(maxY, box.Y + box.Height);
-                words.Add(new LayoutTextWord
-                {
-                    Text = word.Text,
-                    X = box.X + offsetX,
-                    Y = box.Y + offsetY,
-                    Width = box.Width,
-                    Height = box.Height
-                });
+
+                words.AddRange(SubdivideWord(
+                    word.Text,
+                    box.X + offsetX,
+                    box.Y + offsetY,
+                    box.Width,
+                    box.Height));
             }
 
             if (minX < maxX && minY < maxY)
@@ -146,4 +171,88 @@ public static class WindowsMediaOcr
         }
         return lines;
     }
+
+    private static IEnumerable<LayoutTextWord> SubdivideWord(
+        string text,
+        double x,
+        double y,
+        double width,
+        double height)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            yield break;
+        }
+
+        bool hasCjk = false;
+        var runes = new List<string>();
+        var weights = new List<double>();
+        double totalWeight = 0;
+
+        for (int i = 0; i < text.Length; i++)
+        {
+            string element;
+            if (char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+            {
+                element = text.Substring(i, 2);
+                i++;
+            }
+            else
+            {
+                element = text[i].ToString();
+            }
+            runes.Add(element);
+
+            bool isCjkChar = element.Length == 1 && IsCjk(element[0]);
+            if (isCjkChar)
+            {
+                hasCjk = true;
+            }
+            double w = isCjkChar ? 1.0 : 0.55;
+            weights.Add(w);
+            totalWeight += w;
+        }
+
+        if (!hasCjk || runes.Count <= 1)
+        {
+            yield return new LayoutTextWord
+            {
+                Text = text,
+                X = x,
+                Y = y,
+                Width = width,
+                Height = height
+            };
+            yield break;
+        }
+
+        if (totalWeight <= 0) totalWeight = runes.Count;
+
+        double unitWidth = width / totalWeight;
+        double currentX = x;
+
+        for (int i = 0; i < runes.Count; i++)
+        {
+            double charWidth = (i == runes.Count - 1)
+                ? (x + width - currentX)
+                : (unitWidth * weights[i]);
+
+            yield return new LayoutTextWord
+            {
+                Text = runes[i],
+                X = currentX,
+                Y = y,
+                Width = Math.Max(1.0, charWidth),
+                Height = height
+            };
+
+            currentX += charWidth;
+        }
+    }
+
+    private static bool IsCjk(char value) =>
+        value is >= '\u3400' and <= '\u9FFF'
+        or >= '\uF900' and <= '\uFAFF'
+        or >= '\u3040' and <= '\u30FF'
+        or >= '\uAC00' and <= '\uD7AF';
 }

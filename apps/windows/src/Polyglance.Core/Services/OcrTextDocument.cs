@@ -92,5 +92,7 @@ public sealed class OcrTextDocument
 
     private static bool IsCjk(char value) =>
         value is >= '\u3400' and <= '\u9FFF'
-        or >= '\uF900' and <= '\uFAFF';
+        or >= '\uF900' and <= '\uFAFF'
+        or >= '\u3040' and <= '\u30FF'
+        or >= '\uAC00' and <= '\uD7AF';
 }

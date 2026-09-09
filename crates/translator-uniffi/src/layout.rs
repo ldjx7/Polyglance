@@ -44,3 +44,12 @@ pub fn layout_paragraphs(lines: Vec<LayoutTextLine>) -> Vec<LayoutParagraph> {
         .map(Into::into)
         .collect()
 }
+
+#[uniffi::export]
+pub fn layout_format_text(lines: Vec<LayoutTextLine>, mode: u8) -> String {
+    let lines: Vec<layout::TextLine> = lines.into_iter().map(Into::into).collect();
+    layout::layout_format(
+        &lines,
+        capture_core::formatting::TextFormattingMode::from_raw(mode),
+    )
+}

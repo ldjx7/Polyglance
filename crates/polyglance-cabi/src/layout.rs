@@ -84,3 +84,48 @@ unsafe fn layout_paragraphs(
         Err(_) => POLYGLANCE_ERR_INVALID_INPUT,
     }
 }
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn polyglance_layout_format_text(
+    lines_json: *const c_char,
+    mode: u8,
+    out_text: *mut *mut c_char,
+) -> i32 {
+    ffi_status(|| unsafe { layout_format_text(lines_json, mode, out_text) })
+}
+
+unsafe fn layout_format_text(
+    lines_json: *const c_char,
+    mode: u8,
+    out_text: *mut *mut c_char,
+) -> i32 {
+    if lines_json.is_null() || out_text.is_null() {
+        return POLYGLANCE_ERR_NULL_PTR;
+    }
+
+    let input_str = match unsafe { c_char_to_str(lines_json) } {
+        Some(s) => s,
+        None => return POLYGLANCE_ERR_INVALID_INPUT,
+    };
+
+    let lines: Vec<CLayoutTextLine> = match serde_json::from_str(input_str) {
+        Ok(l) => l,
+        Err(_) => return POLYGLANCE_ERR_INVALID_INPUT,
+    };
+
+    let rust_lines: Vec<TextLine> = lines
+        .into_iter()
+        .map(|l| TextLine {
+            text: l.text,
+            bounding_box: Rect::new(l.x, l.y, l.width, l.height),
+        })
+        .collect();
+
+    let formatting_mode = capture_core::formatting::TextFormattingMode::from_raw(mode);
+    let result = layout::layout_format(&rust_lines, formatting_mode);
+
+    unsafe {
+        *out_text = string_to_c_char(result);
+    }
+    POLYGLANCE_OK
+}

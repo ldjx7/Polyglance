@@ -18,6 +18,7 @@
 
 pub mod alignment;
 pub mod engine;
+pub mod formatting;
 pub mod geometry;
 pub mod layout;
 pub mod recording;

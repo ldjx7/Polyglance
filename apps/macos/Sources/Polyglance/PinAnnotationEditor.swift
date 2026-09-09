@@ -24,6 +24,11 @@ final class PinAnnotationOverlayView: NSView {
     var elements: [ScreenshotAnnotationElement] { history.elements }
     var onEditingChanged: ((Bool) -> Void)?
 
+    func addElement(_ element: ScreenshotAnnotationElement) {
+        history.append(element)
+        needsDisplay = true
+    }
+
     init(sourceImage: NSImage) {
         self.sourceImage = sourceImage
         super.init(frame: CGRect(origin: .zero, size: sourceImage.size))

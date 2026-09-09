@@ -8,6 +8,7 @@ use translator_providers::openai::ProviderError;
 
 uniffi::setup_scaffolding!();
 
+pub mod formatting;
 pub mod geometry;
 pub mod layout;
 pub mod pin;

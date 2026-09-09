@@ -80,10 +80,41 @@ public static partial class NativeMethods
         out IntPtr outParagraphsJson);
 
     [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    public static unsafe partial int polyglance_layout_format_text(
+        string linesJson,
+        byte mode,
+        out IntPtr outText);
+
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
     public static unsafe partial int polyglance_alignment_pairs(
         string sourceText,
         string targetText,
         out IntPtr outPairsJson);
+
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int polyglance_text_format(
+        string text,
+        byte mode,
+        out IntPtr outText);
+
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int polyglance_text_smart_merge_lines(
+        string text,
+        out IntPtr outText);
+
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int polyglance_text_apply_pangu_spacing(
+        string text,
+        out IntPtr outText);
+
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int polyglance_text_remove_extraneous_spaces(
+        string text,
+        out IntPtr outText);
+
+    [LibraryImport(DllName)]
+    [return: MarshalAs(UnmanagedType.U1)]
+    public static partial bool polyglance_text_is_cjk_scalar(uint scalar);
 
     [LibraryImport(DllName)]
     public static partial int polyglance_selection_rect(

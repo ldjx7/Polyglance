@@ -380,7 +380,13 @@ final class OCRSelectionCanvasView: NSView, NSDraggingSource {
         context?.restoreGState()
     }
 
-    private var selectionLayout: OCRSelectionLayout {
+    func clearSelection() {
+        selectionModel.clearSelection()
+        onSelectionChanged?(nil)
+        needsDisplay = true
+    }
+
+    var selectionLayout: OCRSelectionLayout {
         OCRSelectionLayout(imagePixelSize: imagePixelSize, viewport: bounds)
     }
 
@@ -432,6 +438,10 @@ final class OCRSelectionResultView: NSView {
     let canvasView: OCRSelectionCanvasView
     let selectionModeButton: NSButton
     let copySelectionButton: NSButton
+    let highlightButton: NSButton
+    let wavyButton: NSButton
+    let lineButton: NSButton
+    let strikethroughButton: NSButton
     let copyAllButton: NSButton
     let translateButton: NSButton
     let closeButton: NSButton
@@ -461,6 +471,10 @@ final class OCRSelectionResultView: NSView {
         canvasView = OCRSelectionCanvasView(image: image, document: document)
         selectionModeButton = Self.makeButton(title: "退出文字选择", symbol: "text.cursor")
         copySelectionButton = Self.makeButton(title: "复制", symbol: "doc.on.doc")
+        highlightButton = Self.makeButton(title: "荧光笔", symbol: "highlighter")
+        wavyButton = Self.makeButton(title: "波浪线", symbol: "waveform.path")
+        lineButton = Self.makeButton(title: "直线", symbol: "underline")
+        strikethroughButton = Self.makeButton(title: "删除线", symbol: "strikethrough")
         copyAllButton = Self.makeButton(title: "复制全部", symbol: "doc.on.doc.fill")
         translateButton = Self.makeButton(title: "翻译", symbol: "character.bubble")
         closeButton = Self.makeButton(title: "关闭", symbol: "xmark")
@@ -477,6 +491,14 @@ final class OCRSelectionResultView: NSView {
         copySelectionButton.target = self
         copySelectionButton.action = #selector(copySelectedText)
         copySelectionButton.isEnabled = false
+        highlightButton.target = self
+        highlightButton.action = #selector(highlightSelectedText)
+        wavyButton.target = self
+        wavyButton.action = #selector(wavySelectedText)
+        lineButton.target = self
+        lineButton.action = #selector(lineSelectedText)
+        strikethroughButton.target = self
+        strikethroughButton.action = #selector(strikethroughSelectedText)
         copyAllButton.target = self
         copyAllButton.action = #selector(copyAllText)
         translateButton.target = self
@@ -490,10 +512,12 @@ final class OCRSelectionResultView: NSView {
         contextualActions.layer?.cornerRadius = 8
         contextualActions.layer?.masksToBounds = true
         contextualActions.isHidden = true
-        // Keep the contextual action buttons under our own layout control.
-        // NSStackView's deferred intrinsic-size layout can leave the two button
-        // frames overlapping briefly on headless GitHub macOS runners.
+
         contextualActions.addSubview(copySelectionButton)
+        contextualActions.addSubview(highlightButton)
+        contextualActions.addSubview(wavyButton)
+        contextualActions.addSubview(lineButton)
+        contextualActions.addSubview(strikethroughButton)
         contextualActions.addSubview(translateButton)
         addSubview(contextualActions)
         addSubview(annotationEditor)
@@ -536,33 +560,85 @@ final class OCRSelectionResultView: NSView {
         super.layout()
         canvasView.frame = bounds
         annotationEditor.frame = bounds
-        contextualActions.frame = CGRect(
-            x: max(8, bounds.maxX - 176),
-            y: 10,
-            width: 168,
-            height: 36
-        )
+
+        let buttons = [copySelectionButton, highlightButton, wavyButton, lineButton, strikethroughButton, translateButton]
+        let buttonCount = CGFloat(buttons.count)
         let horizontalPadding: CGFloat = 6
         let verticalPadding: CGFloat = 4
-        let buttonSpacing: CGFloat = 6
-        let availableWidth = max(
-            0,
-            contextualActions.bounds.width - horizontalPadding * 2 - buttonSpacing
+        let buttonSpacing: CGFloat = 4
+        let capsuleHeight: CGFloat = 34
+        let capsuleWidth = min(max(40, bounds.width - 16), 340)
+
+        contextualActions.frame = CGRect(
+            x: max(8, min(bounds.maxX - capsuleWidth - 8, bounds.midX - capsuleWidth / 2)),
+            y: max(8, min(bounds.maxY - capsuleHeight - 8, 10)),
+            width: capsuleWidth,
+            height: capsuleHeight
         )
-        let buttonWidth = availableWidth / 2
-        let buttonHeight = max(0, contextualActions.bounds.height - verticalPadding * 2)
-        copySelectionButton.frame = CGRect(
-            x: horizontalPadding,
-            y: verticalPadding,
-            width: buttonWidth,
-            height: buttonHeight
-        )
-        translateButton.frame = CGRect(
-            x: horizontalPadding + buttonWidth + buttonSpacing,
-            y: verticalPadding,
-            width: buttonWidth,
-            height: buttonHeight
-        )
+
+        let totalSpacing = buttonSpacing * (buttonCount - 1)
+        let availableWidth = max(0, capsuleWidth - horizontalPadding * 2 - totalSpacing)
+        let buttonWidth = availableWidth / buttonCount
+        let buttonHeight = max(0, capsuleHeight - verticalPadding * 2)
+
+        for (index, button) in buttons.enumerated() {
+            button.frame = CGRect(
+                x: horizontalPadding + CGFloat(index) * (buttonWidth + buttonSpacing),
+                y: verticalPadding,
+                width: buttonWidth,
+                height: buttonHeight
+            )
+        }
+    }
+
+    @objc private func highlightSelectedText() {
+        let layout = canvasView.selectionLayout
+        for item in document.items where canvasView.selectedItemIDs.contains(item.id) {
+            let rect = layout.viewRect(forNormalizedRect: item.boundingBox)
+            let style = ScreenshotAnnotationStyle(color: NSColor.systemYellow.withAlphaComponent(0.4), lineWidth: 1)
+            annotationEditor.addElement(.rectangle(start: rect.origin, end: CGPoint(x: rect.maxX, y: rect.maxY), style: style))
+        }
+        canvasView.clearSelection()
+    }
+
+    @objc private func wavySelectedText() {
+        let layout = canvasView.selectionLayout
+        for item in document.items where canvasView.selectedItemIDs.contains(item.id) {
+            let rect = layout.viewRect(forNormalizedRect: item.boundingBox)
+            var points: [CGPoint] = []
+            let step: CGFloat = 4
+            var up = true
+            let y = rect.minY + 2
+            for x in stride(from: rect.minX, through: rect.maxX, by: step) {
+                points.append(CGPoint(x: x, y: up ? y + 2 : y - 2))
+                up.toggle()
+            }
+            if points.count >= 2 {
+                let style = ScreenshotAnnotationStyle(color: .systemRed, lineWidth: 1.5)
+                annotationEditor.addElement(.freehand(points: points, style: style))
+            }
+        }
+        canvasView.clearSelection()
+    }
+
+    @objc private func lineSelectedText() {
+        let layout = canvasView.selectionLayout
+        for item in document.items where canvasView.selectedItemIDs.contains(item.id) {
+            let rect = layout.viewRect(forNormalizedRect: item.boundingBox)
+            let style = ScreenshotAnnotationStyle(color: .systemBlue, lineWidth: 2)
+            annotationEditor.addElement(.line(start: CGPoint(x: rect.minX, y: rect.minY + 1), end: CGPoint(x: rect.maxX, y: rect.minY + 1), style: style))
+        }
+        canvasView.clearSelection()
+    }
+
+    @objc private func strikethroughSelectedText() {
+        let layout = canvasView.selectionLayout
+        for item in document.items where canvasView.selectedItemIDs.contains(item.id) {
+            let rect = layout.viewRect(forNormalizedRect: item.boundingBox)
+            let style = ScreenshotAnnotationStyle(color: .systemGray, lineWidth: 2)
+            annotationEditor.addElement(.line(start: CGPoint(x: rect.minX, y: rect.midY), end: CGPoint(x: rect.maxX, y: rect.midY), style: style))
+        }
+        canvasView.clearSelection()
     }
 
     @objc private func copySelectedText() { canvasView.copySelectedText() }

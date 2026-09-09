@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import PolyglanceKit
 
 /// A selectable subrange of one Vision text observation.
 ///
@@ -199,7 +200,7 @@ struct OCRService: Sendable {
         let preparedObservations: [PreparedObservation] = observations.enumerated().compactMap {
             index, observation -> PreparedObservation? in
             let text = observation.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else {
+            guard !text.isEmpty, isUsableNormalizedBox(observation.boundingBox) else {
                 return nil
             }
             return PreparedObservation(
@@ -210,42 +211,15 @@ struct OCRService: Sendable {
             )
         }
 
-        var nextItemID = 0
-        let lines = observationsInReadingOrder(preparedObservations).enumerated().map {
-            lineIndex, observation -> OCRTextLine in
-            let validFragments = observation.fragments.filter {
-                !$0.text.isEmpty && Self.isUsableNormalizedBox($0.boundingBox)
-            }
-            let sourceFragments = validFragments.isEmpty
-                ? [
-                    OCRTextFragment(
-                        text: observation.text,
-                        boundingBox: observation.boundingBox
-                    ),
-                ]
-                : validFragments
-            let items = sourceFragments.enumerated().map { indexInLine, fragment in
-                defer { nextItemID += 1 }
-                return OCRTextItem(
-                    id: nextItemID,
-                    lineIndex: lineIndex,
-                    indexInLine: indexInLine,
-                    text: fragment.text,
-                    boundingBox: fragment.boundingBox.standardized,
-                    separatorBefore: fragment.separatorBefore
-                )
-            }
-            return OCRTextLine(
-                index: lineIndex,
-                text: observation.text,
-                boundingBox: observation.boundingBox,
-                items: items
-            )
+        guard !preparedObservations.isEmpty else {
+            return OCRDocument(lines: [])
         }
+
+        let lines = organizeLinesInReadingOrder(preparedObservations)
         return OCRDocument(lines: lines)
     }
 
-    private static func isUsableNormalizedBox(_ box: CGRect) -> Bool {
+    fileprivate static func isUsableNormalizedBox(_ box: CGRect) -> Bool {
         let box = box.standardized
         return box.origin.x.isFinite
             && box.origin.y.isFinite
@@ -255,9 +229,141 @@ struct OCRService: Sendable {
             && box.height > 0
     }
 
-    private static func observationsInReadingOrder(
+    private static func organizeLinesInReadingOrder(
         _ observations: [PreparedObservation]
-    ) -> [PreparedObservation] {
+    ) -> [OCRTextLine] {
+        let medianHeight = calculateMedianHeight(observations)
+        let blocks = partitionIntoBlocks(observations, medianHeight: medianHeight)
+
+        var nextItemID = 0
+        var resultLines: [OCRTextLine] = []
+
+        for block in blocks {
+            let blockLines = clusterLinesInBlock(
+                block,
+                medianHeight: medianHeight,
+                startLineIndex: resultLines.count,
+                nextItemID: &nextItemID
+            )
+            resultLines.append(contentsOf: blockLines)
+        }
+
+        return resultLines
+    }
+
+    private static func calculateMedianHeight(_ observations: [PreparedObservation]) -> CGFloat {
+        let heights = observations.map(\.boundingBox.height).filter { $0 > 0 }.sorted()
+        guard !heights.isEmpty else { return 0.03 }
+        return heights[heights.count / 2]
+    }
+
+    private static func partitionIntoBlocks(
+        _ observations: [PreparedObservation],
+        medianHeight: CGFloat
+    ) -> [[PreparedObservation]] {
+        guard observations.count >= 4 else {
+            return [observations]
+        }
+
+        let minX = observations.map(\.boundingBox.minX).min() ?? 0
+        let maxX = observations.map(\.boundingBox.maxX).max() ?? 1
+        let totalWidth = maxX - minX
+
+        guard totalWidth >= 0.25 else {
+            return [observations]
+        }
+
+        let minGutterWidth = max(0.025, medianHeight * 1.2)
+        let sortedByX = observations.sorted { $0.boundingBox.minX < $1.boundingBox.minX }
+
+        var bestSplit: (
+            left: [PreparedObservation],
+            right: [PreparedObservation],
+            headers: [PreparedObservation],
+            footers: [PreparedObservation],
+            gutterWidth: CGFloat
+        )?
+
+        for i in 0..<(sortedByX.count - 1) {
+            let leftCandidateMaxX = sortedByX[0...i].map { $0.boundingBox.maxX }.max() ?? 0
+            let rightCandidateMinX = sortedByX[(i + 1)...].map { $0.boundingBox.minX }.min() ?? 0
+            let gutter = rightCandidateMinX - leftCandidateMaxX
+
+            guard gutter >= minGutterWidth else { continue }
+
+            let gStart = leftCandidateMaxX
+            let gEnd = rightCandidateMinX
+
+            let crossingItems = observations.filter {
+                $0.boundingBox.minX < gEnd && $0.boundingBox.maxX > gStart
+            }
+
+            let nonCrossingLeft = observations.filter { $0.boundingBox.maxX <= gStart }
+            let nonCrossingRight = observations.filter { $0.boundingBox.minX >= gEnd }
+
+            guard nonCrossingLeft.count >= 2, nonCrossingRight.count >= 2 else { continue }
+
+            let leftMinY: CGFloat = nonCrossingLeft.map { $0.boundingBox.minY }.min() ?? 0
+            let leftMaxY: CGFloat = nonCrossingLeft.map { $0.boundingBox.maxY }.max() ?? 0
+            let rightMinY: CGFloat = nonCrossingRight.map { $0.boundingBox.minY }.min() ?? 0
+            let rightMaxY: CGFloat = nonCrossingRight.map { $0.boundingBox.maxY }.max() ?? 0
+
+            let columnTopY: CGFloat = min(leftMaxY, rightMaxY)
+            let columnBottomY: CGFloat = max(leftMinY, rightMinY)
+            let verticalOverlap: CGFloat = columnTopY - columnBottomY
+
+            guard columnTopY > columnBottomY, verticalOverlap >= max(0.04, medianHeight * 1.8) else {
+                continue
+            }
+
+            let headers = crossingItems.filter { $0.boundingBox.minY >= columnTopY - medianHeight * 0.5 }
+            let footers = crossingItems.filter { $0.boundingBox.maxY <= columnBottomY + medianHeight * 0.5 }
+
+            if headers.count + footers.count != crossingItems.count {
+                continue
+            }
+
+            let leftMinX: CGFloat = nonCrossingLeft.map { $0.boundingBox.minX }.min() ?? 0
+            let leftMaxX: CGFloat = nonCrossingLeft.map { $0.boundingBox.maxX }.max() ?? 0
+            let rightMinX: CGFloat = nonCrossingRight.map { $0.boundingBox.minX }.min() ?? 0
+            let rightMaxX: CGFloat = nonCrossingRight.map { $0.boundingBox.maxX }.max() ?? 0
+
+            let leftWidth = leftMaxX - leftMinX
+            let rightWidth = rightMaxX - rightMinX
+
+            guard leftWidth >= max(0.10, medianHeight * 2.0), rightWidth >= max(0.10, medianHeight * 2.0) else {
+                continue
+            }
+
+            if bestSplit == nil || gutter > (bestSplit?.gutterWidth ?? 0) {
+                bestSplit = (nonCrossingLeft, nonCrossingRight, headers, footers, gutter)
+            }
+        }
+
+        if let split = bestSplit {
+            var result: [[PreparedObservation]] = []
+            if !split.headers.isEmpty {
+                result.append(split.headers)
+            }
+            result.append(contentsOf: partitionIntoBlocks(split.left, medianHeight: medianHeight))
+            result.append(contentsOf: partitionIntoBlocks(split.right, medianHeight: medianHeight))
+            if !split.footers.isEmpty {
+                result.append(split.footers)
+            }
+            return result
+        }
+
+        return [observations]
+    }
+
+    private static func clusterLinesInBlock(
+        _ observations: [PreparedObservation],
+        medianHeight: CGFloat,
+        startLineIndex: Int,
+        nextItemID: inout Int
+    ) -> [OCRTextLine] {
+        guard !observations.isEmpty else { return [] }
+
         let topToBottom = observations.sorted { left, right in
             if left.boundingBox.midY != right.boundingBox.midY {
                 return left.boundingBox.midY > right.boundingBox.midY
@@ -270,28 +376,32 @@ struct OCRService: Sendable {
 
         var lines: [TextLine] = []
         for observation in topToBottom {
-            if let lineIndex = lines.firstIndex(where: { $0.containsSameLine(as: observation) }) {
+            if let lineIndex = lines.firstIndex(where: { $0.containsSameLine(as: observation, medianHeight: medianHeight) }) {
                 lines[lineIndex].append(observation)
             } else {
                 lines.append(TextLine(observation: observation))
             }
         }
 
-        return lines
-            .sorted { left, right in
-                if left.midY != right.midY {
-                    return left.midY > right.midY
-                }
-                return left.minX < right.minX
+        let sortedLines = lines.sorted { left, right in
+            if left.midY != right.midY {
+                return left.midY > right.midY
             }
-            .flatMap { line in
-                line.observations.sorted { left, right in
-                    if left.boundingBox.minX != right.boundingBox.minX {
-                        return left.boundingBox.minX < right.boundingBox.minX
-                    }
-                    return left.originalIndex < right.originalIndex
-                }
-            }
+            return left.minX < right.minX
+        }
+
+        var ocrLines: [OCRTextLine] = []
+        for (offset, line) in sortedLines.enumerated() {
+            let lineIndex = startLineIndex + offset
+            ocrLines.append(
+                line.toOCRTextLine(
+                    lineIndex: lineIndex,
+                    nextItemID: &nextItemID
+                )
+            )
+        }
+
+        return ocrLines
     }
 }
 
@@ -303,9 +413,9 @@ private struct PreparedObservation {
 }
 
 private struct TextLine {
-    private(set) var observations: [PreparedObservation]
-    private var minY: CGFloat
-    private var maxY: CGFloat
+    var observations: [PreparedObservation]
+    var minY: CGFloat
+    var maxY: CGFloat
 
     init(observation: PreparedObservation) {
         observations = [observation]
@@ -314,30 +424,168 @@ private struct TextLine {
     }
 
     var midY: CGFloat {
-        (minY + maxY) / 2
+        (minY + maxY) / 2.0
     }
 
     var minX: CGFloat {
         observations.map(\.boundingBox.minX).min() ?? 0
     }
 
-    func containsSameLine(as observation: PreparedObservation) -> Bool {
+    func containsSameLine(as observation: PreparedObservation, medianHeight: CGFloat) -> Bool {
         let observationHeight = observation.boundingBox.height
         let lineHeight = maxY - minY
         let overlap = min(maxY, observation.boundingBox.maxY)
             - max(minY, observation.boundingBox.minY)
         let shortestHeight = min(lineHeight, observationHeight)
 
-        if shortestHeight > 0, overlap >= shortestHeight * 0.5 {
-            return true
+        let verticalMatch: Bool
+        if shortestHeight > 0, overlap >= shortestHeight * 0.45 {
+            verticalMatch = true
+        } else {
+            verticalMatch = abs(midY - observation.boundingBox.midY)
+                <= max(lineHeight, observationHeight) * 0.35
         }
-        return abs(midY - observation.boundingBox.midY)
-            <= max(lineHeight, observationHeight) * 0.35
+        guard verticalMatch else { return false }
+
+        let minClusterX = observations.map(\.boundingBox.minX).min() ?? 0
+        let maxClusterX = observations.map(\.boundingBox.maxX).max() ?? 0
+        let obsMinX = observation.boundingBox.minX
+        let obsMaxX = observation.boundingBox.maxX
+        let gap: CGFloat
+        if obsMinX >= maxClusterX {
+            gap = obsMinX - maxClusterX
+        } else if obsMaxX <= minClusterX {
+            gap = minClusterX - obsMaxX
+        } else {
+            gap = 0
+        }
+
+        let maxAllowedGap = max(medianHeight * 2.5, 0.05)
+        return gap <= maxAllowedGap
     }
 
     mutating func append(_ observation: PreparedObservation) {
         observations.append(observation)
         minY = min(minY, observation.boundingBox.minY)
         maxY = max(maxY, observation.boundingBox.maxY)
+    }
+
+    func toOCRTextLine(
+        lineIndex: Int,
+        nextItemID: inout Int
+    ) -> OCRTextLine {
+        let sortedObs = observations.sorted { left, right in
+            if left.boundingBox.minX != right.boundingBox.minX {
+                return left.boundingBox.minX < right.boundingBox.minX
+            }
+            return left.originalIndex < right.originalIndex
+        }
+
+        var fullText = ""
+        var fullBox = sortedObs[0].boundingBox
+        var items: [OCRTextItem] = []
+        var indexInLine = 0
+
+        for (i, obs) in sortedObs.enumerated() {
+            fullBox = fullBox.union(obs.boundingBox)
+
+            let separator: String
+            if i == 0 {
+                separator = ""
+            } else {
+                let prevObs = sortedObs[i - 1]
+                let gap = obs.boundingBox.minX - prevObs.boundingBox.maxX
+                separator = Self.separatorBetween(
+                    leftText: fullText,
+                    rightText: obs.text,
+                    gap: gap,
+                    lineHeight: min(prevObs.boundingBox.height, obs.boundingBox.height)
+                )
+            }
+
+            fullText.append(separator)
+            fullText.append(obs.text)
+
+            let validFragments = obs.fragments.filter {
+                !$0.text.isEmpty && OCRService.isUsableNormalizedBox($0.boundingBox)
+            }
+            let fragments = validFragments.isEmpty
+                ? [OCRTextFragment(text: obs.text, boundingBox: obs.boundingBox)]
+                : validFragments
+
+            for (fragIdx, fragment) in fragments.enumerated() {
+                let sepBefore: String
+                if fragIdx == 0 && i > 0 {
+                    sepBefore = separator + fragment.separatorBefore
+                } else {
+                    sepBefore = fragment.separatorBefore
+                }
+
+                items.append(
+                    OCRTextItem(
+                        id: nextItemID,
+                        lineIndex: lineIndex,
+                        indexInLine: indexInLine,
+                        text: fragment.text,
+                        boundingBox: fragment.boundingBox.standardized,
+                        separatorBefore: sepBefore
+                    )
+                )
+                nextItemID += 1
+                indexInLine += 1
+            }
+        }
+
+        return OCRTextLine(
+            index: lineIndex,
+            text: fullText,
+            boundingBox: fullBox,
+            items: items
+        )
+    }
+
+    private static func separatorBetween(
+        leftText: String,
+        rightText: String,
+        gap: CGFloat,
+        lineHeight: CGFloat
+    ) -> String {
+        guard let lastChar = leftText.last, let firstChar = rightText.first else {
+            return ""
+        }
+
+        if lastChar.isWhitespace || firstChar.isWhitespace {
+            return ""
+        }
+
+        let isLeftCjk = TextFormattingService.isCjk(lastChar)
+        let isRightCjk = TextFormattingService.isCjk(firstChar)
+
+        if isPunctuation(firstChar) {
+            return ""
+        }
+
+        let relGap = lineHeight > 0 ? gap / lineHeight : gap
+
+        if isLeftCjk && isRightCjk {
+            if relGap >= 0.75 {
+                return " "
+            }
+            return ""
+        }
+
+        if (isLeftCjk && !isRightCjk) || (!isLeftCjk && isRightCjk) {
+            return " "
+        }
+
+        if relGap >= 0.15 || (lastChar.isLetter && firstChar.isLetter) || (lastChar.isNumber && firstChar.isLetter) {
+            return " "
+        }
+
+        return ""
+    }
+
+    private static func isPunctuation(_ c: Character) -> Bool {
+        [",", ".", "!", "?", ";", ":", ")", "]", "}", "、", "，", "。", "！", "？", "；", "：", "）", "】", "”", "’"].contains(c)
     }
 }

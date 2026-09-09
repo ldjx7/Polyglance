@@ -1,6 +1,7 @@
 //! Platform-agnostic capture logic shared by every Polyglance frontend.
 
 pub mod alignment;
+pub mod formatting;
 pub mod geometry;
 pub mod layout;
 pub mod pin;
@@ -10,6 +11,7 @@ pub mod stitch;
 pub mod text;
 
 pub use alignment::SegmentPair;
+pub use formatting::TextFormattingMode;
 pub use geometry::{
     KeyboardAdjustment, KeyboardDirection, KeyboardOperation, KeyboardStep, ResizeHandle,
     SelectionEditTarget,

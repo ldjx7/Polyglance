@@ -61,6 +61,9 @@ enum ScreenshotCapturePolicy {
         if case .detectBarcode = action {
             return true
         }
+        if case .ocrCopy = action {
+            return true
+        }
         return false
     }
 }
@@ -78,6 +81,7 @@ final class ScreenshotCoordinator {
     private let configurationStore: AppConfigurationStore
     private var selectionSession: ScreenSelectionSession?
     private let barcodeResultWindows = BarcodeResultWindowStore()
+    private var activeOCRWorkspacePanel: OCRWorkspacePanel?
     private var isCapturing = false
 
     init(
@@ -152,11 +156,30 @@ final class ScreenshotCoordinator {
                 preferredDisplaySize: result.screenFrame.size
             )
         case let .ocrCopy(result):
-            let document = try await ocrService.recognizeDocument(in: result.image)
-            guard pinWindowManager.pinOCRSelection(
+            if let activeContinuous = OCRWorkspacePanel.activeContinuousInstance, activeContinuous.isVisible {
+                activeContinuous.startPendingAppend(image: result.image)
+                NSApp.setActivationPolicy(.regular)
+                activeContinuous.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                Task {
+                    do {
+                        let document = try await ocrService.recognizeDocument(in: result.image)
+                        await MainActor.run {
+                            activeContinuous.finishPendingAppend(image: result.image, document: document)
+                        }
+                    } catch {
+                        await MainActor.run {
+                            activeContinuous.cancelPendingAppend(error: error)
+                        }
+                    }
+                }
+                break
+            }
+
+            let panel = OCRWorkspacePanel(
                 image: result.image,
-                document: document,
-                sourceFrame: result.screenFrame,
+                document: nil,
+                configurationStore: configurationStore,
                 translateHandler: { [weak self] text in
                     guard let self else { return }
                     Task { @MainActor in
@@ -167,8 +190,33 @@ final class ScreenshotCoordinator {
                         }
                     }
                 }
-            ) != nil else {
-                throw ScreenshotError.ocrSelectionPresentationFailed
+            )
+            activeOCRWorkspacePanel = panel
+            panel.center()
+            panel.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+
+            Task {
+                do {
+                    let document = try await ocrService.recognizeDocument(in: result.image)
+                    await MainActor.run {
+                        panel.setDocument(document)
+                        let config = try? configurationStore.load()
+                        if config?.ocrAutoCopyNextTime == true {
+                            let mode = TextFormattingMode(rawValue: config?.ocrDefaultFormatting ?? 0) ?? .smartMerge
+                            let lines = document.lines.map { (text: $0.text, boundingBox: $0.boundingBox) }
+                            let cleaned = TextFormattingService.format(lines: lines, mode: mode)
+                            let pasteboard = NSPasteboard.general
+                            pasteboard.clearContents()
+                            pasteboard.setString(cleaned, forType: .string)
+                            NSSound(named: "Tink")?.play()
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        panel.setError(error.localizedDescription)
+                    }
+                }
             }
         case let .ocrCopyAll(result):
             let text = try await ocrService.recognizeText(in: result.image)
@@ -408,6 +456,7 @@ enum ScreenshotError: LocalizedError {
     case captureFailed(String)
     case ocrSelectionPresentationFailed
     case ocrCopyFailed
+    case noTextFound
     case barcodeDetectionFailed(String)
     case barcodeNotFound
     case barcodeResultNotPresentable
@@ -426,6 +475,8 @@ enum ScreenshotError: LocalizedError {
             return "无法打开 OCR 文字选择窗口"
         case .ocrCopyFailed:
             return "无法将 OCR 文字写入剪贴板"
+        case .noTextFound:
+            return "当前截图中没有识别到文字"
         case let .barcodeDetectionFailed(message):
             return "条码识别失败：\(message)"
         case .barcodeNotFound:

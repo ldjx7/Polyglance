@@ -112,6 +112,12 @@ public sealed class AppConfiguration
 
     [JsonPropertyName("screenshot_toolbar_items")]
     public List<ScreenshotToolbarItemConfig> ScreenshotToolbarItems { get; set; } = ScreenshotToolbarItemConfig.DefaultItems();
+
+    [JsonPropertyName("ocr_auto_copy_next_time")]
+    public bool OcrAutoCopyNextTime { get; set; }
+
+    [JsonPropertyName("ocr_default_formatting")]
+    public int OcrDefaultFormatting { get; set; }
 }
 
 public sealed class ScreenshotToolbarItemConfig

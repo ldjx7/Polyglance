@@ -49,6 +49,12 @@ public partial class PinWindow : Window
     private bool _isLocked;
     private readonly PinSessionController _sessions;
 
+    private OcrTextDocument? _ocrDocument;
+    private bool _isTextSelecting;
+    private Point _textSelectStart;
+    private Rect _textSelectionRect = Rect.Empty;
+    private readonly List<LayoutTextWord> _selectedWords = [];
+
     internal bool IsColorPicking { get; private set; }
     internal bool IsAnnotationEditing { get; private set; }
     internal MagnifierControl ColorMagnifierControl => _colorMagnifier;
@@ -149,6 +155,7 @@ public partial class PinWindow : Window
         // there is no inactive-to-active flash after Show().
         SetSelectionHighlight(true);
         _zoomBadgeTimer.Tick += (_, _) => { ZoomBadge.Visibility = Visibility.Collapsed; _zoomBadgeTimer.Stop(); };
+        Loaded += async (_, _) => await RecognizeTextInPinAsync();
     }
 
     private void OnActivated(object? sender, EventArgs e) => SetSelectionHighlight(true);
@@ -287,6 +294,19 @@ public partial class PinWindow : Window
         }
         if (e.LeftButton == MouseButtonState.Pressed)
         {
+            Point pt = e.GetPosition(PinSurface);
+            if (_ocrDocument != null && (GetWordAt(pt) != null || (_selectedWords.Count > 0 && _textSelectionRect.Contains(pt))))
+            {
+                _isTextSelecting = true;
+                _textSelectStart = pt;
+                _textSelectionRect = new Rect(pt, new Size(0, 0));
+                TextCapsuleBar.Visibility = Visibility.Collapsed;
+                PinSurface.CaptureMouse();
+                e.Handled = true;
+                return;
+            }
+
+            ClearTextSelection();
             DragMove();
         }
     }
@@ -367,10 +387,47 @@ public partial class PinWindow : Window
             }
             return;
         }
+
+        if (!IsAnnotationEditing && !IsColorPicking && !_isLocked)
+        {
+            Point pt = e.GetPosition(PinSurface);
+            if (_isTextSelecting)
+            {
+                _textSelectionRect = new Rect(
+                    Math.Min(_textSelectStart.X, pt.X),
+                    Math.Min(_textSelectStart.Y, pt.Y),
+                    Math.Max(1, Math.Abs(pt.X - _textSelectStart.X)),
+                    Math.Max(1, Math.Abs(pt.Y - _textSelectStart.Y)));
+                UpdateTextSelection();
+                return;
+            }
+
+            if (_ocrDocument != null)
+            {
+                var word = GetWordAt(pt);
+                Cursor = word != null ? Cursors.IBeam : Cursors.Arrow;
+            }
+        }
     }
 
     private void OnMouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (_isTextSelecting)
+        {
+            _isTextSelecting = false;
+            PinSurface.ReleaseMouseCapture();
+            if (_selectedWords.Count > 0)
+            {
+                ShowTextCapsuleBar();
+            }
+            else
+            {
+                ClearTextSelection();
+            }
+            e.Handled = true;
+            return;
+        }
+
         if (_draggingAnnotationHandle != AnnotationHandleType.None)
         {
             _draggingAnnotationHandle = AnnotationHandleType.None;
@@ -475,6 +532,22 @@ public partial class PinWindow : Window
 
     private void OnKeyDown(object sender, KeyEventArgs e)
     {
+        if (TextCapsuleBar.Visibility == Visibility.Visible)
+        {
+            if (e.Key == Key.Escape)
+            {
+                ClearTextSelection();
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.C && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+            {
+                OnCapsuleCopyClick(this, new RoutedEventArgs());
+                e.Handled = true;
+                return;
+            }
+        }
+
         if (IsAnnotationEditing)
         {
             if (e.Key == Key.Delete || e.Key == Key.Back)
@@ -1252,25 +1325,23 @@ public partial class PinWindow : Window
     {
         try
         {
-            var document = await WindowsMediaOcr.RecognizeDocumentAsync(_bitmap);
+            var document = await OcrService.RecognizeDocumentAsync(_bitmap);
             if (string.IsNullOrWhiteSpace(document.FullText))
             {
                 throw new WindowsOcrException("当前贴图中没有识别到文字。");
             }
-            var ocrWindow = new OcrSelectionWindow(
+            var ocrWindow = new OcrWorkspaceWindow(
                 _bitmap,
                 document,
                 _translationService,
-                _configuration,
-                new Rect(Left, Top, ActualWidth, ActualHeight))
+                _configuration)
             {
                 Owner = this,
-                Left = Left,
-                Top = Top
+                Left = Left + 20,
+                Top = Top + 20
             };
             ocrWindow.Show();
             ocrWindow.Activate();
-            Hide();
         }
         catch (Exception error)
         {
@@ -1287,7 +1358,7 @@ public partial class PinWindow : Window
 
         try
         {
-            var document = await WindowsMediaOcr.RecognizeDocumentAsync(_bitmap);
+            var document = await OcrService.RecognizeDocumentAsync(_bitmap);
             if (string.IsNullOrWhiteSpace(document.FullText))
             {
                 throw new WindowsOcrException("当前贴图中没有识别到文字。");
@@ -1314,6 +1385,283 @@ public partial class PinWindow : Window
         {
             MessageBox.Show($"截图翻译失败：{error.Message}", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
+    }
+
+    private async Task RecognizeTextInPinAsync()
+    {
+        try
+        {
+            _ocrDocument = await OcrService.RecognizeDocumentAsync(_bitmap);
+        }
+        catch
+        {
+            // Background OCR for pin selection is non-blocking
+        }
+    }
+
+    private LayoutTextWord? GetWordAt(Point pt)
+    {
+        if (_ocrDocument == null || _bitmap.PixelWidth <= 0 || _bitmap.PixelHeight <= 0)
+            return null;
+
+        double scaleX = PinImage.ActualWidth > 0 ? PinImage.ActualWidth / _bitmap.PixelWidth : 1;
+        double scaleY = PinImage.ActualHeight > 0 ? PinImage.ActualHeight / _bitmap.PixelHeight : 1;
+
+        foreach (var line in _ocrDocument.Lines)
+        {
+            if (line.Words.Count > 0)
+            {
+                foreach (var word in line.Words)
+                {
+                    var rect = new Rect(word.X * scaleX, word.Y * scaleY, word.Width * scaleX, word.Height * scaleY);
+                    if (rect.Contains(pt))
+                        return word;
+                }
+            }
+            else
+            {
+                var rect = new Rect(line.X * scaleX, line.Y * scaleY, line.Width * scaleX, line.Height * scaleY);
+                if (rect.Contains(pt))
+                {
+                    return new LayoutTextWord
+                    {
+                        Text = line.Text,
+                        X = line.X,
+                        Y = line.Y,
+                        Width = line.Width,
+                        Height = line.Height
+                    };
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private void UpdateTextSelection()
+    {
+        AnnotationSelectionCanvas.Children.Clear();
+        _selectedWords.Clear();
+        if (_ocrDocument == null || _bitmap.PixelWidth <= 0 || _bitmap.PixelHeight <= 0)
+            return;
+
+        double scaleX = PinImage.ActualWidth > 0 ? PinImage.ActualWidth / _bitmap.PixelWidth : 1;
+        double scaleY = PinImage.ActualHeight > 0 ? PinImage.ActualHeight / _bitmap.PixelHeight : 1;
+
+        foreach (var line in _ocrDocument.Lines)
+        {
+            var words = line.Words.Count > 0
+                ? line.Words
+                : [new LayoutTextWord { Text = line.Text, X = line.X, Y = line.Y, Width = line.Width, Height = line.Height }];
+
+            foreach (var word in words)
+            {
+                var wordRect = new Rect(word.X * scaleX, word.Y * scaleY, word.Width * scaleX, word.Height * scaleY);
+                if (_textSelectionRect.IntersectsWith(wordRect))
+                {
+                    _selectedWords.Add(word);
+                    var highlight = new Rectangle
+                    {
+                        Width = Math.Max(2, wordRect.Width),
+                        Height = Math.Max(2, wordRect.Height),
+                        Fill = new SolidColorBrush(Color.FromArgb(60, 10, 132, 255)),
+                        Stroke = new SolidColorBrush(Color.FromArgb(160, 10, 132, 255)),
+                        StrokeThickness = 1
+                    };
+                    Canvas.SetLeft(highlight, wordRect.X);
+                    Canvas.SetTop(highlight, wordRect.Y);
+                    AnnotationSelectionCanvas.Children.Add(highlight);
+                }
+            }
+        }
+    }
+
+    private void ClearTextSelection()
+    {
+        _isTextSelecting = false;
+        _textSelectionRect = Rect.Empty;
+        _selectedWords.Clear();
+        AnnotationSelectionCanvas.Children.Clear();
+        TextCapsuleBar.Visibility = Visibility.Collapsed;
+    }
+
+    private void ShowTextCapsuleBar()
+    {
+        if (_selectedWords.Count == 0) return;
+        double scaleX = _bitmap.PixelWidth > 0 ? PinImage.ActualWidth / _bitmap.PixelWidth : 1;
+        double scaleY = _bitmap.PixelHeight > 0 ? PinImage.ActualHeight / _bitmap.PixelHeight : 1;
+
+        double minX = _selectedWords.Min(w => w.X * scaleX);
+        double minY = _selectedWords.Min(w => w.Y * scaleY);
+        double maxX = _selectedWords.Max(w => (w.X + w.Width) * scaleX);
+
+        double capsuleWidth = 320;
+        double left = Math.Clamp((minX + maxX) / 2 - capsuleWidth / 2, 4, Math.Max(4, PinSurface.ActualWidth - capsuleWidth - 4));
+        double top = Math.Max(4, minY - 32);
+
+        TextCapsuleBar.Margin = new Thickness(left, top, 0, 0);
+        TextCapsuleBar.Visibility = Visibility.Visible;
+    }
+
+    private void OnCapsuleCopyClick(object sender, RoutedEventArgs e)
+    {
+        if (_selectedWords.Count > 0)
+        {
+            var text = string.Join(" ", _selectedWords.Select(w => w.Text));
+            Clipboard.SetText(TextFormattingService.ApplyPanguSpacing(text));
+        }
+        ClearTextSelection();
+    }
+
+    private void OnCapsuleHighlightClick(object sender, RoutedEventArgs e)
+    {
+        double scaleX = _bitmap.PixelWidth > 0 ? PinImage.ActualWidth / _bitmap.PixelWidth : 1;
+        double scaleY = _bitmap.PixelHeight > 0 ? PinImage.ActualHeight / _bitmap.PixelHeight : 1;
+        foreach (var word in _selectedWords)
+        {
+            var rect = new Rectangle
+            {
+                Width = Math.Max(2, word.Width * scaleX),
+                Height = Math.Max(2, word.Height * scaleY),
+                Fill = new SolidColorBrush(Color.FromArgb(0x60, 0xFD, 0xE0, 0x47))
+            };
+            Canvas.SetLeft(rect, word.X * scaleX);
+            Canvas.SetTop(rect, word.Y * scaleY);
+            AnnotationCanvas.Children.Add(rect);
+            _annotationHistory.Add(rect);
+        }
+        ClearTextSelection();
+    }
+
+    private void OnCapsuleWavyClick(object sender, RoutedEventArgs e)
+    {
+        double scaleX = _bitmap.PixelWidth > 0 ? PinImage.ActualWidth / _bitmap.PixelWidth : 1;
+        double scaleY = _bitmap.PixelHeight > 0 ? PinImage.ActualHeight / _bitmap.PixelHeight : 1;
+        var lines = _selectedWords.GroupBy(w => Math.Round(w.Y * scaleY / 10)).ToList();
+        foreach (var lineGroup in lines)
+        {
+            double left = lineGroup.Min(w => w.X * scaleX);
+            double right = lineGroup.Max(w => (w.X + w.Width) * scaleX);
+            double bottom = lineGroup.Max(w => (w.Y + w.Height) * scaleY);
+
+            var path = CreateWavyPath(left, right, bottom, Color.FromRgb(0xEF, 0x44, 0x44));
+            AnnotationCanvas.Children.Add(path);
+            _annotationHistory.Add(path);
+        }
+        ClearTextSelection();
+    }
+
+    private void OnCapsuleLineClick(object sender, RoutedEventArgs e)
+    {
+        double scaleX = _bitmap.PixelWidth > 0 ? PinImage.ActualWidth / _bitmap.PixelWidth : 1;
+        double scaleY = _bitmap.PixelHeight > 0 ? PinImage.ActualHeight / _bitmap.PixelHeight : 1;
+        var lines = _selectedWords.GroupBy(w => Math.Round(w.Y * scaleY / 10)).ToList();
+        foreach (var lineGroup in lines)
+        {
+            double left = lineGroup.Min(w => w.X * scaleX);
+            double right = lineGroup.Max(w => (w.X + w.Width) * scaleX);
+            double bottom = lineGroup.Max(w => (w.Y + w.Height) * scaleY);
+
+            var line = new Line
+            {
+                X1 = left,
+                Y1 = bottom,
+                X2 = right,
+                Y2 = bottom,
+                Stroke = new SolidColorBrush(Color.FromRgb(0x3B, 0x82, 0xF6)),
+                StrokeThickness = 2
+            };
+            AnnotationCanvas.Children.Add(line);
+            _annotationHistory.Add(line);
+        }
+        ClearTextSelection();
+    }
+
+    private void OnCapsuleStrikethroughClick(object sender, RoutedEventArgs e)
+    {
+        double scaleX = _bitmap.PixelWidth > 0 ? PinImage.ActualWidth / _bitmap.PixelWidth : 1;
+        double scaleY = _bitmap.PixelHeight > 0 ? PinImage.ActualHeight / _bitmap.PixelHeight : 1;
+        var lines = _selectedWords.GroupBy(w => Math.Round(w.Y * scaleY / 10)).ToList();
+        foreach (var lineGroup in lines)
+        {
+            double left = lineGroup.Min(w => w.X * scaleX);
+            double right = lineGroup.Max(w => (w.X + w.Width) * scaleX);
+            double midY = lineGroup.Average(w => (w.Y + w.Height / 2) * scaleY);
+
+            var line = new Line
+            {
+                X1 = left,
+                Y1 = midY,
+                X2 = right,
+                Y2 = midY,
+                Stroke = new SolidColorBrush(Color.FromRgb(0x9C, 0xA3, 0xAF)),
+                StrokeThickness = 2
+            };
+            AnnotationCanvas.Children.Add(line);
+            _annotationHistory.Add(line);
+        }
+        ClearTextSelection();
+    }
+
+    private async void OnCapsuleTranslateClick(object sender, RoutedEventArgs e)
+    {
+        if (_selectedWords.Count == 0 || _translationService == null || _configuration == null)
+            return;
+
+        var text = string.Join(" ", _selectedWords.Select(w => w.Text));
+        ClearTextSelection();
+
+        try
+        {
+            var result = await _translationService.TranslateAsync(
+                text,
+                _configuration.TargetLanguage,
+                _configuration.SourceLanguage,
+                _configuration);
+
+            var window = new ScreenTranslationWindow(
+                text,
+                result.Text,
+                _bitmap,
+                _translationService,
+                _configuration)
+            {
+                Left = Left + 20,
+                Top = Top + 20
+            };
+            window.Show();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "翻译失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private static Path CreateWavyPath(double left, double right, double y, Color color)
+    {
+        var geometry = new StreamGeometry();
+        using (var ctx = geometry.Open())
+        {
+            ctx.BeginFigure(new Point(left, y), false, false);
+            double step = 6;
+            double amp = 2;
+            bool up = true;
+            for (double x = left; x < right; x += step)
+            {
+                double nextX = Math.Min(right, x + step);
+                double midX = (x + nextX) / 2;
+                double targetY = up ? y - amp : y + amp;
+                ctx.QuadraticBezierTo(new Point(midX, targetY), new Point(nextX, y), true, false);
+                up = !up;
+            }
+        }
+        geometry.Freeze();
+        return new Path
+        {
+            Data = geometry,
+            Stroke = new SolidColorBrush(color),
+            StrokeThickness = 1.5
+        };
     }
 
     private void OnCloseClick(object sender, RoutedEventArgs e)

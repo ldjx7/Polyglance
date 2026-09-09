@@ -42,7 +42,7 @@ public partial class ScreenSelectionWindow : Window
     private readonly BitmapSource _fullScreenBitmap;
     private readonly Rect _screenBounds;
     private readonly TranslationService _translationService;
-    private readonly AppConfiguration _config;
+    private readonly AppConfiguration? _config;
     private readonly ScreenshotCaptureIntent _captureIntent;
     private readonly Action<string> _colorClipboardWriter;
 
@@ -1287,27 +1287,59 @@ public partial class ScreenSelectionWindow : Window
                 break;
 
             case "OCR":
-                try
+                if (OcrWorkspaceWindow.ActiveContinuousInstance != null && OcrWorkspaceWindow.ActiveContinuousInstance.IsLoaded)
                 {
-                    var document = await WindowsMediaOcr.RecognizeDocumentAsync(cropped);
-                    if (string.IsNullOrWhiteSpace(document.FullText))
-                    {
-                        throw new WindowsOcrException("当前截图中没有识别到文字。");
-                    }
-                    var ocrWindow = new OcrSelectionWindow(
-                        cropped,
-                        document,
-                        _translationService,
-                        _config,
-                        SelectedScreenFrame());
-                    ocrWindow.Show();
-                    ocrWindow.Activate();
+                    var activeInstance = OcrWorkspaceWindow.ActiveContinuousInstance;
+                    activeInstance.StartPendingAppend(cropped);
+                    activeInstance.Activate();
                     Close();
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var document = await OcrService.RecognizeDocumentAsync(cropped);
+                            await Dispatcher.InvokeAsync(() => activeInstance.FinishPendingAppend(cropped, document));
+                        }
+                        catch (Exception ex)
+                        {
+                            await Dispatcher.InvokeAsync(() => activeInstance.CancelPendingAppend(ex));
+                        }
+                    });
+                    break;
                 }
-                catch (Exception error)
+
+                var workspaceWindow = new OcrWorkspaceWindow(
+                    cropped,
+                    null,
+                    _translationService,
+                    _config);
+                workspaceWindow.Show();
+                workspaceWindow.Activate();
+                Close();
+
+                _ = Task.Run(async () =>
                 {
-                    ShowCaptureError("OCR 识别失败", error);
-                }
+                    try
+                    {
+                        var document = await OcrService.RecognizeDocumentAsync(cropped);
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            workspaceWindow.SetDocument(document);
+                            if (_config?.OcrAutoCopyNextTime == true)
+                            {
+                                var mode = (Polyglance.Core.Services.TextFormattingMode)Math.Clamp(_config.OcrDefaultFormatting, 0, 3);
+                                var cleaned = TextFormattingService.Format(document.Lines, mode);
+                                Clipboard.SetText(cleaned);
+                                System.Media.SystemSounds.Asterisk.Play();
+                                App.ShowNotification("Polyglance 文字识别", $"已识别并复制 {cleaned.Length} 个字符到剪贴板。");
+                            }
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        await Dispatcher.InvokeAsync(() => workspaceWindow.SetError(ex.Message));
+                    }
+                });
                 break;
 
             case "Barcode":
@@ -1362,7 +1394,7 @@ public partial class ScreenSelectionWindow : Window
                 Cursor = Cursors.Wait;
                 try
                 {
-                    var document = await WindowsMediaOcr.RecognizeDocumentAsync(cropped);
+                    var document = await OcrService.RecognizeDocumentAsync(cropped);
                     if (string.IsNullOrWhiteSpace(document.FullText))
                     {
                         throw new WindowsOcrException("当前截图中没有识别到文字。");
@@ -1400,7 +1432,7 @@ public partial class ScreenSelectionWindow : Window
             case "ScreenTranslation":
                 try
                 {
-                    var document = await WindowsMediaOcr.RecognizeDocumentAsync(cropped);
+                    var document = await OcrService.RecognizeDocumentAsync(cropped);
                     if (document.Lines.Count == 0)
                     {
                         throw new WindowsOcrException("当前截图中没有识别到文字。");

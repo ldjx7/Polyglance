@@ -44,6 +44,29 @@
                                FontWeight="SemiBold"
                                HorizontalAlignment="Center"/>
                 </Border>
+                <!-- Text Selection Capsule Menu (PixPin Style) -->
+                <Border x:Name="TextCapsuleBar"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top"
+                        Background="#EE202124"
+                        CornerRadius="16"
+                        Padding="6,3"
+                        Visibility="Collapsed"
+                        Panel.ZIndex="100">
+                    <Border.Effect>
+                        <DropShadowEffect Color="#000000" Opacity="0.35" BlurRadius="12" ShadowDepth="2" Direction="270"/>
+                    </Border.Effect>
+                    <StackPanel Orientation="Horizontal">
+                        <Button x:Name="BtnCapsuleCopy" Content="复制" ToolTip="复制文本" Height="24" Padding="8,0" Background="Transparent" Foreground="#FFFFFF" BorderThickness="0" Cursor="Hand" Click="OnCapsuleCopyClick"/>
+                        <Rectangle Width="1" Height="14" Fill="#40FFFFFF" Margin="2,0"/>
+                        <Button x:Name="BtnCapsuleHighlight" Content="荧光笔" ToolTip="荧光高亮" Height="24" Padding="8,0" Background="Transparent" Foreground="#FDE047" BorderThickness="0" Cursor="Hand" Click="OnCapsuleHighlightClick"/>
+                        <Button x:Name="BtnCapsuleWavy" Content="波浪线" ToolTip="波浪下划线" Height="24" Padding="8,0" Background="Transparent" Foreground="#EF4444" BorderThickness="0" Cursor="Hand" Click="OnCapsuleWavyClick"/>
+                        <Button x:Name="BtnCapsuleLine" Content="直线" ToolTip="直线下划线" Height="24" Padding="8,0" Background="Transparent" Foreground="#3B82F6" BorderThickness="0" Cursor="Hand" Click="OnCapsuleLineClick"/>
+                        <Button x:Name="BtnCapsuleStrikethrough" Content="删除线" ToolTip="删除线" Height="24" Padding="8,0" Background="Transparent" Foreground="#9CA3AF" BorderThickness="0" Cursor="Hand" Click="OnCapsuleStrikethroughClick"/>
+                        <Rectangle Width="1" Height="14" Fill="#40FFFFFF" Margin="2,0"/>
+                        <Button x:Name="BtnCapsuleTranslate" Content="翻译" ToolTip="翻译选中文本" Height="24" Padding="8,0" Background="Transparent" Foreground="#A78BFA" BorderThickness="0" Cursor="Hand" Click="OnCapsuleTranslateClick"/>
+                    </StackPanel>
+                </Border>
             </Grid>
             <controls:ScreenshotToolbar x:Name="AnnotationToolbar"
                                         Visibility="Collapsed"
@@ -57,7 +80,7 @@
                 <MenuItem Header="保存图片 (Save)..." Click="OnSaveClick"/>
                 <Separator/>
                 <MenuItem x:Name="ColorPickerMenuItem" Header="取色" Click="OnColorPickerClick"/>
-                <MenuItem x:Name="OcrMenuItem" Header="OCR 文字选择" Click="OnOcrClick"/>
+                <MenuItem x:Name="OcrMenuItem" Header="文字识别 (OCR)" Click="OnOcrClick"/>
                 <MenuItem x:Name="TranslateMenuItem" Header="截图翻译" Click="OnTranslateClick"/>
                 <Separator/>
                 <MenuItem Header="透明度 (Opacity)">

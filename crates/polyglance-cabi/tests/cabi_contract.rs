@@ -3,12 +3,16 @@ use polyglance_cabi::engine::{
     STREAM_EVENT_DELTA, STREAM_EVENT_DONE, polyglance_engine_free, polyglance_engine_new,
     polyglance_stream_event_parse, polyglance_translate,
 };
+use polyglance_cabi::formatting::{
+    polyglance_text_apply_pangu_spacing, polyglance_text_format, polyglance_text_is_cjk_scalar,
+    polyglance_text_remove_extraneous_spaces, polyglance_text_smart_merge_lines,
+};
 use polyglance_cabi::geometry::{
     CPoint, CRect, POLYGLANCE_SELECTION_MOVE, POLYGLANCE_SELECTION_RESIZE_RIGHT,
     POLYGLANCE_SELECTION_RESIZE_TOP_LEFT, polyglance_selection_edit_target,
     polyglance_selection_edited, polyglance_selection_expanded_toward, polyglance_selection_rect,
 };
-use polyglance_cabi::layout::polyglance_layout_paragraphs;
+use polyglance_cabi::layout::{polyglance_layout_format_text, polyglance_layout_paragraphs};
 use polyglance_cabi::recording::{
     CEncodingProfile, polyglance_recording_calculate_output, polyglance_recording_get_profile,
 };
@@ -19,8 +23,8 @@ use polyglance_cabi::stitch::{
 };
 use polyglance_cabi::{
     POLYGLANCE_ERR_INVALID_CONFIG, POLYGLANCE_ERR_INVALID_INPUT, POLYGLANCE_ERR_INVALID_RESPONSE,
-    POLYGLANCE_ERR_PANIC, POLYGLANCE_OK, ffi_status, owned_bytes_into_raw, polyglance_free_buffer,
-    polyglance_free_string,
+    POLYGLANCE_ERR_NULL_PTR, POLYGLANCE_ERR_PANIC, POLYGLANCE_OK, ffi_status, owned_bytes_into_raw,
+    polyglance_free_buffer, polyglance_free_string,
 };
 use std::ffi::{CStr, CString};
 use std::io::{Read, Write};
@@ -409,6 +413,28 @@ fn test_layout_paragraphs_cabi() {
 }
 
 #[test]
+fn test_layout_format_text_cabi() {
+    unsafe {
+        let lines_json = CString::new(
+            r#"[
+            {"text": "First line of text", "x": 10.0, "y": 10.0, "width": 200.0, "height": 18.0},
+            {"text": "second line of text", "x": 10.0, "y": 32.0, "width": 200.0, "height": 18.0}
+        ]"#,
+        )
+        .unwrap();
+
+        let mut out_text = std::ptr::null_mut();
+        let ret = polyglance_layout_format_text(lines_json.as_ptr(), 0, &mut out_text);
+        assert_eq!(ret, POLYGLANCE_OK);
+        assert!(!out_text.is_null());
+
+        let out_str = CStr::from_ptr(out_text).to_str().unwrap();
+        assert_eq!(out_str, "First line of text second line of text");
+        polyglance_free_string(out_text);
+    }
+}
+
+#[test]
 fn test_alignment_pairs_cabi() {
     unsafe {
         let source = CString::new("Hello world. How are you?").unwrap();
@@ -462,4 +488,97 @@ fn test_recording_profiles_cabi() {
         assert!(out_h > 0.0);
         assert!(bitrate > 0);
     }
+}
+
+#[test]
+fn test_text_format_cabi() {
+    unsafe {
+        let text = CString::new("这是第一行具有OCR\n识别能力的文本。").unwrap();
+
+        let mut out_text = std::ptr::null_mut();
+        let ret = polyglance_text_format(text.as_ptr(), 0, &mut out_text);
+        assert_eq!(ret, POLYGLANCE_OK);
+        assert!(!out_text.is_null());
+
+        let out_str = CStr::from_ptr(out_text).to_str().unwrap();
+        assert_eq!(out_str, "这是第一行具有 OCR 识别能力的文本。");
+        polyglance_free_string(out_text);
+    }
+}
+
+#[test]
+fn test_text_format_falls_back_to_smart_merge_for_an_unknown_mode() {
+    unsafe {
+        let text = CString::new("具有OCR\n识别能力").unwrap();
+
+        let mut out_text = std::ptr::null_mut();
+        let ret = polyglance_text_format(text.as_ptr(), 200, &mut out_text);
+        assert_eq!(ret, POLYGLANCE_OK);
+
+        let out_str = CStr::from_ptr(out_text).to_str().unwrap();
+        assert_eq!(out_str, "具有 OCR 识别能力");
+        polyglance_free_string(out_text);
+    }
+}
+
+#[test]
+fn test_text_transforms_cabi() {
+    unsafe {
+        for (input, expected, transform) in [
+            (
+                "这是一个由于换行产生的\n句子被切断了。",
+                "这是一个由于换行产生的句子被切断了。",
+                polyglance_text_smart_merge_lines
+                    as unsafe extern "C" fn(
+                        *const std::ffi::c_char,
+                        *mut *mut std::ffi::c_char,
+                    ) -> i32,
+            ),
+            (
+                "使用Polyglance进行OCR识别",
+                "使用 Polyglance 进行 OCR 识别",
+                polyglance_text_apply_pangu_spacing,
+            ),
+            (
+                "你 好 世 界 。 Hello World!",
+                "你好世界。Hello World!",
+                polyglance_text_remove_extraneous_spaces,
+            ),
+        ] {
+            let text = CString::new(input).unwrap();
+            let mut out_text = std::ptr::null_mut();
+            let ret = transform(text.as_ptr(), &mut out_text);
+            assert_eq!(ret, POLYGLANCE_OK);
+
+            let out_str = CStr::from_ptr(out_text).to_str().unwrap();
+            assert_eq!(out_str, expected, "transforming {input:?}");
+            polyglance_free_string(out_text);
+        }
+    }
+}
+
+#[test]
+fn test_text_exports_reject_null_pointers() {
+    unsafe {
+        let mut out_text = std::ptr::null_mut();
+        assert_eq!(
+            polyglance_text_format(std::ptr::null(), 0, &mut out_text),
+            POLYGLANCE_ERR_NULL_PTR
+        );
+
+        let text = CString::new("你好").unwrap();
+        assert_eq!(
+            polyglance_text_smart_merge_lines(text.as_ptr(), std::ptr::null_mut()),
+            POLYGLANCE_ERR_NULL_PTR
+        );
+    }
+}
+
+#[test]
+fn test_text_is_cjk_scalar_cabi() {
+    assert!(polyglance_text_is_cjk_scalar('漢' as u32));
+    assert!(polyglance_text_is_cjk_scalar('，' as u32));
+    assert!(!polyglance_text_is_cjk_scalar('a' as u32));
+    assert!(!polyglance_text_is_cjk_scalar(0xD800));
+    assert!(!polyglance_text_is_cjk_scalar(0x11_0000));
 }
