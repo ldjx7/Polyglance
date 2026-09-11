@@ -6,10 +6,14 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+hex = "0.4.3"
+hmac = "0.13.0"
 html-escape.workspace = true
+md-5 = "0.11.0"
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.11.0"
 thiserror.workspace = true
 translator-core.workspace = true
 

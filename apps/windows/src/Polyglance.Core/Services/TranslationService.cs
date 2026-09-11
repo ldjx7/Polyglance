@@ -26,19 +26,61 @@ public sealed class TranslationService : IDisposable
         string text,
         string targetLanguage,
         string? sourceLanguage,
-        AppConfiguration config)
+        AppConfiguration config,
+        string? providerOverride = null)
     {
         if (_disposed || _engine == IntPtr.Zero)
             throw new ObjectDisposedException(nameof(TranslationService));
 
         return Task.Run(() =>
         {
+            string effectiveProvider = (providerOverride ?? config.Provider).ToLowerInvariant();
+            string endpoint = config.Endpoint;
+            string apiKey = config.ApiKey;
+            string model = config.Model;
+            string? prompt = null;
+
+            var customMatch = config.CustomAIConfigs?.Find(c => string.Equals(c.Id, effectiveProvider, StringComparison.OrdinalIgnoreCase));
+            if (customMatch != null)
+            {
+                endpoint = customMatch.Endpoint;
+                apiKey = customMatch.ApiKey;
+                model = customMatch.Model;
+                prompt = string.IsNullOrWhiteSpace(customMatch.Prompt) ? null : customMatch.Prompt;
+            }
+            else
+            {
+                switch (effectiveProvider)
+                {
+                    case "deepl":
+                        endpoint = config.DeeplEndpoint;
+                        apiKey = config.DeeplAuthKey;
+                        break;
+                    case "baidu":
+                        endpoint = "";
+                        apiKey = $"{config.BaiduAppId}:{config.BaiduSecretKey}";
+                        break;
+                    case "youdao":
+                        endpoint = "";
+                        apiKey = $"{config.YoudaoAppKey}:{config.YoudaoSecret}";
+                        break;
+                    case "volcano":
+                    case "volcengine":
+                        endpoint = "";
+                        apiKey = string.IsNullOrEmpty(config.VolcanoSecretKey)
+                            ? config.VolcanoAccessKey
+                            : $"{config.VolcanoAccessKey}:{config.VolcanoSecretKey}";
+                        break;
+                }
+            }
+
             var input = new
             {
-                provider = config.Provider.ToLowerInvariant(),
-                endpoint = config.Endpoint,
-                api_key = config.ApiKey,
-                model = config.Model,
+                provider = effectiveProvider,
+                endpoint = endpoint,
+                api_key = apiKey,
+                model = model,
+                prompt = prompt,
                 text = text,
                 source_language = sourceLanguage,
                 target_language = targetLanguage
@@ -52,9 +94,16 @@ public sealed class TranslationService : IDisposable
                 {
                     1 => "输入文本内容无效",
                     2 => "服务配置无效，请在偏好设置中检查",
-                    3 => "未配置有效 API Key（请在偏好设置中填写 OpenAI / DeepSeek 等兼容 Key）",
+                    3 => effectiveProvider switch
+                    {
+                        "deepl" => "未配置 DeepL Auth Key，请在偏好设置中填写",
+                        "baidu" => "未配置百度翻译 AppID 或密钥，请在偏好设置中填写",
+                        "youdao" => "未配置有道翻译 AppKey 或密钥，请在偏好设置中填写",
+                        "volcano" or "volcengine" => "未配置火山翻译 AccessKey 或 SecretKey，请在偏好设置中填写",
+                        _ => "未配置有效 API Key（请在偏好设置中填写相应 API Key）"
+                    },
                     4 => "请求频次超限，请稍后重试",
-                    5 => config.Provider.Contains("google", StringComparison.OrdinalIgnoreCase)
+                    5 => effectiveProvider.Contains("google", StringComparison.OrdinalIgnoreCase)
                         ? "无法直连 Google 翻译服务器（国内网络需开启代理或推荐切换至 Microsoft 翻译）"
                         : "网络连接失败，请检查网络连接或系统代理",
                     6 => "翻译服务商响应异常",

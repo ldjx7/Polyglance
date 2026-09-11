@@ -13,6 +13,11 @@ final class GlobalHotKeyManager {
     var onRestoreMostRecentPin: (() -> Void)?
     var onScreenTranslation: (() -> Void)?
     var onOpenTranslator: (() -> Void)?
+    var onOcrTranslate: (() -> Void)?
+    var onOcrWorkspace: (() -> Void)?
+    var onOcrTranslationCard: (() -> Void)?
+    var onScreenshotAndCopy: (() -> Void)?
+    var onTranslateAndReplace: (() -> Void)?
 
     private var eventHandler: EventHandlerRef?
     private var hotKeys: [EventHotKeyRef] = []
@@ -88,7 +93,7 @@ final class GlobalHotKeyManager {
                 let manager = Unmanaged<GlobalHotKeyManager>
                     .fromOpaque(userData)
                     .takeUnretainedValue()
-                Task { @MainActor in
+                DispatchQueue.main.async {
                     manager.handleHotKey(id: hotKeyID.id)
                 }
                 return noErr
@@ -149,6 +154,16 @@ final class GlobalHotKeyManager {
             onScreenTranslation?()
         case .openTranslator:
             onOpenTranslator?()
+        case .ocrTranslate:
+            onOcrTranslate?()
+        case .ocrWorkspace:
+            onOcrWorkspace?()
+        case .ocrTranslationCard:
+            onOcrTranslationCard?()
+        case .screenshotAndCopy:
+            onScreenshotAndCopy?()
+        case .translateAndReplace:
+            onTranslateAndReplace?()
         }
     }
 

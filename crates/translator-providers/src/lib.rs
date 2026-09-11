@@ -6,12 +6,16 @@ use std::sync::{Arc, OnceLock};
 
 use crate::openai::ProviderError;
 
+pub mod baidu;
+pub mod deepl;
 pub mod dispatch;
 pub mod free_ai;
 pub mod google;
 pub mod microsoft;
 pub mod openai;
 pub mod streaming;
+pub mod volcano;
+pub mod youdao;
 
 #[derive(Clone)]
 pub(crate) struct SharedHttpClient {

@@ -51,7 +51,7 @@ enum OpenAIStreamParser {
 /// content and languages and nothing else, so a reverse-engineered client can
 /// neither name a model nor rewrite the prompt.
 enum StreamingRequestShape: Sendable {
-    case chatCompletions(model: String, denyDataCollection: Bool)
+    case chatCompletions(model: String, denyDataCollection: Bool, prompt: String?)
     case freeTranslate
 }
 
@@ -66,7 +66,8 @@ struct OpenAIStreamingConfiguration: Sendable {
         endpoint: String,
         apiKey: String,
         model: String,
-        denyDataCollection: Bool
+        denyDataCollection: Bool,
+        prompt: String? = nil
     ) throws {
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -78,9 +79,11 @@ struct OpenAIStreamingConfiguration: Sendable {
         }
         self.endpoint = url
         self.apiKey = trimmedKey
+        let cleanPrompt = prompt?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.shape = .chatCompletions(
             model: trimmedModel,
-            denyDataCollection: denyDataCollection
+            denyDataCollection: denyDataCollection,
+            prompt: (cleanPrompt?.isEmpty ?? true) ? nil : cleanPrompt
         )
     }
 
@@ -99,7 +102,7 @@ struct OpenAIStreamingConfiguration: Sendable {
 
     /// Empty for the bundled service, which names its own model server-side.
     var model: String {
-        guard case let .chatCompletions(model, _) = shape else { return "" }
+        guard case let .chatCompletions(model, _, _) = shape else { return "" }
         return model
     }
 
@@ -107,14 +110,15 @@ struct OpenAIStreamingConfiguration: Sendable {
         let url: URL?
         let body: String
         switch shape {
-        case let .chatCompletions(model, denyDataCollection):
+        case let .chatCompletions(model, denyDataCollection, prompt):
             url = URL(string: streamChatCompletionsUrl(endpoint: endpoint.absoluteString))
-            body = streamRequestBody(
+            body = streamRequestBodyWithPrompt(
                 model: model,
                 text: request.text,
                 sourceLanguage: request.sourceLanguage,
                 targetLanguage: request.targetLanguage,
-                denyDataCollection: denyDataCollection
+                denyDataCollection: denyDataCollection,
+                prompt: prompt
             )
         case .freeTranslate:
             url = URL(string: streamFreeTranslateUrl(endpoint: endpoint.absoluteString))
@@ -130,7 +134,7 @@ struct OpenAIStreamingConfiguration: Sendable {
 
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
-        urlRequest.timeoutInterval = 60
+        urlRequest.timeoutInterval = 15
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         if !apiKey.isEmpty {
@@ -154,10 +158,17 @@ final class OpenAIStreamingTranslationService: @unchecked Sendable {
 
     init(
         configuration: OpenAIStreamingConfiguration,
-        session: URLSession = .shared
+        session: URLSession? = nil
     ) {
         self.configuration = configuration
-        self.session = session
+        if let session {
+            self.session = session
+        } else {
+            let sessionConfig = URLSessionConfiguration.default
+            sessionConfig.timeoutIntervalForRequest = 15
+            sessionConfig.timeoutIntervalForResource = 30
+            self.session = URLSession(configuration: sessionConfig)
+        }
     }
 
     func deltas(
@@ -194,6 +205,8 @@ final class OpenAIStreamingTranslationService: @unchecked Sendable {
                     continuation.finish()
                 } catch is CancellationError {
                     continuation.finish()
+                } catch let urlError as URLError where urlError.code == .timedOut {
+                    continuation.finish(throwing: OpenAIStreamingError.timeout)
                 } catch {
                     continuation.finish(throwing: error)
                 }
@@ -209,6 +222,7 @@ enum OpenAIStreamingError: LocalizedError {
     case provider(String)
     case httpStatus(Int)
     case responseTooLarge
+    case timeout
 
     var errorDescription: String? {
         switch self {
@@ -231,6 +245,8 @@ enum OpenAIStreamingError: LocalizedError {
             }
         case .responseTooLarge:
             "翻译结果过大，已停止接收"
+        case .timeout:
+            "翻译请求超时，请检查网络连接"
         }
     }
 }

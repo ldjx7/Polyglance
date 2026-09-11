@@ -16,6 +16,7 @@ pub struct OpenAiCompatibleConfig {
     api_key: String,
     model: String,
     deny_data_collection: bool,
+    prompt: Option<String>,
 }
 
 impl OpenAiCompatibleConfig {
@@ -23,6 +24,15 @@ impl OpenAiCompatibleConfig {
         endpoint: impl AsRef<str>,
         api_key: impl Into<String>,
         model: impl Into<String>,
+    ) -> Result<Self, ProviderError> {
+        Self::with_prompt(endpoint, api_key, model, None)
+    }
+
+    pub fn with_prompt(
+        endpoint: impl AsRef<str>,
+        api_key: impl Into<String>,
+        model: impl Into<String>,
+        prompt: Option<String>,
     ) -> Result<Self, ProviderError> {
         let api_key = api_key.into().trim().to_owned();
         if api_key.is_empty() {
@@ -51,11 +61,16 @@ impl OpenAiCompatibleConfig {
         let normalized_path = endpoint.path().trim_end_matches('/').to_owned();
         endpoint.set_path(&normalized_path);
 
+        let clean_prompt = prompt
+            .map(|p| p.trim().to_owned())
+            .filter(|p| !p.is_empty());
+
         Ok(Self {
             endpoint,
             api_key,
             model,
             deny_data_collection: false,
+            prompt: clean_prompt,
         })
     }
 
@@ -141,14 +156,29 @@ impl OpenAiCompatibleProvider {
 }
 
 pub fn build_request_body(config: &OpenAiCompatibleConfig, request: &TranslationRequest) -> Value {
-    let source_instruction = request
-        .source_language()
-        .map(|language| format!(" from {language}"))
-        .unwrap_or_else(|| " after detecting its language".to_owned());
-    let system_prompt = format!(
-        "Translate the user's text{source_instruction} to {}. Return only the translated text, without explanations or quotation marks.",
-        request.target_language()
-    );
+    let system_prompt = if let Some(custom) = &config.prompt {
+        let trimmed = custom.trim();
+        if !trimmed.is_empty() {
+            let src = request
+                .source_language()
+                .map(|l| l.as_str())
+                .unwrap_or("auto");
+            let target = request.target_language().as_str();
+            let mut prompt = trimmed
+                .replace("{source_language}", src)
+                .replace("{target_language}", target)
+                .replace("{source}", src)
+                .replace("{target}", target);
+            if !prompt.contains(target) {
+                prompt.push_str(&format!("\nTranslate to {target}. Return only the translated text."));
+            }
+            prompt
+        } else {
+            default_system_prompt(request)
+        }
+    } else {
+        default_system_prompt(request)
+    };
 
     let mut body = json!({
         "model": config.model,
@@ -162,6 +192,17 @@ pub fn build_request_body(config: &OpenAiCompatibleConfig, request: &Translation
         body["provider"] = json!({"data_collection": "deny"});
     }
     body
+}
+
+fn default_system_prompt(request: &TranslationRequest) -> String {
+    let source_instruction = request
+        .source_language()
+        .map(|language| format!(" from {language}"))
+        .unwrap_or_else(|| " after detecting its language".to_owned());
+    format!(
+        "Translate the user's text{source_instruction} to {}. Return only the translated text, without explanations or quotation marks.",
+        request.target_language()
+    )
 }
 
 #[derive(Debug, Eq, PartialEq)]

@@ -14,6 +14,7 @@ fn valid_input() -> TranslationInput {
         text: "Hello".to_owned(),
         source_language: Some("en".to_owned()),
         target_language: "zh-CN".to_owned(),
+        prompt: None,
     }
 }
 

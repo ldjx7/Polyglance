@@ -52,13 +52,13 @@ public sealed class AnnotationInteractionTests
 
             Assert.True(toolbar.IsOcrTranslationBusy);
             Assert.False(toolbar.BtnTranslate.IsEnabled);
-            Assert.Equal("正在识别并翻译…", toolbar.BtnTranslate.ToolTip);
+            Assert.Equal("正在OCR翻译…", toolbar.BtnTranslate.ToolTip);
 
             toolbar.SetOcrTranslationBusy(false);
 
             Assert.False(toolbar.IsOcrTranslationBusy);
             Assert.True(toolbar.BtnTranslate.IsEnabled);
-            Assert.Equal("识别并翻译", toolbar.BtnTranslate.ToolTip);
+            Assert.Equal("OCR翻译", toolbar.BtnTranslate.ToolTip);
         });
     }
 

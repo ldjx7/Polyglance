@@ -120,6 +120,8 @@ mkdir -p "$app_bundle/Contents/MacOS" "$app_bundle/Contents/Resources"
 cp "$binary_directory/Polyglance" "$app_bundle/Contents/MacOS/Polyglance"
 cp "$macos_root/Resources/Info.plist" "$app_bundle/Contents/Info.plist"
 cp "$macos_root/Resources/Polyglance.icns" "$app_bundle/Contents/Resources/Polyglance.icns"
+cp "$macos_root/Resources/PolyglanceIcon.png" "$app_bundle/Contents/Resources/PolyglanceIcon.png"
+cp -R "$macos_root/Resources/ProviderIcons" "$app_bundle/Contents/Resources/ProviderIcons"
 
 sparkle_framework="$macos_root/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
 if [[ ! -d "$sparkle_framework" ]]; then

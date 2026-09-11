@@ -58,13 +58,45 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="SegmentTabStyle" TargetType="RadioButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Padding" Value="16,0"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="Normal"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="TabBorder"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="TabBorder" Property="Background" Value="#0A000000"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="TabBorder" Property="Background" Value="#0A84FF"/>
+                                <Setter Property="Foreground" Value="White"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- 顶部标题栏 -->
@@ -73,7 +105,7 @@
         <!-- 主体布局：左侧导航 + 右侧内容 -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="180"/>
+                <ColumnDefinition Width="190"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
@@ -82,173 +114,846 @@
                     Background="{DynamicResource SolidBackgroundFillColorQuarternaryBrush}"
                     BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                     BorderThickness="0,0,1,0"
-                    Padding="12,14,12,14">
-                <StackPanel>
-                    <RadioButton x:Name="NavGeneral" Style="{StaticResource NavItemStyle}" IsChecked="True" Tag="General" Click="OnNavChanged">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="Settings24" FontSize="17" Margin="0,0,10,0"/>
-                            <TextBlock Text="通用" FontSize="13.5" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </RadioButton>
-
-                    <RadioButton x:Name="NavServices" Style="{StaticResource NavItemStyle}" Tag="Services" Click="OnNavChanged">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="LocalLanguage24" FontSize="17" Margin="0,0,10,0"/>
-                            <TextBlock Text="服务配置" FontSize="13.5" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </RadioButton>
-
-                    <RadioButton x:Name="NavShortcuts" Style="{StaticResource NavItemStyle}" Tag="Shortcuts" Click="OnNavChanged">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="Keyboard24" FontSize="17" Margin="0,0,10,0"/>
-                            <TextBlock Text="快捷键" FontSize="13.5" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </RadioButton>
-
-                    <RadioButton x:Name="NavRecording" Style="{StaticResource NavItemStyle}" Tag="Recording" Click="OnNavChanged">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="Video24" FontSize="17" Margin="0,0,10,0"/>
-                            <TextBlock Text="截图与录屏" FontSize="13.5" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </RadioButton>
-
-                    <RadioButton x:Name="NavToolbar" Style="{StaticResource NavItemStyle}" Tag="Toolbar" Click="OnNavChanged">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="Toolbox24" FontSize="17" Margin="0,0,10,0"/>
-                            <TextBlock Text="工具栏" FontSize="13.5" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </RadioButton>
-
-                    <RadioButton x:Name="NavAbout" Style="{StaticResource NavItemStyle}" Tag="About" Click="OnNavChanged">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="Info24" FontSize="17" Margin="0,0,10,0"/>
-                            <TextBlock Text="更新与关于" FontSize="13.5" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </RadioButton>
-                </StackPanel>
-            </Border>
-
-            <!-- 右侧内容面板区 -->
-            <Grid Grid.Column="1" Margin="20,14,20,12">
-                <!-- 1. 通用 (General) -->
-                <Grid x:Name="PanelGeneral" Visibility="Visible">
+                    Padding="10,12,10,12">
+                <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    <StackPanel Grid.Row="0" Margin="0,0,0,14">
-                        <TextBlock Text="通用设置" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-                        <TextBlock Text="管理应用程序基础运行与启动行为" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,3,0,0"/>
+
+                    <!-- 顶部 Branding (对齐 Mac) -->
+                    <StackPanel Grid.Row="0" Margin="4,2,0,10">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Image Source="pack://application:,,,/Polyglance;component/Resources/Polyglance.ico" Width="26" Height="26" Margin="0,0,8,0"/>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="Polyglance" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                <TextBlock Text="原生多源翻译与屏幕工具" FontSize="9.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                            </StackPanel>
+                        </StackPanel>
+                        <Separator Margin="0,10,0,4" Opacity="0.3"/>
                     </StackPanel>
 
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
+                    <!-- 分类导航项 (可滚动) -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel>
+                            <!-- 1. 翻译 Section -->
+                            <TextBlock Text="翻译" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="8,4,0,3"/>
+
+                            <RadioButton x:Name="NavTranslation" Style="{StaticResource NavItemStyle}" Tag="Translation" Click="OnNavChanged">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="LocalLanguage24" FontSize="15" Margin="0,0,10,0"/>
+                                    <TextBlock Text="翻译设置" FontSize="12.5" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+
+                            <RadioButton x:Name="NavFavorites" Style="{StaticResource NavItemStyle}" Tag="Favorites" Click="OnNavChanged">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="Star24" FontSize="15" Margin="0,0,10,0"/>
+                                    <TextBlock Text="收藏夹" FontSize="12.5" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+
+                            <RadioButton x:Name="NavHistory" Style="{StaticResource NavItemStyle}" Tag="History" Click="OnNavChanged">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="History24" FontSize="15" Margin="0,0,10,0"/>
+                                    <TextBlock Text="历史记录" FontSize="12.5" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+
+                            <!-- 2. OCR Section -->
+                            <TextBlock Text="OCR" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="8,10,0,3"/>
+
+                            <RadioButton x:Name="NavOcrSettings" Style="{StaticResource NavItemStyle}" Tag="OcrSettings" Click="OnNavChanged">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="DocumentText24" FontSize="15" Margin="0,0,10,0"/>
+                                    <TextBlock Text="OCR 设置" FontSize="12.5" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+
+                            <!-- 3. 通用 Section -->
+                            <TextBlock Text="通用" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="8,10,0,3"/>
+
+                            <RadioButton x:Name="NavGeneral" Style="{StaticResource NavItemStyle}" IsChecked="True" Tag="General" Click="OnNavChanged">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="Settings24" FontSize="15" Margin="0,0,10,0"/>
+                                    <TextBlock Text="通用设置" FontSize="12.5" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+
+                            <RadioButton x:Name="NavShortcuts" Style="{StaticResource NavItemStyle}" Tag="Shortcuts" Click="OnNavChanged">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="Keyboard24" FontSize="15" Margin="0,0,10,0"/>
+                                    <TextBlock Text="快捷键" FontSize="12.5" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+
+                            <RadioButton x:Name="NavToolbar" Style="{StaticResource NavItemStyle}" Tag="Toolbar" Click="OnNavChanged">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="Toolbox24" FontSize="15" Margin="0,0,10,0"/>
+                                    <TextBlock Text="录屏与工具栏" FontSize="12.5" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+
+                            <RadioButton x:Name="NavAbout" Style="{StaticResource NavItemStyle}" Tag="About" Click="OnNavChanged">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="Info24" FontSize="15" Margin="0,0,10,0"/>
+                                    <TextBlock Text="关于" FontSize="12.5" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- 底部版本信息 -->
+                    <TextBlock x:Name="TxtSidebarVersion" Grid.Row="2" Text="版本 v0.0.4" FontSize="10" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="8,8,0,0"/>
+                </Grid>
+            </Border>
+
+            <!-- 右侧内容区 -->
+            <Grid Grid.Column="1" Margin="20,12,20,12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- 顶部统一 HeaderBar (对齐 Mac) -->
+                <Grid Grid.Row="0" Margin="0,0,0,14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock x:Name="TxtHeaderTitle" Text="通用设置" FontSize="19" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                        <TextBlock x:Name="TxtHeaderSubtitle" Text="系统权限、启动项与基础偏好" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,3,0,0"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock x:Name="TxtStatusMessage" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,14,0"/>
+                        <ui:Button Appearance="Primary" Content="保存设置" Padding="20,6" Click="OnSaveClick"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- 面板切换容器 -->
+                <Grid Grid.Row="1">
+                <!-- 1. 通用 (General) -->
+                <Grid x:Name="PanelGeneral" Visibility="Visible">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
                         <StackPanel>
                             <ui:Card Padding="16,14" Margin="0,0,0,10">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <ui:SymbolIcon Symbol="Power24" FontSize="20" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
                                         <TextBlock Text="开机时自动启动 Polyglance" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                         <TextBlock Text="登录 Windows 后在后台静默启动，并驻留系统托盘" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
                                     </StackPanel>
-                                    <ui:ToggleSwitch x:Name="ChkLaunchAtLogin" Grid.Column="1" VerticalAlignment="Center"/>
+                                    <ui:ToggleSwitch x:Name="ChkLaunchAtLogin" Grid.Column="2" VerticalAlignment="Center"/>
                                 </Grid>
                             </ui:Card>
 
                             <ui:Card Padding="16,14" Margin="0,0,0,10">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <ui:SymbolIcon Symbol="AppGeneric24" FontSize="20" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
                                         <TextBlock Text="关闭主窗口时最小化到系统托盘" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                         <TextBlock Text="点击主窗口关闭按钮时继续在后台保持运行" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
                                     </StackPanel>
-                                    <ui:ToggleSwitch x:Name="ChkMinimizeToTray" Grid.Column="1" VerticalAlignment="Center" IsChecked="True"/>
+                                    <ui:ToggleSwitch x:Name="ChkMinimizeToTray" Grid.Column="2" VerticalAlignment="Center" IsChecked="True"/>
+                                </Grid>
+                            </ui:Card>
+
+                            <ui:Card Padding="16,14" Margin="0,0,0,10">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ui:SymbolIcon Symbol="History24" FontSize="20" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Text="保存已完成截图到历史记录" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock Text="开启后，成功复制或另存为的截图与长截图将自动存入历史记录" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <ui:ToggleSwitch x:Name="ToggleSaveCompletedScreenshotsToHistory" Grid.Column="2" VerticalAlignment="Center"/>
                                 </Grid>
                             </ui:Card>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>
 
-                <!-- 2. 服务配置 (Services) -->
-                <Grid x:Name="PanelServices" Visibility="Collapsed">
+                <!-- 2. 翻译设置 (Translation) -->
+                <Grid x:Name="PanelTranslation" Visibility="Collapsed">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <StackPanel Grid.Row="0" Margin="0,0,0,14">
-                        <TextBlock Text="服务配置" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-                        <TextBlock Text="配置默认翻译服务商、目标语言与大模型 API 参数" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,3,0,0"/>
-                    </StackPanel>
 
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
-                        <StackPanel>
-                            <!-- 默认翻译引擎 -->
-                            <ui:Card Margin="0,0,0,10" Padding="16,14">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Text="默认翻译服务" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-                                        <TextBlock Text="选择截屏、划词与主面板翻译的默认服务商" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
+                    <!-- 顶部服务分类切换胶囊 (对齐 Mac) -->
+                    <Border Grid.Row="0" Background="#0A000000" CornerRadius="8" Padding="3" HorizontalAlignment="Center" Margin="0,0,0,12">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton x:Name="TabServiceTranslation" Style="{StaticResource SegmentTabStyle}" Content="文本翻译" IsChecked="True" Click="OnServiceCategoryChanged"/>
+                            <RadioButton x:Name="TabServiceOcr" Style="{StaticResource SegmentTabStyle}" Content="文本识别" Click="OnServiceCategoryChanged"/>
+                            <RadioButton x:Name="TabServiceTts" Style="{StaticResource SegmentTabStyle}" Content="语音合成" Click="OnServiceCategoryChanged"/>
+                            <RadioButton x:Name="TabServicePreferences" Style="{StaticResource SegmentTabStyle}" Content="偏好设置" Click="OnServiceCategoryChanged"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 分类 1: 文本翻译 (双栏 Master-Detail) -->
+                    <Grid x:Name="ViewServiceTranslation" Grid.Row="1" Visibility="Visible">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="280"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- 左侧服务列表 -->
+                        <Border Grid.Column="0"
+                                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Margin="0,0,12,0">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <ListBox x:Name="ListServiceProviders"
+                                         Grid.Row="0"
+                                         BorderThickness="0"
+                                         Background="Transparent"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ScrollViewer.CanContentScroll="False"
+                                         VirtualizingPanel.IsVirtualizing="False"
+                                         SelectionChanged="OnProviderSelectionChanged">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                            <Setter Property="Padding" Value="8,4"/>
+                                            <Setter Property="Margin" Value="4,1"/>
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="BorderThickness" Value="0"/>
+                                            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="ListBoxItem">
+                                                        <Border x:Name="Bd"
+                                                                Background="{TemplateBinding Background}"
+                                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                                CornerRadius="6"
+                                                                Padding="{TemplateBinding Padding}"
+                                                                SnapsToDevicePixels="True">
+                                                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}"/>
+                                                            </Trigger>
+                                                            <Trigger Property="IsSelected" Value="True">
+                                                                <Setter TargetName="Bd" Property="Background" Value="#1F0078D7"/>
+                                                            </Trigger>
+                                                            <MultiTrigger>
+                                                                <MultiTrigger.Conditions>
+                                                                    <Condition Property="IsSelected" Value="True"/>
+                                                                    <Condition Property="IsMouseOver" Value="True"/>
+                                                                </MultiTrigger.Conditions>
+                                                                <Setter TargetName="Bd" Property="Background" Value="#2E0078D7"/>
+                                                            </MultiTrigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Height="34" Margin="0,2" Background="Transparent"
+                                                  PreviewMouseLeftButtonDown="OnProviderItemPreviewMouseDown"
+                                                  MouseMove="OnProviderItemMouseMove"
+                                                  PreviewMouseLeftButtonUp="OnProviderItemMouseUp">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <Image Grid.Column="0" Source="{Binding IconPath}" Width="18" Height="18" Margin="4,0,8,0" VerticalAlignment="Center"/>
+
+                                                <TextBlock Grid.Column="1" Text="{Binding DisplayName}" FontSize="12.5" FontWeight="Medium" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
+
+                                                <!-- 徽章 (内置 / 秘钥) -->
+                                                <Border Grid.Column="2" Background="{Binding BadgeBackground}" CornerRadius="8" Padding="5,1" VerticalAlignment="Center" Margin="4,0,10,0">
+                                                    <TextBlock Text="{Binding BadgeText}" FontSize="9.5" FontWeight="SemiBold" Foreground="{Binding BadgeForeground}"/>
+                                                </Border>
+
+                                                <!-- 启用/禁用 Switch -->
+                                                <ui:ToggleSwitch Grid.Column="3" IsChecked="{Binding IsEnabled, Mode=TwoWay}" Focusable="False" Click="OnProviderToggleClick" Tag="{Binding}" VerticalAlignment="Center" MinWidth="0" Margin="0,0,2,0"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+
+                                <Separator Grid.Row="1" Margin="0" Background="{DynamicResource CardStrokeColorDefaultBrush}"/>
+
+                                <!-- 底部工具条 (+ - 默认排序) -->
+                                <Grid Grid.Row="2" Margin="8,6,8,6">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <ui:Button x:Name="BtnAddProvider" Appearance="Transparent" Width="26" Height="26" Padding="0" Margin="0,0,4,0" ToolTip="启用服务" Click="OnAddProviderMenuClick">
+                                            <ui:SymbolIcon Symbol="Add16" FontSize="12"/>
+                                        </ui:Button>
+                                        <ui:Button Appearance="Transparent" Width="26" Height="26" Padding="0" ToolTip="禁用选中服务" Click="OnRemoveProviderClick">
+                                            <ui:SymbolIcon Symbol="Subtract16" FontSize="12"/>
+                                        </ui:Button>
                                     </StackPanel>
-                                    <ComboBox x:Name="CmbProvider" Grid.Column="1" Width="190" Height="32" VerticalContentAlignment="Center" Padding="10,0,24,0" FontSize="12.5">
-                                        <ComboBoxItem Content="Microsoft (免费内置)" Tag="microsoft"/>
-                                        <ComboBoxItem Content="Google (免费内置)" Tag="google"/>
-                                        <ComboBoxItem Content="FreeAI (免费内置)" Tag="freeai"/>
-                                        <ComboBoxItem Content="OpenAI 兼容协议" Tag="openaicompatible"/>
-                                    </ComboBox>
+                                    <ui:Button Appearance="Transparent" Content="默认排序" FontSize="11.5" Foreground="#0A84FF" HorizontalAlignment="Right" VerticalAlignment="Center" Padding="6,2" Click="OnResetProviderOrderClick" ToolTip="恢复默认顺序（官方 AI 在首位）"/>
                                 </Grid>
-                            </ui:Card>
+                            </Grid>
+                        </Border>
 
-                            <!-- 默认目标语言 -->
-                            <ui:Card Margin="0,0,0,10" Padding="16,14">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Text="默认目标语言" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-                                        <TextBlock Text="未指定语种时翻译结果的目标语言" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
+                        <!-- 右侧详细配置卡片 -->
+                        <Border Grid.Column="1"
+                                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="18,16">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+                                    <StackPanel>
+                                        <!-- 头部：图标 + 标题 + 副标题 -->
+                                        <Grid Margin="0,0,0,12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Image x:Name="ImgSelectedProvider" Grid.Column="0" Width="28" Height="28" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <TextBlock x:Name="TxtSelectedProviderTitle" Text="官方 AI" FontSize="14.5" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                                <TextBlock x:Name="TxtSelectedProviderSubtitle" Text="官方内置 AI 翻译服务，无需配置密钥" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0"/>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <Separator Margin="0,0,0,14" Background="{DynamicResource CardStrokeColorDefaultBrush}"/>
+
+                                        <!-- 官方 AI -->
+                                        <StackPanel x:Name="FormFreeAi" Visibility="Collapsed">
+                                            <TextBlock Text="官方 AI 翻译服务，无需配置任何 API Key，由 Polyglance 统一内置支持。" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                            <ui:ToggleSwitch x:Name="ChkAiStreamingFreeAi" Content="开启 AI 流式逐字输出" IsChecked="True" Click="OnAiStreamingFreeAiClick"/>
+                                        </StackPanel>
+
+                                        <!-- DeepL -->
+                                        <StackPanel x:Name="FormDeepl" Visibility="Collapsed">
+                                            <TextBlock Text="Auth Key" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4"/>
+                                            <ui:PasswordBox x:Name="TxtDeeplAuthKey" PlaceholderText="00000000-0000-0000-0000-000000000000:fx" Height="32" Padding="8,0,32,0" VerticalContentAlignment="Center" Margin="0,0,0,10"/>
+                                            <TextBlock Text="接口地址 (可选)" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4"/>
+                                            <ui:TextBox x:Name="TxtDeeplEndpoint" PlaceholderText="留空自动匹配 Free/Pro 官方地址" Height="32" Padding="8,0,8,0" VerticalContentAlignment="Center" Margin="0,0,0,8"/>
+                                            <TextBlock Text="前往 DeepL 开发平台 (deepl.com) 注册获取 Auth Key，支持免费版与付费版。" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+
+                                        <!-- 百度翻译 -->
+                                        <StackPanel x:Name="FormBaidu" Visibility="Collapsed">
+                                            <TextBlock Text="APP ID" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4"/>
+                                            <ui:TextBox x:Name="TxtBaiduAppId" PlaceholderText="百度翻译开放平台 AppID" Height="32" Padding="8,0,8,0" VerticalContentAlignment="Center" Margin="0,0,0,10"/>
+                                            <TextBlock Text="密钥 (Secret Key)" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4"/>
+                                            <ui:PasswordBox x:Name="TxtBaiduSecretKey" PlaceholderText="平台生成的密钥" Height="32" Padding="8,0,32,0" VerticalContentAlignment="Center" Margin="0,0,0,8"/>
+                                            <TextBlock Text="前往百度翻译开放平台 (fanyi-api.baidu.com) 注册开通通用翻译 API 获取。" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+
+                                        <!-- 有道翻译 -->
+                                        <StackPanel x:Name="FormYoudao" Visibility="Collapsed">
+                                            <TextBlock Text="应用 ID (AppKey)" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4"/>
+                                            <ui:TextBox x:Name="TxtYoudaoAppKey" PlaceholderText="有道智云 AppKey" Height="32" Padding="8,0,8,0" VerticalContentAlignment="Center" Margin="0,0,0,10"/>
+                                            <TextBlock Text="应用密钥 (AppSecret)" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4"/>
+                                            <ui:PasswordBox x:Name="TxtYoudaoSecret" PlaceholderText="平台生成的密钥" Height="32" Padding="8,0,32,0" VerticalContentAlignment="Center" Margin="0,0,0,8"/>
+                                            <TextBlock Text="前往有道智云平台 (ai.youdao.com) 注册开通自然语言翻译服务获取。" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+
+                                        <!-- 火山翻译 -->
+                                        <StackPanel x:Name="FormVolcano" Visibility="Collapsed">
+                                            <TextBlock Text="AccessKey ID" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4"/>
+                                            <ui:TextBox x:Name="TxtVolcanoAccessKey" PlaceholderText="火山引擎 AccessKey ID" Height="32" Padding="8,0,8,0" VerticalContentAlignment="Center" Margin="0,0,0,10"/>
+                                            <TextBlock Text="Secret AccessKey" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4"/>
+                                            <ui:PasswordBox x:Name="TxtVolcanoSecretKey" PlaceholderText="火山引擎 Secret AccessKey (或 Bearer Token)" Height="32" Padding="8,0,32,0" VerticalContentAlignment="Center" Margin="0,0,0,8"/>
+                                            <TextBlock Text="前往火山引擎控制台 (volcengine.com) 申请机器翻译 API 密钥。" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+
+                                        <!-- OpenAI 兼容 / 自定义 AI -->
+                                        <StackPanel x:Name="FormOpenAi" Visibility="Collapsed">
+                                            <TextBlock x:Name="LblCustomAiName" Text="服务名称" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4" Visibility="Collapsed"/>
+                                            <ui:TextBox x:Name="TxtCustomAiName" PlaceholderText="例如 DeepSeek, Claude 等" Height="32" Padding="8,0,8,0" VerticalContentAlignment="Center" Margin="0,0,0,4" Visibility="Collapsed" TextChanged="OnCustomAiNameChanged"/>
+                                            <TextBlock x:Name="TxtCustomAiNameError" Text="服务名称已存在，请保持唯一" FontSize="10.5" Foreground="#FF3B30" Margin="0,0,0,8" Visibility="Collapsed"/>
+
+                                            <TextBlock Text="服务地址 (Endpoint)" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4"/>
+                                            <ui:TextBox x:Name="TxtEndpoint" PlaceholderText="https://api.openai.com/v1" Height="32" Padding="8,0,8,0" VerticalContentAlignment="Center" Margin="0,0,0,10"/>
+                                            <TextBlock Text="API 密钥 (API Key)" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4"/>
+                                            <ui:PasswordBox x:Name="TxtApiKey" PlaceholderText="sk-..." Height="32" Padding="8,0,32,0" VerticalContentAlignment="Center" Margin="0,0,0,10"/>
+                                            <TextBlock Text="模型名称" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4"/>
+                                            <ui:TextBox x:Name="TxtModel" PlaceholderText="例如 deepseek-chat, gpt-4o-mini" Height="32" Padding="8,0,8,0" VerticalContentAlignment="Center" Margin="0,0,0,12"/>
+
+                                            <TextBlock x:Name="LblCustomAiPrompt" Text="自定义 Prompt (可选)" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4" Visibility="Collapsed"/>
+                                            <ui:TextBox x:Name="TxtCustomAiPrompt" PlaceholderText="支持变量替换：{target_language}、{source_language}。留空则使用系统默认翻译提示词。" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="70" MaxHeight="120" Padding="8,6" Margin="0,0,0,4" Visibility="Collapsed"/>
+                                            <TextBlock x:Name="TxtCustomAiPromptHint" Text="支持变量替换：{target_language}、{source_language}。留空则使用系统默认翻译提示词。" FontSize="10.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" TextWrapping="Wrap" Margin="0,0,0,10" Visibility="Collapsed"/>
+
+                                            <ui:ToggleSwitch x:Name="ChkAiStreaming" Content="开启 AI 流式逐字输出" IsChecked="True" Click="OnAiStreamingOpenAiClick" Margin="0,0,0,12"/>
+
+                                            <ui:Button x:Name="BtnDeleteCustomAi" Appearance="Danger" Content="删除该自定义 AI 服务" Padding="14,4" HorizontalAlignment="Left" Click="OnDeleteCustomAiClick" Visibility="Collapsed"/>
+                                        </StackPanel>
+
+                                        <!-- 内置系统网络服务 (Microsoft, Google) -->
+                                        <StackPanel x:Name="FormBuiltin" Visibility="Collapsed">
+                                            <TextBlock Text="该服务内置系统网络协议，无需额外参数。" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                        </StackPanel>
                                     </StackPanel>
-                                    <ComboBox x:Name="CmbTargetLang" Grid.Column="1" Width="190" Height="32" VerticalContentAlignment="Center" Padding="10,0,24,0" FontSize="12.5" SelectedIndex="0">
-                                        <ComboBoxItem Content="中文 (简体)" Tag="zh-Hans"/>
-                                        <ComboBoxItem Content="英语 (EN)" Tag="en"/>
-                                        <ComboBoxItem Content="日语 (JA)" Tag="ja"/>
-                                        <ComboBoxItem Content="韩语 (KO)" Tag="ko"/>
-                                        <ComboBoxItem Content="法语 (FR)" Tag="fr"/>
-                                        <ComboBoxItem Content="德语 (DE)" Tag="de"/>
-                                        <ComboBoxItem Content="西班牙语" Tag="es"/>
-                                        <ComboBoxItem Content="俄语 (RU)" Tag="ru"/>
-                                    </ComboBox>
-                                </Grid>
-                            </ui:Card>
+                                </ScrollViewer>
 
-                            <!-- 自定义大模型参数 -->
-                            <ui:CardExpander Header="自定义大模型 (OpenAI 兼容协议)" IsExpanded="True" Margin="0,0,0,10">
-                                <StackPanel Margin="0,8,0,4">
-                                    <TextBlock Text="API Endpoint" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4"/>
-                                    <ui:TextBox x:Name="TxtEndpoint" PlaceholderText="https://api.openai.com/v1" Height="32" Margin="0,0,0,10"/>
+                                <Separator Grid.Row="1" Margin="0,12,0,12" Background="{DynamicResource CardStrokeColorDefaultBrush}"/>
 
-                                    <TextBlock Text="API Key" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4"/>
-                                    <ui:PasswordBox x:Name="TxtApiKey" PlaceholderText="sk-..." Height="32" Margin="0,0,0,10"/>
-
-                                    <TextBlock Text="Model 模型名称" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4"/>
-                                    <ui:TextBox x:Name="TxtModel" PlaceholderText="gpt-4o-mini / deepseek-chat" Height="32" Margin="0,0,0,12"/>
-
-                                    <ui:ToggleSwitch x:Name="ChkAiStreaming" Content="启用 AI 流式实时逐字输出" IsChecked="True"/>
+                                <!-- 底部撤销与保存按钮 -->
+                                <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <ui:Button Appearance="Secondary" Content="撤销" Padding="18,5" Margin="0,0,8,0" Click="OnCancelProviderSettingsClick"/>
+                                    <ui:Button Appearance="Primary" Content="保存" Padding="18,5" Click="OnSaveClick"/>
                                 </StackPanel>
-                            </ui:CardExpander>
+                            </Grid>
+                        </Border>
+                    </Grid>
+
+                    <!-- 分类 2: 文本识别 (OCR) -->
+                    <Grid x:Name="ViewServiceOcr" Grid.Row="1" Visibility="Collapsed">
+                        <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Border Width="56" Height="56" CornerRadius="16" Background="#180D9488" Margin="0,0,0,14" HorizontalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="ScanType24" FontSize="28" Foreground="#0D9488" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <TextBlock Text="Windows Media OCR 离线文字识别" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" HorizontalAlignment="Center"/>
+                                <TextBlock Text="由 Windows 系统原生 OCR 引擎支持，支持多语言离线高精度识别，免配置开箱即用。" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" MaxWidth="380" TextAlignment="Center" Margin="0,8,0,14" HorizontalAlignment="Center"/>
+                                <Border Background="#1810B981" CornerRadius="12" Padding="10,3" HorizontalAlignment="Center">
+                                    <TextBlock Text="内置生效" FontSize="11" FontWeight="SemiBold" Foreground="#10B981"/>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+
+                    <!-- 分类 3: 语音合成 (TTS) -->
+                    <Grid x:Name="ViewServiceTts" Grid.Row="1" Visibility="Collapsed">
+                        <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="24">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Border Width="56" Height="56" CornerRadius="16" Background="#184F46E5" Margin="0,0,0,14" HorizontalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="Speaker224" FontSize="28" Foreground="#4F46E5" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <TextBlock Text="Windows SAPI 离线语音合成" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" HorizontalAlignment="Center"/>
+                                <TextBlock Text="由 Windows 系统语音合成服务提供支持，内置高品质多国语言发音人，免配置开箱即用。" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" MaxWidth="380" TextAlignment="Center" Margin="0,8,0,14" HorizontalAlignment="Center"/>
+                                <Border Background="#1810B981" CornerRadius="12" Padding="10,3" HorizontalAlignment="Center">
+                                    <TextBlock Text="内置生效" FontSize="11" FontWeight="SemiBold" Foreground="#10B981"/>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+
+                    <!-- 分类 4: 偏好设置 -->
+                    <Grid x:Name="ViewServicePreferences" Grid.Row="1" Visibility="Collapsed">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
+                            <StackPanel>
+                                <!-- 默认翻译服务 -->
+                                <ui:Card Margin="0,0,0,10" Padding="16,14">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                            <TextBlock Text="默认翻译服务" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                            <TextBlock Text="选择截屏、划词与主面板翻译的默认服务商" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
+                                        </StackPanel>
+                                        <ComboBox x:Name="CmbProvider" Grid.Column="1" Width="190" Height="32" VerticalContentAlignment="Center" Padding="8,0,24,0" FontSize="12.5">
+                                            <ComboBoxItem Tag="freeai">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Image Source="pack://application:,,,/Polyglance;component/Resources/ProviderIcons/free-ai.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="官方 AI (免费内置)" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </ComboBoxItem>
+                                            <ComboBoxItem Tag="microsoft">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Image Source="pack://application:,,,/Polyglance;component/Resources/ProviderIcons/microsoft.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="Microsoft (免费内置)" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </ComboBoxItem>
+                                            <ComboBoxItem Tag="google">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Image Source="pack://application:,,,/Polyglance;component/Resources/ProviderIcons/google.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="Google (免费内置)" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </ComboBoxItem>
+                                            <ComboBoxItem Tag="deepl">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Image Source="pack://application:,,,/Polyglance;component/Resources/ProviderIcons/deepl.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="DeepL" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </ComboBoxItem>
+                                            <ComboBoxItem Tag="baidu">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Image Source="pack://application:,,,/Polyglance;component/Resources/ProviderIcons/baidu.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="百度翻译" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </ComboBoxItem>
+                                            <ComboBoxItem Tag="youdao">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Image Source="pack://application:,,,/Polyglance;component/Resources/ProviderIcons/youdao.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="有道翻译" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </ComboBoxItem>
+                                            <ComboBoxItem Tag="volcano">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Image Source="pack://application:,,,/Polyglance;component/Resources/ProviderIcons/volcano.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="火山翻译" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </ComboBoxItem>
+                                            <ComboBoxItem Tag="openaicompatible">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Image Source="pack://application:,,,/Polyglance;component/Resources/ProviderIcons/openai.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="OpenAI 兼容协议" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </ComboBoxItem>
+                                        </ComboBox>
+                                    </Grid>
+                                </ui:Card>
+
+                                <!-- 默认目标语言 -->
+                                <ui:Card Margin="0,0,0,10" Padding="16,14">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                            <TextBlock Text="默认目标语言" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                            <TextBlock Text="未指定语种时翻译结果的目标语言" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
+                                        </StackPanel>
+                                        <ComboBox x:Name="CmbTargetLang" Grid.Column="1" Width="190" Height="32" VerticalContentAlignment="Center" Padding="10,0,24,0" FontSize="12.5" SelectedIndex="0">
+                                            <ComboBoxItem Content="中文 (简体)" Tag="zh-Hans"/>
+                                            <ComboBoxItem Content="英语 (EN)" Tag="en"/>
+                                            <ComboBoxItem Content="日语 (JA)" Tag="ja"/>
+                                            <ComboBoxItem Content="韩语 (KO)" Tag="ko"/>
+                                            <ComboBoxItem Content="法语 (FR)" Tag="fr"/>
+                                            <ComboBoxItem Content="德语 (DE)" Tag="de"/>
+                                            <ComboBoxItem Content="西班牙语" Tag="es"/>
+                                            <ComboBoxItem Content="俄语 (RU)" Tag="ru"/>
+                                        </ComboBox>
+                                    </Grid>
+                                </ui:Card>
+
+                                <!-- 备用目标语言 -->
+                                <ui:Card Margin="0,0,0,10" Padding="16,14">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                            <TextBlock Text="备用目标语言 (输入母语时互译)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                            <TextBlock Text="当划词文本与默认目标语言相同时自动翻译为此语言" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
+                                        </StackPanel>
+                                        <ComboBox x:Name="CmbSecondTargetLang" Grid.Column="1" Width="190" Height="32" VerticalContentAlignment="Center" Padding="10,0,24,0" FontSize="12.5" SelectedIndex="1">
+                                            <ComboBoxItem Content="中文 (简体)" Tag="zh-Hans"/>
+                                            <ComboBoxItem Content="英语 (EN)" Tag="en"/>
+                                            <ComboBoxItem Content="日语 (JA)" Tag="ja"/>
+                                            <ComboBoxItem Content="韩语 (KO)" Tag="ko"/>
+                                            <ComboBoxItem Content="法语 (FR)" Tag="fr"/>
+                                            <ComboBoxItem Content="德语 (DE)" Tag="de"/>
+                                            <ComboBoxItem Content="西班牙语" Tag="es"/>
+                                            <ComboBoxItem Content="俄语 (RU)" Tag="ru"/>
+                                        </ComboBox>
+                                    </Grid>
+                                </ui:Card>
+
+                                <!-- 截图翻译风格 -->
+                                <ui:Card Margin="0,0,0,10" Padding="16,14">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                            <TextBlock Text="截图翻译风格" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                            <TextBlock Text="Bob 风格在独立窗口中呈现多引擎翻译；有道风格在原图位置覆盖译文" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
+                                        </StackPanel>
+                                        <ComboBox x:Name="CmbScreenshotTranslationStyle" Grid.Column="1" Width="220" Height="32" VerticalContentAlignment="Center" Padding="10,0,24,0" FontSize="12.5" SelectedIndex="0">
+                                            <ComboBoxItem Content="Bob 风格 (独立窗口识别翻译)" Tag="bob"/>
+                                            <ComboBoxItem Content="有道风格 (原图覆盖译文)" Tag="youdao"/>
+                                        </ComboBox>
+                                    </Grid>
+                                </ui:Card>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+                </Grid>
+
+                <!-- 收藏夹 (Favorites) -->
+                <Grid x:Name="PanelFavorites" Visibility="Collapsed">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="250"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 左侧列表 -->
+                    <Border Grid.Column="0"
+                            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Margin="0,0,12,0"
+                            Padding="8">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <ui:TextBox x:Name="TxtFavoriteSearch"
+                                        Grid.Row="0"
+                                        PlaceholderText="搜索收藏记录…"
+                                        Icon="{ui:SymbolIcon Search24}"
+                                        Height="32"
+                                        Margin="0,0,0,8"
+                                        TextChanged="OnFavoriteSearchTextChanged"/>
+                            <ListBox x:Name="ListFavorites"
+                                     Grid.Row="1"
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     SelectionChanged="OnFavoriteSelectionChanged">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,3">
+                                            <TextBlock Text="{Binding SourceText}" FontSize="12.5" FontWeight="Medium" Foreground="{DynamicResource TextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding TargetText}" FontSize="12" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis" Margin="0,2,0,3"/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Timestamp, StringFormat='MM-dd HH:mm'}" FontSize="10" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                                                <TextBlock Text="{Binding Provider}" FontSize="10" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="8,0,0,0"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            <StackPanel x:Name="EmptyFavoritesNotice" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
+                                <ui:SymbolIcon Symbol="Star24" FontSize="26" Foreground="{DynamicResource TextFillColorTertiaryBrush}" HorizontalAlignment="Center"/>
+                                <TextBlock Text="暂无收藏内容" FontSize="12" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,6,0,0" HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- 右侧详情卡片 -->
+                    <Border Grid.Column="1"
+                            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="16">
+                        <Grid>
+                            <ScrollViewer x:Name="FavoriteDetailPane" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,12">
+                                        <TextBlock x:Name="TxtFavoriteTime" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"/>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <ui:Button Appearance="Transparent" Icon="{ui:SymbolIcon Delete24}" Width="28" Height="28" Padding="0" Margin="0,0,6,0" ToolTip="删除记录" Click="OnDeleteFavoriteClick"/>
+                                            <ui:Button Appearance="Transparent" Icon="{ui:SymbolIcon Star24}" Foreground="#EAB308" Width="28" Height="28" Padding="0" ToolTip="取消收藏" Click="OnUnfavoriteClick"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <ui:Card Padding="12" Margin="0,0,0,10">
+                                        <StackPanel>
+                                            <TextBox x:Name="TxtFavoriteSource" TextWrapping="Wrap" IsReadOnly="True" BorderThickness="0" Background="Transparent" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                                <ui:Button Appearance="Transparent" Icon="{ui:SymbolIcon Copy20}" Width="24" Height="24" Padding="0" ToolTip="复制原文" Click="OnCopyFavoriteSourceClick"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </ui:Card>
+                                    <StackPanel Orientation="Horizontal" Margin="4,0,0,10">
+                                        <Border Background="{DynamicResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,2">
+                                            <TextBlock x:Name="TxtFavoriteSourceLang" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                        </Border>
+                                        <ui:SymbolIcon Symbol="ChevronRight16" FontSize="10" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="6,0" VerticalAlignment="Center"/>
+                                        <Border Background="{DynamicResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,2">
+                                            <TextBlock x:Name="TxtFavoriteTargetLang" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                        </Border>
+                                    </StackPanel>
+                                    <ui:Card Padding="12">
+                                        <StackPanel>
+                                            <TextBox x:Name="TxtFavoriteTarget" TextWrapping="Wrap" IsReadOnly="True" BorderThickness="0" Background="Transparent" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                            <Grid Margin="0,8,0,0">
+                                                <ui:Button Appearance="Transparent" Icon="{ui:SymbolIcon Copy20}" Width="24" Height="24" Padding="0" ToolTip="复制译文" HorizontalAlignment="Left" Click="OnCopyFavoriteTargetClick"/>
+                                                <TextBlock x:Name="TxtFavoriteProvider" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                                            </Grid>
+                                        </StackPanel>
+                                    </ui:Card>
+                                </StackPanel>
+                            </ScrollViewer>
+                            <TextBlock x:Name="TxtFavoriteEmptySelection" Text="请在左侧选择一条记录" FontSize="12" Foreground="{DynamicResource TextFillColorTertiaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <!-- 历史记录 (History) -->
+                <Grid x:Name="PanelHistory" Visibility="Collapsed">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="250"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 左侧列表 -->
+                    <Border Grid.Column="0"
+                            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Margin="0,0,12,0"
+                            Padding="8">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0" Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ui:TextBox x:Name="TxtHistorySearch"
+                                            Grid.Column="0"
+                                            PlaceholderText="搜索历史记录…"
+                                            Icon="{ui:SymbolIcon Search24}"
+                                            Height="32"
+                                            TextChanged="OnHistorySearchTextChanged"/>
+                                <ui:Button Grid.Column="1" Content="清空" Appearance="Transparent" Padding="8,4" Margin="4,0,0,0" ToolTip="清空所有记录" Click="OnClearHistoryClick"/>
+                            </Grid>
+                            <ListBox x:Name="ListHistory"
+                                     Grid.Row="1"
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     SelectionChanged="OnHistorySelectionChanged">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,3">
+                                            <TextBlock Text="{Binding SourceText}" FontSize="12.5" FontWeight="Medium" Foreground="{DynamicResource TextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding TargetText}" FontSize="12" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis" Margin="0,2,0,3"/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Timestamp, StringFormat='MM-dd HH:mm'}" FontSize="10" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                                                <TextBlock Text="{Binding Provider}" FontSize="10" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="8,0,0,0"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            <StackPanel x:Name="EmptyHistoryNotice" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
+                                <ui:SymbolIcon Symbol="History24" FontSize="26" Foreground="{DynamicResource TextFillColorTertiaryBrush}" HorizontalAlignment="Center"/>
+                                <TextBlock Text="暂无历史记录" FontSize="12" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,6,0,0" HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- 右侧详情卡片 -->
+                    <Border Grid.Column="1"
+                            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="16">
+                        <Grid>
+                            <ScrollViewer x:Name="HistoryDetailPane" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,12">
+                                        <TextBlock x:Name="TxtHistoryTime" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"/>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <ui:Button Appearance="Transparent" Icon="{ui:SymbolIcon Delete24}" Width="28" Height="28" Padding="0" Margin="0,0,6,0" ToolTip="删除记录" Click="OnDeleteHistoryClick"/>
+                                            <ui:Button x:Name="BtnToggleFavoriteHistory" Appearance="Transparent" Icon="{ui:SymbolIcon Star24}" Width="28" Height="28" Padding="0" ToolTip="收藏/取消收藏" Click="OnToggleFavoriteHistoryClick"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <ui:Card Padding="12" Margin="0,0,0,10">
+                                        <StackPanel>
+                                            <TextBox x:Name="TxtHistorySource" TextWrapping="Wrap" IsReadOnly="True" BorderThickness="0" Background="Transparent" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                                <ui:Button Appearance="Transparent" Icon="{ui:SymbolIcon Copy20}" Width="24" Height="24" Padding="0" ToolTip="复制原文" Click="OnCopyHistorySourceClick"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </ui:Card>
+                                    <StackPanel Orientation="Horizontal" Margin="4,0,0,10">
+                                        <Border Background="{DynamicResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,2">
+                                            <TextBlock x:Name="TxtHistorySourceLang" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                        </Border>
+                                        <ui:SymbolIcon Symbol="ChevronRight16" FontSize="10" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="6,0" VerticalAlignment="Center"/>
+                                        <Border Background="{DynamicResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="8,2">
+                                            <TextBlock x:Name="TxtHistoryTargetLang" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                        </Border>
+                                    </StackPanel>
+                                    <ui:Card Padding="12">
+                                        <StackPanel>
+                                            <TextBox x:Name="TxtHistoryTarget" TextWrapping="Wrap" IsReadOnly="True" BorderThickness="0" Background="Transparent" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                            <Grid Margin="0,8,0,0">
+                                                <ui:Button Appearance="Transparent" Icon="{ui:SymbolIcon Copy20}" Width="24" Height="24" Padding="0" ToolTip="复制译文" HorizontalAlignment="Left" Click="OnCopyHistoryTargetClick"/>
+                                                <TextBlock x:Name="TxtHistoryProvider" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                                            </Grid>
+                                        </StackPanel>
+                                    </ui:Card>
+                                </StackPanel>
+                            </ScrollViewer>
+                            <TextBlock x:Name="TxtHistoryEmptySelection" Text="请在左侧选择一条记录" FontSize="12" Foreground="{DynamicResource TextFillColorTertiaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <!-- OCR 设置 (OcrSettings) -->
+                <Grid x:Name="PanelOcrSettings" Visibility="Collapsed">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
+                        <StackPanel>
+                            <ui:Card Margin="0,0,0,10" Padding="16,14">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Text="默认文字排版" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock Text="选择 OCR 提取多行文本时的换行合并偏好" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="CmbOcrFormatting" Grid.Column="1" Width="200" Height="32" VerticalContentAlignment="Center" Padding="10,0,24,0" FontSize="12.5" SelectedIndex="0">
+                                        <ComboBoxItem Content="保留段落换行" Tag="0"/>
+                                        <ComboBoxItem Content="合并所有换行（单行）" Tag="1"/>
+                                        <ComboBoxItem Content="严格保留原有换行" Tag="2"/>
+                                    </ComboBox>
+                                </Grid>
+                            </ui:Card>
+
+                            <ui:Card Margin="0,0,0,10" Padding="16,14">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Text="文字识别完成后自动复制到剪贴板" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock Text="完成文本识别后自动将格式化结果存入系统剪贴板" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <ui:ToggleSwitch x:Name="ToggleOcrAutoCopy" Grid.Column="1" VerticalAlignment="Center"/>
+                                </Grid>
+                            </ui:Card>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>
+
 
                 <!-- 3. 快捷键 (Shortcuts) -->
                 <Grid x:Name="PanelShortcuts" Visibility="Collapsed">
@@ -256,11 +961,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <Grid Grid.Row="0" Margin="0,0,0,14">
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="快捷键设置" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-                            <TextBlock Text="自定义全局呼出热键，点击输入框后按下组合键即可录制" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,3,0,0"/>
-                        </StackPanel>
+                    <Grid Grid.Row="0" Margin="0,0,12,10">
                         <ui:Button Content="恢复默认" Appearance="Secondary" HorizontalAlignment="Right" VerticalAlignment="Center" Padding="12,4" Click="OnResetShortcutsClick"/>
                     </Grid>
 
@@ -287,6 +988,20 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Text="截图并复制 (Screenshot &amp; Copy)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock Text="激活截图区域，框选之后直接复制到剪贴板，不显示工具栏菜单" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <controls:ShortcutRecorderControl x:Name="RecHotkeyScreenshotCopy" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
+                                </Grid>
+                            </ui:Card>
+
+                            <ui:Card Margin="0,0,0,8" Padding="16,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
                                         <TextBlock Text="贴出剪贴板图片 (Pin Clipboard)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                         <TextBlock Text="将剪贴板中的图片作为置顶贴图显示" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
                                     </StackPanel>
@@ -301,10 +1016,38 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Text="智能屏幕原位翻译 (In-Place Translation)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-                                        <TextBlock Text="框选屏幕并在原图坐标上直接覆盖呈现译文" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
+                                        <TextBlock Text="截图翻译 (Screenshot Translate)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock Text="框选屏幕进行翻译；可在服务设置中选择 Bob 风格或有道原图覆盖风格" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
                                     </StackPanel>
                                     <controls:ShortcutRecorderControl x:Name="RecHotkeyScreenTranslate" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
+                                </Grid>
+                            </ui:Card>
+
+                            <ui:Card Margin="0,0,0,8" Padding="16,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Text="文字识别 (OCR Workspace)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock Text="框选屏幕唤起文字识别工作台，支持排版与二次加工" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <controls:ShortcutRecorderControl x:Name="RecHotkeyOcrWorkspace" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
+                                </Grid>
+                            </ui:Card>
+
+                            <ui:Card Margin="0,0,0,8" Padding="16,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Text="双语对照卡 (Bilingual Card)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock Text="框选屏幕识别并生成双语对照置顶结果卡" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <controls:ShortcutRecorderControl x:Name="RecHotkeyOcrTranslationCard" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
                                 </Grid>
                             </ui:Card>
 
@@ -333,6 +1076,20 @@
                                         <TextBlock Text="抓取任意应用当前选中文本并即时弹出翻译" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
                                     </StackPanel>
                                     <controls:ShortcutRecorderControl x:Name="RecHotkeySelectedText" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
+                                </Grid>
+                            </ui:Card>
+
+                            <ui:Card Margin="0,0,0,8" Padding="16,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Text="划词翻译并替换 (Translate &amp; Replace)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock Text="抓取选中文本直接原地替换为译文，不弹出翻译窗口" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <controls:ShortcutRecorderControl x:Name="RecHotkeyTranslateAndReplace" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
                                 </Grid>
                             </ui:Card>
 
@@ -400,19 +1157,19 @@
                     </ScrollViewer>
                 </Grid>
 
-                <!-- 4. 截图与录屏 (Recording) -->
-                <Grid x:Name="PanelRecording" Visibility="Collapsed">
+                <!-- 5. 录屏与工具栏 (Toolbar) -->
+                <Grid x:Name="PanelToolbar" Visibility="Collapsed">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <StackPanel Grid.Row="0" Margin="0,0,0,14">
-                        <TextBlock Text="截图与录屏" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-                        <TextBlock Text="配置高清区域录屏的默认导出格式、帧率与捕获参数" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,3,0,0"/>
-                    </StackPanel>
+                    <Grid Grid.Row="0" Margin="0,0,12,10">
+                        <ui:Button x:Name="BtnResetToolbarItems" Appearance="Secondary" Content="恢复默认" HorizontalAlignment="Right" Padding="14,4" Click="OnResetToolbarItemsClick" VerticalAlignment="Center"/>
+                    </Grid>
 
                     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
                         <StackPanel>
+                            <!-- 录屏参数 -->
                             <ui:Card Margin="0,0,0,10" Padding="16,14">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -448,7 +1205,7 @@
                                 </Grid>
                             </ui:Card>
 
-                            <ui:Card Padding="16,14" Margin="0,0,0,10">
+                            <ui:Card Padding="16,14" Margin="0,0,0,12">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
@@ -466,47 +1223,6 @@
                                     </ComboBox>
                                 </Grid>
                             </ui:Card>
-
-                            <!-- 截图历史 -->
-                            <ui:Card Padding="16,14" Margin="0,0,0,10">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Text="保存已完成截图到历史记录" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-                                        <TextBlock Text="复制或保存普通截图与长截图成功后，自动保存到贴图历史。数据仅保存在本机（最多 30 条 / 512 MiB）。" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0" TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                    <ui:ToggleSwitch x:Name="ToggleSaveCompletedScreenshotsToHistory" Grid.Column="1" VerticalAlignment="Center"/>
-                                </Grid>
-                            </ui:Card>
-                        </StackPanel>
-                    </ScrollViewer>
-                </Grid>
-
-                <!-- 5. 工具栏自定义 (Toolbar) -->
-                <Grid x:Name="PanelToolbar" Visibility="Collapsed">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    <StackPanel Grid.Row="0" Margin="0,0,0,14">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0">
-                                <TextBlock Text="工具栏自定义" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-                                <TextBlock Text="拖拽调整工具按钮顺序，点击下方卡片即时启用或移除" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,3,0,0"/>
-                            </StackPanel>
-                            <ui:Button x:Name="BtnResetToolbarItems" Grid.Column="1" Appearance="Secondary" Content="恢复默认" Padding="14,6" Click="OnResetToolbarItemsClick" VerticalAlignment="Center"/>
-                        </Grid>
-                    </StackPanel>
-
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
-                        <StackPanel>
                             <!-- 实时生效工具栏卡片 -->
                             <ui:Card Margin="0,0,0,12" Padding="16,14">
                                 <StackPanel>
@@ -610,16 +1326,7 @@
 
                 <!-- 6. 更新与关于 (About) -->
                 <Grid x:Name="PanelAbout" Visibility="Collapsed">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    <StackPanel Grid.Row="0" Margin="0,0,0,14">
-                        <TextBlock Text="更新与关于" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-                        <TextBlock Text="查看当前软件版本与软件版权信息" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,3,0,0"/>
-                    </StackPanel>
-
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
                         <StackPanel>
                             <!-- 检查版本更新 -->
                             <ui:Card Margin="0,0,0,12" Padding="16,14">
@@ -704,23 +1411,6 @@
                 </Grid>
             </Grid>
         </Grid>
-
-        <!-- 底部操作底栏 -->
-        <Border Grid.Row="2"
-                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                BorderThickness="0,1,0,0"
-                Padding="24,12">
-            <Grid>
-                <TextBlock x:Name="TxtStatusMessage"
-                           VerticalAlignment="Center"
-                           FontSize="12"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <ui:Button Appearance="Secondary" Content="取消" Margin="0,0,10,0" Padding="18,6" Click="OnCancelClick"/>
-                    <ui:Button Appearance="Primary" Content="保存配置" Padding="22,6" Click="OnSaveClick"/>
-                </StackPanel>
-            </Grid>
-        </Border>
     </Grid>
+</Grid>
 </ui:FluentWindow>

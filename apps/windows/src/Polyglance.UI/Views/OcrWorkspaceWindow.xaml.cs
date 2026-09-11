@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -383,7 +384,18 @@ public partial class OcrWorkspaceWindow : Window
         var lineCount = string.IsNullOrEmpty(text) ? 0 : text.Split('\n').Length;
         TxtStats.Text = $"字符数: {charCount} | 行数: {lineCount}";
         var engine = OcrService.GetEngine();
-        TxtLanguage.Text = $"引擎: {engine.DisplayName} | 语言: 简体中文";
+        var lang = DetectLanguageName(text);
+        TxtLanguage.Text = $"引擎: {engine.DisplayName} | 语言: {lang}";
+    }
+
+    private static string DetectLanguageName(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return "自动检测";
+        if (Regex.IsMatch(text, @"[\u3040-\u30FF]")) return "日语";
+        if (Regex.IsMatch(text, @"[\uAC00-\uD7AF]")) return "韩语";
+        if (Regex.IsMatch(text, @"[\u4E00-\u9FA5]")) return "简体中文";
+        if (Regex.IsMatch(text, @"[\u0400-\u04FF]")) return "俄语";
+        return "英语";
     }
 
     private void UpdateFormattingMenuSelection()
@@ -427,6 +439,23 @@ public partial class OcrWorkspaceWindow : Window
             await Task.Delay(1200);
             BtnCopyAll.Content = originalContent;
         }
+    }
+
+    private void OnTranslateClick(object sender, RoutedEventArgs e)
+    {
+        string textToSend;
+        if (!string.IsNullOrWhiteSpace(TxtContent.SelectedText))
+        {
+            textToSend = TxtContent.SelectedText;
+        }
+        else
+        {
+            textToSend = TxtContent.Text;
+        }
+        textToSend = textToSend.Trim();
+        if (string.IsNullOrEmpty(textToSend)) return;
+
+        App.CurrentApp?.MainWindow?.SetAndTranslate(textToSend);
     }
 
     private void OnContinuousClick(object sender, RoutedEventArgs e)

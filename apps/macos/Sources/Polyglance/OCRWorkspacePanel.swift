@@ -1,9 +1,10 @@
 import AppKit
 import Foundation
+import NaturalLanguage
 import PolyglanceKit
 
 @MainActor
-final class OCRWorkspacePanel: NSWindow {
+final class OCRWorkspacePanel: NSPanel {
     static weak var activeContinuousInstance: OCRWorkspacePanel?
 
     private var sourceImage: NSImage
@@ -16,6 +17,7 @@ final class OCRWorkspacePanel: NSWindow {
 
     // UI elements
     private let copyAllButton = NSButton()
+    private let translateButton = NSButton()
     private let formattingButton = NSPopUpButton()
     private let continuousButton = NSButton()
     private let showImageCheckbox = NSButton()
@@ -61,7 +63,7 @@ final class OCRWorkspacePanel: NSWindow {
         let contentRect = CGRect(x: 100, y: 100, width: 640, height: 480)
         super.init(
             contentRect: contentRect,
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -72,13 +74,13 @@ final class OCRWorkspacePanel: NSWindow {
         hidesOnDeactivate = false
         minSize = CGSize(width: 480, height: 360)
         isReleasedWhenClosed = false
+        isFloatingPanel = true
 
         if let config = try? configurationStore?.load() {
             currentMode = TextFormattingMode(rawValue: config.ocrDefaultFormatting) ?? .smartMerge
             autoCopyCheckbox.state = config.ocrAutoCopyNextTime ? .on : .off
         }
 
-        NSApp.setActivationPolicy(.regular)
         setupTitlebarAccessory()
         setupUI()
         updatePinButtonState()
@@ -172,6 +174,12 @@ final class OCRWorkspacePanel: NSWindow {
         copyAllButton.target = self
         copyAllButton.action = #selector(copyAllAction)
         toolbar.addArrangedSubview(copyAllButton)
+
+        translateButton.title = "翻译"
+        translateButton.bezelStyle = .rounded
+        translateButton.target = self
+        translateButton.action = #selector(translateAction)
+        toolbar.addArrangedSubview(translateButton)
 
         formattingButton.pullsDown = true
         formattingButton.bezelStyle = .rounded
@@ -292,7 +300,7 @@ final class OCRWorkspacePanel: NSWindow {
 
         engineLabel.font = NSFont.systemFont(ofSize: 12)
         engineLabel.textColor = .secondaryLabelColor
-        engineLabel.stringValue = "引擎: Apple Vision (系统原生) | 语言: 简体中文"
+        engineLabel.stringValue = "引擎: Apple Vision (系统原生) | 语言: 自动检测"
         bottomBar.addArrangedSubview(engineLabel)
 
         root.addSubview(bottomBar)
@@ -369,7 +377,7 @@ final class OCRWorkspacePanel: NSWindow {
         updatePagingUI()
         showLoading(true)
         statsLabel.stringValue = "字符数: 0 | 行数: 0"
-        engineLabel.stringValue = "引擎: Apple Vision (系统原生) | 语言: 简体中文"
+        engineLabel.stringValue = "引擎: Apple Vision (系统原生) | 语言: 自动检测"
         copyAllButton.isEnabled = false
         formattingButton.isEnabled = false
     }
@@ -449,7 +457,55 @@ final class OCRWorkspacePanel: NSWindow {
         let chars = text.count
         let lines = text.isEmpty ? 0 : text.components(separatedBy: .newlines).count
         statsLabel.stringValue = "字符数: \(chars) | 行数: \(lines)"
-        engineLabel.stringValue = "引擎: Apple Vision (系统原生) | 语言: 简体中文"
+        let lang = detectLanguageName(for: text)
+        engineLabel.stringValue = "引擎: Apple Vision (系统原生) | 语言: \(lang)"
+    }
+
+    private func detectLanguageName(for text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "自动检测" }
+
+        if trimmed.range(of: "[\\u3040-\\u30FF]", options: .regularExpression) != nil { return "日语" }
+        if trimmed.range(of: "[\\uAC00-\\uD7AF]", options: .regularExpression) != nil { return "韩语" }
+        if trimmed.range(of: "[\\u4E00-\\u9FA5]", options: .regularExpression) != nil { return "简体中文" }
+        if trimmed.range(of: "[\\u0400-\\u04FF]", options: .regularExpression) != nil { return "俄语" }
+
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(trimmed)
+        let hypotheses = recognizer.languageHypotheses(withMaximum: 5)
+
+        let isPureASCII = trimmed.allSatisfy { $0.isASCII }
+        let wordCount = trimmed.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count
+
+        if isPureASCII && wordCount <= 2 {
+            let dominantConf = recognizer.dominantLanguage.flatMap { hypotheses[$0] } ?? 0
+            if dominantConf < 0.75 {
+                return "英语"
+            }
+        }
+
+        guard let lang = recognizer.dominantLanguage else {
+            return "英语"
+        }
+
+        switch lang {
+        case .simplifiedChinese: return "简体中文"
+        case .traditionalChinese: return "繁体中文"
+        case .english: return "英语"
+        case .japanese: return "日语"
+        case .korean: return "韩语"
+        case .french: return "法语"
+        case .german: return "德语"
+        case .spanish: return "西班牙语"
+        case .russian: return "俄语"
+        case .italian: return "意大利语"
+        case .portuguese: return "葡萄牙语"
+        default:
+            if isPureASCII && (hypotheses[lang] ?? 0) < 0.85 {
+                return "英语"
+            }
+            return Locale(identifier: "zh-Hans").localizedString(forLanguageCode: lang.rawValue) ?? lang.rawValue
+        }
     }
 
     @objc private func copyAllAction() {
@@ -484,12 +540,14 @@ final class OCRWorkspacePanel: NSWindow {
 
     private func updatePinButtonState() {
         if isPinned {
+            isFloatingPanel = true
             level = .floating
             collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             pinButton.image = NSImage(systemSymbolName: "pin.fill", accessibilityDescription: "置顶")
             pinButton.contentTintColor = .controlAccentColor
             pinButton.toolTip = "取消置顶"
         } else {
+            isFloatingPanel = false
             level = .normal
             collectionBehavior = [.managed, .participatesInCycle]
             pinButton.image = NSImage(systemSymbolName: "pin", accessibilityDescription: "置顶")
@@ -531,8 +589,21 @@ final class OCRWorkspacePanel: NSWindow {
         }
     }
 
+    @objc private func translateAction() {
+        let selected = textView.selectedRange()
+        let textToSend: String
+        if selected.length > 0, let range = Range(selected, in: textView.string) {
+            textToSend = String(textView.string[range])
+        } else {
+            textToSend = textView.string
+        }
+        let trimmed = textToSend.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        translateHandler(trimmed)
+    }
+
     override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
+    override var canBecomeMain: Bool { false }
 
     override func cancelOperation(_ sender: Any?) {
         close()
@@ -547,7 +618,6 @@ final class OCRWorkspacePanel: NSWindow {
             Self.activeContinuousInstance = nil
         }
         super.close()
-        NSApp.setActivationPolicy(.accessory)
     }
 }
 

@@ -87,10 +87,11 @@ enum ScreenTranslationRenderer {
             width: box.width * contentRect.width,
             height: box.height * contentRect.height
         )
-        let padding = min(4, rect.height * 0.12)
-        let backgroundRect = rect.insetBy(dx: -padding, dy: -padding)
+        let paddingH = max(3, min(6, rect.width * 0.04))
+        let paddingV = max(2, min(4, rect.height * 0.12))
+        let backgroundRect = rect.insetBy(dx: -paddingH, dy: -paddingV)
             .intersection(contentRect.insetBy(dx: -1, dy: -1))
-        let cornerRadius = min(4, backgroundRect.height * 0.15)
+        let cornerRadius = min(6, max(3, backgroundRect.height * 0.18))
         let path = NSBezierPath(
             roundedRect: backgroundRect,
             xRadius: cornerRadius,
@@ -102,7 +103,7 @@ enum ScreenTranslationRenderer {
         let (attributes, textHeight) = fittedAttributes(
             for: paragraph.text,
             width: rect.width,
-            height: rect.height + padding * 1.5,
+            height: rect.height + paddingV * 1.5,
             lineCount: paragraph.lineCount,
             color: paragraph.textColor
         )
@@ -110,7 +111,7 @@ enum ScreenTranslationRenderer {
             x: rect.minX,
             y: rect.minY + max(0, (rect.height - textHeight) / 2),
             width: rect.width,
-            height: min(rect.height + padding * 1.5, textHeight)
+            height: min(rect.height + paddingV * 1.5, textHeight)
         )
         (paragraph.text as NSString).draw(
             with: textRect,
@@ -128,11 +129,12 @@ enum ScreenTranslationRenderer {
     ) -> ([NSAttributedString.Key: Any], CGFloat) {
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.lineBreakMode = .byWordWrapping
+        paragraphStyle.lineSpacing = 1.5
         var fontSize = min(60, max(9, height / CGFloat(max(1, lineCount)) * 0.74))
         var measuredHeight: CGFloat = 0
         while fontSize >= 9 {
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: fontSize),
+                .font: NSFont.systemFont(ofSize: fontSize, weight: .regular),
                 .foregroundColor: color,
                 .paragraphStyle: paragraphStyle,
             ]
@@ -147,7 +149,7 @@ enum ScreenTranslationRenderer {
             fontSize -= 1
         }
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9),
+            .font: NSFont.systemFont(ofSize: 9, weight: .regular),
             .foregroundColor: color,
             .paragraphStyle: paragraphStyle,
         ]
@@ -332,11 +334,14 @@ final class ScreenTranslationCompareView: NSView {
 
 @MainActor
 final class ScreenTranslationToolbarState: ObservableObject {
+    @Published var currentProvider: TranslationProvider = .freeAI
     @Published var selectedSourceCode: String?
     @Published var selectedTargetCode: String = "zh-CN"
+    @Published var detectedLanguageDisplayName: String?
     @Published var isComparing = false
     @Published var hasTranslation = false
 
+    var onProviderChanged: ((TranslationProvider) -> Void)?
     var onLanguageChanged: (() -> Void)?
     var onToggleCompare: (() -> Void)?
     var onCopyTranslation: (() -> Void)?
@@ -347,7 +352,13 @@ final class ScreenTranslationToolbarState: ObservableObject {
     var onClose: (() -> Void)?
 
     var sourceTitle: String {
-        ScreenTranslationOverlaySession.sourceLanguages.first(where: { $0.code == selectedSourceCode })?.title ?? "自动检测"
+        if let selectedSourceCode {
+            return ScreenTranslationOverlaySession.sourceLanguages.first(where: { $0.code == selectedSourceCode })?.title ?? "自动检测"
+        }
+        if let detectedLanguageDisplayName, !detectedLanguageDisplayName.isEmpty, detectedLanguageDisplayName != "自动检测" {
+            return "自动检测 (\(detectedLanguageDisplayName))"
+        }
+        return "自动检测"
     }
 
     var targetTitle: String {
@@ -374,17 +385,71 @@ struct ScreenTranslationToolbarView: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            // 翻译引擎选择器
+            Menu {
+                ForEach(TranslationProvider.allCases, id: \.self) { provider in
+                    Button {
+                        state.currentProvider = provider
+                        state.onProviderChanged?(provider)
+                    } label: {
+                        HStack {
+                            Text(provider.displayName)
+                            if state.currentProvider == provider {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                    Text(state.currentProvider.displayName)
+                        .font(.system(size: 12, weight: .medium))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+                .foregroundStyle(.white.opacity(0.95))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(Color.white.opacity(0.12))
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+                )
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("翻译引擎: 当前使用 \(state.currentProvider.displayName)，点击切换")
+
+            Rectangle()
+                .fill(Color.white.opacity(0.18))
+                .frame(width: 1, height: 16)
+
             // 语言选择胶囊容器
             HStack(spacing: 4) {
                 Menu {
                     ForEach(ScreenTranslationOverlaySession.sourceLanguages, id: \.title) { option in
-                        Button(option.title) {
+                        Button {
                             state.selectedSourceCode = option.code
                             state.onLanguageChanged?()
+                        } label: {
+                            HStack {
+                                Text(option.title)
+                                if state.selectedSourceCode == option.code {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
                         }
                     }
                 } label: {
-                    HStack(spacing: 2) {
+                    HStack(spacing: 3) {
                         Text(state.sourceTitle)
                             .font(.system(size: 12, weight: .medium))
                         Image(systemName: "chevron.down")
@@ -396,6 +461,9 @@ struct ScreenTranslationToolbarView: View {
                     .padding(.vertical, 3)
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("源语言: \(state.sourceTitle)")
 
                 Button {
                     state.swapLanguages()
@@ -403,20 +471,28 @@ struct ScreenTranslationToolbarView: View {
                     Image(systemName: "arrow.left.arrow.right")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(state.canSwap ? .white.opacity(0.85) : .white.opacity(0.3))
-                        .padding(2)
+                        .padding(3)
                 }
                 .buttonStyle(.plain)
                 .disabled(!state.canSwap)
+                .help("交换源语言和目标语言")
 
                 Menu {
                     ForEach(ScreenTranslationOverlaySession.targetLanguages, id: \.title) { option in
-                        Button(option.title) {
+                        Button {
                             state.selectedTargetCode = option.code ?? "zh-CN"
                             state.onLanguageChanged?()
+                        } label: {
+                            HStack {
+                                Text(option.title)
+                                if state.selectedTargetCode == (option.code ?? "zh-CN") {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
                         }
                     }
                 } label: {
-                    HStack(spacing: 2) {
+                    HStack(spacing: 3) {
                         Text(state.targetTitle)
                             .font(.system(size: 12, weight: .medium))
                         Image(systemName: "chevron.down")
@@ -428,6 +504,9 @@ struct ScreenTranslationToolbarView: View {
                     .padding(.vertical, 3)
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("目标语言: \(state.targetTitle)")
             }
             .padding(.horizontal, 4)
             .padding(.vertical, 2)
@@ -435,10 +514,14 @@ struct ScreenTranslationToolbarView: View {
                 Capsule()
                     .fill(Color.white.opacity(0.12))
             )
+            .overlay(
+                Capsule()
+                    .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+            )
 
-            Divider()
-                .frame(height: 14)
-                .opacity(0.3)
+            Rectangle()
+                .fill(Color.white.opacity(0.18))
+                .frame(width: 1, height: 16)
 
             // 动作按钮组
             HStack(spacing: 3) {
@@ -459,34 +542,34 @@ struct ScreenTranslationToolbarView: View {
 
                 ToolbarIconButton(
                     symbol: "doc.plaintext",
-                    tooltip: "提取文字",
+                    tooltip: "提取文字 (查看原文与译文卡片)",
                     disabled: !state.hasTranslation,
                     action: { state.onExtractText?() }
                 )
 
                 ToolbarIconButton(
                     symbol: "viewfinder",
-                    tooltip: "重新选区",
+                    tooltip: "重新选区 (重新框选翻译区域)",
                     action: { state.onReselect?() }
                 )
 
                 ToolbarIconButton(
                     symbol: "pin",
-                    tooltip: "钉住为贴图",
+                    tooltip: "钉住为贴图 (固定在屏幕上)",
                     disabled: !state.hasTranslation,
                     action: { state.onPin?() }
                 )
 
                 ToolbarIconButton(
                     symbol: "arrow.clockwise",
-                    tooltip: "刷新（重新识别）",
+                    tooltip: "重新识别 (重新截取并识别)",
                     action: { state.onRefresh?() }
                 )
             }
 
-            Divider()
-                .frame(height: 14)
-                .opacity(0.3)
+            Rectangle()
+                .fill(Color.white.opacity(0.18))
+                .frame(width: 1, height: 16)
 
             // 关闭按钮
             ToolbarIconButton(
@@ -499,14 +582,16 @@ struct ScreenTranslationToolbarView: View {
         .padding(.vertical, 5)
         .background(
             Capsule()
-                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.85))
-                .background(.ultraThinMaterial, in: Capsule())
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    Capsule()
+                        .fill(Color(nsColor: .windowBackgroundColor).opacity(0.6))
+                )
         )
         .overlay(
             Capsule()
-                .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
+                .stroke(Color.white.opacity(0.18), lineWidth: 0.8)
         )
-        .shadow(color: Color.black.opacity(0.35), radius: 8, y: 3)
         .preferredColorScheme(.dark)
     }
 }
@@ -524,11 +609,11 @@ private struct ToolbarIconButton: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(isActive ? Color.accentColor : (disabled ? Color.white.opacity(0.3) : Color.white.opacity(0.88)))
+                .foregroundStyle(isActive ? Color.accentColor : (disabled ? Color.white.opacity(0.25) : (isHovered ? Color.white : Color.white.opacity(0.85))))
                 .frame(width: 28, height: 28)
                 .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(isActive ? Color.accentColor.opacity(0.25) : (isHovered ? Color.white.opacity(0.12) : Color.clear))
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(isActive ? Color.accentColor.opacity(0.25) : (isHovered && !disabled ? Color.white.opacity(0.14) : Color.clear))
                 )
         }
         .buttonStyle(.plain)
@@ -551,6 +636,11 @@ final class ScreenTranslationOverlaySession {
         LanguageOption(code: "en", title: "英语"),
         LanguageOption(code: "ja", title: "日语"),
         LanguageOption(code: "ko", title: "韩语"),
+        LanguageOption(code: "zh-TW", title: "繁体中文"),
+        LanguageOption(code: "fr", title: "法语"),
+        LanguageOption(code: "de", title: "德语"),
+        LanguageOption(code: "es", title: "西班牙语"),
+        LanguageOption(code: "ru", title: "俄语"),
     ]
 
     static let targetLanguages: [LanguageOption] = [
@@ -558,6 +648,11 @@ final class ScreenTranslationOverlaySession {
         LanguageOption(code: "en", title: "英语"),
         LanguageOption(code: "ja", title: "日语"),
         LanguageOption(code: "ko", title: "韩语"),
+        LanguageOption(code: "zh-TW", title: "繁体中文"),
+        LanguageOption(code: "fr", title: "法语"),
+        LanguageOption(code: "de", title: "德语"),
+        LanguageOption(code: "es", title: "西班牙语"),
+        LanguageOption(code: "ru", title: "俄语"),
     ]
 
     let panel: ScreenTranslationOverlayPanel
@@ -577,6 +672,7 @@ final class ScreenTranslationOverlaySession {
 
     var onRegionChanged: ((CGRect) -> Void)?
     var liveCropProvider: ((CGRect) -> NSImage?)?
+    var onProviderChanged: ((TranslationProvider) -> Void)?
     var onLanguageChanged: ((String?, String) -> Void)?
     var onExtractText: (() -> Void)?
     var onReselect: (() -> Void)?
@@ -643,6 +739,9 @@ final class ScreenTranslationOverlaySession {
     }
 
     private func configureToolbarCallbacks() {
+        toolbarState.onProviderChanged = { [weak self] provider in
+            self?.onProviderChanged?(provider)
+        }
         toolbarState.onLanguageChanged = { [weak self] in
             guard let self else { return }
             self.onLanguageChanged?(self.toolbarState.selectedSourceCode, self.toolbarState.selectedTargetCode)
@@ -677,9 +776,20 @@ final class ScreenTranslationOverlaySession {
         toolbarPanel.orderFrontRegardless()
     }
 
+    func setProvider(_ provider: TranslationProvider) {
+        toolbarState.currentProvider = provider
+        positionToolbar()
+    }
+
+    func setDetectedLanguage(_ language: String?) {
+        toolbarState.detectedLanguageDisplayName = language
+        positionToolbar()
+    }
+
     func setLanguages(source: String?, target: String) {
         toolbarState.selectedSourceCode = source
         toolbarState.selectedTargetCode = target
+        positionToolbar()
     }
 
     func beginLoading() {

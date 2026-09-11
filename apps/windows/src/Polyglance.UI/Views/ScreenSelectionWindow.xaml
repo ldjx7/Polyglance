@@ -42,8 +42,8 @@
             <Border x:Name="CandidateBorder"
                     BorderBrush="#0A84FF"
                     BorderThickness="2"
-                    CornerRadius="4"
-                    Background="#150A84FF"
+                    CornerRadius="2"
+                    Background="Transparent"
                     Visibility="Collapsed"
                     IsHitTestVisible="False"/>
 
@@ -88,6 +88,24 @@
 
         <!-- 浮动控件层 (放大镜与工具栏) -->
         <Canvas x:Name="OverlayCanvas">
+            <!-- 顶部操作说明提示 (仅在当前鼠标所在屏幕居中展示) -->
+            <Border x:Name="InstructionBadge"
+                    Background="#CC1E1E24"
+                    BorderBrush="#33FFFFFF"
+                    BorderThickness="1"
+                    CornerRadius="16"
+                    Padding="16,6"
+                    IsHitTestVisible="False"
+                    Visibility="Collapsed">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="10" ShadowDepth="2" Opacity="0.35"/>
+                </Border.Effect>
+                <TextBlock Text="移动鼠标自动选择 · C 复制色值 · ⇧C 切换 HEX/RGB · 右键返回 · Esc 退出"
+                           Foreground="#FFFFFF"
+                           FontSize="13"
+                           FontWeight="Medium"/>
+            </Border>
+
             <!-- 放大镜 -->
             <controls:MagnifierControl x:Name="Magnifier" Visibility="Collapsed"/>
 

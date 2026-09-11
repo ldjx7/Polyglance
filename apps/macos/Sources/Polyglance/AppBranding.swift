@@ -4,7 +4,46 @@ import AppKit
 enum PolyglanceMenuBarIcon {
     static let image: NSImage = {
         let size = CGSize(width: 18, height: 18)
-        let image = NSImage(size: size, flipped: false) { _ in
+        let loaded: NSImage? = {
+            if let img = NSImage(named: "PolyglanceIcon"), img.isValid {
+                return img
+            }
+            if let url = Bundle.main.url(forResource: "PolyglanceIcon", withExtension: "png"),
+               let img = NSImage(contentsOf: url), img.isValid {
+                return img
+            }
+            if let url = Bundle.main.url(forResource: "Polyglance", withExtension: "icns"),
+               let img = NSImage(contentsOf: url), img.isValid {
+                return img
+            }
+            let devPaths = [
+                "apps/macos/Resources/PolyglanceIcon.png",
+                "Resources/PolyglanceIcon.png",
+                "../Resources/PolyglanceIcon.png"
+            ]
+            for path in devPaths {
+                if FileManager.default.fileExists(atPath: path),
+                   let img = NSImage(contentsOfFile: path), img.isValid {
+                    return img
+                }
+            }
+            if let appIcon = NSApp.applicationIconImage, appIcon.isValid {
+                return appIcon
+            }
+            return nil
+        }()
+
+        if let base = loaded {
+            let resized = NSImage(size: size)
+            resized.lockFocus()
+            base.draw(in: NSRect(origin: .zero, size: size), from: .zero, operation: .copy, fraction: 1.0)
+            resized.unlockFocus()
+            resized.isTemplate = false
+            resized.accessibilityDescription = "Polyglance"
+            return resized
+        }
+
+        let fallback = NSImage(size: size, flipped: false) { _ in
             NSColor.black.setStroke()
 
             let cropPath = NSBezierPath()
@@ -43,9 +82,9 @@ enum PolyglanceMenuBarIcon {
             translationPath.stroke()
             return true
         }
-        image.isTemplate = true
-        image.accessibilityDescription = "Polyglance"
-        return image
+        fallback.isTemplate = false
+        fallback.accessibilityDescription = "Polyglance"
+        return fallback
     }()
 }
 

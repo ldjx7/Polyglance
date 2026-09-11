@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     override init() {
         super.init()
+        UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 150])
         AppDelegate.shared = self
     }
 
@@ -26,6 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var shortcutConfiguration = GlobalShortcutConfiguration.default
     private var translatorPanel: NSPanel?
     private var selectionCaptureTask: Task<Void, Never>?
+    private var panelEscapeMonitor: Any?
+    private var localPanelEscapeMonitor: Any?
     private lazy var settingsWindowLifecycleDelegate = SettingsWindowLifecycleDelegate { [weak self] in
         guard let self else { return }
         if self.pinHistoryWindowCoordinator.window?.isVisible != true {
@@ -69,10 +72,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     private lazy var screenshotCoordinator = ScreenshotCoordinator(
         pinWindowManager: pinWindowManager,
-        configurationStore: configurationStore,
-        onOCRTranslate: { [weak self] screenshot, text in
+        onBeginOCRTranslate: { [weak self] screenshot in
             guard let self else { return }
-            try await translateOCRScreenshot(screenshot, sourceText: text)
+            self.showTranslator(with: "", near: screenshot.screenFrame, isOcrPending: true)
+        },
+        onOCRTranslate: { [weak self] _, text in
+            guard let self else { return }
+            self.completeOCRTranslate(with: text)
+        },
+        onOCRTranslationCard: { [weak self] screenshot, text in
+            guard let self else { return }
+            try await self.translateOCRScreenshot(screenshot, sourceText: text)
         },
         onLongScreenshot: { [weak self] screenFrame in
             guard let self else { return }
@@ -128,14 +138,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let configuration = try? configurationStore.load() {
             apply(configuration)
         }
+        ScreenshotCoordinator.prewarm()
         hotKeyManager.onTranslateSelection = { [weak self] in
             self?.showTranslator(capturingSelection: true, translateImmediately: true)
+        }
+        hotKeyManager.onTranslateAndReplace = { [weak self] in
+            self?.translateSelectionAndReplace()
         }
         hotKeyManager.onCaptureSelection = { [weak self] in
             self?.showTranslator(capturingSelection: true, translateImmediately: false)
         }
         hotKeyManager.onScreenshotAndPin = { [weak self] in
             self?.captureScreenshotAndPin()
+        }
+        hotKeyManager.onScreenshotAndCopy = { [weak self] in
+            self?.captureScreenshotAndCopy()
         }
         hotKeyManager.onPinClipboardImage = { [weak self] in
             self?.pinClipboardImage()
@@ -154,6 +171,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         hotKeyManager.onOpenTranslator = { [weak self] in
             self?.showTranslator()
+        }
+        hotKeyManager.onOcrTranslate = { [weak self] in
+            self?.captureOCRTranslate()
+        }
+        hotKeyManager.onOcrWorkspace = { [weak self] in
+            self?.captureOCRWorkspace()
+        }
+        hotKeyManager.onOcrTranslationCard = { [weak self] in
+            self?.captureOCRTranslationCard()
         }
         do {
             shortcutConfiguration = shortcutStore.load()
@@ -179,7 +205,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func apply(_ configuration: AppConfiguration) {
-        viewModel.targetLanguage = configuration.targetLanguage
+        viewModel.defaultTargetLanguage = configuration.targetLanguage
+        viewModel.secondTargetLanguage = configuration.secondTargetLanguage
+        if viewModel.sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            viewModel.targetLanguage = configuration.targetLanguage
+        } else {
+            viewModel.updateAutoTargetLanguage(for: viewModel.sourceText)
+        }
+        let effective = configuration.enabledProviders.isEmpty ? ["free-ai"] : configuration.enabledProviders
+        viewModel.enabledProviders = effective
+        viewModel.primaryProvider = effective.first ?? "free-ai"
+        viewModel.providerModes = configuration.providerDisplayModes
+        viewModel.providerOrder = configuration.providerOrder
+        var customNames: [String: String] = [:]
+        for c in configuration.customAIConfigs {
+            customNames[c.id] = c.name
+        }
+        viewModel.customAIDisplayNames = customNames
     }
 
     func showSettings() {
@@ -208,7 +250,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func captureScreenTranslation() {
-        captureScreenshot(preferredAction: .screenTranslation)
+        let style = (try? configurationStore.load())?.screenshotTranslationStyle ?? "bob"
+        if style == "youdao" {
+            captureScreenshot(preferredAction: .screenTranslation)
+        } else {
+            captureScreenshot(preferredAction: .ocrTranslate)
+        }
+    }
+
+    func captureScreenshotAndCopy() {
+        captureScreenshot(preferredAction: .screenshotAndCopy)
     }
 
     func captureScreenRecordingRegion() {
@@ -218,13 +269,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         captureScreenshot(preferredAction: .screenRecording)
     }
 
+    func captureOCRTranslate() {
+        captureScreenshot(preferredAction: .ocrTranslate)
+    }
+
+    func captureOCRWorkspace() {
+        captureScreenshot(preferredAction: .ocrWorkspace)
+    }
+
+    func captureOCRTranslationCard() {
+        captureScreenshot(preferredAction: .ocrTranslationCard)
+    }
+
     private func captureScreenshot(preferredAction: ScreenshotPreferredAction?) {
+        let triggerTime = CFAbsoluteTimeGetCurrent()
         Task { [weak self] in
             guard let self else {
                 return
             }
             do {
-                try await screenshotCoordinator.captureAndPin(preferredAction: preferredAction)
+                try await screenshotCoordinator.captureAndPin(
+                    preferredAction: preferredAction,
+                    triggerTime: triggerTime
+                )
             } catch {
                 if case .permissionRequired = error as? ScreenshotError {
                     return
@@ -276,6 +343,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         translateImmediately: Bool = false
     ) {
         if capturingSelection {
+            if let app = NSWorkspace.shared.frontmostApplication,
+               app.bundleIdentifier != Bundle.main.bundleIdentifier {
+                TextReplacementService.lastTargetApplication = app
+            }
             selectionCaptureTask?.cancel()
             selectionCaptureTask = Task { [weak self] in
                 await self?.captureSelectionAndShow(translateImmediately: translateImmediately)
@@ -303,10 +374,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        viewModel.applyCapturedText(selectedText)
-        presentTranslatorPanel()
-        if translateImmediately {
-            await viewModel.translate()
+        let mouseLocation = NSEvent.mouseLocation
+        let mouseFrame = CGRect(x: mouseLocation.x, y: mouseLocation.y, width: 1, height: 1)
+        showTranslator(with: selectedText, near: mouseFrame, shouldTranslate: translateImmediately, takeFocus: false)
+    }
+
+    func translateSelectionAndReplace() {
+        if let app = NSWorkspace.shared.frontmostApplication,
+           app.bundleIdentifier != Bundle.main.bundleIdentifier {
+            TextReplacementService.lastTargetApplication = app
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            let result = await selectedTextReader.read()
+            guard !Task.isCancelled else { return }
+            let selectedText: String
+            switch result {
+            case let .text(text):
+                selectedText = text
+            case .permissionRequired, .noSelection:
+                return
+            }
+
+            let configuration = (try? configurationStore.load()) ?? AppConfiguration()
+            let targetLang = determineTargetLanguage(
+                for: selectedText,
+                primary: configuration.targetLanguage,
+                secondary: configuration.secondTargetLanguage
+            )
+
+            let request = AppTranslationRequest(
+                text: selectedText,
+                sourceLanguage: nil,
+                targetLanguage: targetLang,
+                provider: configuration.provider.rawValue
+            )
+
+            do {
+                let translationResult = try await translationClient.translate(request)
+                guard !Task.isCancelled, !translationResult.text.isEmpty else { return }
+                TextReplacementService.replaceSelection(with: translationResult.text)
+            } catch {
+            }
+        }
+    }
+
+    private func determineTargetLanguage(for text: String, primary: String, secondary: String) -> String {
+        let hasChinese = text.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) }
+        let primaryIsChinese = primary.lowercased().starts(with: "zh")
+        if primaryIsChinese {
+            return hasChinese ? (secondary.isEmpty ? "en" : secondary) : primary
+        } else {
+            return hasChinese ? primary : (secondary.isEmpty ? "zh-CN" : secondary)
         }
     }
 
@@ -355,32 +474,152 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         translatorPanel?.makeKeyAndOrderFront(nil)
     }
 
+    func showTranslator(
+        with text: String = "",
+        near targetFrame: CGRect? = nil,
+        isOcrPending: Bool = false,
+        shouldTranslate: Bool = true,
+        takeFocus: Bool = true
+    ) {
+        createTranslatorPanel()
+        guard let panel = translatorPanel else { return }
+        if let cfg = try? configurationStore.load() {
+            apply(cfg)
+        }
+        if isOcrPending {
+            viewModel.startOcrLoading()
+        } else {
+            viewModel.finishOcrLoading()
+            viewModel.applyCapturedText(text)
+        }
+        if !panel.isVisible {
+            if let targetFrame {
+                placeTranslatorPanel(panel, near: targetFrame)
+            } else {
+                panel.center()
+            }
+        }
+        if takeFocus {
+            NSApp.activate(ignoringOtherApps: true)
+            panel.makeKeyAndOrderFront(nil)
+        } else {
+            panel.orderFrontRegardless()
+        }
+        if shouldTranslate && !isOcrPending && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            viewModel.startTranslation()
+        }
+    }
+
+    func completeOCRTranslate(with text: String) {
+        viewModel.finishOcrLoading()
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            viewModel.presentError("未识别到文字")
+        } else {
+            viewModel.applyCapturedText(trimmed)
+            viewModel.startTranslation()
+        }
+    }
+
+    private func placeTranslatorPanel(_ panel: NSPanel, near targetFrame: CGRect) {
+        let center = CGPoint(x: targetFrame.midX, y: targetFrame.midY)
+        let screen = NSScreen.screens.first(where: { $0.frame.contains(center) })
+            ?? NSScreen.screens.first(where: { $0.frame.intersects(targetFrame) })
+            ?? NSScreen.main
+        guard let screen else {
+            panel.center()
+            return
+        }
+
+        let visible = screen.visibleFrame
+        let panelSize = panel.frame.size
+
+        if targetFrame.width <= 2 && targetFrame.height <= 2 {
+            var x = targetFrame.minX - 30
+            var y = targetFrame.minY - panelSize.height - 12
+            if y < visible.minY {
+                y = targetFrame.maxY + 12
+            }
+            x = max(visible.minX + 10, min(x, visible.maxX - panelSize.width - 10))
+            y = max(visible.minY + 10, min(y, visible.maxY - panelSize.height - 10))
+            panel.setFrameOrigin(CGPoint(x: x, y: y))
+            return
+        }
+
+        var x = targetFrame.maxX + 12
+        var y = targetFrame.maxY - panelSize.height
+
+        if x + panelSize.width > visible.maxX {
+            x = targetFrame.minX - panelSize.width - 12
+        }
+
+        if x < visible.minX {
+            x = targetFrame.midX - panelSize.width / 2
+            y = targetFrame.minY - panelSize.height - 12
+            if y < visible.minY {
+                y = targetFrame.maxY + 12
+            }
+        }
+
+        x = max(visible.minX + 10, min(x, visible.maxX - panelSize.width - 10))
+        y = max(visible.minY + 10, min(y, visible.maxY - panelSize.height - 10))
+
+        panel.setFrameOrigin(CGPoint(x: x, y: y))
+    }
+
     private func createTranslatorPanel() {
         guard translatorPanel == nil else {
             return
         }
 
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 620, height: 380),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+        let panel = FloatingTranslatorPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 440, height: 480),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.minSize = NSSize(width: 380, height: 340)
         panel.title = "Polyglance"
         panel.titlebarAppearsTransparent = true
         panel.titleVisibility = .hidden
+        panel.titlebarSeparatorStyle = .none
+        panel.hideTrafficLights()
         panel.isMovableByWindowBackground = true
         panel.isFloatingPanel = true
         panel.level = .floating
-        panel.hidesOnDeactivate = true
+        panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
+        panel.setFrameAutosaveName("PolyglanceTranslatorPanel")
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentViewController = NSHostingController(rootView: TranslationView(viewModel: viewModel))
         panel.center()
         translatorPanel = panel
+        setupPanelEscapeMonitors()
+    }
+
+    private func setupPanelEscapeMonitors() {
+        if panelEscapeMonitor == nil {
+            panelEscapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, let panel = self.translatorPanel, panel.isVisible else { return }
+                if event.keyCode == 53 {
+                    panel.orderOut(nil)
+                }
+            }
+        }
+        if localPanelEscapeMonitor == nil {
+            localPanelEscapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, let panel = self.translatorPanel, panel.isVisible else { return event }
+                if event.keyCode == 53 {
+                    panel.orderOut(nil)
+                    return nil
+                }
+                return event
+            }
+        }
     }
 
     private func makeSettingsWindow() -> NSWindow {
@@ -409,7 +648,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Polyglance 设置"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        window.isMovableByWindowBackground = true
+        window.isMovableByWindowBackground = false
         window.isReleasedWhenClosed = false
         window.delegate = settingsWindowLifecycleDelegate
         window.contentViewController = NSHostingController(rootView: settingsView)
@@ -506,5 +745,31 @@ private struct UnavailableTranslationClient: TranslationClient {
 
     func translate(_ request: AppTranslationRequest) async throws -> AppTranslationResult {
         throw error
+    }
+}
+
+private final class FloatingTranslatorPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+    override func cancelOperation(_ sender: Any?) {
+        orderOut(nil)
+    }
+
+    override func makeKeyAndOrderFront(_ sender: Any?) {
+        super.makeKeyAndOrderFront(sender)
+        hideTrafficLights()
+    }
+
+    override func orderFrontRegardless() {
+        super.orderFrontRegardless()
+        hideTrafficLights()
+    }
+
+    func hideTrafficLights() {
+        [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].forEach {
+            let btn = standardWindowButton($0)
+            btn?.isHidden = true
+            btn?.removeFromSuperview()
+        }
     }
 }

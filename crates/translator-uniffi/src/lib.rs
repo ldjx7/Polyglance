@@ -26,6 +26,7 @@ pub struct TranslationInput {
     pub text: String,
     pub source_language: Option<String>,
     pub target_language: String,
+    pub prompt: Option<String>,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -82,9 +83,14 @@ impl TranslationEngine {
             &input.target_language,
         )
         .map_err(map_core_error)?;
-        let selection =
-            dispatch::select(&input.provider, input.endpoint, input.api_key, input.model)
-                .map_err(map_provider_error)?;
+        let selection = dispatch::select_with_prompt(
+            &input.provider,
+            input.endpoint,
+            input.api_key,
+            input.model,
+            input.prompt,
+        )
+        .map_err(map_provider_error)?;
         let result = self
             .runtime
             .block_on(dispatch::translate(selection, &request))
@@ -92,7 +98,7 @@ impl TranslationEngine {
 
         Ok(TranslationOutput {
             text: result.text,
-            provider: result.provider,
+            provider: input.provider,
             elapsed_ms: result.elapsed_ms,
         })
     }

@@ -90,11 +90,14 @@ struct ScreenshotRegionDetector: @unchecked Sendable {
             x: displayBounds.minX + localPoint.x,
             y: displayBounds.maxY - localPoint.y
         )
-        guard let window = windows.first(where: { $0.frame.contains(quartzPoint) }) else {
-            return localDisplayBounds
+
+        let containing = windows.filter { $0.frame.contains(quartzPoint) }
+        if let best = containing.min(by: { ($0.frame.width * $0.frame.height) < ($1.frame.width * $1.frame.height) }),
+           let local = localRect(for: best.frame) {
+            return local
         }
 
-        return localRect(for: window.frame)
+        return localDisplayBounds
     }
 
     func refinedElementRegion(at localPoint: CGPoint) -> CGRect? {
@@ -107,15 +110,15 @@ struct ScreenshotRegionDetector: @unchecked Sendable {
             x: displayBounds.minX + localPoint.x,
             y: displayBounds.maxY - localPoint.y
         )
-        guard let window = windows.first(where: { $0.frame.contains(quartzPoint) }) else {
-            return nil
-        }
+        let containing = windows.filter { $0.frame.contains(quartzPoint) }
+        let targetPID = containing.min(by: { ($0.frame.width * $0.frame.height) < ($1.frame.width * $1.frame.height) })?.ownerPID ?? 0
 
-        if let elementFrame = elementFrameLookup(window.ownerPID, quartzPoint),
+        if let elementFrame = elementFrameLookup(targetPID, quartzPoint),
            elementFrame.contains(quartzPoint),
            let localElementFrame = localRect(for: elementFrame),
            localElementFrame.width >= 4,
-           localElementFrame.height >= 4 {
+           localElementFrame.height >= 4,
+           (localElementFrame.width < localDisplayBounds.width - 6 || localElementFrame.height < localDisplayBounds.height - 6) {
             return localElementFrame
         }
         return nil
@@ -135,30 +138,60 @@ struct ScreenshotRegionDetector: @unchecked Sendable {
     }
 
     private static func accessibilityElementFrame(
-        ownerPID: pid_t,
+        ownerPID: pid_t?,
         quartzPoint: CGPoint
     ) -> CGRect? {
         guard AXIsProcessTrusted() else {
             return nil
         }
 
-        let application = AXUIElementCreateApplication(ownerPID)
-        var element: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(
-            application,
+        // Try system-wide accessibility first to find leaf controls
+        let systemWide = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(systemWide, 0.06)
+        var systemElement: AXUIElement?
+        if AXUIElementCopyElementAtPosition(
+            systemWide,
             Float(quartzPoint.x),
             Float(quartzPoint.y),
-            &element
+            &systemElement
         ) == .success,
-        let element else {
-            return nil
+        let systemElement {
+            AXUIElementSetMessagingTimeout(systemElement, 0.06)
+            if let pos = pointAttribute(kAXPositionAttribute as CFString, of: systemElement),
+               let size = sizeAttribute(kAXSizeAttribute as CFString, of: systemElement),
+               size.width >= 8, size.height >= 8 {
+                let frame = CGRect(origin: pos, size: size)
+                if frame.contains(quartzPoint) {
+                    return frame
+                }
+            }
         }
 
-        guard let position = pointAttribute(kAXPositionAttribute as CFString, of: element),
-              let size = sizeAttribute(kAXSizeAttribute as CFString, of: element) else {
-            return nil
+        // Fall back to application-specific element lookup
+        if let ownerPID, ownerPID > 0 {
+            let application = AXUIElementCreateApplication(ownerPID)
+            AXUIElementSetMessagingTimeout(application, 0.06)
+            var element: AXUIElement?
+            if AXUIElementCopyElementAtPosition(
+                application,
+                Float(quartzPoint.x),
+                Float(quartzPoint.y),
+                &element
+            ) == .success,
+            let element {
+                AXUIElementSetMessagingTimeout(element, 0.06)
+                if let position = pointAttribute(kAXPositionAttribute as CFString, of: element),
+                   let size = sizeAttribute(kAXSizeAttribute as CFString, of: element),
+                   size.width >= 8, size.height >= 8 {
+                    let frame = CGRect(origin: position, size: size)
+                    if frame.contains(quartzPoint) {
+                        return frame
+                    }
+                }
+            }
         }
-        return CGRect(origin: position, size: size)
+
+        return nil
     }
 
     private static func pointAttribute(_ attribute: CFString, of element: AXUIElement) -> CGPoint? {

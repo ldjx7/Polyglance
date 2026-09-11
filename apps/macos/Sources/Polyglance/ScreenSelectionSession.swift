@@ -17,6 +17,7 @@ enum ScreenshotSelectionAction {
     case longScreenshot(SelectedScreenshot)
     case screenRecording(SelectedScreenshot)
     case screenTranslation(ScreenTranslationSelection)
+    case ocrTranslationCard(SelectedScreenshot)
 }
 
 enum ScreenshotCursorMode: Equatable {
@@ -235,7 +236,7 @@ fileprivate struct ScreenSelectionMirrorState {
     let selection: CGRect?
     let dimsDesktop: Bool
     let showsHandles: Bool
-    let showsInstructions: Bool
+    var showsInstructions: Bool
     let sizeLabel: String?
     let annotations: [ScreenshotAnnotationElement]
     let selectedAnnotation: ScreenshotAnnotationElement?
@@ -613,6 +614,7 @@ final class ScreenSelectionSession {
     private var completion: ((ScreenshotSelectionAction?) -> Void)?
     private var didFinish = false
     private var screenChangeObserver: NSObjectProtocol?
+    private let startTime: CFAbsoluteTime?
 
     var inactiveDimmingWindowFrames: [CGRect] {
         inactiveDimmingWindows.map(\.frame)
@@ -657,8 +659,10 @@ final class ScreenSelectionSession {
         regionProvider: ScreenshotRegionProvider? = nil,
         regionRefiner: ScreenshotRegionRefiner? = nil,
         preferredAction: ScreenshotPreferredAction? = nil,
-        toolbarItems: [ScreenshotToolbarItemConfig] = ScreenshotToolbarItemConfig.defaultItems
+        toolbarItems: [ScreenshotToolbarItemConfig] = ScreenshotToolbarItemConfig.defaultItems,
+        startTime: CFAbsoluteTime? = nil
     ) {
+        self.startTime = startTime
         window = ScreenSelectionWindow(
             image: image,
             screen: screen,
@@ -696,7 +700,15 @@ final class ScreenSelectionSession {
             )
         }
         selectionView.onMirrorStateChange = { [weak self] state in
-            self?.crossScreenWindows.forEach { $0.mirrorView.update(state) }
+            guard let self else { return }
+            let mouseLocal = self.window.selectionView.currentLocalMousePoint
+            for window in self.crossScreenWindows {
+                var windowState = state
+                let mirrorRect = window.mirrorView.displayFrame.offsetBy(dx: -activeFrame.minX, dy: -activeFrame.minY)
+                let isMouseInMirror = mirrorRect.contains(mouseLocal)
+                windowState.showsInstructions = (self.window.selectionView.confirmedSelection == nil) && isMouseInMirror
+                window.mirrorView.update(windowState)
+            }
         }
         selectionView.onMagnifierStateChange = { [weak self, weak selectionView] state in
             guard let self, let selectionView else { return }
@@ -765,6 +777,10 @@ final class ScreenSelectionSession {
         window.makeKey()
         window.makeFirstResponder(window.selectionView)
         crossScreenWindows.forEach { $0.orderFrontRegardless() }
+        if let startTime {
+            let latency = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+            window.selectionView.startupLatencyMs = latency
+        }
         window.selectionView.prepareForCaptureInput()
         screenChangeObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -963,6 +979,23 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     fileprivate var onMagnifierStateChange: ((ScreenSelectionMagnifierState?) -> Void)?
     fileprivate var onMagnifierCopyConfirmation: ((String) -> Void)?
     private var lastMagnifierPoint: CGPoint?
+    var startupLatencyMs: Double?
+
+    private var isDebugClient: Bool {
+        #if DEBUG
+        return true
+        #else
+        return Bundle.main.bundleIdentifier == "io.polyglance.macos.dev"
+        #endif
+    }
+
+    var currentLocalMousePoint: CGPoint {
+        lastHoverPoint ?? CGPoint(x: toolbarPlacementFrame.midX, y: toolbarPlacementFrame.midY)
+    }
+
+    var isMouseOnHostScreen: Bool {
+        toolbarPlacementFrame.contains(currentLocalMousePoint)
+    }
 
     private let capturedImage: CGImage
     private let displayImage: NSImage
@@ -1112,12 +1145,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     }
 
     var dimsCurrentScreen: Bool {
-        switch capturePhase {
-        case .dragging, .selected, .annotating:
-            return true
-        case .ready, .pressed:
-            return false
-        }
+        true
     }
 
     private var isAnnotating: Bool {
@@ -1277,8 +1305,12 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             drawSizeLabel(for: selection)
         }
 
-        if confirmedSelection == nil {
+        if confirmedSelection == nil && isMouseOnHostScreen {
             drawInstructions()
+        }
+
+        if isDebugClient, let latency = startupLatencyMs {
+            drawStartupLatencyBadge(latency)
         }
     }
 
@@ -2606,6 +2638,11 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         hideMagnifier()
         if let preferredAction {
             switch preferredAction {
+            case .screenshotAndCopy:
+                if let result = makeSelectedScreenshot() {
+                    onAction?(.copy(result))
+                    return
+                }
             case .longScreenshot:
                 if let result = makeSelectedScreenshot() {
                     onAction?(.longScreenshot(result))
@@ -2628,6 +2665,21 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
                     )
                 )))
                 return
+            case .ocrTranslate:
+                if let result = makeSelectedScreenshot() {
+                    onAction?(.ocrTranslate(result))
+                    return
+                }
+            case .ocrWorkspace:
+                if let result = makeSelectedScreenshot() {
+                    onAction?(.ocrCopy(result))
+                    return
+                }
+            case .ocrTranslationCard:
+                if let result = makeSelectedScreenshot() {
+                    onAction?(.ocrTranslationCard(result))
+                    return
+                }
             }
         }
         resetAnnotationControls()
@@ -2956,6 +3008,12 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
 
     private func updateHoveredCandidate(at point: CGPoint) {
         lastHoverPoint = point
+        if let current = hoveredCandidate,
+           current != bounds,
+           current.contains(point) {
+            scheduleElementRefinement(at: point)
+            return
+        }
         let candidate = candidateRegion(at: point)
         if candidate != hoveredCandidate {
             hoveredCandidate = candidate
@@ -2969,7 +3027,14 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         guard bounds.contains(point) else {
             return nil
         }
-        return validatedCandidate(regionProvider?(point))
+        if let candidate = validatedCandidate(regionProvider?(point)) {
+            return candidate
+        }
+        let hostBounds = toolbarPlacementFrame.intersection(bounds)
+        if hostBounds.contains(point) {
+            return hostBounds
+        }
+        return bounds
     }
 
     private func candidateForPress(at point: CGPoint) -> CGRect? {
@@ -3002,7 +3067,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         let requestID = hoverRequestID
         hoverRefinementTask = Task.detached(priority: .userInitiated) { [weak self] in
             do {
-                try await Task.sleep(for: .milliseconds(45))
+                try await Task.sleep(for: .milliseconds(15))
             } catch {
                 return
             }
@@ -3142,7 +3207,10 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     }
 
     private func drawInstructions() {
-        let text = "移动鼠标自动选择 · C 复制色值 · ⇧C 切换 HEX/RGB · 右键返回 · Esc 退出"
+        var text = "移动鼠标自动选择 · C 复制色值 · ⇧C 切换 HEX/RGB · 右键返回 · Esc 退出"
+        if isDebugClient, let latency = startupLatencyMs {
+            text = String(format: "⚡ 激活耗时: %.0f ms · ", latency) + text
+        }
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 15, weight: .medium),
             .foregroundColor: NSColor.white,
@@ -3153,6 +3221,43 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         let targetBounds = (!hostBounds.isNull && !hostBounds.isEmpty) ? hostBounds : bounds
         let point = CGPoint(x: targetBounds.midX - size.width / 2, y: targetBounds.maxY - size.height - 36)
         text.draw(at: point, withAttributes: attributes)
+    }
+
+    private func drawStartupLatencyBadge(_ latency: Double) {
+        let text = String(format: "⚡ 激活耗时: %.0f ms", latency)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+        let textAttributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor(calibratedRed: 0.35, green: 0.85, blue: 0.45, alpha: 1.0),
+        ]
+        let textSize = text.size(withAttributes: textAttributes)
+        let horizontalPadding: CGFloat = 10
+        let verticalPadding: CGFloat = 5
+        let badgeSize = CGSize(
+            width: textSize.width + horizontalPadding * 2,
+            height: textSize.height + verticalPadding * 2
+        )
+        let hostBounds = toolbarPlacementFrame.intersection(bounds)
+        let targetBounds = (!hostBounds.isNull && !hostBounds.isEmpty) ? hostBounds : bounds
+        let badgeOrigin = CGPoint(
+            x: targetBounds.maxX - badgeSize.width - 20,
+            y: targetBounds.maxY - badgeSize.height - 20
+        )
+        let badgeRect = CGRect(origin: badgeOrigin, size: badgeSize)
+
+        NSGraphicsContext.saveGraphicsState()
+        let bgPath = NSBezierPath(roundedRect: badgeRect, xRadius: 6, yRadius: 6)
+        NSColor.black.withAlphaComponent(0.72).setFill()
+        bgPath.fill()
+        NSColor.white.withAlphaComponent(0.15).setStroke()
+        bgPath.lineWidth = 1
+        bgPath.stroke()
+
+        text.draw(
+            at: CGPoint(x: badgeRect.minX + horizontalPadding, y: badgeRect.minY + verticalPadding),
+            withAttributes: textAttributes
+        )
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private func sizeLabelText(for selection: CGRect) -> String {

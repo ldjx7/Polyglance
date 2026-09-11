@@ -30,6 +30,8 @@ pub struct CTranslationInput {
     #[serde(default)]
     pub source_language: Option<String>,
     pub target_language: String,
+    #[serde(default)]
+    pub prompt: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -112,11 +114,16 @@ unsafe fn translate(
         Err(e) => return map_core_error(e),
     };
 
-    let selection =
-        match dispatch::select(&input.provider, input.endpoint, input.api_key, input.model) {
-            Ok(sel) => sel,
-            Err(e) => return map_provider_error(e),
-        };
+    let selection = match dispatch::select_with_prompt(
+        &input.provider,
+        input.endpoint,
+        input.api_key,
+        input.model,
+        input.prompt,
+    ) {
+        Ok(sel) => sel,
+        Err(e) => return map_provider_error(e),
+    };
 
     let engine_ref = unsafe { &*engine };
     let result = match engine_ref
@@ -129,7 +136,7 @@ unsafe fn translate(
 
     let output = CTranslationOutput {
         text: result.text,
-        provider: result.provider,
+        provider: input.provider,
         elapsed_ms: result.elapsed_ms,
     };
 

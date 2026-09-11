@@ -70,6 +70,25 @@ pub fn stream_request_body(
     )
 }
 
+#[uniffi::export]
+pub fn stream_request_body_with_prompt(
+    model: String,
+    text: String,
+    source_language: Option<String>,
+    target_language: String,
+    deny_data_collection: bool,
+    prompt: Option<String>,
+) -> String {
+    streaming::streaming_request_body_with_prompt(
+        &model,
+        &text,
+        source_language.as_deref(),
+        &target_language,
+        deny_data_collection,
+        prompt.as_deref(),
+    )
+}
+
 #[derive(uniffi::Object)]
 pub struct StreamEmissionPolicy {
     inner: Mutex<streaming::EmissionPolicy>,

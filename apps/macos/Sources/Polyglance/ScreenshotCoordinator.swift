@@ -45,7 +45,7 @@ enum ScreenshotCapturePolicy {
             // engines. Standard screenshots, OCR and screenshot translation can
             // consume the composed virtual-desktop bitmap directly.
             return false
-        case .screenTranslation, .none:
+        case .screenshotAndCopy, .screenTranslation, .ocrTranslate, .ocrWorkspace, .ocrTranslationCard, .none:
             return true
         }
     }
@@ -74,7 +74,9 @@ final class ScreenshotCoordinator {
     private let fileSaver: ScreenshotFileSaver
     private let ocrService: OCRService
     private let barcodeService: BarcodeService
+    private let onBeginOCRTranslate: @MainActor (SelectedScreenshot) -> Void
     private let onOCRTranslate: @MainActor (SelectedScreenshot, String) async throws -> Void
+    private let onOCRTranslationCard: @MainActor (SelectedScreenshot, String) async throws -> Void
     private let onLongScreenshot: @MainActor (CGRect) async throws -> Void
     private let onScreenRecording: @MainActor (CGRect) async throws -> Void
     private let onScreenTranslate: @MainActor (ScreenTranslationSelection) async throws -> Void
@@ -89,7 +91,9 @@ final class ScreenshotCoordinator {
         configurationStore: AppConfigurationStore = AppConfigurationStore(),
         ocrService: OCRService = OCRService(),
         barcodeService: BarcodeService = BarcodeService(),
+        onBeginOCRTranslate: @escaping @MainActor (SelectedScreenshot) -> Void = { _ in },
         onOCRTranslate: @escaping @MainActor (SelectedScreenshot, String) async throws -> Void = { _, _ in },
+        onOCRTranslationCard: @escaping @MainActor (SelectedScreenshot, String) async throws -> Void = { _, _ in },
         onLongScreenshot: @escaping @MainActor (CGRect) async throws -> Void = { _ in },
         onScreenRecording: @escaping @MainActor (CGRect) async throws -> Void = { _ in },
         onScreenTranslate: @escaping @MainActor (ScreenTranslationSelection) async throws -> Void = { _ in }
@@ -99,7 +103,9 @@ final class ScreenshotCoordinator {
         fileSaver = ScreenshotFileSaver()
         self.ocrService = ocrService
         self.barcodeService = barcodeService
+        self.onBeginOCRTranslate = onBeginOCRTranslate
         self.onOCRTranslate = onOCRTranslate
+        self.onOCRTranslationCard = onOCRTranslationCard
         self.onLongScreenshot = onLongScreenshot
         self.onScreenRecording = onScreenRecording
         self.onScreenTranslate = onScreenTranslate
@@ -111,13 +117,19 @@ final class ScreenshotCoordinator {
         configurationStore = AppConfigurationStore()
         ocrService = OCRService()
         barcodeService = BarcodeService()
+        onBeginOCRTranslate = { _ in }
         onOCRTranslate = { _, _ in }
+        onOCRTranslationCard = { _, _ in }
         onLongScreenshot = { _ in }
         onScreenRecording = { _ in }
         onScreenTranslate = { _ in }
     }
 
-    func captureAndPin(preferredAction: ScreenshotPreferredAction? = nil) async throws {
+    func captureAndPin(
+        preferredAction: ScreenshotPreferredAction? = nil,
+        triggerTime: CFAbsoluteTime? = nil
+    ) async throws {
+        let startTime = triggerTime ?? CFAbsoluteTimeGetCurrent()
         guard selectionSession == nil, !isCapturing else {
             return
         }
@@ -132,8 +144,12 @@ final class ScreenshotCoordinator {
             }
             selectionSession = nil
             isCapturing = false
+            Self.prewarm()
         }
-        guard let action = try await captureSelectionAction(preferredAction: preferredAction) else {
+        guard let action = try await captureSelectionAction(
+            preferredAction: preferredAction,
+            startTime: startTime
+        ) else {
             return
         }
         keepsOverlayUntilHandoff = ScreenshotCapturePolicy
@@ -158,9 +174,8 @@ final class ScreenshotCoordinator {
         case let .ocrCopy(result):
             if let activeContinuous = OCRWorkspacePanel.activeContinuousInstance, activeContinuous.isVisible {
                 activeContinuous.startPendingAppend(image: result.image)
-                NSApp.setActivationPolicy(.regular)
-                activeContinuous.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
+                activeContinuous.orderFrontRegardless()
+                activeContinuous.makeKey()
                 Task {
                     do {
                         let document = try await ocrService.recognizeDocument(in: result.image)
@@ -193,8 +208,8 @@ final class ScreenshotCoordinator {
             )
             activeOCRWorkspacePanel = panel
             panel.center()
-            panel.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            panel.orderFrontRegardless()
+            panel.makeKey()
 
             Task {
                 do {
@@ -226,8 +241,12 @@ final class ScreenshotCoordinator {
                 throw ScreenshotError.ocrCopyFailed
             }
         case let .ocrTranslate(result):
+            onBeginOCRTranslate(result)
             let text = try await ocrService.recognizeText(in: result.image)
             try await onOCRTranslate(result, text)
+        case let .ocrTranslationCard(result):
+            let text = try await ocrService.recognizeText(in: result.image)
+            try await onOCRTranslationCard(result, text)
         case let .detectBarcode(result):
             let observations: [BarcodeObservation]
             do {
@@ -263,7 +282,8 @@ final class ScreenshotCoordinator {
     /// OCR, translation, long-capture, or recording setup begins prevents an
     /// older post-processing task from releasing a newer selection session.
     private func captureSelectionAction(
-        preferredAction: ScreenshotPreferredAction?
+        preferredAction: ScreenshotPreferredAction?,
+        startTime: CFAbsoluteTime? = nil
     ) async throws -> ScreenshotSelectionAction? {
         guard CGPreflightScreenCaptureAccess() else {
             _ = CGRequestScreenCaptureAccess()
@@ -278,13 +298,39 @@ final class ScreenshotCoordinator {
             preferredAction: preferredAction
         ) {
             let screens = NSScreen.screens
-            var segments: [VirtualDesktopCapture.Segment] = []
-            for candidate in screens {
-                segments.append(VirtualDesktopCapture.Segment(
-                    image: try await capture(screen: candidate),
-                    frame: candidate.frame,
-                    backingScaleFactor: candidate.backingScaleFactor
-                ))
+            let displays = try await Self.fetchDisplays(screens: screens)
+            let segments: [VirtualDesktopCapture.Segment] = try await withThrowingTaskGroup(
+                of: (Int, VirtualDesktopCapture.Segment).self
+            ) { group in
+                for (index, candidate) in screens.enumerated() {
+                    guard let displayID = candidate.deviceDescription[.init("NSScreenNumber")] as? NSNumber,
+                          let display = displays.first(where: {
+                              $0.displayID == CGDirectDisplayID(displayID.uint32Value)
+                          }) else {
+                        throw ScreenshotError.screenUnavailable
+                    }
+                    let pointSize = candidate.frame.size
+                    let scale = candidate.backingScaleFactor
+                    let frame = candidate.frame
+                    group.addTask {
+                        let img = try await Self.captureDisplay(
+                            display: display,
+                            screenPointSize: pointSize,
+                            backingScaleFactor: scale
+                        )
+                        return (index, VirtualDesktopCapture.Segment(
+                            image: img,
+                            frame: frame,
+                            backingScaleFactor: scale
+                        ))
+                    }
+                }
+                var results: [(Int, VirtualDesktopCapture.Segment)] = []
+                for try await item in group {
+                    results.append(item)
+                }
+                results.sort(by: { $0.0 < $1.0 })
+                return results.map(\.1)
             }
             guard let desktop = VirtualDesktopCapture.compose(segments) else {
                 throw ScreenshotError.screenUnavailable
@@ -307,7 +353,8 @@ final class ScreenshotCoordinator {
                 regionProvider: { point in detector.windowRegion(at: point) },
                 regionRefiner: { point in detector.refinedElementRegion(at: point) },
                 preferredAction: preferredAction,
-                toolbarItems: toolbarItems
+                toolbarItems: toolbarItems,
+                startTime: startTime
             )
             selectionSession = session
             return await withCheckedContinuation { continuation in
@@ -338,7 +385,8 @@ final class ScreenshotCoordinator {
             regionProvider: regionProvider,
             regionRefiner: regionRefiner,
             preferredAction: preferredAction,
-            toolbarItems: toolbarItems
+            toolbarItems: toolbarItems,
+            startTime: startTime
         )
         selectionSession = session
         let action = await withCheckedContinuation { continuation in
@@ -357,31 +405,64 @@ final class ScreenshotCoordinator {
         CGPreflightScreenCaptureAccess()
     }
 
-    private func capture(screen: NSScreen) async throws -> CGImage {
+    private static var cachedDisplays: [SCDisplay] = []
+
+    private static func fetchDisplays(screens: [NSScreen]) async throws -> [SCDisplay] {
+        if !cachedDisplays.isEmpty {
+            let cachedIDs = Set(cachedDisplays.map(\.displayID))
+            let requiredIDs = screens.compactMap { s -> CGDirectDisplayID? in
+                (s.deviceDescription[.init("NSScreenNumber")] as? NSNumber).map { CGDirectDisplayID($0.uint32Value) }
+            }
+            if !requiredIDs.isEmpty && requiredIDs.allSatisfy({ cachedIDs.contains($0) }) {
+                return cachedDisplays
+            }
+        }
+        return try await refreshDisplays()
+    }
+
+    @discardableResult
+    private static func refreshDisplays() async throws -> [SCDisplay] {
         let content = try await SCShareableContent.excludingDesktopWindows(
             false,
             onScreenWindowsOnly: true
         )
+        cachedDisplays = content.displays
+        return content.displays
+    }
+
+    private func capture(screen: NSScreen) async throws -> CGImage {
+        let displays = try await Self.fetchDisplays(screens: [screen])
         guard let displayID = screen.deviceDescription[.init("NSScreenNumber")] as? NSNumber,
-              let display = content.displays.first(where: {
+              let display = displays.first(where: {
                   $0.displayID == CGDirectDisplayID(displayID.uint32Value)
               }) else {
             throw ScreenshotError.screenUnavailable
         }
+        return try await Self.captureDisplay(
+            display: display,
+            screenPointSize: screen.frame.size,
+            backingScaleFactor: screen.backingScaleFactor
+        )
+    }
 
+    private static func captureDisplay(
+        display: SCDisplay,
+        screenPointSize: CGSize,
+        backingScaleFactor: CGFloat
+    ) async throws -> CGImage {
         let excludedApplications = ScreenshotCapturePolicy.includesCurrentApplicationWindows
             ? []
-            : content.applications.filter {
+            : (try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true))?.applications.filter {
                 $0.bundleIdentifier == Bundle.main.bundleIdentifier
-            }
+            } ?? []
         let filter = SCContentFilter(
             display: display,
             excludingApplications: excludedApplications,
             exceptingWindows: []
         )
         let captureSize = CaptureGeometry.preferredCapturePixelSize(
-            screenPointSize: screen.frame.size,
-            backingScaleFactor: screen.backingScaleFactor,
+            screenPointSize: screenPointSize,
+            backingScaleFactor: backingScaleFactor,
             reportedPixelSize: CGSize(width: display.width, height: display.height)
         )
         do {
@@ -442,12 +523,23 @@ final class ScreenshotCoordinator {
         let pointer = NSEvent.mouseLocation
         return NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? NSScreen.main
     }
+
+    static func prewarm() {
+        Task.detached(priority: .userInitiated) {
+            guard CGPreflightScreenCaptureAccess() else { return }
+            _ = try? await refreshDisplays()
+        }
+    }
 }
 
 enum ScreenshotPreferredAction {
+    case screenshotAndCopy
     case longScreenshot
     case screenRecording
     case screenTranslation
+    case ocrTranslate
+    case ocrWorkspace
+    case ocrTranslationCard
 }
 
 enum ScreenshotError: LocalizedError {

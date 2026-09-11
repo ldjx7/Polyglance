@@ -22,7 +22,6 @@ struct VirtualDesktopCapture {
         localFrame.offsetBy(dx: captureFrame.minX, dy: captureFrame.minY)
     }
 
-    @MainActor
     static func compose(_ segments: [Segment]) -> VirtualDesktopCapture? {
         let frame = unionFrame(segments.map(\.frame))
         guard !frame.isNull, frame.width > 0, frame.height > 0 else {
@@ -32,41 +31,30 @@ struct VirtualDesktopCapture {
         let scale = max(1, segments.map(\.backingScaleFactor).max() ?? 1)
         let pixelWidth = max(1, Int(ceil(frame.width * scale)))
         let pixelHeight = max(1, Int(ceil(frame.height * scale)))
-        guard let bitmap = NSBitmapImageRep(
-            bitmapDataPlanes: nil,
-            pixelsWide: pixelWidth,
-            pixelsHigh: pixelHeight,
-            bitsPerSample: 8,
-            samplesPerPixel: 4,
-            hasAlpha: true,
-            isPlanar: false,
-            colorSpaceName: .deviceRGB,
-            bytesPerRow: 0,
-            bitsPerPixel: 0
-        ), let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: pixelWidth,
+            height: pixelHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: pixelWidth * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
             return nil
         }
 
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = context
-        context.cgContext.scaleBy(x: scale, y: scale)
-        NSColor.black.setFill()
-        CGRect(origin: .zero, size: frame.size).fill()
+        context.interpolationQuality = .none
+        context.scaleBy(x: scale, y: scale)
+        context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(origin: .zero, size: frame.size))
+
         for segment in segments {
             let destination = segment.frame.offsetBy(dx: -frame.minX, dy: -frame.minY)
-            NSImage(cgImage: segment.image, size: segment.frame.size).draw(
-                in: destination,
-                from: .zero,
-                operation: .copy,
-                fraction: 1,
-                respectFlipped: true,
-                hints: [.interpolation: NSImageInterpolation.none]
-            )
+            context.draw(segment.image, in: destination)
         }
-        context.flushGraphics()
-        NSGraphicsContext.restoreGraphicsState()
 
-        guard let image = bitmap.cgImage else {
+        guard let image = context.makeImage() else {
             return nil
         }
         return VirtualDesktopCapture(image: image, frame: frame)

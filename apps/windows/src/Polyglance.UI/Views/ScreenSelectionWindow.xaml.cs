@@ -14,6 +14,7 @@ using System.Windows.Shapes;
 using Path = System.Windows.Shapes.Path;
 using TextBox = System.Windows.Controls.TextBox;
 using FontFamily = System.Windows.Media.FontFamily;
+using System.Windows.Automation;
 using Microsoft.Win32;
 using Polyglance.Core.Models;
 using Polyglance.Core.Services;
@@ -51,7 +52,8 @@ public partial class ScreenSelectionWindow : Window
     private Point _dragStart;
     private Rect _initialSelection = Rect.Empty;
     private Rect _selectionRect = Rect.Empty;
-    private Rect _hoveredWindowRect = Rect.Empty;
+    private Rect _candidateRect = Rect.Empty;
+    private Point _lastCandidateQueryPoint = new Point(-9999, -9999);
     private string _activeTool = "None";
     private bool _isToolbarManuallyMoved;
     private double _manualMainToolbarLeft;
@@ -109,7 +111,11 @@ public partial class ScreenSelectionWindow : Window
         Top = screenBounds.Y;
         Width = screenBounds.Width;
         Height = screenBounds.Height;
-        SourceInitialized += (_, _) => CoverCapturedArea();
+        SourceInitialized += (_, _) =>
+        {
+            CoverCapturedArea();
+            InitializeInitialCandidate();
+        };
 
         BackgroundImage.Source = fullScreenBitmap;
 
@@ -231,6 +237,7 @@ public partial class ScreenSelectionWindow : Window
                 CaptureMouse();
                 Toolbar.Visibility = Visibility.Collapsed;
                 CandidateBorder.Visibility = Visibility.Collapsed;
+                InstructionBadge.Visibility = Visibility.Collapsed;
                 ShowMagnifier(pt);
                 return;
             }
@@ -309,6 +316,7 @@ public partial class ScreenSelectionWindow : Window
                 break;
 
             case SelectionPhase.Ready:
+                UpdateCandidateAt(pt);
                 ShowMagnifier(pt);
                 break;
         }
@@ -416,8 +424,21 @@ public partial class ScreenSelectionWindow : Window
         {
             HideMagnifier();
 
+            if (_phase == SelectionPhase.DraggingNew && (_selectionRect.Width <= 6 || _selectionRect.Height <= 6))
+            {
+                if (!_candidateRect.IsEmpty && _candidateRect.Width > 6 && _candidateRect.Height > 6)
+                {
+                    _selectionRect = _candidateRect;
+                    CandidateBorder.Visibility = Visibility.Collapsed;
+                    InstructionBadge.Visibility = Visibility.Collapsed;
+                    UpdateSelectionDisplay();
+                }
+            }
+
             if (_selectionRect.Width > 6 && _selectionRect.Height > 6)
             {
+                CandidateBorder.Visibility = Visibility.Collapsed;
+                InstructionBadge.Visibility = Visibility.Collapsed;
                 _phase = SelectionPhase.Selected;
                 _currentEditTarget = NativeSelectionEditTarget.None;
                 var preferredAction = _captureIntent.ActionAfterSelection();
@@ -430,9 +451,13 @@ public partial class ScreenSelectionWindow : Window
                     Toolbar.Visibility = Visibility.Collapsed;
                     OnActionTriggered(preferredAction switch
                     {
+                        ScreenshotSelectionAction.Copy => "Copy",
                         ScreenshotSelectionAction.ScreenTranslation => "ScreenTranslation",
                         ScreenshotSelectionAction.LongScreenshot => "LongScreenshot",
                         ScreenshotSelectionAction.ScreenRecording => "ScreenRecording",
+                        ScreenshotSelectionAction.OcrTranslate => "OCRTranslate",
+                        ScreenshotSelectionAction.OcrWorkspace => "OCR",
+                        ScreenshotSelectionAction.OcrTranslationCard => "OCRCard",
                         _ => throw new InvalidOperationException("Unsupported screenshot selection action")
                     });
                 }
@@ -506,6 +531,8 @@ public partial class ScreenSelectionWindow : Window
         _phase = SelectionPhase.Ready;
         _currentEditTarget = NativeSelectionEditTarget.None;
         _selectionRect = Rect.Empty;
+        _candidateRect = Rect.Empty;
+        _lastCandidateQueryPoint = new Point(-9999, -9999);
         _isToolbarManuallyMoved = false;
         _manualMainToolbarLeft = 0;
         _manualMainToolbarTop = 0;
@@ -513,12 +540,24 @@ public partial class ScreenSelectionWindow : Window
         HandlesCanvas.Visibility = Visibility.Collapsed;
         SizeBadge.Visibility = Visibility.Collapsed;
         Toolbar.Visibility = Visibility.Collapsed;
+        CandidateBorder.Visibility = Visibility.Collapsed;
         AnnotationCanvas.Children.Clear();
         _annotationHistory.Clear();
         _redoStack.Clear();
         _nextNumber = 1;
-        UpdateMask(Rect.Empty);
         Cursor = Cursors.Cross;
+
+        try
+        {
+            var cursor = System.Windows.Forms.Cursor.Position;
+            Point overlayPt = PointFromScreen(new Point(cursor.X, cursor.Y));
+            Point pt = ClampPointToOverlay(overlayPt);
+            UpdateCandidateAt(pt);
+        }
+        catch
+        {
+            UpdateMask(Rect.Empty);
+        }
     }
 
     // 检测鼠标在选区上的编辑目标 (手柄、内部平移、或外部扩展)
@@ -717,6 +756,245 @@ public partial class ScreenSelectionWindow : Window
         Canvas.SetTop(SizeBadge, badgeTop);
 
         UpdateMask(_selectionRect);
+    }
+
+    private void InitializeInitialCandidate()
+    {
+        try
+        {
+            var cursor = System.Windows.Forms.Cursor.Position;
+            Point overlayPt = PointFromScreen(new Point(cursor.X, cursor.Y));
+            Point pt = ClampPointToOverlay(overlayPt);
+            UpdateCandidateAt(pt);
+        }
+        catch
+        {
+            UpdateCandidateAt(new Point(0, 0));
+        }
+    }
+
+    private void UpdateCandidateAt(Point pt)
+    {
+        if (_phase != SelectionPhase.Ready) return;
+
+        if (Math.Abs(pt.X - _lastCandidateQueryPoint.X) < 2 && Math.Abs(pt.Y - _lastCandidateQueryPoint.Y) < 2)
+        {
+            return;
+        }
+        _lastCandidateQueryPoint = pt;
+
+        Rect candidate = DetectCandidateAt(pt);
+        if (candidate.IsEmpty || candidate.Width <= 0 || candidate.Height <= 0)
+        {
+            CandidateBorder.Visibility = Visibility.Collapsed;
+            UpdateMask(Rect.Empty);
+            _candidateRect = Rect.Empty;
+            PositionInstructionBadge(pt);
+            return;
+        }
+
+        if (candidate != _candidateRect || CandidateBorder.Visibility != Visibility.Visible)
+        {
+            _candidateRect = candidate;
+            Canvas.SetLeft(CandidateBorder, candidate.Left);
+            Canvas.SetTop(CandidateBorder, candidate.Top);
+            CandidateBorder.Width = Math.Max(0, candidate.Width);
+            CandidateBorder.Height = Math.Max(0, candidate.Height);
+            CandidateBorder.Visibility = Visibility.Visible;
+
+            UpdateMask(candidate);
+        }
+
+        PositionInstructionBadge(pt);
+    }
+
+    private void PositionInstructionBadge(Point overlayPt)
+    {
+        if (_phase != SelectionPhase.Ready)
+        {
+            InstructionBadge.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        try
+        {
+            Point screenPt = PointToScreen(overlayPt);
+            var formsPt = new System.Drawing.Point((int)Math.Round(screenPt.X), (int)Math.Round(screenPt.Y));
+            var screen = System.Windows.Forms.Screen.FromPoint(formsPt);
+            var bounds = screen.Bounds;
+
+            Point monitorTopLeft = PointFromScreen(new Point(bounds.Left, bounds.Top));
+            Point monitorBottomRight = PointFromScreen(new Point(bounds.Right, bounds.Bottom));
+            double monitorWidth = Math.Abs(monitorBottomRight.X - monitorTopLeft.X);
+
+            InstructionBadge.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            double badgeWidth = InstructionBadge.DesiredSize.Width > 0 ? InstructionBadge.DesiredSize.Width : 420;
+            double badgeLeft = monitorTopLeft.X + (monitorWidth - badgeWidth) / 2.0;
+            double badgeTop = monitorTopLeft.Y + 40;
+
+            Canvas.SetLeft(InstructionBadge, Math.Max(monitorTopLeft.X + 10, badgeLeft));
+            Canvas.SetTop(InstructionBadge, badgeTop);
+            InstructionBadge.Visibility = Visibility.Visible;
+        }
+        catch
+        {
+            InstructionBadge.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private Rect DetectCandidateAt(Point overlayPt)
+    {
+        Point screenPt;
+        try
+        {
+            screenPt = PointToScreen(overlayPt);
+        }
+        catch
+        {
+            return Rect.Empty;
+        }
+
+        IntPtr myHwnd = new WindowInteropHelper(this).Handle;
+        NativeWin32.GetWindowThreadProcessId(myHwnd, out uint myPid);
+
+        try
+        {
+            var element = AutomationElement.FromPoint(screenPt);
+            if (element != null && element.Current.ProcessId != myPid)
+            {
+                var rect = element.Current.BoundingRectangle;
+                if (!rect.IsEmpty && rect.Width >= 8 && rect.Height >= 8)
+                {
+                    if (rect.Width < SystemParameters.VirtualScreenWidth - 50 || rect.Height < SystemParameters.VirtualScreenHeight - 50)
+                    {
+                        Point tl = PointFromScreen(new Point(rect.Left, rect.Top));
+                        Point br = PointFromScreen(new Point(rect.Right, rect.Bottom));
+                        Rect cand = ClampSelectionToOverlay(new Rect(tl, br));
+                        if (cand.Width > 8 && cand.Height > 8)
+                        {
+                            return cand;
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // UI Automation might throw on some UI elements; fallback to Win32
+        }
+
+        IntPtr targetHwnd = IntPtr.Zero;
+        var win32Pt = new NativeWin32.POINT { X = (int)Math.Round(screenPt.X), Y = (int)Math.Round(screenPt.Y) };
+
+        NativeWin32.EnumWindows((hwnd, lParam) =>
+        {
+            if (hwnd == myHwnd) return true;
+            NativeWin32.GetWindowThreadProcessId(hwnd, out uint pid);
+            if (pid == myPid) return true;
+            if (!NativeWin32.IsWindowVisible(hwnd)) return true;
+
+            Rect winRect = GetWindowExtendedBounds(hwnd);
+            if (winRect.Contains(screenPt))
+            {
+                targetHwnd = hwnd;
+                return false;
+            }
+            return true;
+        }, IntPtr.Zero);
+
+        if (targetHwnd != IntPtr.Zero)
+        {
+            IntPtr child = GetDeepestChildWindow(targetHwnd, win32Pt);
+            if (child != IntPtr.Zero && child != targetHwnd)
+            {
+                Rect childScreenRect = GetWindowExtendedBounds(child);
+                if (!childScreenRect.IsEmpty && childScreenRect.Width >= 8 && childScreenRect.Height >= 8)
+                {
+                    Point tl = PointFromScreen(new Point(childScreenRect.Left, childScreenRect.Top));
+                    Point br = PointFromScreen(new Point(childScreenRect.Right, childScreenRect.Bottom));
+                    Rect cand = ClampSelectionToOverlay(new Rect(tl, br));
+                    if (cand.Width > 8 && cand.Height > 8)
+                    {
+                        return cand;
+                    }
+                }
+            }
+
+            Rect targetScreenRect = GetWindowExtendedBounds(targetHwnd);
+            if (!targetScreenRect.IsEmpty && targetScreenRect.Width >= 8 && targetScreenRect.Height >= 8)
+            {
+                Point tl = PointFromScreen(new Point(targetScreenRect.Left, targetScreenRect.Top));
+                Point br = PointFromScreen(new Point(targetScreenRect.Right, targetScreenRect.Bottom));
+                Rect cand = ClampSelectionToOverlay(new Rect(tl, br));
+                if (cand.Width > 8 && cand.Height > 8)
+                {
+                    return cand;
+                }
+            }
+        }
+
+        return GetMonitorCandidate(screenPt);
+    }
+
+    private Rect GetMonitorCandidate(Point screenPt)
+    {
+        try
+        {
+            var formsPt = new System.Drawing.Point((int)Math.Round(screenPt.X), (int)Math.Round(screenPt.Y));
+            var screen = System.Windows.Forms.Screen.FromPoint(formsPt);
+            var bounds = screen.Bounds;
+            Point tl = PointFromScreen(new Point(bounds.Left, bounds.Top));
+            Point br = PointFromScreen(new Point(bounds.Right, bounds.Bottom));
+            return ClampSelectionToOverlay(new Rect(tl, br));
+        }
+        catch
+        {
+            Size view = OverlayViewSize();
+            return new Rect(0, 0, view.Width, view.Height);
+        }
+    }
+
+    private static unsafe Rect GetWindowExtendedBounds(IntPtr hwnd)
+    {
+        NativeWin32.RECT rect = default;
+        int hr = NativeWin32.DwmGetWindowAttribute(
+            hwnd,
+            NativeWin32.DWMWA_EXTENDED_FRAME_BOUNDS,
+            &rect,
+            sizeof(NativeWin32.RECT));
+
+        if (hr == 0 && rect.Right > rect.Left && rect.Bottom > rect.Top)
+        {
+            return new Rect(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
+        }
+
+        if (NativeWin32.GetWindowRect(hwnd, out rect) && rect.Right > rect.Left && rect.Bottom > rect.Top)
+        {
+            return new Rect(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
+        }
+
+        return Rect.Empty;
+    }
+
+    private static IntPtr GetDeepestChildWindow(IntPtr parent, NativeWin32.POINT screenPt)
+    {
+        IntPtr current = parent;
+        for (int depth = 0; depth < 10; depth++)
+        {
+            NativeWin32.POINT clientPt = screenPt;
+            if (!NativeWin32.ScreenToClient(current, ref clientPt))
+                break;
+
+            const uint CWP_SKIPINVISIBLE = 0x0001;
+            const uint CWP_SKIPDISABLED = 0x0002;
+            const uint CWP_SKIPTRANSPARENT = 0x0004;
+            IntPtr child = NativeWin32.ChildWindowFromPointEx(current, clientPt, CWP_SKIPINVISIBLE | CWP_SKIPDISABLED | CWP_SKIPTRANSPARENT);
+            if (child == IntPtr.Zero || child == current)
+                break;
+
+            current = child;
+        }
+        return current;
     }
 
     private void UpdateMask(Rect hole)
@@ -1386,11 +1664,37 @@ public partial class ScreenSelectionWindow : Window
                 break;
 
             case "OCRTranslate":
-                if (Toolbar.IsOcrTranslationBusy)
+                var targetFrame = SelectedScreenFrame();
+                Close();
+                App.CurrentApp?.MainWindow?.BeginOcrLoading(targetFrame);
+                _ = Task.Run(async () =>
                 {
-                    return;
-                }
-                Toolbar.SetOcrTranslationBusy(true);
+                    try
+                    {
+                        var document = await OcrService.RecognizeDocumentAsync(cropped);
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            if (string.IsNullOrWhiteSpace(document?.FullText))
+                            {
+                                App.CurrentApp?.MainWindow?.SetAndTranslate("未识别到文字", targetFrame);
+                            }
+                            else
+                            {
+                                App.CurrentApp?.MainWindow?.SetAndTranslate(document.FullText, targetFrame);
+                            }
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            App.CurrentApp?.MainWindow?.SetAndTranslate("OCR 识别失败: " + ex.Message, targetFrame);
+                        });
+                    }
+                });
+                break;
+
+            case "OCRCard":
                 Cursor = Cursors.Wait;
                 try
                 {
@@ -1420,11 +1724,10 @@ public partial class ScreenSelectionWindow : Window
                 }
                 catch (Exception error)
                 {
-                    ShowCaptureError("OCR 翻译失败", error);
+                    ShowCaptureError("OCR 翻译卡生成失败", error);
                 }
                 finally
                 {
-                    Toolbar.SetOcrTranslationBusy(false);
                     Cursor = _activeTool == "None" ? Cursors.Arrow : Cursors.Cross;
                 }
                 break;

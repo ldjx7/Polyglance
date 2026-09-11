@@ -1,4 +1,5 @@
 import AppKit
+import NaturalLanguage
 import PolyglanceKit
 
 @MainActor
@@ -56,6 +57,9 @@ final class ScreenTranslationCoordinator {
         )
         self.session = session
         configureCallbacks(for: session)
+        let config = try? configurationStore.load()
+        let currentProvider = config?.provider ?? .freeAI
+        session.setProvider(currentProvider)
         session.setLanguages(source: sourceLanguage, target: targetLanguage)
         session.beginLoading()
         session.present()
@@ -65,6 +69,16 @@ final class ScreenTranslationCoordinator {
     private func configureCallbacks(for session: ScreenTranslationOverlaySession) {
         session.liveCropProvider = { [weak self] region in
             self?.capture?.croppedImage(for: region)
+        }
+        session.onProviderChanged = { [weak self] provider in
+            guard let self, self.session === session else { return }
+            do {
+                var config = try self.configurationStore.load()
+                config.provider = provider
+                try self.configurationStore.save(config)
+            } catch {}
+            session.beginLoading()
+            self.startPipeline(reRunOCR: false)
         }
         session.onRegionChanged = { [weak self] region in
             guard let self, self.session === session else { return }
@@ -150,6 +164,9 @@ final class ScreenTranslationCoordinator {
                 let document = try await ocrService.recognizeDocument(in: cgImage)
                 guard self.generation == generation else { return }
                 paragraphs = ScreenTranslationLayout.paragraphs(from: document)
+                let fullText = paragraphs.map(\.text).joined(separator: "\n")
+                let detected = Self.detectLanguageName(for: fullText)
+                session.setDetectedLanguage(detected)
             }
             croppedCGImage = cgImage
             guard !paragraphs.isEmpty else {
@@ -332,5 +349,52 @@ final class ScreenTranslationCoordinator {
     private static func cgImage(from image: NSImage) -> CGImage? {
         var proposedRect = CGRect(origin: .zero, size: image.size)
         return image.cgImage(forProposedRect: &proposedRect, context: nil, hints: nil)
+    }
+
+    private static func detectLanguageName(for text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "自动检测" }
+
+        if trimmed.range(of: "[\\u3040-\\u30FF]", options: .regularExpression) != nil { return "日语" }
+        if trimmed.range(of: "[\\uAC00-\\uD7AF]", options: .regularExpression) != nil { return "韩语" }
+        if trimmed.range(of: "[\\u4E00-\\u9FA5]", options: .regularExpression) != nil { return "简体中文" }
+        if trimmed.range(of: "[\\u0400-\\u04FF]", options: .regularExpression) != nil { return "俄语" }
+
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(trimmed)
+        let hypotheses = recognizer.languageHypotheses(withMaximum: 5)
+
+        let isPureASCII = trimmed.allSatisfy { $0.isASCII }
+        let wordCount = trimmed.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count
+
+        if isPureASCII && wordCount <= 2 {
+            let dominantConf = recognizer.dominantLanguage.flatMap { hypotheses[$0] } ?? 0
+            if dominantConf < 0.75 {
+                return "英语"
+            }
+        }
+
+        guard let lang = recognizer.dominantLanguage else {
+            return "英语"
+        }
+
+        switch lang {
+        case .simplifiedChinese: return "简体中文"
+        case .traditionalChinese: return "繁体中文"
+        case .english: return "英语"
+        case .japanese: return "日语"
+        case .korean: return "韩语"
+        case .french: return "法语"
+        case .german: return "德语"
+        case .spanish: return "西班牙语"
+        case .russian: return "俄语"
+        case .italian: return "意大利语"
+        case .portuguese: return "葡萄牙语"
+        default:
+            if isPureASCII && (hypotheses[lang] ?? 0) < 0.85 {
+                return "英语"
+            }
+            return Locale(identifier: "zh-Hans").localizedString(forLanguageCode: lang.rawValue) ?? lang.rawValue
+        }
     }
 }

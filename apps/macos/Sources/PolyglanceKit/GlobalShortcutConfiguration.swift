@@ -36,15 +36,24 @@ public enum GlobalShortcutAction: String, Codable, CaseIterable, Sendable {
     case restoreMostRecentPin
     case screenTranslation
     case openTranslator
+    case ocrTranslate
+    case ocrWorkspace
+    case ocrTranslationCard
+    case screenshotAndCopy
+    case translateAndReplace
 
     public var title: String {
         switch self {
         case .translateSelection:
-            return "读取选区并翻译"
+            return "划词翻译"
         case .captureSelection:
             return "读取选区，不自动翻译"
         case .screenshotAndPin:
             return "截图工具"
+        case .screenshotAndCopy:
+            return "截图并复制"
+        case .translateAndReplace:
+            return "划词翻译并替换"
         case .pinClipboardImage:
             return "贴出剪贴板图片"
         case .longScreenshot:
@@ -54,9 +63,15 @@ public enum GlobalShortcutAction: String, Codable, CaseIterable, Sendable {
         case .restoreMostRecentPin:
             return "恢复最近关闭的贴图"
         case .screenTranslation:
-            return "截屏翻译"
+            return "截图翻译"
         case .openTranslator:
-            return "打开主翻译窗口"
+            return "输入翻译 (主窗口)"
+        case .ocrTranslate:
+            return "OCR翻译"
+        case .ocrWorkspace:
+            return "文字识别"
+        case .ocrTranslationCard:
+            return "双语对照卡"
         }
     }
 
@@ -71,6 +86,11 @@ public enum GlobalShortcutAction: String, Codable, CaseIterable, Sendable {
         case .restoreMostRecentPin: return 7
         case .screenTranslation: return 8
         case .openTranslator: return 9
+        case .ocrTranslate: return 10
+        case .ocrWorkspace: return 11
+        case .ocrTranslationCard: return 12
+        case .screenshotAndCopy: return 13
+        case .translateAndReplace: return 14
         }
     }
 }
@@ -79,57 +99,82 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
     public var translateSelection: RecordedShortcut?
     public var captureSelection: RecordedShortcut?
     public var screenshotAndPin: RecordedShortcut?
+    public var screenshotAndCopy: RecordedShortcut?
     public var pinClipboardImage: RecordedShortcut?
     public var longScreenshot: RecordedShortcut?
     public var screenRecording: RecordedShortcut?
     public var restoreMostRecentPin: RecordedShortcut?
     public var screenTranslation: RecordedShortcut?
     public var openTranslator: RecordedShortcut?
+    public var ocrTranslate: RecordedShortcut?
+    public var ocrWorkspace: RecordedShortcut?
+    public var ocrTranslationCard: RecordedShortcut?
+    public var translateAndReplace: RecordedShortcut?
 
     public init(
         translateSelection: RecordedShortcut?,
         captureSelection: RecordedShortcut?,
         screenshotAndPin: RecordedShortcut?,
+        screenshotAndCopy: RecordedShortcut? = nil,
+        translateAndReplace: RecordedShortcut? = nil,
         pinClipboardImage: RecordedShortcut?,
         longScreenshot: RecordedShortcut?,
         screenRecording: RecordedShortcut?,
         restoreMostRecentPin: RecordedShortcut?,
         screenTranslation: RecordedShortcut?,
-        openTranslator: RecordedShortcut? = nil
+        openTranslator: RecordedShortcut? = nil,
+        ocrTranslate: RecordedShortcut? = nil,
+        ocrWorkspace: RecordedShortcut? = nil,
+        ocrTranslationCard: RecordedShortcut? = nil
     ) {
         self.translateSelection = translateSelection
         self.captureSelection = captureSelection
         self.screenshotAndPin = screenshotAndPin
+        self.screenshotAndCopy = screenshotAndCopy
+        self.translateAndReplace = translateAndReplace
         self.pinClipboardImage = pinClipboardImage
         self.longScreenshot = longScreenshot
         self.screenRecording = screenRecording
         self.restoreMostRecentPin = restoreMostRecentPin
         self.screenTranslation = screenTranslation
         self.openTranslator = openTranslator
+        self.ocrTranslate = ocrTranslate
+        self.ocrWorkspace = ocrWorkspace
+        self.ocrTranslationCard = ocrTranslationCard
     }
 
     public static let `default` = GlobalShortcutConfiguration(
         translateSelection: RecordedShortcut(keyCode: 20, modifiers: [.control, .shift]),
         captureSelection: nil,
         screenshotAndPin: RecordedShortcut(keyCode: 18, modifiers: [.control, .shift]),
+        screenshotAndCopy: nil,
+        translateAndReplace: nil,
         pinClipboardImage: RecordedShortcut(keyCode: 19, modifiers: [.control, .shift]),
         longScreenshot: nil,
         screenRecording: nil,
         restoreMostRecentPin: RecordedShortcut(keyCode: 23, modifiers: [.control, .shift]),
         screenTranslation: RecordedShortcut(keyCode: 21, modifiers: [.control, .shift]),
-        openTranslator: nil
+        openTranslator: nil,
+        ocrTranslate: nil,
+        ocrWorkspace: nil,
+        ocrTranslationCard: nil
     )
 
     public static let legacyDefault = GlobalShortcutConfiguration(
         translateSelection: RecordedShortcut(keyCode: 2, modifiers: [.option]),
         captureSelection: RecordedShortcut(keyCode: 2, modifiers: [.option, .shift]),
         screenshotAndPin: RecordedShortcut(keyCode: 18, modifiers: [.option]),
+        screenshotAndCopy: nil,
+        translateAndReplace: nil,
         pinClipboardImage: RecordedShortcut(keyCode: 19, modifiers: [.option]),
         longScreenshot: RecordedShortcut(keyCode: 20, modifiers: [.option]),
         screenRecording: RecordedShortcut(keyCode: 21, modifiers: [.option]),
         restoreMostRecentPin: RecordedShortcut(keyCode: 23, modifiers: [.option]),
         screenTranslation: RecordedShortcut(keyCode: 22, modifiers: [.option]),
-        openTranslator: nil
+        openTranslator: nil,
+        ocrTranslate: nil,
+        ocrWorkspace: nil,
+        ocrTranslationCard: nil
     )
 
     public subscript(action: GlobalShortcutAction) -> RecordedShortcut? {
@@ -138,12 +183,17 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
             case .translateSelection: return translateSelection
             case .captureSelection: return captureSelection
             case .screenshotAndPin: return screenshotAndPin
+            case .screenshotAndCopy: return screenshotAndCopy
+            case .translateAndReplace: return translateAndReplace
             case .pinClipboardImage: return pinClipboardImage
             case .longScreenshot: return longScreenshot
             case .screenRecording: return screenRecording
             case .restoreMostRecentPin: return restoreMostRecentPin
             case .screenTranslation: return screenTranslation
             case .openTranslator: return openTranslator
+            case .ocrTranslate: return ocrTranslate
+            case .ocrWorkspace: return ocrWorkspace
+            case .ocrTranslationCard: return ocrTranslationCard
             }
         }
         set {
@@ -151,12 +201,17 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
             case .translateSelection: translateSelection = newValue
             case .captureSelection: captureSelection = newValue
             case .screenshotAndPin: screenshotAndPin = newValue
+            case .screenshotAndCopy: screenshotAndCopy = newValue
+            case .translateAndReplace: translateAndReplace = newValue
             case .pinClipboardImage: pinClipboardImage = newValue
             case .longScreenshot: longScreenshot = newValue
             case .screenRecording: screenRecording = newValue
             case .restoreMostRecentPin: restoreMostRecentPin = newValue
             case .screenTranslation: screenTranslation = newValue
             case .openTranslator: openTranslator = newValue
+            case .ocrTranslate: ocrTranslate = newValue
+            case .ocrWorkspace: ocrWorkspace = newValue
+            case .ocrTranslationCard: ocrTranslationCard = newValue
             }
         }
     }
@@ -169,12 +224,17 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
         case translateSelection
         case captureSelection
         case screenshotAndPin
+        case screenshotAndCopy
+        case translateAndReplace
         case pinClipboardImage
         case longScreenshot
         case screenRecording
         case restoreMostRecentPin
         case screenTranslation
         case openTranslator
+        case ocrTranslate
+        case ocrWorkspace
+        case ocrTranslationCard
     }
 
     public init(from decoder: Decoder) throws {
@@ -182,6 +242,8 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
         translateSelection = try container.decodeIfPresent(RecordedShortcut.self, forKey: .translateSelection)
         captureSelection = try container.decodeIfPresent(RecordedShortcut.self, forKey: .captureSelection)
         screenshotAndPin = try container.decodeIfPresent(RecordedShortcut.self, forKey: .screenshotAndPin)
+        screenshotAndCopy = try container.decodeIfPresent(RecordedShortcut.self, forKey: .screenshotAndCopy)
+        translateAndReplace = try container.decodeIfPresent(RecordedShortcut.self, forKey: .translateAndReplace)
         pinClipboardImage = try container.decodeIfPresent(RecordedShortcut.self, forKey: .pinClipboardImage)
         longScreenshot = try container.decodeIfPresent(RecordedShortcut.self, forKey: .longScreenshot)
         screenRecording = try container.decodeIfPresent(RecordedShortcut.self, forKey: .screenRecording)
@@ -195,6 +257,9 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
         }
         screenTranslation = try container.decodeIfPresent(RecordedShortcut.self, forKey: .screenTranslation)
         openTranslator = try container.decodeIfPresent(RecordedShortcut.self, forKey: .openTranslator)
+        ocrTranslate = try container.decodeIfPresent(RecordedShortcut.self, forKey: .ocrTranslate)
+        ocrWorkspace = try container.decodeIfPresent(RecordedShortcut.self, forKey: .ocrWorkspace)
+        ocrTranslationCard = try container.decodeIfPresent(RecordedShortcut.self, forKey: .ocrTranslationCard)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -202,12 +267,17 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
         try container.encodeIfPresent(translateSelection, forKey: .translateSelection)
         try container.encodeIfPresent(captureSelection, forKey: .captureSelection)
         try container.encodeIfPresent(screenshotAndPin, forKey: .screenshotAndPin)
+        try container.encodeIfPresent(screenshotAndCopy, forKey: .screenshotAndCopy)
+        try container.encodeIfPresent(translateAndReplace, forKey: .translateAndReplace)
         try container.encodeIfPresent(pinClipboardImage, forKey: .pinClipboardImage)
         try container.encodeIfPresent(longScreenshot, forKey: .longScreenshot)
         try container.encodeIfPresent(screenRecording, forKey: .screenRecording)
         try container.encode(restoreMostRecentPin, forKey: .restoreMostRecentPin)
         try container.encodeIfPresent(screenTranslation, forKey: .screenTranslation)
         try container.encodeIfPresent(openTranslator, forKey: .openTranslator)
+        try container.encodeIfPresent(ocrTranslate, forKey: .ocrTranslate)
+        try container.encodeIfPresent(ocrWorkspace, forKey: .ocrWorkspace)
+        try container.encodeIfPresent(ocrTranslationCard, forKey: .ocrTranslationCard)
     }
 
     public func validate() throws {

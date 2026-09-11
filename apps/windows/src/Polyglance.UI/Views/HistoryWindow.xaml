@@ -1,0 +1,123 @@
+<ui:FluentWindow x:Class="Polyglance.UI.Views.HistoryWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        mc:Ignorable="d"
+        Title="历史记录与收藏夹"
+        Width="460" Height="580"
+        MinWidth="400" MinHeight="450"
+        WindowStartupLocation="CenterOwner"
+        WindowBackdropType="Mica"
+        ExtendsContentIntoTitleBar="True"
+        WindowCornerPreference="Round"
+        FontFamily="Segoe UI, Microsoft YaHei UI">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="32"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="历史记录与收藏夹" Height="32"/>
+
+        <Grid Grid.Row="1" Margin="16,8,16,8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,10">
+                <RadioButton x:Name="RbHistory" Content="历史记录" IsChecked="True" Checked="OnTabSelectionChanged" Margin="0,0,12,0"/>
+                <RadioButton x:Name="RbFavorites" Content="收藏夹" Checked="OnTabSelectionChanged"/>
+            </StackPanel>
+
+            <ui:TextBox Grid.Row="1"
+                        x:Name="TxtSearch"
+                        PlaceholderText="搜索历史或译文…"
+                        Icon="{ui:SymbolIcon Search24}"
+                        TextChanged="OnSearchTextChanged"/>
+        </Grid>
+
+        <ScrollViewer Grid.Row="2" Margin="16,0,16,8" VerticalScrollBarVisibility="Auto">
+            <ItemsControl x:Name="ItemsHistory">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="#FFFFFF"
+                                BorderBrush="#E5E7EB"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Margin="0,0,0,8"
+                                Padding="10">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Text="{Binding SourceText}" FontSize="13" Foreground="#111827" TextWrapping="Wrap" MaxHeight="60"/>
+                                <TextBlock Grid.Row="1" Text="{Binding TargetText}" FontSize="13" FontWeight="Medium" Foreground="#2563EB" TextWrapping="Wrap" Margin="0,4,0,6" MaxHeight="80"/>
+
+                                <Grid Grid.Row="2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Timestamp, StringFormat='MM-dd HH:mm'}" FontSize="11" Foreground="#9CA3AF" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding Provider}" FontSize="11" Foreground="#6B7280" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                        <ui:Button Appearance="Transparent"
+                                                   Content="填入"
+                                                   FontSize="11"
+                                                   Padding="6,2"
+                                                   Tag="{Binding}"
+                                                   Click="OnApplyRecordClick"
+                                                   Margin="0,0,4,0"/>
+                                        <ui:Button Appearance="Transparent"
+                                                   Icon="{ui:SymbolIcon Copy20}"
+                                                   Width="24" Height="24"
+                                                   Padding="0"
+                                                   Tag="{Binding}"
+                                                   Click="OnCopyRecordClick"
+                                                   Margin="0,0,4,0"
+                                                   ToolTip="复制译文"/>
+                                        <ui:Button Appearance="Transparent"
+                                                   Icon="{ui:SymbolIcon Star20}"
+                                                   Width="24" Height="24"
+                                                   Padding="0"
+                                                   Tag="{Binding}"
+                                                   Click="OnToggleFavoriteClick"
+                                                   Margin="0,0,4,0"
+                                                   ToolTip="收藏"/>
+                                        <ui:Button Appearance="Transparent"
+                                                   Icon="{ui:SymbolIcon Delete20}"
+                                                   Width="24" Height="24"
+                                                   Padding="0"
+                                                   Tag="{Binding}"
+                                                   Click="OnDeleteRecordClick"
+                                                   ToolTip="删除"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <Border Grid.Row="3" BorderBrush="#E5E7EB" BorderThickness="0,1,0,0" Padding="16,8">
+            <Grid>
+                <TextBlock x:Name="TxtCount" Text="共 0 条记录" VerticalAlignment="Center" FontSize="11" Foreground="#9CA3AF"/>
+                <ui:Button HorizontalAlignment="Right" Appearance="Danger" Content="清空全部" Click="OnClearAllClick"/>
+            </Grid>
+        </Border>
+    </Grid>
+</ui:FluentWindow>

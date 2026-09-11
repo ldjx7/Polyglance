@@ -15,11 +15,15 @@ final class AppConfigurationStoreTests: XCTestCase {
         XCTAssertEqual(configuration.apiKey, "")
         XCTAssertEqual(
             TranslationProvider.allCases,
-            [.google, .microsoft, .freeAI, .openAICompatible]
+            [.freeAI, .microsoft, .google, .deepl, .baidu, .youdao, .volcano, .openAICompatible]
         )
-        XCTAssertFalse(TranslationProvider.google.requiresUserAPIKey)
-        XCTAssertFalse(TranslationProvider.microsoft.requiresUserAPIKey)
         XCTAssertFalse(TranslationProvider.freeAI.requiresUserAPIKey)
+        XCTAssertFalse(TranslationProvider.microsoft.requiresUserAPIKey)
+        XCTAssertFalse(TranslationProvider.google.requiresUserAPIKey)
+        XCTAssertTrue(TranslationProvider.deepl.requiresUserAPIKey)
+        XCTAssertTrue(TranslationProvider.baidu.requiresUserAPIKey)
+        XCTAssertTrue(TranslationProvider.youdao.requiresUserAPIKey)
+        XCTAssertTrue(TranslationProvider.volcano.requiresUserAPIKey)
         XCTAssertTrue(TranslationProvider.openAICompatible.requiresUserAPIKey)
     }
 

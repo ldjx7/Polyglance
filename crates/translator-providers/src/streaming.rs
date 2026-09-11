@@ -103,12 +103,44 @@ pub fn streaming_request_body(
     target_language: &str,
     deny_data_collection: bool,
 ) -> String {
-    let source_instruction = source_language
-        .map(|language| format!(" from {language}"))
-        .unwrap_or_else(|| " after detecting its language".to_owned());
-    let system_prompt = format!(
-        "Translate the user's text{source_instruction} to {target_language}. Return only the translated text, without explanations or quotation marks. Preserve paragraph and sentence boundaries where natural."
-    );
+    streaming_request_body_with_prompt(
+        model,
+        text,
+        source_language,
+        target_language,
+        deny_data_collection,
+        None,
+    )
+}
+
+pub fn streaming_request_body_with_prompt(
+    model: &str,
+    text: &str,
+    source_language: Option<&str>,
+    target_language: &str,
+    deny_data_collection: bool,
+    prompt: Option<&str>,
+) -> String {
+    let system_prompt = if let Some(custom) = prompt {
+        let trimmed = custom.trim();
+        if !trimmed.is_empty() {
+            let src = source_language.unwrap_or("auto");
+            let mut p = trimmed
+                .replace("{source_language}", src)
+                .replace("{target_language}", target_language)
+                .replace("{source}", src)
+                .replace("{target}", target_language);
+            if !p.contains(target_language) {
+                p.push_str(&format!("\nTranslate to {target_language}. Return only the translated text."));
+            }
+            p
+        } else {
+            default_streaming_prompt(source_language, target_language)
+        }
+    } else {
+        default_streaming_prompt(source_language, target_language)
+    };
+
     let mut body = json!({
         "model": model,
         "temperature": 0,
@@ -122,6 +154,15 @@ pub fn streaming_request_body(
         body["provider"] = json!({"data_collection": "deny"});
     }
     body.to_string()
+}
+
+fn default_streaming_prompt(source_language: Option<&str>, target_language: &str) -> String {
+    let source_instruction = source_language
+        .map(|language| format!(" from {language}"))
+        .unwrap_or_else(|| " after detecting its language".to_owned());
+    format!(
+        "Translate the user's text{source_instruction} to {target_language}. Return only the translated text, without explanations or quotation marks. Preserve paragraph and sentence boundaries where natural."
+    )
 }
 
 /// Collapses bursts of deltas so the UI repaints at a bounded rate.

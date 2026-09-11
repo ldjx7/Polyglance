@@ -22,4 +22,6 @@ global using Brush = System.Windows.Media.Brush;
 global using SolidColorBrush = System.Windows.Media.SolidColorBrush;
 global using Color = System.Windows.Media.Color;
 global using ColorConverter = System.Windows.Media.ColorConverter;
+global using Image = System.Windows.Controls.Image;
+global using TextBlock = System.Windows.Controls.TextBlock;
 global using SaveFileDialog = Microsoft.Win32.SaveFileDialog;

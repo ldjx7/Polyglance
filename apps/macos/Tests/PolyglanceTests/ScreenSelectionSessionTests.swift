@@ -445,11 +445,12 @@ final class ScreenSelectionSessionTests: XCTestCase {
             }
         )
         session.present { _ in }
-
-        XCTAssertEqual(session.crossScreenInstructionStatesForTesting, [true])
+        XCTAssertEqual(session.crossScreenInstructionStatesForTesting, [false])
 
         let pointOnCandidate = CGPoint(x: secondFrame.minX + 30, y: secondFrame.minY + 40)
         session.forwardCrossScreenMouseForTesting(.mouseMoved, globalPoint: pointOnCandidate)
+
+        XCTAssertEqual(session.crossScreenInstructionStatesForTesting, [true])
 
         let displayed = try XCTUnwrap(session.crossScreenSelectionsForTesting.first ?? nil)
         XCTAssertEqual(displayed, CGRect(x: 20, y: 30, width: 200, height: 150))

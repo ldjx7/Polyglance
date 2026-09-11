@@ -164,6 +164,25 @@
                         </Button.Resources>
                     </Button>
 
+                    <!-- Translate Button -->
+                    <Button x:Name="BtnTranslate"
+                            Content="翻译"
+                            MinWidth="60" Height="28"
+                            Margin="0,0,8,0"
+                            Background="#F3F4F6"
+                            Foreground="#374151"
+                            BorderThickness="1"
+                            BorderBrush="#E5E7EB"
+                            Cursor="Hand"
+                            ToolTip="送入主窗口翻译当前文本"
+                            Click="OnTranslateClick">
+                        <Button.Resources>
+                            <Style TargetType="Border">
+                                <Setter Property="CornerRadius" Value="4"/>
+                            </Style>
+                        </Button.Resources>
+                    </Button>
+
                     <!-- Formatting Menu Button -->
                     <Button x:Name="BtnFormatting"
                             Content="排版设置 ▾"
@@ -325,7 +344,7 @@
                     <!-- Language and Info -->
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                         <TextBlock x:Name="TxtStats" Text="字符数: 0" FontSize="12" Foreground="#6B7280" Margin="0,0,16,0"/>
-                        <TextBlock x:Name="TxtLanguage" Text="识别语言: 简体中文" FontSize="12" Foreground="#6B7280"/>
+                        <TextBlock x:Name="TxtLanguage" Text="识别语言: 自动检测" FontSize="12" Foreground="#6B7280"/>
                     </StackPanel>
                 </Grid>
             </Border>

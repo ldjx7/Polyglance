@@ -21,64 +21,111 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
 
     func translate(_ request: AppTranslationRequest) async throws -> AppTranslationResult {
         let configuration = try configurationStore.load()
+        let requestedProviderString = request.provider ?? configuration.provider.rawValue
+        let customAi = configuration.customAIConfigs.first(where: {
+            $0.id == requestedProviderString || $0.name == requestedProviderString
+        })
+
         let endpoint: String
         let apiKey: String
         let model: String
         let region: String?
-        switch configuration.provider {
-        case .google:
-            endpoint = ""
-            apiKey = ""
-            model = ""
-            region = nil
-        case .microsoft:
-            endpoint = ""
-            apiKey = ""
-            model = ""
-            region = nil
-        case .freeAI:
-            guard let bundledFreeAIConfiguration else {
-                throw ClientError.freeAIUnavailable
-            }
-            // The Worker owns the credential and the model. Neither is shipped
-            // in an open-source bundle, so neither is sent.
-            endpoint = bundledFreeAIConfiguration.endpoint
-            apiKey = ""
-            model = ""
-            region = nil
-        case .openAICompatible:
-            guard !configuration.apiKey.isEmpty else {
+        let prompt: String?
+        let effectiveProviderString: String
+
+        if let customAi {
+            guard !customAi.apiKey.isEmpty else {
                 throw ClientError.missingAPIKey
             }
-            endpoint = configuration.endpoint
-            apiKey = configuration.apiKey
-            model = configuration.model
+            endpoint = customAi.endpoint
+            apiKey = customAi.apiKey
+            model = customAi.model
             region = nil
-        }
-
-        let cacheKey = Self.cacheKey(
-            provider: configuration.provider,
-            endpoint: endpoint,
-            model: model,
-            request: request
-        )
-        if let cached = await cache.value(for: cacheKey) {
-            return AppTranslationResult(
-                text: cached.text,
-                provider: cached.provider,
-                elapsedMilliseconds: 0
-            )
+            prompt = customAi.prompt.isEmpty ? nil : customAi.prompt
+            effectiveProviderString = customAi.id
+        } else {
+            prompt = nil
+            let activeProvider: TranslationProvider
+            if let p = TranslationProvider(rawValue: requestedProviderString) {
+                activeProvider = p
+            } else {
+                activeProvider = configuration.provider
+            }
+            effectiveProviderString = activeProvider.rawValue
+            switch activeProvider {
+            case .google:
+                endpoint = ""
+                apiKey = ""
+                model = ""
+                region = nil
+            case .microsoft:
+                endpoint = ""
+                apiKey = ""
+                model = ""
+                region = nil
+            case .freeAI:
+                guard let bundledFreeAIConfiguration else {
+                    throw ClientError.freeAIUnavailable
+                }
+                endpoint = bundledFreeAIConfiguration.endpoint
+                apiKey = ""
+                model = ""
+                region = nil
+            case .deepl:
+                guard !configuration.deeplAuthKey.isEmpty else {
+                    throw ClientError.missingAPIKey
+                }
+                endpoint = configuration.deeplEndpoint
+                apiKey = configuration.deeplAuthKey
+                model = ""
+                region = nil
+            case .baidu:
+                guard !configuration.baiduAppId.isEmpty && !configuration.baiduSecretKey.isEmpty else {
+                    throw ClientError.missingAPIKey
+                }
+                endpoint = ""
+                apiKey = "\(configuration.baiduAppId):\(configuration.baiduSecretKey)"
+                model = ""
+                region = nil
+            case .youdao:
+                guard !configuration.youdaoAppKey.isEmpty && !configuration.youdaoSecret.isEmpty else {
+                    throw ClientError.missingAPIKey
+                }
+                endpoint = ""
+                apiKey = "\(configuration.youdaoAppKey):\(configuration.youdaoSecret)"
+                model = ""
+                region = nil
+            case .volcano:
+                guard !configuration.volcanoAccessKey.isEmpty else {
+                    throw ClientError.missingAPIKey
+                }
+                endpoint = ""
+                apiKey = configuration.volcanoSecretKey.isEmpty
+                    ? configuration.volcanoAccessKey
+                    : "\(configuration.volcanoAccessKey):\(configuration.volcanoSecretKey)"
+                model = ""
+                region = nil
+            case .openAICompatible:
+                guard !configuration.apiKey.isEmpty else {
+                    throw ClientError.missingAPIKey
+                }
+                endpoint = configuration.endpoint
+                apiKey = configuration.apiKey
+                model = configuration.model
+                region = nil
+            }
         }
 
         let input = TranslationInput(
-            provider: configuration.provider.rawValue,
+            provider: effectiveProviderString,
             endpoint: endpoint,
             apiKey: apiKey,
             model: model,
             region: region,
             text: request.text,
             sourceLanguage: request.sourceLanguage,
-            targetLanguage: request.targetLanguage
+            targetLanguage: request.targetLanguage,
+            prompt: prompt
         )
 
         do {
@@ -87,10 +134,9 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
             }.value
             let result = AppTranslationResult(
                 text: output.text,
-                provider: output.provider,
+                provider: requestedProviderString,
                 elapsedMilliseconds: output.elapsedMs
             )
-            await cache.insert(result, for: cacheKey)
             return result
         } catch let failure as TranslationFailure {
             throw ClientError(failure)
@@ -104,13 +150,18 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
             let task = Task {
                 do {
                     let configuration = try configurationStore.load()
-                    guard configuration.aiStreamingEnabled,
-                          configuration.provider == .freeAI
-                            || configuration.provider == .openAICompatible else {
+                    let requestedProviderString = request.provider ?? configuration.provider.rawValue
+                    let customAi = configuration.customAIConfigs.first(where: {
+                        $0.id == requestedProviderString || $0.name == requestedProviderString
+                    })
+                    let isFreeAI = (requestedProviderString == "free-ai" || requestedProviderString == "freeai") && customAi == nil
+                    let isCustomAI = customAi != nil || requestedProviderString == "openai-compatible" || requestedProviderString == "openaicompatible"
+
+                    guard configuration.aiStreamingEnabled, (isFreeAI || isCustomAI) else {
                         let result = try await translate(request)
                         continuation.yield(AppTranslationUpdate(
                             text: result.text,
-                            provider: result.provider,
+                            provider: requestedProviderString,
                             isFinal: true
                         ))
                         continuation.finish()
@@ -118,7 +169,7 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
                     }
 
                     let streamingConfiguration: OpenAIStreamingConfiguration
-                    if configuration.provider == .freeAI {
+                    if isFreeAI {
                         guard let bundledFreeAIConfiguration else {
                             throw ClientError.freeAIUnavailable
                         }
@@ -126,31 +177,20 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
                             freeTranslateEndpoint: bundledFreeAIConfiguration.endpoint
                         )
                     } else {
-                        guard !configuration.apiKey.isEmpty else {
+                        let aiEndpoint = customAi?.endpoint ?? configuration.endpoint
+                        let aiApiKey = customAi?.apiKey ?? configuration.apiKey
+                        let aiModel = customAi?.model ?? configuration.model
+                        let aiPrompt = customAi?.prompt
+                        guard !aiApiKey.isEmpty else {
                             throw ClientError.missingAPIKey
                         }
                         streamingConfiguration = try OpenAIStreamingConfiguration(
-                            endpoint: configuration.endpoint,
-                            apiKey: configuration.apiKey,
-                            model: configuration.model,
-                            denyDataCollection: false
+                            endpoint: aiEndpoint,
+                            apiKey: aiApiKey,
+                            model: aiModel,
+                            denyDataCollection: false,
+                            prompt: aiPrompt
                         )
-                    }
-
-                    let cacheKey = Self.cacheKey(
-                        provider: configuration.provider,
-                        endpoint: streamingConfiguration.endpoint.absoluteString,
-                        model: streamingConfiguration.model,
-                        request: request
-                    )
-                    if let cached = await cache.value(for: cacheKey) {
-                        continuation.yield(AppTranslationUpdate(
-                            text: cached.text,
-                            provider: cached.provider,
-                            isFinal: true
-                        ))
-                        continuation.finish()
-                        return
                     }
 
                     let service = OpenAIStreamingTranslationService(
@@ -168,7 +208,7 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
                         if emissionPolicy.shouldEmit(at: elapsed, isFinal: false) {
                             continuation.yield(AppTranslationUpdate(
                                 text: accumulated,
-                                provider: configuration.provider.rawValue,
+                                provider: requestedProviderString,
                                 isFinal: false
                             ))
                         }
@@ -179,17 +219,9 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
                     }
                     continuation.yield(AppTranslationUpdate(
                         text: finalText,
-                        provider: configuration.provider.rawValue,
+                        provider: requestedProviderString,
                         isFinal: true
                     ))
-                    await cache.insert(
-                        AppTranslationResult(
-                            text: finalText,
-                            provider: configuration.provider.rawValue,
-                            elapsedMilliseconds: 0
-                        ),
-                        for: cacheKey
-                    )
                     continuation.finish()
                 } catch is CancellationError {
                     continuation.finish()

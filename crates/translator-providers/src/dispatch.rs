@@ -6,17 +6,28 @@
 
 use translator_core::{TranslationRequest, TranslationResult};
 
+use crate::baidu::{BaiduConfig, BaiduProvider};
+use crate::deepl::{DeepLConfig, DeepLProvider};
 use crate::free_ai::{FreeAiConfig, FreeAiProvider};
 use crate::google::{GoogleConfig, GoogleProvider};
 use crate::microsoft::{MicrosoftConfig, MicrosoftProvider};
 use crate::openai::{OpenAiCompatibleConfig, OpenAiCompatibleProvider, ProviderError};
+use crate::volcano::{VolcanoConfig, VolcanoProvider};
+use crate::youdao::{YoudaoConfig, YoudaoProvider};
 
 pub const GOOGLE: &str = "google";
 pub const MICROSOFT: &str = "microsoft";
 pub const FREE_AI: &str = "free-ai";
 pub const FREEAI: &str = "freeai";
+pub const OFFICIAL_AI: &str = "official-ai";
+pub const POLYGLANCE_AI: &str = "polyglance-ai";
 pub const OPENAI_COMPATIBLE: &str = "openai-compatible";
 pub const OPENAICOMPATIBLE: &str = "openaicompatible";
+pub const DEEPL: &str = "deepl";
+pub const BAIDU: &str = "baidu";
+pub const YOUDAO: &str = "youdao";
+pub const VOLCANO: &str = "volcano";
+pub const VOLCENGINE: &str = "volcengine";
 
 pub use crate::free_ai::DEFAULT_FREE_AI_ENDPOINT;
 
@@ -26,6 +37,10 @@ pub enum Selection {
     Microsoft(MicrosoftConfig),
     FreeAi(FreeAiConfig),
     OpenAiCompatible(OpenAiCompatibleConfig),
+    DeepL(DeepLConfig),
+    Baidu(BaiduConfig),
+    Youdao(YoudaoConfig),
+    Volcano(VolcanoConfig),
 }
 
 /// Resolves a stored provider name into a usable configuration.
@@ -38,7 +53,17 @@ pub fn select(
     api_key: String,
     model: String,
 ) -> Result<Selection, ProviderError> {
-    match provider {
+    select_with_prompt(provider, endpoint, api_key, model, None)
+}
+
+pub fn select_with_prompt(
+    provider: &str,
+    endpoint: String,
+    api_key: String,
+    model: String,
+    prompt: Option<String>,
+) -> Result<Selection, ProviderError> {
+    match provider.to_lowercase().as_str() {
         GOOGLE => {
             let config = if endpoint.trim().is_empty() {
                 GoogleConfig::new()
@@ -55,11 +80,7 @@ pub fn select(
             }?;
             Ok(Selection::Microsoft(config))
         }
-        // The bundled service takes no credential and no model: it is the
-        // project's own Worker, which owns both. An ignored `model` here is not
-        // an oversight; letting a client choose one is exactly what made the
-        // previous design billable by anyone holding the binary.
-        FREE_AI | FREEAI => {
+        FREE_AI | FREEAI | OFFICIAL_AI | POLYGLANCE_AI => {
             let config = if endpoint.trim().is_empty() {
                 FreeAiConfig::default_endpoint()
             } else {
@@ -67,7 +88,23 @@ pub fn select(
             }?;
             Ok(Selection::FreeAi(config))
         }
-        OPENAI_COMPATIBLE | OPENAICOMPATIBLE => {
+        DEEPL => {
+            let config = DeepLConfig::new(endpoint, api_key)?;
+            Ok(Selection::DeepL(config))
+        }
+        BAIDU => {
+            let config = BaiduConfig::new(endpoint, api_key)?;
+            Ok(Selection::Baidu(config))
+        }
+        YOUDAO => {
+            let config = YoudaoConfig::new(endpoint, api_key)?;
+            Ok(Selection::Youdao(config))
+        }
+        VOLCANO | VOLCENGINE => {
+            let config = VolcanoConfig::new(endpoint, api_key)?;
+            Ok(Selection::Volcano(config))
+        }
+        p if p == OPENAI_COMPATIBLE || p == OPENAICOMPATIBLE || p.starts_with("custom") => {
             if api_key.trim().is_empty() {
                 return Err(ProviderError::InvalidConfig(
                     "未配置 API Key，请在偏好设置中填写 OpenAI / DeepSeek / SiliconFlow 等兼容 API Key"
@@ -84,8 +121,8 @@ pub fn select(
             } else {
                 model
             };
-            Ok(Selection::OpenAiCompatible(OpenAiCompatibleConfig::new(
-                endpoint, api_key, model,
+            Ok(Selection::OpenAiCompatible(OpenAiCompatibleConfig::with_prompt(
+                endpoint, api_key, model, prompt,
             )?))
         }
         _ => Err(ProviderError::InvalidConfig(format!(
@@ -102,6 +139,10 @@ pub async fn translate(
         Selection::Google(config) => GoogleProvider::new(config)?.translate(request).await,
         Selection::Microsoft(config) => MicrosoftProvider::new(config)?.translate(request).await,
         Selection::FreeAi(config) => FreeAiProvider::new(config)?.translate(request).await,
+        Selection::DeepL(config) => DeepLProvider::new(config)?.translate(request).await,
+        Selection::Baidu(config) => BaiduProvider::new(config)?.translate(request).await,
+        Selection::Youdao(config) => YoudaoProvider::new(config)?.translate(request).await,
+        Selection::Volcano(config) => VolcanoProvider::new(config)?.translate(request).await,
         Selection::OpenAiCompatible(config) => {
             OpenAiCompatibleProvider::new(config)?
                 .translate(request)

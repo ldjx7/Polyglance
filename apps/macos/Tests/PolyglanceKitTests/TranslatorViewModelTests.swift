@@ -111,10 +111,96 @@ final class TranslatorViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.translatedText, "")
         XCTAssertNil(viewModel.errorMessage)
     }
+
+    func testSubsequentTranslationClearsPreviousResultAndTranslates() async {
+        let client = StubTranslationClient(result: .success(
+            AppTranslationResult(text: "你好", provider: "test", elapsedMilliseconds: 12)
+        ))
+        let viewModel = TranslatorViewModel(client: client)
+        viewModel.sourceText = "Hello"
+        await viewModel.translate()
+        XCTAssertEqual(viewModel.translatedText, "你好")
+        let firstCount = await client.callCount
+        XCTAssertEqual(firstCount, 1)
+
+        viewModel.sourceText = "World"
+        await viewModel.translate()
+        XCTAssertEqual(viewModel.translatedText, "你好")
+        let secondCount = await client.callCount
+        XCTAssertEqual(secondCount, 2)
+    }
+
+    func testReTranslationWithSameSourceTextClearsPreviousResultAndTranslates() async {
+        let client = StubTranslationClient(result: .success(
+            AppTranslationResult(text: "你好", provider: "test", elapsedMilliseconds: 12)
+        ))
+        let viewModel = TranslatorViewModel(client: client)
+        viewModel.sourceText = "Hello"
+        await viewModel.translate()
+        XCTAssertEqual(viewModel.translatedText, "你好")
+        let firstCount = await client.callCount
+        XCTAssertEqual(firstCount, 1)
+
+        await viewModel.translate()
+        XCTAssertEqual(viewModel.translatedText, "你好")
+        let secondCount = await client.callCount
+        XCTAssertEqual(secondCount, 2)
+    }
+
+    func testEnteringChineseAutomaticallySwitchesTargetLanguageToSecondTargetLanguage() async {
+        let client = StubTranslationClient(result: .success(
+            AppTranslationResult(text: "Hello", provider: "test", elapsedMilliseconds: 12)
+        ))
+        let viewModel = TranslatorViewModel(client: client)
+        viewModel.defaultTargetLanguage = "zh-CN"
+        viewModel.secondTargetLanguage = "en"
+
+        viewModel.sourceText = "你好世界"
+        await viewModel.translate()
+
+        XCTAssertEqual(viewModel.targetLanguage, "en")
+        let lastTarget = await client.lastRequest?.targetLanguage
+        XCTAssertEqual(lastTarget, "en")
+
+        viewModel.sourceText = "Hello world"
+        await viewModel.translate()
+
+        XCTAssertEqual(viewModel.targetLanguage, "zh-CN")
+        let secondTarget = await client.lastRequest?.targetLanguage
+        XCTAssertEqual(secondTarget, "zh-CN")
+    }
+
+    func testSwitchingLanguageDirectionViaApplyCapturedTextTranslatesSuccessfully() async {
+        let client = StubTranslationClient(result: .success(
+            AppTranslationResult(text: "Hello", provider: "free-ai", elapsedMilliseconds: 12)
+        ))
+        let viewModel = TranslatorViewModel(client: client)
+        viewModel.defaultTargetLanguage = "zh-CN"
+        viewModel.secondTargetLanguage = "en"
+
+        // First translation: English to Chinese
+        viewModel.applyCapturedText("Hello world")
+        viewModel.startTranslation()
+        await viewModel.debouncedTask?.value
+
+        XCTAssertEqual(viewModel.targetLanguage, "zh-CN")
+        XCTAssertEqual(viewModel.translatedText, "Hello")
+        XCTAssertFalse(viewModel.providerStates.first?.text.isEmpty ?? true)
+
+        // Second translation: Chinese to English (switches language direction)
+        viewModel.applyCapturedText("你好世界")
+        viewModel.startTranslation()
+        await viewModel.debouncedTask?.value
+
+        XCTAssertEqual(viewModel.targetLanguage, "en")
+        XCTAssertEqual(viewModel.translatedText, "Hello")
+        XCTAssertFalse(viewModel.providerStates.first?.text.isEmpty ?? true)
+    }
 }
 
 private actor StubTranslationClient: TranslationClient {
     private(set) var callCount = 0
+    private(set) var lastRequest: AppTranslationRequest?
     private let result: Result<AppTranslationResult, Error>
 
     init(result: Result<AppTranslationResult, Error>) {
@@ -123,6 +209,7 @@ private actor StubTranslationClient: TranslationClient {
 
     func translate(_ request: AppTranslationRequest) async throws -> AppTranslationResult {
         callCount += 1
+        lastRequest = request
         return try result.get()
     }
 }

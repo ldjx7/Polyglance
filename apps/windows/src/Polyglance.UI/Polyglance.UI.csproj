@@ -20,6 +20,7 @@
   <ItemGroup>
     <Resource Include="Resources\Polyglance.ico" />
     <Resource Include="Resources\Polyglance.png" />
+    <Resource Include="Resources\ProviderIcons\*.png" />
   </ItemGroup>
 
   <ItemGroup>

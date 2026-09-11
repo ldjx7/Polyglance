@@ -26,23 +26,29 @@ struct PolyglanceApp: App {
             }
 
             Button {
-                appDelegate.captureScreenTranslation()
+                appDelegate.captureOCRWorkspace()
             } label: {
-                Label("截屏翻译", systemImage: "text.viewfinder")
+                Label("文字识别", systemImage: "doc.text.viewfinder")
             }
 
             Divider()
 
             Button {
+                appDelegate.captureScreenTranslation()
+            } label: {
+                Label("截图翻译", systemImage: "photo.badge.checkmark")
+            }
+
+            Button {
                 appDelegate.showTranslator(capturingSelection: true, translateImmediately: true)
             } label: {
-                Label("读取选区并翻译", systemImage: "character.book.closed")
+                Label("划词翻译", systemImage: "character.book.closed")
             }
 
             Button {
                 appDelegate.showTranslator()
             } label: {
-                Label("打开主翻译窗口", systemImage: "translate")
+                Label("输入翻译", systemImage: "translate")
             }
 
             Divider()

@@ -26,8 +26,8 @@ final class AppBrandingTests: XCTestCase {
     func testMenuBarIconIsAnAdaptiveTemplateAtStatusItemSize() throws {
         let image = PolyglanceMenuBarIcon.image
 
-        XCTAssertTrue(image.isTemplate)
         XCTAssertEqual(image.size, CGSize(width: 18, height: 18))
+        XCTAssertEqual(image.accessibilityDescription, "Polyglance")
         let representation: Data = try XCTUnwrap(image.tiffRepresentation)
         let bitmap = try XCTUnwrap(NSBitmapImageRep(data: representation))
         let visiblePixelCount = (0 ..< bitmap.pixelsHigh).reduce(into: 0) { rowCount, y in

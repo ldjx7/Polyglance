@@ -64,7 +64,7 @@ public partial class ScreenshotToolbar : UserControl
     {
         IsOcrTranslationBusy = isBusy;
         BtnTranslate.IsEnabled = !isBusy;
-        BtnTranslate.ToolTip = isBusy ? "正在识别并翻译…" : "识别并翻译";
+        BtnTranslate.ToolTip = isBusy ? "正在OCR翻译…" : "OCR翻译";
         BtnTranslate.Cursor = isBusy ? Cursors.Wait : null;
     }
 

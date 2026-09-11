@@ -17,6 +17,7 @@ using Polyglance.Platform.Pin;
 using Polyglance.Platform.Startup;
 using Polyglance.Platform.Text;
 using Polyglance.Platform.Update;
+using Polyglance.UI.Services;
 using Polyglance.UI.Views;
 using Application = System.Windows.Application;
 
@@ -24,6 +25,9 @@ namespace Polyglance.UI;
 
 public partial class App : Application
 {
+    public static App? CurrentApp => Application.Current as App;
+    new public MainWindow? MainWindow => _mainWindow;
+
     private static Mutex? _mutex;
     private NotifyIcon? _notifyIcon;
     private GlobalHotKeyManager? _hotKeyManager;
@@ -145,13 +149,14 @@ public partial class App : Application
         contextMenu.Items.Add("截图", null, (s, e) => TriggerScreenshot());
         contextMenu.Items.Add("长截图", null, (s, e) => TriggerLongScreenshot());
         contextMenu.Items.Add("区域录屏", null, (s, e) => TriggerScreenRecording());
+        contextMenu.Items.Add("文字识别", null, (s, e) => TriggerOcrWorkspace());
 
         contextMenu.Items.Add(new ToolStripSeparator());
 
         // Group 2: 文本翻译
         contextMenu.Items.Add("截图翻译", null, (s, e) => TriggerScreenTranslate());
-        contextMenu.Items.Add("读取选区并翻译", null, (s, e) => TriggerSelectedTextTranslate());
-        contextMenu.Items.Add("打开主翻译窗口", null, (s, e) => ShowMainWindow());
+        contextMenu.Items.Add("划词翻译", null, (s, e) => TriggerSelectedTextTranslate());
+        contextMenu.Items.Add("输入翻译", null, (s, e) => ShowMainWindow());
 
         contextMenu.Items.Add(new ToolStripSeparator());
 
@@ -165,7 +170,7 @@ public partial class App : Application
         pinMenu.DropDownItems.Add("显示全部贴图", null, (s, e) => ShowAllPins());
         pinMenu.DropDownItems.Add(new ToolStripSeparator());
         pinMenu.DropDownItems.Add("关闭全部贴图", null, (s, e) => CloseAllPins());
-        pinMenu.DropDownItems.Add("销毁全部贴图及对应历史", null, (s, e) => Dispatcher.Invoke(async () => await PinSessionController.For().DestroyAll()));
+        pinMenu.DropDownItems.Add("彻底销毁全部贴图", null, (s, e) => Dispatcher.Invoke(async () => await PinSessionController.For().DestroyAll()));
         contextMenu.Items.Add(pinMenu);
 
         contextMenu.Items.Add(new ToolStripSeparator());
@@ -200,10 +205,15 @@ public partial class App : Application
         var config = LoadConfigurationOrDefault();
 
         var failures = new List<string>();
-        RegisterSingleHotKey("截图贴图", config.HotkeyScreenshotPin, TriggerScreenshot, failures);
+        RegisterSingleHotKey("截图", config.HotkeyScreenshotPin, TriggerScreenshot, failures);
+        RegisterSingleHotKey("截图并复制", config.HotkeyScreenshotCopy, TriggerScreenshotCopy, failures);
         RegisterSingleHotKey("剪贴板贴图", config.HotkeyPinClipboardImage, PinClipboardImage, failures);
         RegisterSingleHotKey("划词翻译", config.HotkeySelectedText, TriggerSelectedTextTranslate, failures);
+        RegisterSingleHotKey("划词翻译并替换", config.HotkeyTranslateAndReplace, TriggerTranslateAndReplace, failures);
         RegisterSingleHotKey("截图翻译", config.HotkeyScreenTranslate, TriggerScreenTranslate, failures);
+        RegisterSingleHotKey("OCR翻译", config.HotkeyOcrTranslate, TriggerOcrTranslate, failures);
+        RegisterSingleHotKey("文字识别", config.HotkeyOcrWorkspace, TriggerOcrWorkspace, failures);
+        RegisterSingleHotKey("双语对照卡", config.HotkeyOcrTranslationCard, TriggerOcrTranslationCard, failures);
         RegisterSingleHotKey("长截图", config.HotkeyLongScreenshot, TriggerLongScreenshot, failures);
         RegisterSingleHotKey("屏幕录制", config.HotkeyScreenRecording, TriggerScreenRecording, failures);
         RegisterSingleHotKey("恢复最近贴图", config.HotkeyRestoreMostRecentPin, RestoreMostRecentPin, failures);
@@ -249,6 +259,11 @@ public partial class App : Application
         BeginScreenshotSelection(ScreenshotCaptureIntent.Standard);
     }
 
+    public void TriggerScreenshotCopy()
+    {
+        BeginScreenshotSelection(ScreenshotCaptureIntent.ScreenshotAndCopy);
+    }
+
     private void BeginScreenshotSelection(ScreenshotCaptureIntent intent)
     {
         Dispatcher.Invoke(() =>
@@ -266,7 +281,30 @@ public partial class App : Application
 
     public void TriggerScreenTranslate()
     {
-        BeginScreenshotSelection(ScreenshotCaptureIntent.ScreenTranslation);
+        var config = LoadConfigurationOrDefault();
+        if (string.Equals(config.ScreenshotTranslationStyle, "youdao", StringComparison.OrdinalIgnoreCase))
+        {
+            BeginScreenshotSelection(ScreenshotCaptureIntent.ScreenTranslation);
+        }
+        else
+        {
+            BeginScreenshotSelection(ScreenshotCaptureIntent.OcrTranslate);
+        }
+    }
+
+    public void TriggerOcrTranslate()
+    {
+        BeginScreenshotSelection(ScreenshotCaptureIntent.OcrTranslate);
+    }
+
+    public void TriggerOcrWorkspace()
+    {
+        BeginScreenshotSelection(ScreenshotCaptureIntent.OcrWorkspace);
+    }
+
+    public void TriggerOcrTranslationCard()
+    {
+        BeginScreenshotSelection(ScreenshotCaptureIntent.OcrTranslationCard);
     }
 
     private AppConfiguration LoadConfigurationOrDefault()
@@ -291,6 +329,7 @@ public partial class App : Application
 
     public async void TriggerSelectedTextTranslate()
     {
+        TextReplacementService.RecordTargetWindow();
         string? text = await SelectedTextReader.GetSelectedTextAsync();
         if (!string.IsNullOrWhiteSpace(text))
         {
@@ -298,9 +337,65 @@ public partial class App : Application
             {
                 if (_mainWindow != null)
                 {
-                    _mainWindow.SetAndTranslate(text);
+                    var p = System.Windows.Forms.Cursor.Position;
+                    _mainWindow.SetAndTranslate(text, new Rect(p.X, p.Y, 1, 1));
                 }
             });
+        }
+    }
+
+    public async void TriggerTranslateAndReplace()
+    {
+        TextReplacementService.RecordTargetWindow();
+        string? text = await SelectedTextReader.GetSelectedTextAsync();
+        if (string.IsNullOrWhiteSpace(text) || _translationService == null) return;
+
+        var config = LoadConfigurationOrDefault();
+        string targetLang = DetermineTargetLanguage(
+            text,
+            config.TargetLanguage,
+            config.SecondTargetLanguage
+        );
+
+        try
+        {
+            var result = await _translationService.TranslateAsync(
+                text,
+                targetLang,
+                config.SourceLanguage,
+                config
+            );
+
+            if (result != null && !string.IsNullOrWhiteSpace(result.Text))
+            {
+                await TextReplacementService.ReplaceSelectedTextAsync(result.Text);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private static string DetermineTargetLanguage(string text, string primary, string secondary)
+    {
+        bool hasChinese = false;
+        foreach (char c in text)
+        {
+            if (c >= 0x4E00 && c <= 0x9FFF)
+            {
+                hasChinese = true;
+                break;
+            }
+        }
+
+        bool primaryIsChinese = primary.StartsWith("zh", StringComparison.OrdinalIgnoreCase);
+        if (primaryIsChinese)
+        {
+            return hasChinese ? (string.IsNullOrWhiteSpace(secondary) ? "en" : secondary) : primary;
+        }
+        else
+        {
+            return hasChinese ? primary : (string.IsNullOrWhiteSpace(secondary) ? "zh-Hans" : secondary);
         }
     }
 
@@ -447,6 +542,7 @@ public partial class App : Application
         {
             if (_mainWindow != null)
             {
+                _mainWindow.ReloadConfiguration();
                 _mainWindow.Show();
                 _mainWindow.WindowState = WindowState.Normal;
                 _mainWindow.Activate();
@@ -464,6 +560,7 @@ public partial class App : Application
                 if (settings.ShowDialog() == true)
                 {
                     RegisterDynamicHotKeys();
+                    _mainWindow?.ReloadConfiguration();
                 }
             }
         });

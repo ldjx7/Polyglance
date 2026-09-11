@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using Polyglance.Core.Models;
 using Polyglance.Core.Services;
@@ -96,6 +97,10 @@ public sealed class ConfigurationStoreTests : IDisposable
             DefaultRecordingFormat = "GIF",
             DefaultRecordingFps = 15,
             DefaultRecordingDelaySeconds = 5,
+            ScreenshotTranslationStyle = "youdao",
+            HotkeyScreenshotCopy = "Ctrl+F9",
+            SecondTargetLanguage = "en",
+            HotkeyTranslateAndReplace = "Ctrl+F10",
         };
 
         store.Save(expected);
@@ -109,7 +114,9 @@ public sealed class ConfigurationStoreTests : IDisposable
     {
         var configuration = new AppConfiguration();
 
+        Assert.Equal("en", configuration.SecondTargetLanguage);
         Assert.Equal("Ctrl+Shift+D1", configuration.HotkeyScreenshotPin);
+        Assert.Equal(string.Empty, configuration.HotkeyScreenshotCopy);
         Assert.Equal("Ctrl+Shift+D2", configuration.HotkeyPinClipboardImage);
         Assert.Equal("Ctrl+Shift+D3", configuration.HotkeySelectedText);
         Assert.Equal("Ctrl+Shift+D4", configuration.HotkeyScreenTranslate);
@@ -117,6 +124,10 @@ public sealed class ConfigurationStoreTests : IDisposable
         Assert.Equal(string.Empty, configuration.HotkeyScreenRecording);
         Assert.Equal("Ctrl+Shift+D5", configuration.HotkeyRestoreMostRecentPin);
         Assert.Equal(string.Empty, configuration.HotkeyMainTranslator);
+        Assert.Equal(string.Empty, configuration.HotkeyOcrTranslate);
+        Assert.Equal(string.Empty, configuration.HotkeyOcrWorkspace);
+        Assert.Equal(string.Empty, configuration.HotkeyOcrTranslationCard);
+        Assert.Equal(string.Empty, configuration.HotkeyTranslateAndReplace);
     }
 
     [Fact]
@@ -189,6 +200,15 @@ public sealed class ConfigurationStoreTests : IDisposable
     {
         if (!OperatingSystem.IsWindows())
             return;
+
+        try
+        {
+            ProtectedData.Protect([1], null, DataProtectionScope.CurrentUser);
+        }
+        catch (CryptographicException)
+        {
+            return;
+        }
 
         string path = Path.Combine(_directory, "credentials.dat");
         var store = new DpapiCredentialStore(path);

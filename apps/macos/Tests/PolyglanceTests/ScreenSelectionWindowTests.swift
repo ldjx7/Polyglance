@@ -668,7 +668,7 @@ final class ScreenSelectionWindowTests: XCTestCase {
         let window = ScreenSelectionWindow(image: try makeImage(width: 300, height: 200), screen: screen)
         window.orderFront(nil)
 
-        XCTAssertFalse(window.selectionView.dimsCurrentScreen)
+        XCTAssertTrue(window.selectionView.dimsCurrentScreen)
 
         dragSelection(in: window, from: CGPoint(x: 20, y: 20), to: CGPoint(x: 220, y: 120))
         XCTAssertTrue(window.selectionView.dimsCurrentScreen)
@@ -676,7 +676,7 @@ final class ScreenSelectionWindowTests: XCTestCase {
         window.selectionView.rightMouseDown(
             with: mouseEvent(.rightMouseDown, at: CGPoint(x: 100, y: 80), window: window)
         )
-        XCTAssertFalse(window.selectionView.dimsCurrentScreen)
+        XCTAssertTrue(window.selectionView.dimsCurrentScreen)
     }
 
     func testEscapeAlwaysCancelsInsteadOfReturningToInitialState() throws {
