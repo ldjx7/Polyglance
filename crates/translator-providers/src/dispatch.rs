@@ -121,9 +121,9 @@ pub fn select_with_prompt(
             } else {
                 model
             };
-            Ok(Selection::OpenAiCompatible(OpenAiCompatibleConfig::with_prompt(
-                endpoint, api_key, model, prompt,
-            )?))
+            Ok(Selection::OpenAiCompatible(
+                OpenAiCompatibleConfig::with_prompt(endpoint, api_key, model, prompt)?,
+            ))
         }
         _ => Err(ProviderError::InvalidConfig(format!(
             "unknown translation provider: {provider}"

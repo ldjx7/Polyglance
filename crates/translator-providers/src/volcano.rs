@@ -37,7 +37,8 @@ impl VolcanoConfig {
                     (creds.to_string(), String::new())
                 } else {
                     return Err(ProviderError::InvalidConfig(
-                        "火山翻译凭证格式需为 AccessKey:SecretKey，请在偏好设置中填写完整".to_string(),
+                        "火山翻译凭证格式需为 AccessKey:SecretKey，请在偏好设置中填写完整"
+                            .to_string(),
                     ));
                 }
             }
@@ -51,9 +52,8 @@ impl VolcanoConfig {
 
         let ep = endpoint.as_ref().trim();
         let target_url = if ep.is_empty() { DEFAULT_ENDPOINT } else { ep };
-        let parsed = Url::parse(target_url).map_err(|e| {
-            ProviderError::InvalidConfig(format!("火山翻译接口地址无效: {e}"))
-        })?;
+        let parsed = Url::parse(target_url)
+            .map_err(|e| ProviderError::InvalidConfig(format!("火山翻译接口地址无效: {e}")))?;
 
         if parsed.scheme() != "https" && !is_loopback_host(&parsed) {
             return Err(ProviderError::InvalidConfig(
@@ -156,14 +156,23 @@ impl VolcanoProvider {
 
         if self.config.secret_key.is_empty() {
             // Bearer Token 模式
-            req_builder = req_builder.header("Authorization", format!("Bearer {}", self.config.access_key));
+            req_builder = req_builder.header(
+                "Authorization",
+                format!("Bearer {}", self.config.access_key),
+            );
         } else {
             // 完整 Volcengine V4 HMAC-SHA256 签名算法
-            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
             // 简易格式化 UTC: YYYYMMDDTHHMMSSZ
             let (year, month, day, hour, min, sec) = epoch_to_utc_parts(now);
             let date_short = format!("{:04}{:02}{:02}", year, month, day);
-            let x_date = format!("{:04}{:02}{:02}T{:02}{:02}{:02}Z", year, month, day, hour, min, sec);
+            let x_date = format!(
+                "{:04}{:02}{:02}T{:02}{:02}{:02}Z",
+                year, month, day, hour, min, sec
+            );
 
             let mut body_hasher = Sha256::new();
             body_hasher.update(body_str.as_bytes());
@@ -187,7 +196,10 @@ impl VolcanoProvider {
             let hashed_req = hex::encode(req_hasher.finalize());
 
             let credential_scope = format!("{}/{}/{}/request", date_short, REGION, SERVICE);
-            let string_to_sign = format!("HMAC-SHA256\n{}\n{}\n{}", x_date, credential_scope, hashed_req);
+            let string_to_sign = format!(
+                "HMAC-SHA256\n{}\n{}\n{}",
+                x_date, credential_scope, hashed_req
+            );
 
             let k_date = hmac_sha256(self.config.secret_key.as_bytes(), date_short.as_bytes());
             let k_region = hmac_sha256(&k_date, REGION.as_bytes());
@@ -218,7 +230,10 @@ impl VolcanoProvider {
             return Err(map_status_error(status, "火山翻译"));
         }
 
-        let body = response.text().await.map_err(|e| ProviderError::Network(e.to_string()))?;
+        let body = response
+            .text()
+            .await
+            .map_err(|e| ProviderError::Network(e.to_string()))?;
         let parsed: VolcanoResponse = serde_json::from_str(&body)
             .map_err(|e| ProviderError::InvalidResponse(format!("解析火山翻译响应失败: {e}")))?;
 
@@ -235,13 +250,14 @@ impl VolcanoProvider {
             }
         }
 
-        let items = parsed.translation_list.ok_or_else(|| {
-            ProviderError::InvalidResponse("火山翻译未返回译文列表".to_string())
-        })?;
+        let items = parsed
+            .translation_list
+            .ok_or_else(|| ProviderError::InvalidResponse("火山翻译未返回译文列表".to_string()))?;
 
-        let first = items.into_iter().next().ok_or_else(|| {
-            ProviderError::InvalidResponse("火山翻译译文为空".to_string())
-        })?;
+        let first = items
+            .into_iter()
+            .next()
+            .ok_or_else(|| ProviderError::InvalidResponse("火山翻译译文为空".to_string()))?;
 
         let detected = first
             .detected_source_language
@@ -275,7 +291,18 @@ fn epoch_to_utc_parts(epoch_sec: u64) -> (u32, u32, u32, u32, u32, u32) {
 
     let leap = is_leap_year(year);
     let month_days = [
-        31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+        31,
+        if leap { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
     ];
     let mut month = 1;
     for &d in &month_days {

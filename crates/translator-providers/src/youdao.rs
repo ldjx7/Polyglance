@@ -41,9 +41,8 @@ impl YoudaoConfig {
 
         let ep = endpoint.as_ref().trim();
         let target_url = if ep.is_empty() { DEFAULT_ENDPOINT } else { ep };
-        let parsed = Url::parse(target_url).map_err(|e| {
-            ProviderError::InvalidConfig(format!("有道翻译接口地址无效: {e}"))
-        })?;
+        let parsed = Url::parse(target_url)
+            .map_err(|e| ProviderError::InvalidConfig(format!("有道翻译接口地址无效: {e}")))?;
 
         if parsed.scheme() != "https" && !is_loopback_host(&parsed) {
             return Err(ProviderError::InvalidConfig(
@@ -124,11 +123,7 @@ impl YoudaoProvider {
         let truncated = truncate_youdao_input(request.text());
         let sign_src = format!(
             "{}{}{}{}{}",
-            self.config.app_key,
-            truncated,
-            salt,
-            curtime,
-            self.config.app_secret
+            self.config.app_key, truncated, salt, curtime, self.config.app_secret
         );
 
         let mut hasher = Sha256::new();
@@ -160,7 +155,10 @@ impl YoudaoProvider {
             return Err(map_status_error(status, "有道翻译"));
         }
 
-        let body = response.text().await.map_err(|e| ProviderError::Network(e.to_string()))?;
+        let body = response
+            .text()
+            .await
+            .map_err(|e| ProviderError::Network(e.to_string()))?;
         let parsed: YoudaoResponse = serde_json::from_str(&body)
             .map_err(|e| ProviderError::InvalidResponse(format!("解析有道翻译响应失败: {e}")))?;
 
@@ -168,10 +166,18 @@ impl YoudaoProvider {
             let friendly = match parsed.error_code.as_str() {
                 "101" => "有道翻译缺少必填参数",
                 "102" => "有道翻译不支持该语言转换",
-                "108" => return Err(ProviderError::Authentication("有道翻译 AppKey 无效，请检查配置".into())),
+                "108" => {
+                    return Err(ProviderError::Authentication(
+                        "有道翻译 AppKey 无效，请检查配置".into(),
+                    ));
+                }
                 "110" => "有道翻译无相关服务权限",
                 "111" => "有道翻译开发者账号无效",
-                "202" => return Err(ProviderError::Authentication("有道翻译签名检验失败，请检查密钥是否正确".into())),
+                "202" => {
+                    return Err(ProviderError::Authentication(
+                        "有道翻译签名检验失败，请检查密钥是否正确".into(),
+                    ));
+                }
                 "401" => "有道翻译账户欠费，请前往充值",
                 "411" => return Err(ProviderError::RateLimited("有道翻译访问频次受限".into())),
                 _ => "有道翻译接口返回错误",

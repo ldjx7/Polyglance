@@ -131,7 +131,9 @@ pub fn streaming_request_body_with_prompt(
                 .replace("{source}", src)
                 .replace("{target}", target_language);
             if !p.contains(target_language) {
-                p.push_str(&format!("\nTranslate to {target_language}. Return only the translated text."));
+                p.push_str(&format!(
+                    "\nTranslate to {target_language}. Return only the translated text."
+                ));
             }
             p
         } else {

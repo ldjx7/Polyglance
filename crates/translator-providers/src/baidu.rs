@@ -41,9 +41,8 @@ impl BaiduConfig {
 
         let ep = endpoint.as_ref().trim();
         let target_url = if ep.is_empty() { DEFAULT_ENDPOINT } else { ep };
-        let parsed = Url::parse(target_url).map_err(|e| {
-            ProviderError::InvalidConfig(format!("百度翻译接口地址无效: {e}"))
-        })?;
+        let parsed = Url::parse(target_url)
+            .map_err(|e| ProviderError::InvalidConfig(format!("百度翻译接口地址无效: {e}")))?;
 
         if parsed.scheme() != "https" && !is_loopback_host(&parsed) {
             return Err(ProviderError::InvalidConfig(
@@ -150,7 +149,10 @@ impl BaiduProvider {
             return Err(map_status_error(status, "百度翻译"));
         }
 
-        let body = response.text().await.map_err(|e| ProviderError::Network(e.to_string()))?;
+        let body = response
+            .text()
+            .await
+            .map_err(|e| ProviderError::Network(e.to_string()))?;
         let parsed: BaiduResponse = serde_json::from_str(&body)
             .map_err(|e| ProviderError::InvalidResponse(format!("解析百度翻译响应失败: {e}")))?;
 
@@ -160,9 +162,17 @@ impl BaiduProvider {
                 let friendly = match err_code.as_str() {
                     "52001" => "百度翻译请求超时，请稍后重试",
                     "52002" => "百度翻译系统错误，请稍后重试",
-                    "52003" => return Err(ProviderError::Authentication("百度翻译未授权用户，请检查 AppID 与密钥是否正确".into())),
+                    "52003" => {
+                        return Err(ProviderError::Authentication(
+                            "百度翻译未授权用户，请检查 AppID 与密钥是否正确".into(),
+                        ));
+                    }
                     "54000" => "百度翻译必填参数为空",
-                    "54003" | "54005" => return Err(ProviderError::RateLimited("百度翻译访问频次受限或并发过高，请稍后重试".into())),
+                    "54003" | "54005" => {
+                        return Err(ProviderError::RateLimited(
+                            "百度翻译访问频次受限或并发过高，请稍后重试".into(),
+                        ));
+                    }
                     "54004" => "百度翻译账户余额不足，请前往平台充值",
                     _ => "百度翻译接口返回错误",
                 };
@@ -183,7 +193,9 @@ impl BaiduProvider {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let detected = parsed.from.and_then(|f| LanguageCode::new(&f.to_lowercase()).ok());
+        let detected = parsed
+            .from
+            .and_then(|f| LanguageCode::new(&f.to_lowercase()).ok());
 
         Ok(TranslationResult {
             text: translated_text,

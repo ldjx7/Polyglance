@@ -170,7 +170,9 @@ pub fn build_request_body(config: &OpenAiCompatibleConfig, request: &Translation
                 .replace("{source}", src)
                 .replace("{target}", target);
             if !prompt.contains(target) {
-                prompt.push_str(&format!("\nTranslate to {target}. Return only the translated text."));
+                prompt.push_str(&format!(
+                    "\nTranslate to {target}. Return only the translated text."
+                ));
             }
             prompt
         } else {

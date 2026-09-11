@@ -18,10 +18,7 @@ pub struct DeepLConfig {
 }
 
 impl DeepLConfig {
-    pub fn new(
-        endpoint: impl AsRef<str>,
-        api_key: impl AsRef<str>,
-    ) -> Result<Self, ProviderError> {
+    pub fn new(endpoint: impl AsRef<str>, api_key: impl AsRef<str>) -> Result<Self, ProviderError> {
         let key = api_key.as_ref().trim();
         if key.is_empty() {
             return Err(ProviderError::InvalidConfig(
@@ -37,9 +34,8 @@ impl DeepLConfig {
         };
 
         let target_url = if ep.is_empty() { default_url } else { ep };
-        let parsed = Url::parse(target_url).map_err(|e| {
-            ProviderError::InvalidConfig(format!("DeepL endpoint is invalid: {e}"))
-        })?;
+        let parsed = Url::parse(target_url)
+            .map_err(|e| ProviderError::InvalidConfig(format!("DeepL endpoint is invalid: {e}")))?;
 
         if parsed.scheme() != "https" && !is_loopback_host(&parsed) {
             return Err(ProviderError::InvalidConfig(
@@ -116,7 +112,10 @@ impl DeepLProvider {
         let response = self
             .client
             .post(self.config.endpoint.clone())
-            .header("Authorization", format!("DeepL-Auth-Key {}", self.config.api_key))
+            .header(
+                "Authorization",
+                format!("DeepL-Auth-Key {}", self.config.api_key),
+            )
             .form(&form)
             .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECONDS))
             .send()
@@ -126,20 +125,28 @@ impl DeepLProvider {
         let status = response.status();
         if !status.is_success() {
             return Err(match status.as_u16() {
-                403 => ProviderError::Authentication("DeepL 认证失败，请检查 Auth Key 是否有效".into()),
+                403 => {
+                    ProviderError::Authentication("DeepL 认证失败，请检查 Auth Key 是否有效".into())
+                }
                 456 => ProviderError::RateLimited("DeepL 翻译额度已用尽 (Quota Exceeded)".into()),
                 429 => ProviderError::RateLimited("DeepL 请求频次过高，请稍后再试".into()),
                 _ => map_status_error(status, "DeepL"),
             });
         }
 
-        let body = response.text().await.map_err(|e| ProviderError::Network(e.to_string()))?;
-        let parsed: DeepLResponse = serde_json::from_str(&body)
-            .map_err(|e| ProviderError::InvalidResponse(format!("failed to parse DeepL response: {e}")))?;
-
-        let first = parsed.translations.into_iter().next().ok_or_else(|| {
-            ProviderError::InvalidResponse("DeepL 返回的译文列表为空".into())
+        let body = response
+            .text()
+            .await
+            .map_err(|e| ProviderError::Network(e.to_string()))?;
+        let parsed: DeepLResponse = serde_json::from_str(&body).map_err(|e| {
+            ProviderError::InvalidResponse(format!("failed to parse DeepL response: {e}"))
         })?;
+
+        let first = parsed
+            .translations
+            .into_iter()
+            .next()
+            .ok_or_else(|| ProviderError::InvalidResponse("DeepL 返回的译文列表为空".into()))?;
 
         let detected = first
             .detected_source_language
