@@ -385,198 +385,13 @@ struct ScreenTranslationToolbarView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            // 翻译引擎选择器
-            Menu {
-                ForEach(TranslationProvider.allCases, id: \.self) { provider in
-                    Button {
-                        state.currentProvider = provider
-                        state.onProviderChanged?(provider)
-                    } label: {
-                        HStack {
-                            Text(provider.displayName)
-                            if state.currentProvider == provider {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                    Text(state.currentProvider.displayName)
-                        .font(.system(size: 12, weight: .medium))
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.6))
-                }
-                .foregroundStyle(.white.opacity(0.95))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    Capsule()
-                        .fill(Color.white.opacity(0.12))
-                )
-                .overlay(
-                    Capsule()
-                        .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-                )
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("翻译引擎: 当前使用 \(state.currentProvider.displayName)，点击切换")
-
-            Rectangle()
-                .fill(Color.white.opacity(0.18))
-                .frame(width: 1, height: 16)
-
-            // 语言选择胶囊容器
-            HStack(spacing: 4) {
-                Menu {
-                    ForEach(ScreenTranslationOverlaySession.sourceLanguages, id: \.title) { option in
-                        Button {
-                            state.selectedSourceCode = option.code
-                            state.onLanguageChanged?()
-                        } label: {
-                            HStack {
-                                Text(option.title)
-                                if state.selectedSourceCode == option.code {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 3) {
-                        Text(state.sourceTitle)
-                            .font(.system(size: 12, weight: .medium))
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(.white.opacity(0.6))
-                    }
-                    .foregroundStyle(.white.opacity(0.95))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("源语言: \(state.sourceTitle)")
-
-                Button {
-                    state.swapLanguages()
-                } label: {
-                    Image(systemName: "arrow.left.arrow.right")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(state.canSwap ? .white.opacity(0.85) : .white.opacity(0.3))
-                        .padding(3)
-                }
-                .buttonStyle(.plain)
-                .disabled(!state.canSwap)
-                .help("交换源语言和目标语言")
-
-                Menu {
-                    ForEach(ScreenTranslationOverlaySession.targetLanguages, id: \.title) { option in
-                        Button {
-                            state.selectedTargetCode = option.code ?? "zh-CN"
-                            state.onLanguageChanged?()
-                        } label: {
-                            HStack {
-                                Text(option.title)
-                                if state.selectedTargetCode == (option.code ?? "zh-CN") {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 3) {
-                        Text(state.targetTitle)
-                            .font(.system(size: 12, weight: .medium))
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(.white.opacity(0.6))
-                    }
-                    .foregroundStyle(.white.opacity(0.95))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("目标语言: \(state.targetTitle)")
-            }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
-            .background(
-                Capsule()
-                    .fill(Color.white.opacity(0.12))
-            )
-            .overlay(
-                Capsule()
-                    .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-            )
-
-            Rectangle()
-                .fill(Color.white.opacity(0.18))
-                .frame(width: 1, height: 16)
-
-            // 动作按钮组
-            HStack(spacing: 3) {
-                ToolbarIconButton(
-                    symbol: "square.split.2x1",
-                    tooltip: "对照模式 (原图/译文对照)",
-                    isActive: state.isComparing,
-                    disabled: !state.hasTranslation,
-                    action: { state.onToggleCompare?() }
-                )
-
-                ToolbarIconButton(
-                    symbol: "doc.on.doc",
-                    tooltip: "复制译文",
-                    disabled: !state.hasTranslation,
-                    action: { state.onCopyTranslation?() }
-                )
-
-                ToolbarIconButton(
-                    symbol: "doc.plaintext",
-                    tooltip: "提取文字 (查看原文与译文卡片)",
-                    disabled: !state.hasTranslation,
-                    action: { state.onExtractText?() }
-                )
-
-                ToolbarIconButton(
-                    symbol: "viewfinder",
-                    tooltip: "重新选区 (重新框选翻译区域)",
-                    action: { state.onReselect?() }
-                )
-
-                ToolbarIconButton(
-                    symbol: "pin",
-                    tooltip: "钉住为贴图 (固定在屏幕上)",
-                    disabled: !state.hasTranslation,
-                    action: { state.onPin?() }
-                )
-
-                ToolbarIconButton(
-                    symbol: "arrow.clockwise",
-                    tooltip: "重新识别 (重新截取并识别)",
-                    action: { state.onRefresh?() }
-                )
-            }
-
-            Rectangle()
-                .fill(Color.white.opacity(0.18))
-                .frame(width: 1, height: 16)
-
-            // 关闭按钮
-            ToolbarIconButton(
-                symbol: "xmark",
-                tooltip: "关闭 (Esc)",
-                action: { state.onClose?() }
-            )
+            providerSelector
+            separator
+            languageSelector
+            separator
+            actionButtons
+            separator
+            closeButton
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
@@ -593,6 +408,201 @@ struct ScreenTranslationToolbarView: View {
                 .stroke(Color.white.opacity(0.18), lineWidth: 0.8)
         )
         .preferredColorScheme(.dark)
+    }
+
+    private var separator: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.18))
+            .frame(width: 1, height: 16)
+    }
+
+    @ViewBuilder
+    private var providerSelector: some View {
+        Menu {
+            ForEach(TranslationProvider.allCases, id: \.self) { provider in
+                Button {
+                    state.currentProvider = provider
+                    state.onProviderChanged?(provider)
+                } label: {
+                    HStack {
+                        Text(provider.displayName)
+                        if state.currentProvider == provider {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                Text(state.currentProvider.displayName)
+                    .font(.system(size: 12, weight: .medium))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+            .foregroundStyle(.white.opacity(0.95))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule()
+                    .fill(Color.white.opacity(0.12))
+            )
+            .overlay(
+                Capsule()
+                    .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("翻译引擎: 当前使用 \(state.currentProvider.displayName)，点击切换")
+    }
+
+    @ViewBuilder
+    private var languageSelector: some View {
+        HStack(spacing: 4) {
+            Menu {
+                ForEach(ScreenTranslationOverlaySession.sourceLanguages, id: \.title) { option in
+                    Button {
+                        state.selectedSourceCode = option.code
+                        state.onLanguageChanged?()
+                    } label: {
+                        HStack {
+                            Text(option.title)
+                            if state.selectedSourceCode == option.code {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 3) {
+                    Text(state.sourceTitle)
+                        .font(.system(size: 12, weight: .medium))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+                .foregroundStyle(.white.opacity(0.95))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("源语言: \(state.sourceTitle)")
+
+            Button {
+                state.swapLanguages()
+            } label: {
+                Image(systemName: "arrow.left.arrow.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(state.canSwap ? .white.opacity(0.85) : .white.opacity(0.3))
+                    .padding(3)
+            }
+            .buttonStyle(.plain)
+            .disabled(!state.canSwap)
+            .help("交换源语言和目标语言")
+
+            Menu {
+                ForEach(ScreenTranslationOverlaySession.targetLanguages, id: \.title) { option in
+                    Button {
+                        state.selectedTargetCode = option.code ?? "zh-CN"
+                        state.onLanguageChanged?()
+                    } label: {
+                        HStack {
+                            Text(option.title)
+                            if state.selectedTargetCode == (option.code ?? "zh-CN") {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 3) {
+                    Text(state.targetTitle)
+                        .font(.system(size: 12, weight: .medium))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+                .foregroundStyle(.white.opacity(0.95))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("目标语言: \(state.targetTitle)")
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+        .background(
+            Capsule()
+                .fill(Color.white.opacity(0.12))
+        )
+        .overlay(
+            Capsule()
+                .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+        )
+    }
+
+    @ViewBuilder
+    private var actionButtons: some View {
+        HStack(spacing: 3) {
+            ToolbarIconButton(
+                symbol: "square.split.2x1",
+                tooltip: "对照模式 (原图/译文对照)",
+                isActive: state.isComparing,
+                disabled: !state.hasTranslation,
+                action: { state.onToggleCompare?() }
+            )
+
+            ToolbarIconButton(
+                symbol: "doc.on.doc",
+                tooltip: "复制译文",
+                disabled: !state.hasTranslation,
+                action: { state.onCopyTranslation?() }
+            )
+
+            ToolbarIconButton(
+                symbol: "doc.plaintext",
+                tooltip: "提取文字 (查看原文与译文卡片)",
+                disabled: !state.hasTranslation,
+                action: { state.onExtractText?() }
+            )
+
+            ToolbarIconButton(
+                symbol: "viewfinder",
+                tooltip: "重新选区 (重新框选翻译区域)",
+                action: { state.onReselect?() }
+            )
+
+            ToolbarIconButton(
+                symbol: "pin",
+                tooltip: "钉住为贴图 (固定在屏幕上)",
+                disabled: !state.hasTranslation,
+                action: { state.onPin?() }
+            )
+
+            ToolbarIconButton(
+                symbol: "arrow.clockwise",
+                tooltip: "重新识别 (重新截取并识别)",
+                action: { state.onRefresh?() }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var closeButton: some View {
+        ToolbarIconButton(
+            symbol: "xmark",
+            tooltip: "关闭 (Esc)",
+            action: { state.onClose?() }
+        )
     }
 }
 
