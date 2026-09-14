@@ -642,6 +642,7 @@ final class ScreenSelectionSession {
     private var didFinish = false
     private var screenChangeObserver: NSObjectProtocol?
     private let startTime: CFAbsoluteTime?
+    private let previousApp: NSRunningApplication?
 
     var inactiveDimmingWindowFrames: [CGRect] {
         inactiveDimmingWindows.map(\.frame)
@@ -690,6 +691,8 @@ final class ScreenSelectionSession {
         startTime: CFAbsoluteTime? = nil
     ) {
         self.startTime = startTime
+        let currentFrontApp = NSWorkspace.shared.frontmostApplication
+        self.previousApp = (currentFrontApp?.bundleIdentifier != Bundle.main.bundleIdentifier) ? currentFrontApp : nil
         let activeFrame = captureFrame.standardized
         let rawFrames = (crossScreenFrames ?? NSScreen.screens.map(\.frame)).map(\.standardized)
         let hostFrame = screen.frame.standardized
@@ -842,7 +845,6 @@ final class ScreenSelectionSession {
             window.selectionView.sessionStartTime = startTime
             PerfLogger.log(String(format: "[Screenshot Perf] 5. Present (orderFrontRegardless called): %.1f ms", latency))
         }
-        NSApp.activate(ignoringOtherApps: true)
         window.selectionView.publishMirrorState()
         CATransaction.begin()
         inactiveDimmingWindows.forEach { $0.orderFrontRegardless() }
@@ -884,6 +886,19 @@ final class ScreenSelectionSession {
         crossScreenWindows.forEach { $0.orderOut(nil) }
         window.orderOut(nil)
         NSCursor.arrow.set()
+        restorePreviousAppFocus()
+    }
+
+    private func restorePreviousAppFocus() {
+        if let previousApp,
+           previousApp.bundleIdentifier != Bundle.main.bundleIdentifier,
+           !previousApp.isTerminated {
+            if #available(macOS 14.0, *) {
+                previousApp.activate()
+            } else {
+                previousApp.activate(options: .activateIgnoringOtherApps)
+            }
+        }
     }
 
     private func finish(with action: ScreenshotSelectionAction?) {

@@ -292,7 +292,6 @@ final class ScreenshotCoordinator {
         guard let screen = screenUnderPointer() else {
             throw ScreenshotError.screenUnavailable
         }
-        NSApp.activate(ignoringOtherApps: true)
 
         if ScreenshotCapturePolicy.usesVirtualDesktop(
             screenCount: NSScreen.screens.count,

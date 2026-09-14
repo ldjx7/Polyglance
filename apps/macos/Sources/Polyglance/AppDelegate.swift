@@ -292,7 +292,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         triggerTime: CFAbsoluteTime? = nil
     ) {
         let pressTime = triggerTime ?? CFAbsoluteTimeGetCurrent()
-        NSApp.activate(ignoringOtherApps: true)
         let dispatchLag = (CFAbsoluteTimeGetCurrent() - pressTime) * 1000
         if dispatchLag > 0.1 {
             PerfLogger.log(String(format: "[Screenshot Perf] 0. Physical HotKey press -> Main thread dispatch: %.1f ms", dispatchLag))
