@@ -230,7 +230,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         viewModel.customAIDisplayNames = customNames
     }
 
-    func showSettings() {
+    func showSettings(tab: SettingsTab = .general) {
+        SettingsNavigation.shared.selectedTab = tab
         NSApp.setActivationPolicy(SettingsApplicationPresentation.visibleActivationPolicy)
         NSApp.activate(ignoringOtherApps: true)
         if let window = settingsWindowCoordinator.window, !window.isVisible {
@@ -244,6 +245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func checkForUpdates() {
+        showSettings(tab: .about)
         appUpdater.checkForUpdates()
     }
 
@@ -713,6 +715,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try configurationStore.save(configuration)
             try shortcutStore.save(shortcuts)
             try recordingSettingsStore.save(recordingSettings)
+            appUpdater.setAutomaticChecks(enabled: configuration.autoCheckUpdates)
         } catch {
             try? hotKeyManager.register(previousShortcuts)
             try? configurationStore.save(previousConfiguration)

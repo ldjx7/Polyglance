@@ -487,53 +487,9 @@ public partial class App : Application
         });
     }
 
-    public async void TriggerCheckUpdate()
+    public void TriggerCheckUpdate()
     {
-        var config = LoadConfigurationOrDefault();
-        _notifyIcon?.ShowBalloonTip(2500, "Polyglance", "正在检查更新，请稍候...", ToolTipIcon.Info);
-
-        try
-        {
-            UpdateCheckResult check = await AppUpdater.CheckForUpdatesAsync(
-                config.AppcastUrl,
-                config.IncludeBetaUpdates,
-                config.SkippedUpdateVersion);
-            if (check.Status == UpdateCheckStatus.UpdateAvailable)
-            {
-                UpdateInfo update = check.Update!;
-                _notifyIcon?.ShowBalloonTip(
-                    5000,
-                    "Polyglance 发现新版本",
-                    $"发现新版本 v{update.Version}，正在后台下载更新...",
-                    ToolTipIcon.Info);
-
-                bool started = await AppUpdater.DownloadAndApplyUpdateAsync(update.DownloadUrl);
-                if (!started)
-                {
-                    _notifyIcon?.ShowBalloonTip(
-                        5000,
-                        "Polyglance 自动更新",
-                        "更新包下载或替换失败，请稍后重试，或从 GitHub Release 手动安装。",
-                        ToolTipIcon.Warning);
-                }
-            }
-            else if (check.Status == UpdateCheckStatus.UpToDate)
-            {
-                _notifyIcon?.ShowBalloonTip(4000, "Polyglance", "当前已是最新版本！", ToolTipIcon.Info);
-            }
-            else
-            {
-                _notifyIcon?.ShowBalloonTip(
-                    4000,
-                    "Polyglance 检查更新",
-                    string.IsNullOrWhiteSpace(check.ErrorMessage) ? "检查更新失败" : check.ErrorMessage,
-                    ToolTipIcon.Warning);
-            }
-        }
-        catch (Exception ex)
-        {
-            _notifyIcon?.ShowBalloonTip(4000, "Polyglance 检查更新", $"检查更新失败: {ex.Message}", ToolTipIcon.Warning);
-        }
+        ShowSettings(initialTab: "About", autoCheckUpdate: true);
     }
 
     public void ShowMainWindow()
@@ -550,13 +506,13 @@ public partial class App : Application
         });
     }
 
-    public void ShowSettings(string initialTab = "General")
+    public void ShowSettings(string initialTab = "General", bool autoCheckUpdate = false)
     {
         Dispatcher.Invoke(() =>
         {
             if (_configStore != null)
             {
-                var settings = new SettingsWindow(_configStore, initialTab: initialTab);
+                var settings = new SettingsWindow(_configStore, initialTab: initialTab, autoCheckUpdate: autoCheckUpdate);
                 if (settings.ShowDialog() == true)
                 {
                     RegisterDynamicHotKeys();

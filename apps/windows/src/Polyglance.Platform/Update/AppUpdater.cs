@@ -38,6 +38,33 @@ public sealed class UpdateCheckResult
     public string ErrorMessage { get; init; } = "";
 }
 
+public sealed record UpdateDownloadProgress(long BytesReceived, long TotalBytes, int Percent);
+
+public sealed class PreparedUpdate
+{
+    public string BatchScriptPath { get; }
+    public string UpdatedExecutableName { get; }
+
+    internal PreparedUpdate(string batchScriptPath, string updatedExecutableName)
+    {
+        BatchScriptPath = batchScriptPath;
+        UpdatedExecutableName = updatedExecutableName;
+    }
+
+    public void ApplyAndRestart()
+    {
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = "cmd.exe",
+            Arguments = $"/c \"{BatchScriptPath}\"",
+            CreateNoWindow = true,
+            UseShellExecute = false
+        });
+
+        Application.Current.Dispatcher.Invoke(() => Application.Current.Shutdown());
+    }
+}
+
 internal sealed record UpdatePackageLayout(string SourceDirectory, string ExecutableName);
 
 public static class AppUpdater
@@ -338,7 +365,9 @@ public static class AppUpdater
             : null;
     }
 
-    public static async Task<bool> DownloadAndApplyUpdateAsync(string downloadUrl, IProgress<int>? progress = null)
+    public static async Task<PreparedUpdate?> DownloadAndPrepareUpdateAsync(
+        string downloadUrl,
+        IProgress<UpdateDownloadProgress>? progress = null)
     {
         try
         {
@@ -362,11 +391,8 @@ public static class AppUpdater
                     await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead));
                     totalRead += bytesRead;
 
-                    if (totalBytes > 0)
-                    {
-                        int percent = (int)((totalRead * 100) / totalBytes);
-                        progress?.Report(percent);
-                    }
+                    int percent = totalBytes > 0 ? (int)((totalRead * 100) / totalBytes) : 0;
+                    progress?.Report(new UpdateDownloadProgress(totalRead, totalBytes, percent));
                 }
             }
 
@@ -387,22 +413,22 @@ public static class AppUpdater
                 packageLayout.ExecutableName);
             File.WriteAllText(batchScript, scriptContent, System.Text.Encoding.Default);
 
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = "cmd.exe",
-                Arguments = $"/c \"{batchScript}\"",
-                CreateNoWindow = true,
-                UseShellExecute = false
-            });
-
-            Application.Current.Dispatcher.Invoke(() => Application.Current.Shutdown());
-            return true;
+            return new PreparedUpdate(batchScript, packageLayout.ExecutableName);
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Failed to apply update: {ex.Message}");
-            return false;
+            Debug.WriteLine($"Failed to prepare update: {ex.Message}");
+            return null;
         }
+    }
+
+    public static async Task<bool> DownloadAndApplyUpdateAsync(string downloadUrl, IProgress<int>? progress = null)
+    {
+        var wrapperProgress = progress != null ? new Progress<UpdateDownloadProgress>(p => progress.Report(p.Percent)) : null;
+        PreparedUpdate? prepared = await DownloadAndPrepareUpdateAsync(downloadUrl, wrapperProgress);
+        if (prepared == null) return false;
+        prepared.ApplyAndRestart();
+        return true;
     }
 
     internal static UpdatePackageLayout ResolveUpdatePackageLayout(string extractedRoot)

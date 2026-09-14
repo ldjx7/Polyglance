@@ -17,11 +17,16 @@ struct SettingsView: View {
         Bool
     ) throws -> Void
 
-    @State private var selectedTab: SettingsTab = .general
+    @ObservedObject private var navigation = SettingsNavigation.shared
+    private var selectedTab: SettingsTab {
+        get { navigation.selectedTab }
+        nonmutating set { navigation.selectedTab = newValue }
+    }
     @State private var serviceCategory = 0
     @State private var historySearchText = ""
     @State private var selectedHistoryRecordID: UUID?
     @ObservedObject private var historyStore = TranslationHistoryStore.shared
+    @ObservedObject private var updater = AppUpdater.shared
     private let speechSynthesizer = AVSpeechSynthesizer()
 
     @State private var endpoint = ""
@@ -81,15 +86,14 @@ struct SettingsView: View {
             Color.clear
                 .frame(height: 32)
 
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable()
                     .interpolation(.high)
-                    .frame(width: 28, height: 28)
-                    .clipShape(RoundedRectangle(cornerRadius: 6.5))
-                    .shadow(color: .black.opacity(0.12), radius: 3, x: 0, y: 1.5)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 40, height: 40)
 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(SettingsBranding.name)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.primary)
@@ -101,7 +105,7 @@ struct SettingsView: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(SettingsBranding.name)，\(SettingsBranding.tagline)")
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 12)
             .padding(.bottom, 10)
 
             Divider()
@@ -1473,11 +1477,14 @@ struct SettingsView: View {
 
                     Spacer()
 
-                    Button("检查更新") {
-                        AppUpdater.shared.checkForUpdates()
-                    }
+                    aboutActionView
                 }
                 .padding(.vertical, 6)
+
+                if shouldShowInlineUpdateCard {
+                    inlineUpdateCard
+                        .padding(.top, 4)
+                }
             } header: {
                 Text("关于应用")
             }
@@ -1509,6 +1516,245 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private var shouldShowInlineUpdateCard: Bool {
+        switch updater.state {
+        case .updateAvailable, .downloading, .extracting, .readyToRelaunch, .failed:
+            return true
+        case .idle, .checking, .upToDate:
+            return false
+        }
+    }
+
+    @ViewBuilder
+    private var aboutActionView: some View {
+        switch updater.state {
+        case .idle:
+            Button("检查更新") {
+                updater.checkForUpdates()
+            }
+        case .checking:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("正在检查更新...")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                Button("取消") {
+                    updater.cancelCheck()
+                }
+                .controlSize(.small)
+            }
+        case .upToDate:
+            HStack(spacing: 8) {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("已是最新版本")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                Button("重新检查") {
+                    updater.checkForUpdates()
+                }
+                .controlSize(.small)
+            }
+        case .updateAvailable, .downloading, .extracting, .readyToRelaunch, .failed:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var inlineUpdateCard: some View {
+        switch updater.state {
+        case .updateAvailable(_, let displayVersion, let releaseNotes, let isCritical):
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(Color.accentColor)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text("发现新版本")
+                                .font(.system(size: 13, weight: .bold))
+                            Text(displayVersion)
+                                .font(.system(size: 11, weight: .semibold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.accentColor.opacity(0.12))
+                                .foregroundStyle(Color.accentColor)
+                                .clipShape(Capsule())
+                            if isCritical {
+                                Text("重要更新")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.red.opacity(0.12))
+                                    .foregroundStyle(.red)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        Text("当前版本: \(AppVersionInfo.displayString)")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    HStack(spacing: 8) {
+                        Button("跳过此版本") {
+                            updater.skipUpdate()
+                        }
+                        .controlSize(.small)
+
+                        Button("稍后") {
+                            updater.dismissUpdate()
+                        }
+                        .controlSize(.small)
+
+                        Button("立即更新") {
+                            updater.installUpdate()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
+                }
+
+                if let notes = releaseNotes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("更新日志")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        ScrollView {
+                            Text(notes)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.primary.opacity(0.85))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxHeight: 120)
+                        .padding(8)
+                        .background(Color(NSColor.textBackgroundColor).opacity(0.5))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                }
+            }
+            .padding(12)
+            .background(Color.accentColor.opacity(0.06))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.accentColor.opacity(0.2), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+        case .downloading(let progress, let receivedBytes, let totalBytes):
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .foregroundStyle(Color.accentColor)
+                    Text("正在下载更新...")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    if totalBytes > 0 {
+                        Text("\(formatByteSize(receivedBytes)) / \(formatByteSize(totalBytes)) (\(Int(progress * 100))%)")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    Button("取消") {
+                        updater.cancelDownload()
+                    }
+                    .controlSize(.small)
+                }
+                ProgressView(value: max(0.01, progress), total: 1.0)
+                    .progressViewStyle(.linear)
+            }
+            .padding(12)
+            .background(Color(NSColor.controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+        case .extracting(let progress):
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text("正在解压并校验更新文件...")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    if progress > 0 {
+                        Text("\(Int(progress * 100))%")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                ProgressView(value: max(0.05, progress), total: 1.0)
+                    .progressViewStyle(.linear)
+            }
+            .padding(12)
+            .background(Color(NSColor.controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+        case .readyToRelaunch:
+            HStack {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("更新已准备就绪")
+                        .font(.system(size: 13, weight: .bold))
+                    Text("重启应用以完成更新安装")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("稍后重启") {
+                    updater.postponeInstall()
+                }
+                .controlSize(.small)
+
+                Button("立即重启应用") {
+                    updater.relaunchAndInstall()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+            .padding(12)
+            .background(Color.green.opacity(0.08))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.green.opacity(0.25), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+        case .failed(let message):
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text(message)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                Spacer()
+                Button("重试") {
+                    updater.checkForUpdates()
+                }
+                .controlSize(.small)
+            }
+            .padding(10)
+            .background(Color.orange.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+        case .idle, .checking, .upToDate:
+            EmptyView()
+        }
+    }
+
+    private func formatByteSize(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useMB, .useKB, .useBytes]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: bytes)
     }
 
     // MARK: - Helpers
@@ -2062,7 +2308,13 @@ private enum SettingsTabSection: String, CaseIterable, Identifiable {
     }
 }
 
-private enum SettingsTab: String, CaseIterable, Identifiable {
+@MainActor
+final class SettingsNavigation: ObservableObject {
+    static let shared = SettingsNavigation()
+    @Published var selectedTab: SettingsTab = .general
+}
+
+enum SettingsTab: String, CaseIterable, Identifiable {
     case translationSettings = "translation_settings"
     case favorites = "favorites"
     case history = "history"

@@ -4,55 +4,16 @@ import AppKit
 enum PolyglanceMenuBarIcon {
     static let image: NSImage = {
         let size = CGSize(width: 18, height: 18)
-        let loaded: NSImage? = {
-            if let img = NSImage(named: "PolyglanceIcon"), img.isValid {
-                return img
-            }
-            if let url = Bundle.main.url(forResource: "PolyglanceIcon", withExtension: "png"),
-               let img = NSImage(contentsOf: url), img.isValid {
-                return img
-            }
-            if let url = Bundle.main.url(forResource: "Polyglance", withExtension: "icns"),
-               let img = NSImage(contentsOf: url), img.isValid {
-                return img
-            }
-            let devPaths = [
-                "apps/macos/Resources/PolyglanceIcon.png",
-                "Resources/PolyglanceIcon.png",
-                "../Resources/PolyglanceIcon.png"
-            ]
-            for path in devPaths {
-                if FileManager.default.fileExists(atPath: path),
-                   let img = NSImage(contentsOfFile: path), img.isValid {
-                    return img
-                }
-            }
-            if let appIcon = NSApp.applicationIconImage, appIcon.isValid {
-                return appIcon
-            }
-            return nil
-        }()
-
-        if let base = loaded {
-            let resized = NSImage(size: size)
-            resized.lockFocus()
-            base.draw(in: NSRect(origin: .zero, size: size), from: .zero, operation: .copy, fraction: 1.0)
-            resized.unlockFocus()
-            resized.isTemplate = false
-            resized.accessibilityDescription = "Polyglance"
-            return resized
-        }
-
-        let fallback = NSImage(size: size, flipped: false) { _ in
+        let icon = NSImage(size: size, flipped: false) { _ in
             NSColor.black.setStroke()
 
             let cropPath = NSBezierPath()
-            cropPath.lineWidth = 1.7
+            cropPath.lineWidth = 1.4
             cropPath.lineCapStyle = .round
             cropPath.lineJoinStyle = .round
-            let minimum: CGFloat = 2
-            let maximum: CGFloat = 16
-            let arm: CGFloat = 4.5
+            let minimum: CGFloat = 1
+            let maximum: CGFloat = 17
+            let arm: CGFloat = 3.2
             for points in [
                 [CGPoint(x: minimum, y: minimum + arm), CGPoint(x: minimum, y: minimum), CGPoint(x: minimum + arm, y: minimum)],
                 [CGPoint(x: maximum - arm, y: minimum), CGPoint(x: maximum, y: minimum), CGPoint(x: maximum, y: minimum + arm)],
@@ -65,26 +26,39 @@ enum PolyglanceMenuBarIcon {
             }
             cropPath.stroke()
 
-            let translationPath = NSBezierPath()
-            translationPath.lineWidth = 1.7
-            translationPath.lineCapStyle = .round
-            translationPath.lineJoinStyle = .round
-            translationPath.move(to: CGPoint(x: 5, y: 10.7))
-            translationPath.line(to: CGPoint(x: 12.5, y: 10.7))
-            translationPath.move(to: CGPoint(x: 10.2, y: 13))
-            translationPath.line(to: CGPoint(x: 12.5, y: 10.7))
-            translationPath.line(to: CGPoint(x: 10.2, y: 8.4))
-            translationPath.move(to: CGPoint(x: 13, y: 6.5))
-            translationPath.line(to: CGPoint(x: 5.5, y: 6.5))
-            translationPath.move(to: CGPoint(x: 7.8, y: 4.2))
-            translationPath.line(to: CGPoint(x: 5.5, y: 6.5))
-            translationPath.line(to: CGPoint(x: 7.8, y: 8.8))
-            translationPath.stroke()
+            // 保留与彩色 Logo 一致的前后双语卡片，留白由系统背景透出。
+            let rearCard = NSBezierPath(roundedRect: NSRect(x: 7.5, y: 6.3, width: 7.6, height: 8.5),
+                                        xRadius: 1.3, yRadius: 1.3)
+            rearCard.lineWidth = 0.8
+            rearCard.stroke()
+
+            func drawGlyph(_ glyph: String, center: CGPoint, fontSize: CGFloat) {
+                let text = glyph as NSString
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: fontSize, weight: .bold),
+                    .foregroundColor: NSColor.black,
+                ]
+                let textSize = text.size(withAttributes: attributes)
+                text.draw(at: CGPoint(x: center.x - textSize.width / 2,
+                                     y: center.y - textSize.height / 2),
+                          withAttributes: attributes)
+            }
+            drawGlyph("文", center: CGPoint(x: 12.4, y: 11), fontSize: 5.2)
+
+            let frontCard = NSBezierPath(roundedRect: NSRect(x: 3, y: 3, width: 7.2, height: 8.5),
+                                         xRadius: 1.3, yRadius: 1.3)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current?.compositingOperation = .clear
+            frontCard.fill()
+            NSGraphicsContext.restoreGraphicsState()
+            frontCard.lineWidth = 0.8
+            frontCard.stroke()
+            drawGlyph("A", center: CGPoint(x: 6.6, y: 7.4), fontSize: 7)
             return true
         }
-        fallback.isTemplate = false
-        fallback.accessibilityDescription = "Polyglance"
-        return fallback
+        icon.isTemplate = true
+        icon.accessibilityDescription = "Polyglance"
+        return icon
     }()
 }
 

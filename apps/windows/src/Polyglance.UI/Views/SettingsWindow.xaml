@@ -125,7 +125,7 @@
                     <!-- 顶部 Branding (对齐 Mac) -->
                     <StackPanel Grid.Row="0" Margin="4,2,0,10">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <Image Source="pack://application:,,,/Polyglance;component/Resources/Polyglance.ico" Width="26" Height="26" Margin="0,0,8,0"/>
+                            <Image Source="pack://application:,,,/Polyglance;component/Resources/Polyglance.ico" Width="38" Height="38" Margin="0,0,8,0"/>
                             <StackPanel VerticalAlignment="Center">
                                 <TextBlock Text="Polyglance" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                 <TextBlock Text="原生多源翻译与屏幕工具" FontSize="9.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
@@ -1364,11 +1364,30 @@
                                                 </StackPanel>
                                                 <StackPanel Grid.Column="1" Orientation="Horizontal">
                                                     <ui:Button x:Name="BtnSkipVersion" Appearance="Secondary" Content="跳过此版本" Margin="0,0,6,0" Padding="8,3" FontSize="11" Click="OnSkipVersionClick"/>
-                                                    <ui:Button x:Name="BtnApplyUpdate" Appearance="Primary" Content="立即更新并重启" Padding="10,3" FontSize="11" Click="OnApplyUpdateClick"/>
+                                                    <ui:Button x:Name="BtnDismissUpdate" Appearance="Secondary" Content="稍后" Margin="0,0,6,0" Padding="8,3" FontSize="11" Click="OnDismissUpdateClick"/>
+                                                    <ui:Button x:Name="BtnApplyUpdate" Appearance="Primary" Content="立即更新" Padding="10,3" FontSize="11" Click="OnApplyUpdateClick"/>
                                                 </StackPanel>
                                             </Grid>
-                                            <TextBlock x:Name="TxtReleaseNotes" Text="" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" MaxHeight="100"/>
+                                            <TextBlock x:Name="TxtReleaseNotes" Text="" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" MaxHeight="120"/>
                                         </StackPanel>
+                                    </Border>
+
+                                    <!-- 更新已就绪卡片 -->
+                                    <Border x:Name="BorderReadyUpdate" Visibility="Collapsed" Margin="0,0,0,12" Padding="12" CornerRadius="6" Background="#0A10B981" BorderBrush="#2510B981" BorderThickness="1">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock Text="更新已准备就绪" FontWeight="Bold" FontSize="12.5" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                                <TextBlock Text="新版本已下载并校验完成，重启应用后即可生效。" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <ui:Button x:Name="BtnPostponeRestart" Appearance="Secondary" Content="稍后重启" Margin="0,0,6,0" Padding="8,3" FontSize="11" Click="OnPostponeRestartClick"/>
+                                                <ui:Button x:Name="BtnRestartNow" Appearance="Primary" Content="立即重启应用" Padding="10,3" FontSize="11" Click="OnRestartNowClick"/>
+                                            </StackPanel>
+                                        </Grid>
                                     </Border>
 
                                     <TextBlock x:Name="TxtUpdateStatus" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,6" Visibility="Collapsed"/>

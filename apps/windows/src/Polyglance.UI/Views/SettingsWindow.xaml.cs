@@ -27,6 +27,7 @@ public partial class SettingsWindow : FluentWindow
     private readonly AppConfiguration _config;
     private readonly StartupRegistrationManager _startupRegistration;
     private UpdateInfo? _latestFoundUpdate;
+    private PreparedUpdate? _preparedUpdate;
     private readonly ObservableCollection<ToolbarItemViewModel> _toolbarItems = new();
     private readonly ObservableCollection<ToolbarItemViewModel> _previewItems = new();
     private Point _capsuleDragStart;
@@ -72,7 +73,8 @@ public partial class SettingsWindow : FluentWindow
     public SettingsWindow(
         ConfigurationStore configStore,
         StartupRegistrationManager? startupRegistration = null,
-        string initialTab = "General")
+        string initialTab = "General",
+        bool autoCheckUpdate = false)
     {
         InitializeComponent();
         _configStore = configStore;
@@ -117,6 +119,10 @@ public partial class SettingsWindow : FluentWindow
         {
             NavAbout.IsChecked = true;
             OnNavChanged(NavAbout, new RoutedEventArgs());
+            if (autoCheckUpdate)
+            {
+                Loaded += (_, _) => OnCheckUpdateClick(BtnCheckUpdate, new RoutedEventArgs());
+            }
         }
         else if (string.Equals(initialTab, "Toolbar", StringComparison.OrdinalIgnoreCase))
         {
@@ -593,6 +599,7 @@ public partial class SettingsWindow : FluentWindow
             System.Windows.Controls.TextBlock.ForegroundProperty,
             "TextFillColorSecondaryBrush");
         BorderAvailableUpdate.Visibility = Visibility.Collapsed;
+        BorderReadyUpdate.Visibility = Visibility.Collapsed;
         PbUpdateProgress.Visibility = Visibility.Collapsed;
         PbUpdateProgress.Value = 0;
 
@@ -675,33 +682,75 @@ public partial class SettingsWindow : FluentWindow
         }
     }
 
+    private void OnDismissUpdateClick(object sender, RoutedEventArgs e)
+    {
+        BorderAvailableUpdate.Visibility = Visibility.Collapsed;
+        TxtUpdateStatus.Visibility = Visibility.Collapsed;
+    }
+
     private async void OnApplyUpdateClick(object sender, RoutedEventArgs e)
     {
         if (_latestFoundUpdate == null) return;
 
         BtnApplyUpdate.IsEnabled = false;
         BtnSkipVersion.IsEnabled = false;
+        BtnDismissUpdate.IsEnabled = false;
         BtnCheckUpdate.IsEnabled = false;
         PbUpdateProgress.Visibility = Visibility.Visible;
+        PbUpdateProgress.Value = 0;
         TxtUpdateStatus.Visibility = Visibility.Visible;
-        TxtUpdateStatus.Text = "正在下载更新包 (0%)...";
+        TxtUpdateStatus.Text = "正在连接下载更新包...";
         TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
 
-        var progress = new Progress<int>(percent =>
+        var progress = new Progress<UpdateDownloadProgress>(p =>
         {
-            PbUpdateProgress.Value = percent;
-            TxtUpdateStatus.Text = $"正在下载更新包 ({percent}%)...";
+            PbUpdateProgress.Value = p.Percent;
+            string receivedStr = FormatBytes(p.BytesReceived);
+            string totalStr = p.TotalBytes > 0 ? FormatBytes(p.TotalBytes) : "未知大小";
+            TxtUpdateStatus.Text = $"正在下载更新包: {receivedStr} / {totalStr} ({p.Percent}%)...";
         });
 
-        bool started = await AppUpdater.DownloadAndApplyUpdateAsync(_latestFoundUpdate.DownloadUrl, progress);
-        if (!started)
+        PreparedUpdate? prepared = await AppUpdater.DownloadAndPrepareUpdateAsync(_latestFoundUpdate.DownloadUrl, progress);
+        if (prepared == null)
         {
-            TxtUpdateStatus.Text = "更新包下载或替换失败，请稍后重试";
+            TxtUpdateStatus.Text = "更新包下载或校验失败，请稍后重试。";
             TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
             BtnApplyUpdate.IsEnabled = true;
             BtnSkipVersion.IsEnabled = true;
+            BtnDismissUpdate.IsEnabled = true;
             BtnCheckUpdate.IsEnabled = true;
         }
+        else
+        {
+            _preparedUpdate = prepared;
+            PbUpdateProgress.Visibility = Visibility.Collapsed;
+            TxtUpdateStatus.Visibility = Visibility.Collapsed;
+            BorderAvailableUpdate.Visibility = Visibility.Collapsed;
+            BorderReadyUpdate.Visibility = Visibility.Visible;
+            BtnCheckUpdate.IsEnabled = true;
+        }
+    }
+
+    private void OnPostponeRestartClick(object sender, RoutedEventArgs e)
+    {
+        BorderReadyUpdate.Visibility = Visibility.Collapsed;
+        TxtUpdateStatus.Visibility = Visibility.Visible;
+        TxtUpdateStatus.Text = "更新已就绪，将在下次启动时自动应用。";
+        TxtUpdateStatus.SetResourceReference(
+            System.Windows.Controls.TextBlock.ForegroundProperty,
+            "TextFillColorSecondaryBrush");
+    }
+
+    private void OnRestartNowClick(object sender, RoutedEventArgs e)
+    {
+        _preparedUpdate?.ApplyAndRestart();
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024.0):F1} MB";
     }
 
     /// <summary>

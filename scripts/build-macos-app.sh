@@ -156,8 +156,10 @@ fi
     "$info_plist" || /usr/libexec/PlistBuddy -c "Set :PolyglanceFreeAIEndpoint $free_ai_endpoint" "$info_plist"
 print "Configured the bundled free AI translation service."
 
-if [[ -n "${POLYGLANCE_APPCAST_URL:-}" ]]; then
-    if [[ "$POLYGLANCE_APPCAST_URL" != https://* ]]; then
+default_appcast_url="https://github.com/ldjx7/Polyglance/releases/latest/download/appcast.xml"
+polyglance_appcast_url="${POLYGLANCE_APPCAST_URL:-$default_appcast_url}"
+if [[ -n "$polyglance_appcast_url" ]]; then
+    if [[ "$polyglance_appcast_url" != https://* ]]; then
         print -u2 "POLYGLANCE_APPCAST_URL must use HTTPS."
         exit 1
     fi
@@ -166,7 +168,7 @@ if [[ -n "${POLYGLANCE_APPCAST_URL:-}" ]]; then
         print -u2 "A Sparkle public EdDSA key is required when an appcast URL is configured."
         exit 1
     fi
-    /usr/libexec/PlistBuddy -c "Add :SUFeedURL string $POLYGLANCE_APPCAST_URL" "$info_plist"
+    /usr/libexec/PlistBuddy -c "Add :SUFeedURL string $polyglance_appcast_url" "$info_plist"
     /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $sparkle_public_key" "$info_plist"
     /usr/libexec/PlistBuddy -c "Add :SUEnableAutomaticChecks bool true" "$info_plist"
     /usr/libexec/PlistBuddy -c "Add :SUScheduledCheckInterval integer 86400" "$info_plist"
