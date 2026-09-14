@@ -292,13 +292,16 @@ final class ScreenshotCoordinator {
         guard let screen = screenUnderPointer() else {
             throw ScreenshotError.screenUnavailable
         }
+        NSApp.activate(ignoringOtherApps: true)
 
         if ScreenshotCapturePolicy.usesVirtualDesktop(
             screenCount: NSScreen.screens.count,
             preferredAction: preferredAction
         ) {
+            let t0 = startTime ?? CFAbsoluteTimeGetCurrent()
             let screens = NSScreen.screens
             let displays = try await Self.fetchDisplays(screens: screens)
+            let tDisplays = CFAbsoluteTimeGetCurrent()
             let segments: [VirtualDesktopCapture.Segment] = try await withThrowingTaskGroup(
                 of: (Int, VirtualDesktopCapture.Segment).self
             ) { group in
@@ -332,23 +335,26 @@ final class ScreenshotCoordinator {
                 results.sort(by: { $0.0 < $1.0 })
                 return results.map(\.1)
             }
-            guard let desktop = VirtualDesktopCapture.compose(segments) else {
+            let tCapture = CFAbsoluteTimeGetCurrent()
+            let captureFrame = VirtualDesktopCapture.unionFrame(segments.map(\.frame))
+            guard !captureFrame.isNull, captureFrame.width > 0, captureFrame.height > 0 else {
                 throw ScreenshotError.screenUnavailable
             }
             let detector = VirtualDesktopRegionDetector(
-                captureFrame: desktop.frame,
+                captureFrame: captureFrame,
                 entries: screens.compactMap { candidate in
                     ScreenshotRegionDetector.capture(for: candidate).map {
                         VirtualDesktopRegionDetector.Entry(frame: candidate.frame, detector: $0)
                     }
                 }
             )
+            let tDetectors = CFAbsoluteTimeGetCurrent()
             let toolbarItems = (try? configurationStore.load())?.screenshotToolbarItems
                 ?? ScreenshotToolbarItemConfig.defaultItems
             let session = ScreenSelectionSession(
-                image: desktop.image,
+                segments: segments,
                 screen: screen,
-                captureFrame: desktop.frame,
+                captureFrame: captureFrame,
                 inactiveScreenFrames: [],
                 regionProvider: { point in detector.windowRegion(at: point) },
                 regionRefiner: { point in detector.refinedElementRegion(at: point) },
@@ -356,6 +362,16 @@ final class ScreenshotCoordinator {
                 toolbarItems: toolbarItems,
                 startTime: startTime
             )
+            let tSession = CFAbsoluteTimeGetCurrent()
+            PerfLogger.log(String(
+                format: "[Screenshot Perf] Multi-Screen Capture Timing:\n  - Displays fetch: %.1f ms\n  - SCK parallel capture (%d screens): %.1f ms\n  - Region detectors: %.1f ms\n  - Session & windows init: %.1f ms\n  - Total to session ready: %.1f ms",
+                (tDisplays - t0) * 1000,
+                screens.count,
+                (tCapture - tDisplays) * 1000,
+                (tDetectors - tCapture) * 1000,
+                (tSession - tDetectors) * 1000,
+                (tSession - t0) * 1000
+            ))
             selectionSession = session
             return await withCheckedContinuation { continuation in
                 session.present { result in
@@ -364,10 +380,13 @@ final class ScreenshotCoordinator {
             }
         }
 
+        let t0 = startTime ?? CFAbsoluteTimeGetCurrent()
         let toolbarItems = (try? configurationStore.load())?.screenshotToolbarItems
             ?? ScreenshotToolbarItemConfig.defaultItems
         let image = try await capture(screen: screen)
+        let tCapture = CFAbsoluteTimeGetCurrent()
         let regionDetector = ScreenshotRegionDetector.capture(for: screen)
+        let tDetectors = CFAbsoluteTimeGetCurrent()
         let regionProvider: ScreenshotRegionProvider? = regionDetector.map { detector in
             { point in detector.windowRegion(at: point) }
         }
@@ -388,6 +407,14 @@ final class ScreenshotCoordinator {
             toolbarItems: toolbarItems,
             startTime: startTime
         )
+        let tSession = CFAbsoluteTimeGetCurrent()
+        PerfLogger.log(String(
+            format: "[Screenshot Perf] Single-Screen Capture Timing:\n  - SCK capture: %.1f ms\n  - Region detectors: %.1f ms\n  - Session & window init: %.1f ms\n  - Total to session ready: %.1f ms",
+            (tCapture - t0) * 1000,
+            (tDetectors - tCapture) * 1000,
+            (tSession - tDetectors) * 1000,
+            (tSession - t0) * 1000
+        ))
         selectionSession = session
         let action = await withCheckedContinuation { continuation in
             session.present { result in
@@ -524,10 +551,77 @@ final class ScreenshotCoordinator {
         return NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? NSScreen.main
     }
 
+    private static var didPrewarmPresentation = false
+
+    @MainActor
+    static func prewarmPresentation() {
+        guard !didPrewarmPresentation else { return }
+        didPrewarmPresentation = true
+
+        let symbolNames = [
+            "arrow.uturn.backward", "arrow.uturn.forward", "text.viewfinder",
+            "character.bubble", "qrcode", "arrow.up.and.down.square",
+            "video", "pin.fill", "square.and.arrow.down", "xmark.circle", "doc.on.doc"
+        ]
+        for sym in symbolNames {
+            _ = NSImage(systemSymbolName: sym, accessibilityDescription: nil)
+        }
+        for tool in ScreenshotAnnotationTool.allCases {
+            _ = NSImage(systemSymbolName: tool.symbolName, accessibilityDescription: nil)
+        }
+        _ = NSFont.systemFont(ofSize: 15, weight: .medium)
+        _ = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else { return }
+
+        var panels: [NSPanel] = []
+        for screen in screens {
+            let panel = NSPanel(
+                contentRect: CGRect(x: screen.frame.minX, y: screen.frame.minY, width: 1, height: 1),
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            panel.level = .screenSaver
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.alphaValue = 0.001
+            panel.hasShadow = false
+            panel.animationBehavior = .none
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            let view = NSView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+            view.wantsLayer = true
+            view.layer?.backgroundColor = NSColor.black.cgColor
+            panel.contentView = view
+            panel.orderFrontRegardless()
+            view.needsDisplay = true
+            view.display()
+            panels.append(panel)
+        }
+
+        CATransaction.begin()
+        CATransaction.setCompletionBlock {
+            for panel in panels {
+                panel.orderOut(nil)
+                panel.close()
+            }
+            panels.removeAll()
+            PerfLogger.log("[Screenshot Perf] WindowServer presentation prewarm completed")
+        }
+        CATransaction.commit()
+    }
+
     static func prewarm() {
         Task.detached(priority: .userInitiated) {
             guard CGPreflightScreenCaptureAccess() else { return }
-            _ = try? await refreshDisplays()
+            guard let displays = try? await refreshDisplays(), let main = displays.first else { return }
+            let filter = SCContentFilter(display: main, excludingWindows: [])
+            let config = SCStreamConfiguration()
+            config.width = 2
+            config.height = 2
+            config.showsCursor = false
+            _ = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
         }
     }
 }

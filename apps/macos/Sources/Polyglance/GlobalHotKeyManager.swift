@@ -5,18 +5,18 @@ import PolyglanceKit
 @MainActor
 final class GlobalHotKeyManager {
     var onTranslateSelection: (() -> Void)?
-    var onCaptureSelection: (() -> Void)?
-    var onScreenshotAndPin: (() -> Void)?
+    var onCaptureSelection: ((CFAbsoluteTime) -> Void)?
+    var onScreenshotAndPin: ((CFAbsoluteTime) -> Void)?
     var onPinClipboardImage: (() -> Void)?
-    var onLongScreenshot: (() -> Void)?
-    var onScreenRecording: (() -> Void)?
+    var onLongScreenshot: ((CFAbsoluteTime) -> Void)?
+    var onScreenRecording: ((CFAbsoluteTime) -> Void)?
     var onRestoreMostRecentPin: (() -> Void)?
-    var onScreenTranslation: (() -> Void)?
+    var onScreenTranslation: ((CFAbsoluteTime) -> Void)?
     var onOpenTranslator: (() -> Void)?
-    var onOcrTranslate: (() -> Void)?
-    var onOcrWorkspace: (() -> Void)?
-    var onOcrTranslationCard: (() -> Void)?
-    var onScreenshotAndCopy: (() -> Void)?
+    var onOcrTranslate: ((CFAbsoluteTime) -> Void)?
+    var onOcrWorkspace: ((CFAbsoluteTime) -> Void)?
+    var onOcrTranslationCard: ((CFAbsoluteTime) -> Void)?
+    var onScreenshotAndCopy: ((CFAbsoluteTime) -> Void)?
     var onTranslateAndReplace: (() -> Void)?
 
     private var eventHandler: EventHandlerRef?
@@ -74,6 +74,7 @@ final class GlobalHotKeyManager {
         let status = InstallEventHandler(
             GetApplicationEventTarget(),
             { _, event, userData in
+                let pressTime = CFAbsoluteTimeGetCurrent()
                 guard let event, let userData else {
                     return OSStatus(eventNotHandledErr)
                 }
@@ -94,7 +95,7 @@ final class GlobalHotKeyManager {
                     .fromOpaque(userData)
                     .takeUnretainedValue()
                 DispatchQueue.main.async {
-                    manager.handleHotKey(id: hotKeyID.id)
+                    manager.handleHotKey(id: hotKeyID.id, pressTime: pressTime)
                 }
                 return noErr
             },
@@ -131,7 +132,7 @@ final class GlobalHotKeyManager {
         hotKeys.append(hotKey)
     }
 
-    private func handleHotKey(id: UInt32) {
+    private func handleHotKey(id: UInt32, pressTime: CFAbsoluteTime) {
         guard let action = GlobalShortcutAction.allCases.first(where: { $0.eventID == id }) else {
             return
         }
@@ -139,29 +140,29 @@ final class GlobalHotKeyManager {
         case .translateSelection:
             onTranslateSelection?()
         case .captureSelection:
-            onCaptureSelection?()
+            onCaptureSelection?(pressTime)
         case .screenshotAndPin:
-            onScreenshotAndPin?()
+            onScreenshotAndPin?(pressTime)
         case .pinClipboardImage:
             onPinClipboardImage?()
         case .longScreenshot:
-            onLongScreenshot?()
+            onLongScreenshot?(pressTime)
         case .screenRecording:
-            onScreenRecording?()
+            onScreenRecording?(pressTime)
         case .restoreMostRecentPin:
             onRestoreMostRecentPin?()
         case .screenTranslation:
-            onScreenTranslation?()
+            onScreenTranslation?(pressTime)
         case .openTranslator:
             onOpenTranslator?()
         case .ocrTranslate:
-            onOcrTranslate?()
+            onOcrTranslate?(pressTime)
         case .ocrWorkspace:
-            onOcrWorkspace?()
+            onOcrWorkspace?(pressTime)
         case .ocrTranslationCard:
-            onOcrTranslationCard?()
+            onOcrTranslationCard?(pressTime)
         case .screenshotAndCopy:
-            onScreenshotAndCopy?()
+            onScreenshotAndCopy?(pressTime)
         case .translateAndReplace:
             onTranslateAndReplace?()
         }

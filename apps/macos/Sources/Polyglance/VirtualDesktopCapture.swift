@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import PolyglanceKit
 
 struct VirtualDesktopCapture {
     struct Segment {
@@ -20,6 +21,88 @@ struct VirtualDesktopCapture {
 
     static func globalFrame(for localFrame: CGRect, in captureFrame: CGRect) -> CGRect {
         localFrame.offsetBy(dx: captureFrame.minX, dy: captureFrame.minY)
+    }
+
+    static func crop(
+        from segments: [Segment],
+        captureFrame: CGRect,
+        selection: CGRect
+    ) -> CGImage? {
+        guard !selection.isNull, selection.width > 0, selection.height > 0 else {
+            return nil
+        }
+        let globalSelection = globalFrame(for: selection, in: captureFrame)
+        let intersectingSegments = segments.filter { segment in
+            segment.frame.intersects(globalSelection)
+        }
+        guard !intersectingSegments.isEmpty else {
+            return nil
+        }
+
+        if intersectingSegments.count == 1, let segment = intersectingSegments.first {
+            let intersect = globalSelection.intersection(segment.frame)
+            guard !intersect.isNull, intersect.width > 0, intersect.height > 0 else { return nil }
+            let localRect = CGRect(
+                x: intersect.minX - segment.frame.minX,
+                y: intersect.minY - segment.frame.minY,
+                width: intersect.width,
+                height: intersect.height
+            )
+            let cropRect = CaptureGeometry.pixelCropRect(
+                selection: localRect,
+                viewSize: segment.frame.size,
+                imagePixelSize: CGSize(width: segment.image.width, height: segment.image.height)
+            )
+            guard cropRect.width >= 1, cropRect.height >= 1 else { return nil }
+            return segment.image.cropping(to: cropRect)
+        }
+
+        let scale = max(1, intersectingSegments.map(\.backingScaleFactor).max() ?? 1)
+        let pixelWidth = max(1, Int(ceil(selection.width * scale)))
+        let pixelHeight = max(1, Int(ceil(selection.height * scale)))
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: pixelWidth,
+            height: pixelHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: pixelWidth * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
+        }
+
+        context.interpolationQuality = .none
+
+        for segment in intersectingSegments {
+            let intersect = globalSelection.intersection(segment.frame)
+            guard !intersect.isNull, intersect.width > 0, intersect.height > 0 else { continue }
+            let localRect = CGRect(
+                x: intersect.minX - segment.frame.minX,
+                y: intersect.minY - segment.frame.minY,
+                width: intersect.width,
+                height: intersect.height
+            )
+            let cropRect = CaptureGeometry.pixelCropRect(
+                selection: localRect,
+                viewSize: segment.frame.size,
+                imagePixelSize: CGSize(width: segment.image.width, height: segment.image.height)
+            )
+            guard cropRect.width >= 1, cropRect.height >= 1,
+                  let slice = segment.image.cropping(to: cropRect) else {
+                continue
+            }
+            let destRect = CGRect(
+                x: (intersect.minX - globalSelection.minX) * scale,
+                y: (intersect.minY - globalSelection.minY) * scale,
+                width: intersect.width * scale,
+                height: intersect.height * scale
+            )
+            context.draw(slice, in: destRect)
+        }
+
+        return context.makeImage()
     }
 
     static func compose(_ segments: [Segment]) -> VirtualDesktopCapture? {

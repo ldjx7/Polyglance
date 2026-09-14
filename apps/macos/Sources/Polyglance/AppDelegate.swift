@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var appUpdater: AppUpdater { AppUpdater.shared }
     private var shortcutConfiguration = GlobalShortcutConfiguration.default
     private var translatorPanel: NSPanel?
+    private var appNapActivity: NSObjectProtocol?
     private var selectionCaptureTask: Task<Void, Never>?
     private var panelEscapeMonitor: Any?
     private var localPanelEscapeMonitor: Any?
@@ -138,48 +139,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let configuration = try? configurationStore.load() {
             apply(configuration)
         }
+        appNapActivity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiated, .latencyCritical],
+            reason: "Low-latency global screenshot hotkey responsiveness"
+        )
         ScreenshotCoordinator.prewarm()
+        ScreenshotCoordinator.prewarmPresentation()
         hotKeyManager.onTranslateSelection = { [weak self] in
             self?.showTranslator(capturingSelection: true, translateImmediately: true)
         }
         hotKeyManager.onTranslateAndReplace = { [weak self] in
             self?.translateSelectionAndReplace()
         }
-        hotKeyManager.onCaptureSelection = { [weak self] in
+        hotKeyManager.onCaptureSelection = { [weak self] pressTime in
             self?.showTranslator(capturingSelection: true, translateImmediately: false)
         }
-        hotKeyManager.onScreenshotAndPin = { [weak self] in
-            self?.captureScreenshotAndPin()
+        hotKeyManager.onScreenshotAndPin = { [weak self] pressTime in
+            self?.captureScreenshotAndPin(triggerTime: pressTime)
         }
-        hotKeyManager.onScreenshotAndCopy = { [weak self] in
-            self?.captureScreenshotAndCopy()
+        hotKeyManager.onScreenshotAndCopy = { [weak self] pressTime in
+            self?.captureScreenshotAndCopy(triggerTime: pressTime)
         }
         hotKeyManager.onPinClipboardImage = { [weak self] in
             self?.pinClipboardImage()
         }
-        hotKeyManager.onLongScreenshot = { [weak self] in
-            self?.captureLongScreenshot()
+        hotKeyManager.onLongScreenshot = { [weak self] pressTime in
+            self?.captureLongScreenshot(triggerTime: pressTime)
         }
-        hotKeyManager.onScreenRecording = { [weak self] in
-            self?.captureScreenRecordingRegion()
+        hotKeyManager.onScreenRecording = { [weak self] pressTime in
+            self?.captureScreenRecordingRegion(triggerTime: pressTime)
         }
         hotKeyManager.onRestoreMostRecentPin = { [weak self] in
             self?.restoreMostRecentPin()
         }
-        hotKeyManager.onScreenTranslation = { [weak self] in
-            self?.captureScreenTranslation()
+        hotKeyManager.onScreenTranslation = { [weak self] pressTime in
+            self?.captureScreenTranslation(triggerTime: pressTime)
         }
         hotKeyManager.onOpenTranslator = { [weak self] in
             self?.showTranslator()
         }
-        hotKeyManager.onOcrTranslate = { [weak self] in
-            self?.captureOCRTranslate()
+        hotKeyManager.onOcrTranslate = { [weak self] pressTime in
+            self?.captureOCRTranslate(triggerTime: pressTime)
         }
-        hotKeyManager.onOcrWorkspace = { [weak self] in
-            self?.captureOCRWorkspace()
+        hotKeyManager.onOcrWorkspace = { [weak self] pressTime in
+            self?.captureOCRWorkspace(triggerTime: pressTime)
         }
-        hotKeyManager.onOcrTranslationCard = { [weak self] in
-            self?.captureOCRTranslationCard()
+        hotKeyManager.onOcrTranslationCard = { [weak self] pressTime in
+            self?.captureOCRTranslationCard(triggerTime: pressTime)
         }
         do {
             shortcutConfiguration = shortcutStore.load()
@@ -241,62 +247,70 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appUpdater.checkForUpdates()
     }
 
-    func captureScreenshotAndPin() {
-        captureScreenshot(preferredAction: nil)
+    func captureScreenshotAndPin(triggerTime: CFAbsoluteTime? = nil) {
+        captureScreenshot(preferredAction: nil, triggerTime: triggerTime)
     }
 
-    func captureLongScreenshot() {
-        captureScreenshot(preferredAction: .longScreenshot)
+    func captureLongScreenshot(triggerTime: CFAbsoluteTime? = nil) {
+        captureScreenshot(preferredAction: .longScreenshot, triggerTime: triggerTime)
     }
 
-    func captureScreenTranslation() {
+    func captureScreenTranslation(triggerTime: CFAbsoluteTime? = nil) {
         let style = (try? configurationStore.load())?.screenshotTranslationStyle ?? "bob"
         if style == "youdao" {
-            captureScreenshot(preferredAction: .screenTranslation)
+            captureScreenshot(preferredAction: .screenTranslation, triggerTime: triggerTime)
         } else {
-            captureScreenshot(preferredAction: .ocrTranslate)
+            captureScreenshot(preferredAction: .ocrTranslate, triggerTime: triggerTime)
         }
     }
 
-    func captureScreenshotAndCopy() {
-        captureScreenshot(preferredAction: .screenshotAndCopy)
+    func captureScreenshotAndCopy(triggerTime: CFAbsoluteTime? = nil) {
+        captureScreenshot(preferredAction: .screenshotAndCopy, triggerTime: triggerTime)
     }
 
-    func captureScreenRecordingRegion() {
+    func captureScreenRecordingRegion(triggerTime: CFAbsoluteTime? = nil) {
         if screenRecordingCoordinator.handleRecordingShortcut() {
             return
         }
-        captureScreenshot(preferredAction: .screenRecording)
+        captureScreenshot(preferredAction: .screenRecording, triggerTime: triggerTime)
     }
 
-    func captureOCRTranslate() {
-        captureScreenshot(preferredAction: .ocrTranslate)
+    func captureOCRTranslate(triggerTime: CFAbsoluteTime? = nil) {
+        captureScreenshot(preferredAction: .ocrTranslate, triggerTime: triggerTime)
     }
 
-    func captureOCRWorkspace() {
-        captureScreenshot(preferredAction: .ocrWorkspace)
+    func captureOCRWorkspace(triggerTime: CFAbsoluteTime? = nil) {
+        captureScreenshot(preferredAction: .ocrWorkspace, triggerTime: triggerTime)
     }
 
-    func captureOCRTranslationCard() {
-        captureScreenshot(preferredAction: .ocrTranslationCard)
+    func captureOCRTranslationCard(triggerTime: CFAbsoluteTime? = nil) {
+        captureScreenshot(preferredAction: .ocrTranslationCard, triggerTime: triggerTime)
     }
 
-    private func captureScreenshot(preferredAction: ScreenshotPreferredAction?) {
-        let triggerTime = CFAbsoluteTimeGetCurrent()
+    private func captureScreenshot(
+        preferredAction: ScreenshotPreferredAction?,
+        triggerTime: CFAbsoluteTime? = nil
+    ) {
+        let pressTime = triggerTime ?? CFAbsoluteTimeGetCurrent()
+        NSApp.activate(ignoringOtherApps: true)
+        let dispatchLag = (CFAbsoluteTimeGetCurrent() - pressTime) * 1000
+        if dispatchLag > 0.1 {
+            PerfLogger.log(String(format: "[Screenshot Perf] 0. Physical HotKey press -> Main thread dispatch: %.1f ms", dispatchLag))
+        }
         Task { [weak self] in
             guard let self else {
                 return
             }
             do {
-                try await screenshotCoordinator.captureAndPin(
+                try await self.screenshotCoordinator.captureAndPin(
                     preferredAction: preferredAction,
-                    triggerTime: triggerTime
+                    triggerTime: pressTime
                 )
             } catch {
                 if case .permissionRequired = error as? ScreenshotError {
                     return
                 }
-                operationErrorPresenter.present(.screenshot(error))
+                self.operationErrorPresenter.present(.screenshot(error))
             }
         }
     }
