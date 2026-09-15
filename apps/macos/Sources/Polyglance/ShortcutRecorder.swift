@@ -65,7 +65,8 @@ final class ShortcutRecorderButton: NSButton {
         }
 
         let modifiers = ShortcutModifiers(event.modifierFlags)
-        guard !modifiers.intersection(.primary).isEmpty else {
+        let isFnKey = RecordedShortcut.functionKeyCodes.contains(UInt32(event.keyCode))
+        guard isFnKey || !modifiers.intersection(.primary).isEmpty else {
             NSSound.beep()
             title = "需包含 ⌘ / ⌥ / ⌃"
             setAccessibilityValue(title)

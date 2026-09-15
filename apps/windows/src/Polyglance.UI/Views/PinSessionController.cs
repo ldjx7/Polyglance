@@ -76,100 +76,76 @@ internal sealed class PinSessionController
                 throw new InvalidOperationException("剪贴板文本超过 1 MB，无法贴出。");
         }
 
-        bool isCandidateActive = false;
         if (!string.IsNullOrEmpty(candidateText))
         {
-            isCandidateActive = _windows.Values.Any(b =>
+            var existingBinding = _windows.Values.FirstOrDefault(b =>
                 (b.Window as TextPinWindow)?.TextContent.Text == candidateText
                 || b.State.Text == candidateText);
-        }
-        else if (candidateImage != null)
-        {
-            isCandidateActive = _windows.Values.Any(b =>
-                b.Window is PinWindow pin && BitmapsEqual(pin.Bitmap, candidateImage));
-        }
-
-        if (!isCandidateActive)
-        {
-            if (!string.IsNullOrEmpty(candidateText))
+            if (existingBinding != null)
             {
-                var sessions = await _store.Schedule(s => s.LoadSessions());
-                var existing = sessions.LastOrDefault(s => s.Text == candidateText);
-                var window = new TextPinWindow(candidateText, _store, existing?.ArchiveId, existing);
-                window.Show();
-                KeepVisible(window);
-                SaveActive();
+                existingBinding.Window.WindowState = WindowState.Normal;
+                existingBinding.Window.Activate();
+                existingBinding.Window.Topmost = true;
+                return;
             }
-            else if (candidateImage != null)
-            {
-                var historyItems = await _store.Schedule(s => s.List());
-                string? existingId = null;
-                foreach (var item in historyItems)
-                {
-                    if (item.PixelWidth == candidateImage.PixelWidth && item.PixelHeight == candidateImage.PixelHeight)
-                    {
-                        var img = await _store.Schedule(s => s.LoadImage(item.Id));
-                        if (img != null && BitmapsEqual(img, candidateImage))
-                        {
-                            existingId = item.Id;
-                            break;
-                        }
-                    }
-                }
 
-                if (existingId != null)
-                {
-                    var sessions = await _store.Schedule(s => s.LoadSessions());
-                    var existingSession = sessions.LastOrDefault(s => s.ArchiveId == existingId);
-                    Open(candidateImage, existingId, service, configuration, existingSession);
-                }
-                else
-                {
-                    var placement = PinPositioning.CalculatePlacementForCursor(candidateImage.PixelWidth, candidateImage.PixelHeight);
-                    var window = new PinWindow(candidateImage, service, configuration, Clipboard.SetText,
-                        capturedDisplaySize: new Size(placement.ImageWidthDips, placement.ImageHeightDips),
-                        source: PinArchiveSource.Clipboard, saveToHistory: true, archiveStore: _store)
-                    {
-                        Left = placement.WindowLeftDips,
-                        Top = placement.WindowTopDips
-                    };
-                    window.Show();
-                    KeepVisible(window);
-                    SaveActive();
-                }
-            }
+            var sessions = await _store.Schedule(s => s.LoadSessions());
+            var existing = sessions.LastOrDefault(s => s.Text == candidateText);
+            var window = new TextPinWindow(candidateText, _store, existing?.ArchiveId, existing);
+            window.Show();
+            KeepVisible(window);
+            SaveActive();
             return;
         }
 
-        var history = await _store.Schedule(s => s.List());
-        var allSessions = await _store.Schedule(s => s.LoadSessions());
-        var activeIds = _windows.Values.Select(b => b.State.ArchiveId).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var activeTexts = _windows.Values
-            .Select(b => (b.Window as TextPinWindow)?.TextContent.Text ?? b.State.Text)
-            .Where(t => t != null)
-            .ToHashSet();
-
-        foreach (var item in history)
+        if (candidateImage != null)
         {
-            if (activeIds.Contains(item.Id)) continue;
-            var session = allSessions.LastOrDefault(s => string.Equals(s.ArchiveId, item.Id, StringComparison.OrdinalIgnoreCase));
-            if (!string.IsNullOrEmpty(session?.Text))
+            var existingBinding = _windows.Values.FirstOrDefault(b =>
+                b.Window is PinWindow pin && BitmapsEqual(pin.Bitmap, candidateImage));
+            if (existingBinding != null)
             {
-                if (activeTexts.Contains(session.Text)) continue;
-                var window = new TextPinWindow(session.Text, _store, item.Id, session);
-                window.Show();
-                KeepVisible(window);
-                SaveActive();
+                existingBinding.Window.WindowState = WindowState.Normal;
+                existingBinding.Window.Activate();
+                existingBinding.Window.Topmost = true;
                 return;
+            }
+
+            var historyItems = await _store.Schedule(s => s.List());
+            string? existingId = null;
+            foreach (var item in historyItems)
+            {
+                if (item.PixelWidth == candidateImage.PixelWidth && item.PixelHeight == candidateImage.PixelHeight)
+                {
+                    var img = await _store.Schedule(s => s.LoadImage(item.Id));
+                    if (img != null && BitmapsEqual(img, candidateImage))
+                    {
+                        existingId = item.Id;
+                        break;
+                    }
+                }
+            }
+
+            if (existingId != null)
+            {
+                var sessions = await _store.Schedule(s => s.LoadSessions());
+                var existingSession = sessions.LastOrDefault(s => s.ArchiveId == existingId);
+                Open(candidateImage, existingId, service, configuration, existingSession);
             }
             else
             {
-                var img = await _store.Schedule(s => s.LoadImage(item.Id));
-                if (img == null) continue;
-                if (_windows.Values.Any(b => b.Window is PinWindow p && BitmapsEqual(p.Bitmap, img))) continue;
-                Open(img, item.Id, service, configuration, session);
-                return;
+                var placement = PinPositioning.CalculatePlacementForCursor(candidateImage.PixelWidth, candidateImage.PixelHeight);
+                var window = new PinWindow(candidateImage, service, configuration, Clipboard.SetText,
+                    capturedDisplaySize: new Size(placement.ImageWidthDips, placement.ImageHeightDips),
+                    source: PinArchiveSource.Clipboard, saveToHistory: true, archiveStore: _store)
+                {
+                    Left = placement.WindowLeftDips,
+                    Top = placement.WindowTopDips
+                };
+                window.Show();
+                KeepVisible(window);
+                SaveActive();
             }
+            return;
         }
     }
 

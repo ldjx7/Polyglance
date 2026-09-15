@@ -102,6 +102,12 @@ function reset_development_permissions() {
         print "$reset_output"
     done
 
+    for target_bundle_id in "$bundle_identifier" "io.polyglance.macos.dev"; do
+        for permission_key in permissionRequest.accessibility permissionRequest.screenRecording; do
+            /usr/bin/defaults delete "$target_bundle_id" "$permission_key" 2>/dev/null || true
+        done
+    done
+
     print "Cleared Accessibility, Screen Recording, and Microphone permissions for $bundle_identifier"
     print "Launch the app manually, then add the permissions again in System Settings."
 }

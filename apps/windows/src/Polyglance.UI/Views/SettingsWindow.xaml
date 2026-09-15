@@ -125,7 +125,7 @@
                     <!-- 顶部 Branding (对齐 Mac) -->
                     <StackPanel Grid.Row="0" Margin="4,2,0,10">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <Image Source="pack://application:,,,/Polyglance;component/Resources/Polyglance.ico" Width="38" Height="38" Margin="0,0,8,0"/>
+                            <Image Source="pack://application:,,,/Polyglance;component/Resources/Polyglance.png" Width="38" Height="38" Margin="0,0,8,0" RenderOptions.BitmapScalingMode="HighQuality"/>
                             <StackPanel VerticalAlignment="Center">
                                 <TextBlock Text="Polyglance" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                 <TextBlock Text="原生多源翻译与屏幕工具" FontSize="9.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
@@ -962,6 +962,11 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     <Grid Grid.Row="0" Margin="0,0,12,10">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="预设方案：" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,8,0"/>
+                            <ui:Button Content="Snipaste 风格" Appearance="Secondary" Margin="0,0,8,0" Padding="10,4" Click="OnPresetSnipasteClick"/>
+                            <ui:Button Content="PixPin 风格" Appearance="Secondary" Margin="0,0,8,0" Padding="10,4" Click="OnPresetPixPinClick"/>
+                        </StackPanel>
                         <ui:Button Content="恢复默认" Appearance="Secondary" HorizontalAlignment="Right" VerticalAlignment="Center" Padding="12,4" Click="OnResetShortcutsClick"/>
                     </Grid>
 
@@ -977,7 +982,10 @@
                                         <TextBlock Text="截图并贴图 (Screenshot &amp; Pin)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                         <TextBlock Text="触发屏幕划选，支持画笔标注与固定置顶" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
                                     </StackPanel>
-                                    <controls:ShortcutRecorderControl x:Name="RecHotkeyScreenshotPin" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock x:Name="ConflictHotkeyScreenshotPin" Text="[已被占用]" Foreground="#F59E0B" FontSize="11" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,8,0" Visibility="Collapsed"/>
+                                        <controls:ShortcutRecorderControl x:Name="RecHotkeyScreenshotPin" VerticalAlignment="Center" MinWidth="130"/>
+                                    </StackPanel>
                                 </Grid>
                             </ui:Card>
 
@@ -991,7 +999,10 @@
                                         <TextBlock Text="截图并复制 (Screenshot &amp; Copy)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                         <TextBlock Text="激活截图区域，框选之后直接复制到剪贴板，不显示工具栏菜单" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
                                     </StackPanel>
-                                    <controls:ShortcutRecorderControl x:Name="RecHotkeyScreenshotCopy" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock x:Name="ConflictHotkeyScreenshotCopy" Text="[已被占用]" Foreground="#F59E0B" FontSize="11" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,8,0" Visibility="Collapsed"/>
+                                        <controls:ShortcutRecorderControl x:Name="RecHotkeyScreenshotCopy" VerticalAlignment="Center" MinWidth="130"/>
+                                    </StackPanel>
                                 </Grid>
                             </ui:Card>
 
@@ -1005,7 +1016,10 @@
                                         <TextBlock Text="贴出剪贴板图片 (Pin Clipboard)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                         <TextBlock Text="将剪贴板中的图片作为置顶贴图显示" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
                                     </StackPanel>
-                                    <controls:ShortcutRecorderControl x:Name="RecHotkeyPinClipboardImage" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock x:Name="ConflictHotkeyPinClipboardImage" Text="[已被占用]" Foreground="#F59E0B" FontSize="11" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,8,0" Visibility="Collapsed"/>
+                                        <controls:ShortcutRecorderControl x:Name="RecHotkeyPinClipboardImage" VerticalAlignment="Center" MinWidth="130"/>
+                                    </StackPanel>
                                 </Grid>
                             </ui:Card>
 
@@ -1019,7 +1033,10 @@
                                         <TextBlock Text="截图翻译 (Screenshot Translate)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                         <TextBlock Text="框选屏幕进行翻译；可在服务设置中选择 Bob 风格或有道原图覆盖风格" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
                                     </StackPanel>
-                                    <controls:ShortcutRecorderControl x:Name="RecHotkeyScreenTranslate" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock x:Name="ConflictHotkeyScreenTranslate" Text="[已被占用]" Foreground="#F59E0B" FontSize="11" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,8,0" Visibility="Collapsed"/>
+                                        <controls:ShortcutRecorderControl x:Name="RecHotkeyScreenTranslate" VerticalAlignment="Center" MinWidth="130"/>
+                                    </StackPanel>
                                 </Grid>
                             </ui:Card>
 
@@ -1033,7 +1050,10 @@
                                         <TextBlock Text="文字识别 (OCR Workspace)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                         <TextBlock Text="框选屏幕唤起文字识别工作台，支持排版与二次加工" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
                                     </StackPanel>
-                                    <controls:ShortcutRecorderControl x:Name="RecHotkeyOcrWorkspace" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock x:Name="ConflictHotkeyOcrWorkspace" Text="[已被占用]" Foreground="#F59E0B" FontSize="11" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,8,0" Visibility="Collapsed"/>
+                                        <controls:ShortcutRecorderControl x:Name="RecHotkeyOcrWorkspace" VerticalAlignment="Center" MinWidth="130"/>
+                                    </StackPanel>
                                 </Grid>
                             </ui:Card>
 
@@ -1047,7 +1067,10 @@
                                         <TextBlock Text="双语对照卡 (Bilingual Card)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                         <TextBlock Text="框选屏幕识别并生成双语对照置顶结果卡" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
                                     </StackPanel>
-                                    <controls:ShortcutRecorderControl x:Name="RecHotkeyOcrTranslationCard" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock x:Name="ConflictHotkeyOcrTranslationCard" Text="[已被占用]" Foreground="#F59E0B" FontSize="11" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,8,0" Visibility="Collapsed"/>
+                                        <controls:ShortcutRecorderControl x:Name="RecHotkeyOcrTranslationCard" VerticalAlignment="Center" MinWidth="130"/>
+                                    </StackPanel>
                                 </Grid>
                             </ui:Card>
 
@@ -1061,7 +1084,10 @@
                                         <TextBlock Text="打开主翻译面板 (Main Translator)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                         <TextBlock Text="打开双栏翻译控制台（自动填入剪贴板文本）" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
                                     </StackPanel>
-                                    <controls:ShortcutRecorderControl x:Name="RecHotkeyMainTranslator" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock x:Name="ConflictHotkeyMainTranslator" Text="[已被占用]" Foreground="#F59E0B" FontSize="11" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,8,0" Visibility="Collapsed"/>
+                                        <controls:ShortcutRecorderControl x:Name="RecHotkeyMainTranslator" VerticalAlignment="Center" MinWidth="130"/>
+                                    </StackPanel>
                                 </Grid>
                             </ui:Card>
 
@@ -1075,7 +1101,10 @@
                                         <TextBlock Text="全局划词/选中文本即时翻译 (Quick Selection)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                         <TextBlock Text="抓取任意应用当前选中文本并即时弹出翻译" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
                                     </StackPanel>
-                                    <controls:ShortcutRecorderControl x:Name="RecHotkeySelectedText" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock x:Name="ConflictHotkeySelectedText" Text="[已被占用]" Foreground="#F59E0B" FontSize="11" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,8,0" Visibility="Collapsed"/>
+                                        <controls:ShortcutRecorderControl x:Name="RecHotkeySelectedText" VerticalAlignment="Center" MinWidth="130"/>
+                                    </StackPanel>
                                 </Grid>
                             </ui:Card>
 
@@ -1089,7 +1118,10 @@
                                         <TextBlock Text="划词翻译并替换 (Translate &amp; Replace)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                         <TextBlock Text="抓取选中文本直接原地替换为译文，不弹出翻译窗口" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
                                     </StackPanel>
-                                    <controls:ShortcutRecorderControl x:Name="RecHotkeyTranslateAndReplace" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock x:Name="ConflictHotkeyTranslateAndReplace" Text="[已被占用]" Foreground="#F59E0B" FontSize="11" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,8,0" Visibility="Collapsed"/>
+                                        <controls:ShortcutRecorderControl x:Name="RecHotkeyTranslateAndReplace" VerticalAlignment="Center" MinWidth="130"/>
+                                    </StackPanel>
                                 </Grid>
                             </ui:Card>
 
@@ -1103,7 +1135,10 @@
                                         <TextBlock Text="滚动长截图会话 (Scrolling Stitcher)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                         <TextBlock Text="触发 Rust 驱动的超长网页与文档滚动截图拼接" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
                                     </StackPanel>
-                                    <controls:ShortcutRecorderControl x:Name="RecHotkeyLongScreenshot" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock x:Name="ConflictHotkeyLongScreenshot" Text="[已被占用]" Foreground="#F59E0B" FontSize="11" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,8,0" Visibility="Collapsed"/>
+                                        <controls:ShortcutRecorderControl x:Name="RecHotkeyLongScreenshot" VerticalAlignment="Center" MinWidth="130"/>
+                                    </StackPanel>
                                 </Grid>
                             </ui:Card>
 
@@ -1117,7 +1152,10 @@
                                         <TextBlock Text="区域录屏 (Screen Recording)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                         <TextBlock Text="框选区域并进入录屏工具栏" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
                                     </StackPanel>
-                                    <controls:ShortcutRecorderControl x:Name="RecHotkeyScreenRecording" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock x:Name="ConflictHotkeyScreenRecording" Text="[已被占用]" Foreground="#F59E0B" FontSize="11" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,8,0" Visibility="Collapsed"/>
+                                        <controls:ShortcutRecorderControl x:Name="RecHotkeyScreenRecording" VerticalAlignment="Center" MinWidth="130"/>
+                                    </StackPanel>
                                 </Grid>
                             </ui:Card>
 
@@ -1131,7 +1169,10 @@
                                         <TextBlock Text="恢复最近贴图 (Restore Pin)" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                         <TextBlock Text="恢复最近一次保存到贴图历史的图片" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
                                     </StackPanel>
-                                    <controls:ShortcutRecorderControl x:Name="RecHotkeyRestoreMostRecentPin" Grid.Column="1" VerticalAlignment="Center" MinWidth="130"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock x:Name="ConflictHotkeyRestoreMostRecentPin" Text="[已被占用]" Foreground="#F59E0B" FontSize="11" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,8,0" Visibility="Collapsed"/>
+                                        <controls:ShortcutRecorderControl x:Name="RecHotkeyRestoreMostRecentPin" VerticalAlignment="Center" MinWidth="130"/>
+                                    </StackPanel>
                                 </Grid>
                             </ui:Card>
 
@@ -1150,6 +1191,37 @@
                                     <Grid Margin="0,2">
                                         <TextBlock Text="清空并聚焦原文" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                                         <TextBlock Text="Ctrl + K" FontSize="11.5" FontWeight="SemiBold" HorizontalAlignment="Right" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                                    </Grid>
+                                </StackPanel>
+                            </ui:Card>
+
+                            <!-- 截图选区内快捷键说明 -->
+                            <ui:Card Padding="16,12" Margin="0,8,0,0" Background="{DynamicResource SolidBackgroundFillColorQuarternaryBrush}">
+                                <StackPanel>
+                                    <TextBlock Text="截图选区内快捷键（固定）" FontWeight="SemiBold" FontSize="12.5" Foreground="{DynamicResource TextFillColorPrimaryBrush}" Margin="0,0,0,8"/>
+                                    <Grid Margin="0,2">
+                                        <TextBlock Text="复制选区并关闭" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                        <TextBlock Text="C / Ctrl + C / Enter" FontSize="11.5" FontWeight="SemiBold" HorizontalAlignment="Right" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                                    </Grid>
+                                    <Grid Margin="0,2">
+                                        <TextBlock Text="贴图到屏幕" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                        <TextBlock Text="P" FontSize="11.5" FontWeight="SemiBold" HorizontalAlignment="Right" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                                    </Grid>
+                                    <Grid Margin="0,2">
+                                        <TextBlock Text="保存到文件" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                        <TextBlock Text="S / Ctrl + S" FontSize="11.5" FontWeight="SemiBold" HorizontalAlignment="Right" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                                    </Grid>
+                                    <Grid Margin="0,2">
+                                        <TextBlock Text="选区文本翻译" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                        <TextBlock Text="T" FontSize="11.5" FontWeight="SemiBold" HorizontalAlignment="Right" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                                    </Grid>
+                                    <Grid Margin="0,2">
+                                        <TextBlock Text="唤起 OCR 工作台" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                        <TextBlock Text="O" FontSize="11.5" FontWeight="SemiBold" HorizontalAlignment="Right" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                                    </Grid>
+                                    <Grid Margin="0,2">
+                                        <TextBlock Text="退出截图" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                        <TextBlock Text="Esc" FontSize="11.5" FontWeight="SemiBold" HorizontalAlignment="Right" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
                                     </Grid>
                                 </StackPanel>
                             </ui:Card>

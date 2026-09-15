@@ -3,10 +3,7 @@ import XCTest
 
 @MainActor
 final class SelectedTextReaderPermissionTests: XCTestCase {
-    /// The system prompt is what puts the app in the Accessibility list, so it
-    /// has to fire on the first denied read. Not opening System Settings without
-    /// confirmation is a separate guarantee, covered by the error presenter.
-    func testMissingAccessibilityPermissionAsksTheSystemForApproval() async {
+    func testMissingPermissionDefersRequestToPresenter() async {
         var requestCount = 0
         let reader = SelectedTextReader(
             accessibilityTrustCheck: { false },
@@ -16,7 +13,7 @@ final class SelectedTextReaderPermissionTests: XCTestCase {
         let result = await reader.read()
 
         XCTAssertEqual(result, .permissionRequired)
-        XCTAssertEqual(requestCount, 1)
+        XCTAssertEqual(requestCount, 0)
     }
 
     func testExplicitAccessibilityPermissionRequestStillUsesTheSystemPrompt() {

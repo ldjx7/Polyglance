@@ -13,7 +13,8 @@
         WindowState="Normal"
         KeyDown="OnKeyDown"
         KeyUp="OnKeyUp"
-        MouseDown="OnMouseDown">
+        MouseDown="OnMouseDown"
+        MouseUp="OnMouseUp">
     <Grid x:Name="RootGrid">
         <!-- 底图 -->
         <Image x:Name="BackgroundImage" Stretch="Fill"/>

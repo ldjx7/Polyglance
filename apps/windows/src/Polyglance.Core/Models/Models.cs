@@ -332,26 +332,32 @@ public sealed class ScreenshotToolbarItemConfig
 
 public static class GlobalShortcutDefaults
 {
-    public const string Screenshot = "Ctrl+Shift+D1";
+    public const string Screenshot = "Alt+C";
     public const string ScreenshotCopy = "";
-    public const string PinClipboardImage = "Ctrl+Shift+D2";
-    public const string SelectedText = "Ctrl+Shift+D3";
-    public const string ScreenTranslate = "Ctrl+Shift+D4";
+    public const string PinClipboardImage = "Alt+V";
+    public const string SelectedText = "Alt+D";
+    public const string ScreenTranslate = "Alt+S";
     public const string LongScreenshot = "";
     public const string ScreenRecording = "";
-    public const string RestoreMostRecentPin = "Ctrl+Shift+D5";
+    public const string RestoreMostRecentPin = "Alt+Shift+V";
     public const string MainTranslator = "";
     public const string OcrTranslate = "";
-    public const string OcrWorkspace = "";
+    public const string OcrWorkspace = "Alt+O";
     public const string OcrTranslationCard = "";
-    public const string TranslateAndReplace = "";
+    public const string TranslateAndReplace = "Alt+R";
 
     public static bool IsCompleteLegacyDefaultSet(AppConfiguration configuration) =>
-        configuration.HotkeyScreenshotPin == "Alt+A"
+        (configuration.HotkeyScreenshotPin == "Alt+A"
         && configuration.HotkeyScreenTranslate == "Alt+W"
         && configuration.HotkeyMainTranslator == "Alt+T"
         && configuration.HotkeySelectedText == "Alt+D"
-        && configuration.HotkeyLongScreenshot == "Alt+S";
+        && configuration.HotkeyLongScreenshot == "Alt+S")
+        || (configuration.HotkeyScreenshotPin == "Ctrl+Shift+D1"
+        && (configuration.HotkeyPinClipboardImage == "Ctrl+Shift+D2"
+            || configuration.HotkeyPinClipboardImage == "Ctrl+Shift+J"
+            || string.IsNullOrEmpty(configuration.HotkeyPinClipboardImage))
+        && configuration.HotkeySelectedText == "Ctrl+Shift+D3"
+        && configuration.HotkeyScreenTranslate == "Ctrl+Shift+D4");
 
     public static void ApplyRecommendedDefaults(AppConfiguration configuration)
     {
@@ -368,6 +374,40 @@ public static class GlobalShortcutDefaults
         configuration.HotkeyOcrWorkspace = OcrWorkspace;
         configuration.HotkeyOcrTranslationCard = OcrTranslationCard;
         configuration.HotkeyTranslateAndReplace = TranslateAndReplace;
+    }
+
+    public static void ApplySnipastePreset(AppConfiguration configuration)
+    {
+        configuration.HotkeyScreenshotPin = "F1";
+        configuration.HotkeyScreenshotCopy = "";
+        configuration.HotkeyPinClipboardImage = "F3";
+        configuration.HotkeySelectedText = "Alt+D";
+        configuration.HotkeyScreenTranslate = "Alt+S";
+        configuration.HotkeyLongScreenshot = "";
+        configuration.HotkeyScreenRecording = "";
+        configuration.HotkeyRestoreMostRecentPin = "Shift+F3";
+        configuration.HotkeyMainTranslator = "";
+        configuration.HotkeyOcrTranslate = "";
+        configuration.HotkeyOcrWorkspace = "Alt+O";
+        configuration.HotkeyOcrTranslationCard = "";
+        configuration.HotkeyTranslateAndReplace = "Alt+R";
+    }
+
+    public static void ApplyPixPinPreset(AppConfiguration configuration)
+    {
+        configuration.HotkeyScreenshotPin = "Ctrl+D1";
+        configuration.HotkeyScreenshotCopy = "";
+        configuration.HotkeyPinClipboardImage = "Ctrl+D2";
+        configuration.HotkeySelectedText = "Ctrl+Q";
+        configuration.HotkeyScreenTranslate = "Alt+Q";
+        configuration.HotkeyLongScreenshot = "";
+        configuration.HotkeyScreenRecording = "";
+        configuration.HotkeyRestoreMostRecentPin = "Ctrl+Shift+D2";
+        configuration.HotkeyMainTranslator = "";
+        configuration.HotkeyOcrTranslate = "";
+        configuration.HotkeyOcrWorkspace = "Ctrl+D3";
+        configuration.HotkeyOcrTranslationCard = "";
+        configuration.HotkeyTranslateAndReplace = "Alt+R";
     }
 }
 

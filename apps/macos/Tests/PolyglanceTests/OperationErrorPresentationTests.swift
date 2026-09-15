@@ -3,6 +3,52 @@ import XCTest
 
 @MainActor
 final class OperationErrorPresentationTests: XCTestCase {
+    func testFirstRequestsSuppressCustomAlertsAndPersistIndependently() {
+        let suite = "PermissionTests." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var requests: [SystemSettingsDestination] = []
+        var alertCount = 0
+        var openedURLs: [URL] = []
+        let coordinator = PermissionRequestCoordinator(defaults: defaults) { requests.append($0) }
+        let presenter = OperationErrorPresenter(
+            alertRunner: { _, _ in alertCount += 1; return .alertFirstButtonReturn },
+            openURL: { openedURLs.append($0) },
+            requestIfNeeded: { coordinator.requestIfNeeded($0) }
+        )
+        let screenshot = OperationErrorPresentation.screenshot(
+            ScreenshotError.permissionRequired(restartRequired: false))
+        presenter.present(screenshot)
+        presenter.present(.accessibilityPermissionRequired())
+        XCTAssertEqual(requests, [.screenRecording, .accessibility])
+        XCTAssertEqual(alertCount, 0)
+        XCTAssertTrue(openedURLs.isEmpty)
+        presenter.present(screenshot)
+        presenter.present(.accessibilityPermissionRequired())
+        XCTAssertEqual(alertCount, 2)
+        XCTAssertEqual(openedURLs, [SystemSettingsDestination.screenRecording.url,
+                                    SystemSettingsDestination.accessibility.url])
+        let relaunched = PermissionRequestCoordinator(defaults: defaults) { _ in
+            XCTFail("A previously requested permission must not prompt again")
+        }
+        XCTAssertFalse(relaunched.requestIfNeeded(.screenRecording))
+        XCTAssertFalse(relaunched.requestIfNeeded(.accessibility))
+    }
+
+    func testScreenPermissionFailuresUseTheSharedFlowAcrossTools() {
+        let errors: [Error] = [ScreenshotError.permissionRequired(restartRequired: false),
+                               ScreenRecordingCoordinatorError.permissionRequired(restartRequired: false),
+                               LongScreenshotCaptureError.permissionRequired]
+        for error in errors {
+            XCTAssertEqual(OperationErrorPresentation.screenshot(error).action,
+                           .openSystemSettings(.screenRecording))
+            XCTAssertEqual(OperationErrorPresentation.screenRecording(error).action,
+                           .openSystemSettings(.screenRecording))
+            XCTAssertEqual(OperationErrorPresentation.screenTranslation(error).action,
+                           .openSystemSettings(.screenRecording))
+        }
+    }
+
     func testScreenshotFailureUsesStandaloneAlertCopy() {
         let presentation = OperationErrorPresentation.screenshot(
             TestError(message: "需要屏幕录制权限")

@@ -11,15 +11,14 @@ enum SelectedTextReadResult: Equatable {
 @MainActor
 struct SelectedTextReader {
     private let accessibilityTrustCheck: () -> Bool
-    private let accessibilityPermissionRequest: () -> Void
+    private let accessibilityPermissionRequest: @MainActor () -> Void
     private let directReaderOverride: (() -> String?)?
     private let copyReaderOverride: (() async -> String?)?
 
     init(
         accessibilityTrustCheck: @escaping () -> Bool = { AXIsProcessTrusted() },
-        accessibilityPermissionRequest: @escaping () -> Void = {
-            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-            _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
+        accessibilityPermissionRequest: @escaping @MainActor () -> Void = {
+            PermissionRequestCoordinator.shared.openFromSettings(.accessibility)
         },
         directReader: (() -> String?)? = nil,
         copyReader: (() async -> String?)? = nil
@@ -32,9 +31,7 @@ struct SelectedTextReader {
 
     func read() async -> SelectedTextReadResult {
         guard accessibilityTrustCheck() else {
-            // The system prompt is also what registers the app in the
-            // Accessibility list, so without it the user has no entry to grant.
-            accessibilityPermissionRequest()
+            // The presenter owns permission requests to avoid duplicate prompts.
             return .permissionRequired
         }
         let pipeline = SelectionCapturePipeline(

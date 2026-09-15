@@ -144,7 +144,6 @@ final class ScreenshotCoordinator {
             }
             selectionSession = nil
             isCapturing = false
-            Self.prewarm()
         }
         guard let action = try await captureSelectionAction(
             preferredAction: preferredAction,
@@ -286,7 +285,6 @@ final class ScreenshotCoordinator {
         startTime: CFAbsoluteTime? = nil
     ) async throws -> ScreenshotSelectionAction? {
         guard CGPreflightScreenCaptureAccess() else {
-            _ = CGRequestScreenCaptureAccess()
             throw ScreenshotError.permissionRequired(restartRequired: false)
         }
         guard let screen = screenUnderPointer() else {
@@ -424,7 +422,7 @@ final class ScreenshotCoordinator {
     }
 
     func requestPermission() {
-        _ = CGRequestScreenCaptureAccess()
+        PermissionRequestCoordinator.shared.openFromSettings(.screenRecording)
     }
 
     var hasPermission: Bool {
@@ -611,18 +609,7 @@ final class ScreenshotCoordinator {
         CATransaction.commit()
     }
 
-    static func prewarm() {
-        Task.detached(priority: .userInitiated) {
-            guard CGPreflightScreenCaptureAccess() else { return }
-            guard let displays = try? await refreshDisplays(), let main = displays.first else { return }
-            let filter = SCContentFilter(display: main, excludingWindows: [])
-            let config = SCStreamConfiguration()
-            config.width = 2
-            config.height = 2
-            config.showsCursor = false
-            _ = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-        }
-    }
+
 }
 
 enum ScreenshotPreferredAction {
@@ -651,7 +638,7 @@ enum ScreenshotError: LocalizedError {
         case let .permissionRequired(restartRequired):
             return restartRequired
                 ? "已请求屏幕录制权限，请授权后重新启动 Polyglance"
-                : "截图需要屏幕录制权限，请在系统设置的“隐私与安全性”中授权"
+                : "截图需要屏幕录制权限，请在系统设置的隐私与安全性中授权"
         case .screenUnavailable:
             return "无法识别鼠标所在的显示器"
         case let .captureFailed(message):

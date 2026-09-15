@@ -98,88 +98,68 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
             try validate(candidateImage)
         }
 
-        var isCandidateActive = false
         if let candidateText {
-            isCandidateActive = isTextActive(candidateText)
-        } else if let candidateImage {
-            isCandidateActive = isImageActive(candidateImage)
-        }
-
-        if !isCandidateActive {
-            if let candidateText {
-                let allSessions = await archiveStore.perform { $0.loadSessions() }
-                let existing = allSessions.last { $0.text == candidateText }
-                if let archiveID = existing?.archiveID {
-                    historyStore.remove(archiveID: archiveID)
-                }
-                historyStore.remove { $0.session?.text == candidateText }
-                pinText(candidateText, archiveID: existing?.archiveID)
-            } else if let candidateImage {
-                let historyItems = await archiveStore.perform { $0.list() }
-                var existingID: String?
-                if let cg = candidateImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                    for item in historyItems where item.pixelWidth == cg.width && item.pixelHeight == cg.height {
-                        if let stored = await archiveStore.perform({ $0.loadImage(id: item.id) }),
-                           imagesMatch(stored, candidateImage) {
-                            existingID = item.id
-                            break
-                        }
-                    }
-                }
-                if let existingID {
-                    historyStore.remove(archiveID: existingID)
-                }
-                historyStore.remove { self.imagesMatch($0.image, candidateImage) }
-                pin(candidateImage, sourceFrame: nil, preferredDisplaySize: nil, source: .clipboard,
-                    recordInArchive: existingID == nil, archiveID: existingID)
+            if let panel = activeTextPanel(for: candidateText) {
+                panel.orderFrontRegardless()
+                panel.makeKey()
+                return
             }
+            let allSessions = await archiveStore.perform { $0.loadSessions() }
+            let existing = allSessions.last { $0.text == candidateText }
+            if let archiveID = existing?.archiveID {
+                historyStore.remove(archiveID: archiveID)
+            }
+            historyStore.remove { $0.session?.text == candidateText }
+            pinText(candidateText, archiveID: existing?.archiveID)
             return
         }
 
-        let history = await archiveStore.perform { $0.list() }
-        let allSessions = await archiveStore.perform { $0.loadSessions() }
-        let activeIDs = Set(panels.keys.compactMap { archivedPanelIDs[$0] })
-        let activeTexts = Set(orderedPanels.compactMap { ($0.contentView as? TextPinContentView)?.text })
-
-        for item in history {
-            if activeIDs.contains(item.id) { continue }
-            let session = allSessions.last { $0.archiveID == item.id }
-            if let text = session?.text, !text.isEmpty {
-                if activeTexts.contains(text) || isTextActive(text) { continue }
-                historyStore.remove(archiveID: item.id)
-                historyStore.remove { $0.session?.text == text }
-                pinText(text, archiveID: item.id)
-                return
-            } else {
-                guard let img = await archiveStore.perform({ $0.loadImage(id: item.id) }) else { continue }
-                if isImageActive(img) { continue }
-                historyStore.remove(archiveID: item.id)
-                historyStore.remove { self.imagesMatch($0.image, img) }
-                pin(img, sourceFrame: nil, preferredDisplaySize: nil, source: item.source, recordInArchive: false, archiveID: item.id)
+        if let candidateImage {
+            if let panel = activeImagePanel(for: candidateImage) {
+                panel.orderFrontRegardless()
+                panel.makeKey()
                 return
             }
+            let historyItems = await archiveStore.perform { $0.list() }
+            var existingID: String?
+            if let cg = candidateImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                for item in historyItems where item.pixelWidth == cg.width && item.pixelHeight == cg.height {
+                    if let stored = await archiveStore.perform({ $0.loadImage(id: item.id) }),
+                       imagesMatch(stored, candidateImage) {
+                        existingID = item.id
+                        break
+                    }
+                }
+            }
+            if let existingID {
+                historyStore.remove(archiveID: existingID)
+            }
+            historyStore.remove { self.imagesMatch($0.image, candidateImage) }
+            pin(candidateImage, sourceFrame: nil, preferredDisplaySize: nil, source: .clipboard,
+                recordInArchive: existingID == nil, archiveID: existingID)
+            return
         }
     }
 
-    private func isTextActive(_ text: String) -> Bool {
+    private func activeTextPanel(for text: String) -> NSPanel? {
         for panel in orderedPanels {
             if let contentView = panel.contentView as? TextPinContentView, contentView.text == text {
-                return true
+                return panel
             }
             if let session = sessions[ObjectIdentifier(panel)], session.text == text {
-                return true
+                return panel
             }
         }
-        return false
+        return nil
     }
 
-    private func isImageActive(_ image: NSImage) -> Bool {
+    private func activeImagePanel(for image: NSImage) -> NSPanel? {
         for panel in orderedPanels {
             if let contentView = panel.contentView as? PinContentView, imagesMatch(contentView.sourceImage, image) {
-                return true
+                return panel
             }
         }
-        return false
+        return nil
     }
 
     private func imagesMatch(_ a: NSImage, _ b: NSImage) -> Bool {

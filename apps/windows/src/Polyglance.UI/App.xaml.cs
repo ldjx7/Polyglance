@@ -125,7 +125,7 @@ public partial class App : Application
         try
         {
             var iconStream = Application.GetResourceStream(new Uri("pack://application:,,,/Polyglance;component/Resources/Polyglance.ico"))?.Stream;
-            appIcon = iconStream != null ? new Icon(iconStream) : SystemIcons.Application;
+            appIcon = iconStream != null ? new Icon(iconStream, SystemInformation.SmallIconSize) : SystemIcons.Application;
         }
         catch
         {
@@ -191,6 +191,8 @@ public partial class App : Application
         _notifyIcon.DoubleClick += (s, e) => ShowMainWindow();
     }
 
+    public Dictionary<string, string> ActiveHotkeyFailures { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     public void RegisterDynamicHotKeys()
     {
         if (_hotKeyManager == null || _configStore == null) return;
@@ -204,6 +206,7 @@ public partial class App : Application
 
         var config = LoadConfigurationOrDefault();
 
+        ActiveHotkeyFailures.Clear();
         var failures = new List<string>();
         RegisterSingleHotKey("截图", config.HotkeyScreenshotPin, TriggerScreenshot, failures);
         RegisterSingleHotKey("截图并复制", config.HotkeyScreenshotCopy, TriggerScreenshotCopy, failures);
@@ -245,12 +248,14 @@ public partial class App : Application
             || definition == null)
         {
             failures.Add($"{label}（{hotkeyStr}）：{error}");
+            ActiveHotkeyFailures[label] = error ?? "无效快捷键";
             return;
         }
 
         if (_hotKeyManager.Register(definition.Modifiers, definition.VirtualKey, action) < 0)
         {
             failures.Add($"{label}（{hotkeyStr}）：已被其他程序占用");
+            ActiveHotkeyFailures[label] = "已被占用";
         }
     }
 

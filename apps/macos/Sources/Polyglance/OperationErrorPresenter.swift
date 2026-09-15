@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 
 enum SystemSettingsDestination: Equatable {
     case screenRecording
@@ -14,6 +15,54 @@ enum SystemSettingsDestination: Equatable {
             URL(
                 string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
             )!
+        }
+    }
+}
+
+@MainActor
+final class PermissionRequestCoordinator {
+    static let shared = PermissionRequestCoordinator()
+    private let defaults: UserDefaults
+    private let request: (SystemSettingsDestination) -> Void
+    private var isRequesting = false
+
+    init(defaults: UserDefaults = .standard,
+         request: @escaping (SystemSettingsDestination) -> Void = { destination in
+             switch destination {
+             case .screenRecording:
+                 _ = CGRequestScreenCaptureAccess()
+             case .accessibility:
+                 let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+                 _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
+             }
+         }) {
+        self.defaults = defaults
+        self.request = request
+    }
+
+    func hasRequested(_ destination: SystemSettingsDestination) -> Bool {
+        let key = destination == .screenRecording
+            ? "permissionRequest.screenRecording" : "permissionRequest.accessibility"
+        return defaults.bool(forKey: key)
+    }
+
+    // Record before requesting: the system may show its prompt asynchronously.
+    func requestIfNeeded(_ destination: SystemSettingsDestination) -> Bool {
+        guard !isRequesting else { return true }
+        let key = destination == .screenRecording
+            ? "permissionRequest.screenRecording" : "permissionRequest.accessibility"
+        guard !defaults.bool(forKey: key) else { return false }
+        defaults.set(true, forKey: key)
+        isRequesting = true
+        defer { isRequesting = false }
+        PerfLogger.log("[Permissions] Native request: \(destination), pid=\(ProcessInfo.processInfo.processIdentifier)")
+        request(destination)
+        return true
+    }
+
+    func openFromSettings(_ destination: SystemSettingsDestination) {
+        if !requestIfNeeded(destination) {
+            NSWorkspace.shared.open(destination.url)
         }
     }
 }
@@ -35,7 +84,7 @@ struct OperationErrorPresentation: Equatable {
 
     static func screenshot(_ error: Error) -> Self {
         let action: OperationErrorAction?
-        if case .permissionRequired = error as? ScreenshotError {
+        if isScreenPermissionError(error) {
             action = .openSystemSettings(.screenRecording)
         } else {
             action = nil
@@ -45,6 +94,13 @@ struct OperationErrorPresentation: Equatable {
             message: error.localizedDescription,
             action: action
         )
+    }
+
+    private static func isScreenPermissionError(_ error: Error) -> Bool {
+        if case .permissionRequired = error as? ScreenshotError { return true }
+        if case .permissionRequired = error as? ScreenRecordingCoordinatorError { return true }
+        if case .permissionRequired = error as? LongScreenshotCaptureError { return true }
+        return false
     }
 
     static func clipboardPin(_ error: Error) -> Self {
@@ -65,20 +121,24 @@ struct OperationErrorPresentation: Equatable {
     static func screenRecording(_ error: Error) -> Self {
         Self(
             title: "无法完成区域录屏",
-            message: error.localizedDescription
+            message: error.localizedDescription,
+            action: isScreenPermissionError(error) ? .openSystemSettings(.screenRecording) : nil
         )
     }
 
     static func screenTranslation(_ error: Error) -> Self {
         Self(
             title: "无法完成截屏翻译",
-            message: error.localizedDescription
+            message: error.localizedDescription,
+            action: isScreenPermissionError(error) ? .openSystemSettings(.screenRecording) : nil
         )
     }
 }
 
 @MainActor
 final class OperationErrorPresenter {
+    // Native APIs and runModal can process nested main-loop events.
+    private static var isPresenting = false
     typealias AlertRunner = (
         OperationErrorPresentation,
         [String]
@@ -87,8 +147,10 @@ final class OperationErrorPresenter {
 
     private let alertRunner: AlertRunner
     private let openURL: URLOpener
+    private let requestIfNeeded: (SystemSettingsDestination) -> Bool
 
     init() {
+        requestIfNeeded = { PermissionRequestCoordinator.shared.requestIfNeeded($0) }
         alertRunner = Self.runAlert
         openURL = { url in
             _ = NSWorkspace.shared.open(url)
@@ -97,14 +159,21 @@ final class OperationErrorPresenter {
 
     init(
         alertRunner: @escaping AlertRunner,
-        openURL: @escaping URLOpener
+        openURL: @escaping URLOpener,
+        requestIfNeeded: @escaping (SystemSettingsDestination) -> Bool = { _ in false }
     ) {
+        self.requestIfNeeded = requestIfNeeded
         self.alertRunner = alertRunner
         self.openURL = openURL
     }
 
     func present(_ presentation: OperationErrorPresentation) {
+        guard !Self.isPresenting else { return }
+        Self.isPresenting = true
+        defer { Self.isPresenting = false }
         if case let .openSystemSettings(destination) = presentation.action {
+            guard !requestIfNeeded(destination) else { return }
+            PerfLogger.log("[Permissions] Custom prompt: \(destination)")
             let response = alertRunner(
                 presentation,
                 ["打开系统设置", "取消"]

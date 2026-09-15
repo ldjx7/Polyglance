@@ -140,10 +140,10 @@ public partial class ScreenSelectionWindow : Window
 
         Toolbar.CloseAllPopups();
 
-        // 1. 右键处理 (对齐 macOS: 逐级回退取消)
+        // 1. 右键处理：按下时不立即关闭窗口，避免物理按键尚未抬起导致后续 WM_RBUTTONUP 泄露到桌面触发右键菜单
         if (e.RightButton == MouseButtonState.Pressed)
         {
-            HandleRightClick();
+            e.Handled = true;
             return;
         }
 
@@ -380,8 +380,48 @@ public partial class ScreenSelectionWindow : Window
         }
     }
 
+    protected override void OnPreviewMouseRightButtonDown(MouseButtonEventArgs e)
+    {
+        base.OnPreviewMouseRightButtonDown(e);
+        if (Toolbar.IsMouseOver) return;
+        e.Handled = true;
+    }
+
+    protected override void OnPreviewMouseRightButtonUp(MouseButtonEventArgs e)
+    {
+        base.OnPreviewMouseRightButtonUp(e);
+        if (Toolbar.IsMouseOver) return;
+        e.Handled = true;
+        if (IsMouseCaptured)
+        {
+            _isCompletingMouseGesture = true;
+            ReleaseMouseCapture();
+            _isCompletingMouseGesture = false;
+        }
+        HandleRightClick();
+    }
+
+    protected override void OnContextMenuOpening(ContextMenuEventArgs e)
+    {
+        base.OnContextMenuOpening(e);
+        e.Handled = true;
+    }
+
     private void OnMouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (e.ChangedButton == MouseButton.Right)
+        {
+            e.Handled = true;
+            if (IsMouseCaptured)
+            {
+                _isCompletingMouseGesture = true;
+                ReleaseMouseCapture();
+                _isCompletingMouseGesture = false;
+            }
+            HandleRightClick();
+            return;
+        }
+
         if (IsMouseCaptured)
         {
             _isCompletingMouseGesture = true;
@@ -1948,26 +1988,60 @@ public partial class ScreenSelectionWindow : Window
         {
             OnActionTriggered("Redo");
         }
-        else if (_phase == SelectionPhase.Selected && !_selectionRect.IsEmpty && _activeTool == "None")
+        else if (_phase == SelectionPhase.Selected && !_selectionRect.IsEmpty && !(_selectedAnnotationElement is TextBox tb && !tb.IsReadOnly))
         {
-            double step = (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift ? 10 : 1;
-            double dx = 0, dy = 0;
-            if (e.Key == Key.Left) dx = -step;
-            else if (e.Key == Key.Right) dx = step;
-            else if (e.Key == Key.Up) dy = -step;
-            else if (e.Key == Key.Down) dy = step;
-
-            if (dx != 0 || dy != 0)
+            if (e.Key == Key.C && (Keyboard.Modifiers == ModifierKeys.None || Keyboard.Modifiers == ModifierKeys.Control))
             {
-                _selectionRect = FromNativeRect(SelectionGeometryService.Edited(
-                    ToNativeRect(_selectionRect),
-                    new NativePoint(0, 0),
-                    new NativePoint(dx, dy),
-                    NativeSelectionEditTarget.Move,
-                    SelectionBounds(),
-                    minimumSide: 4));
-                UpdateSelectionDisplay();
+                OnActionTriggered("Copy");
                 e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.P && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                OnActionTriggered("Pin");
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.S && (Keyboard.Modifiers == ModifierKeys.None || Keyboard.Modifiers == ModifierKeys.Control))
+            {
+                OnActionTriggered("Save");
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.T && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                OnActionTriggered("OCRTranslate");
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.O && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                OnActionTriggered("OCR");
+                e.Handled = true;
+                return;
+            }
+
+            if (_activeTool == "None")
+            {
+                double step = (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift ? 10 : 1;
+                double dx = 0, dy = 0;
+                if (e.Key == Key.Left) dx = -step;
+                else if (e.Key == Key.Right) dx = step;
+                else if (e.Key == Key.Up) dy = -step;
+                else if (e.Key == Key.Down) dy = step;
+
+                if (dx != 0 || dy != 0)
+                {
+                    _selectionRect = FromNativeRect(SelectionGeometryService.Edited(
+                        ToNativeRect(_selectionRect),
+                        new NativePoint(0, 0),
+                        new NativePoint(dx, dy),
+                        NativeSelectionEditTarget.Move,
+                        SelectionBounds(),
+                        minimumSide: 4));
+                    UpdateSelectionDisplay();
+                    e.Handled = true;
+                }
             }
         }
     }

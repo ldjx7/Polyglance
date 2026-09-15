@@ -143,7 +143,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             options: [.userInitiated, .latencyCritical],
             reason: "Low-latency global screenshot hotkey responsiveness"
         )
-        ScreenshotCoordinator.prewarm()
         ScreenshotCoordinator.prewarmPresentation()
         hotKeyManager.onTranslateSelection = { [weak self] in
             self?.showTranslator(capturingSelection: true, translateImmediately: true)
@@ -308,9 +307,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     triggerTime: pressTime
                 )
             } catch {
-                if case .permissionRequired = error as? ScreenshotError {
-                    return
-                }
                 self.operationErrorPresenter.present(.screenshot(error))
             }
         }
@@ -380,6 +376,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case let .text(text):
             selectedText = text
         case .permissionRequired:
+            operationErrorPresenter.present(.accessibilityPermissionRequired())
             return
         case .noSelection:
             if !Task.isCancelled {
@@ -407,7 +404,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch result {
             case let .text(text):
                 selectedText = text
-            case .permissionRequired, .noSelection:
+            case .permissionRequired:
+                self.operationErrorPresenter.present(.accessibilityPermissionRequired())
+                return
+            case .noSelection:
                 return
             }
 
@@ -642,12 +642,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             store: configurationStore,
             shortcutStore: shortcutStore,
             recordingSettingsStore: recordingSettingsStore,
-            launchAtLoginManager: launchAtLoginManager
+            launchAtLoginManager: launchAtLoginManager,
+            initialHotKeyFailures: hotKeyManager.failedActions
         ) { [weak self] configuration, shortcuts, recordingSettings, launchAtLoginEnabled in
             guard let self else {
-                return
+                return [:]
             }
-            try saveSettings(
+            return try saveSettings(
                 configuration,
                 shortcuts: shortcuts,
                 recordingSettings: recordingSettings,
@@ -695,12 +696,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? NSScreen.main
     }
 
+    @discardableResult
     private func saveSettings(
         _ configuration: AppConfiguration,
         shortcuts: GlobalShortcutConfiguration,
         recordingSettings: RecordingSettings,
         launchAtLoginEnabled: Bool
-    ) throws {
+    ) throws -> [GlobalShortcutAction: String] {
         let previousShortcuts = shortcutConfiguration
         let previousConfiguration = try configurationStore.load()
         let previousRecordingSettings = recordingSettingsStore.load()
@@ -729,6 +731,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         shortcutConfiguration = shortcuts
         apply(configuration)
+        return hotKeyManager.failedActions
     }
 
     private func makeTranslationClient() -> any TranslationClient {

@@ -19,33 +19,33 @@ final class GlobalHotKeyManager {
     var onScreenshotAndCopy: ((CFAbsoluteTime) -> Void)?
     var onTranslateAndReplace: (() -> Void)?
 
+    public private(set) var failedActions: [GlobalShortcutAction: String] = [:]
+
     private var eventHandler: EventHandlerRef?
     private var hotKeys: [EventHotKeyRef] = []
+    private var pressedHotKeyIDs: Set<UInt32> = []
     private var activeConfiguration: GlobalShortcutConfiguration?
 
     func register(_ configuration: GlobalShortcutConfiguration) throws {
         try configuration.validate()
-        if activeConfiguration == configuration, !hotKeys.isEmpty {
+        if activeConfiguration == configuration, !hotKeys.isEmpty, failedActions.isEmpty {
             return
         }
 
-        let previousConfiguration = activeConfiguration
         unregisterAll()
-        do {
-            try registerAll(configuration)
-            activeConfiguration = configuration
-        } catch {
-            unregisterAll()
-            if let previousConfiguration {
-                do {
-                    try registerAll(previousConfiguration)
-                    activeConfiguration = previousConfiguration
-                } catch {
-                    activeConfiguration = nil
-                }
+        failedActions.removeAll()
+        try installEventHandler()
+        for action in GlobalShortcutAction.allCases {
+            guard let shortcut = configuration[action] else {
+                continue
             }
-            throw error
+            do {
+                try registerHotKey(shortcut, action: action)
+            } catch {
+                failedActions[action] = "已被占用"
+            }
         }
+        activeConfiguration = configuration
     }
 
     deinit {
@@ -55,21 +55,17 @@ final class GlobalHotKeyManager {
         }
     }
 
-    private func registerAll(_ configuration: GlobalShortcutConfiguration) throws {
-        try installEventHandler()
-        for action in GlobalShortcutAction.allCases {
-            guard let shortcut = configuration[action] else {
-                continue
-            }
-            try registerHotKey(shortcut, action: action)
-        }
-    }
-
     private func installEventHandler() throws {
-        var eventType = EventTypeSpec(
-            eventClass: OSType(kEventClassKeyboard),
-            eventKind: UInt32(kEventHotKeyPressed)
-        )
+        let eventTypes = [
+            EventTypeSpec(
+                eventClass: OSType(kEventClassKeyboard),
+                eventKind: UInt32(kEventHotKeyPressed)
+            ),
+            EventTypeSpec(
+                eventClass: OSType(kEventClassKeyboard),
+                eventKind: UInt32(kEventHotKeyReleased)
+            )
+        ]
         let userData = Unmanaged.passUnretained(self).toOpaque()
         let status = InstallEventHandler(
             GetApplicationEventTarget(),
@@ -94,13 +90,22 @@ final class GlobalHotKeyManager {
                 let manager = Unmanaged<GlobalHotKeyManager>
                     .fromOpaque(userData)
                     .takeUnretainedValue()
+                let eventKind = GetEventKind(event)
                 DispatchQueue.main.async {
+                    if eventKind == UInt32(kEventHotKeyReleased) {
+                        manager.pressedHotKeyIDs.remove(hotKeyID.id)
+                        return
+                    }
+                    // Holding a shortcut must not repeat actions or permission prompts.
+                    guard manager.pressedHotKeyIDs.insert(hotKeyID.id).inserted else {
+                        return
+                    }
                     manager.handleHotKey(id: hotKeyID.id, pressTime: pressTime)
                 }
                 return noErr
             },
-            1,
-            &eventType,
+            eventTypes.count,
+            eventTypes,
             userData,
             &eventHandler
         )
@@ -169,6 +174,7 @@ final class GlobalHotKeyManager {
     }
 
     private func unregisterAll() {
+        pressedHotKeyIDs.removeAll()
         hotKeys.forEach { UnregisterEventHotKey($0) }
         hotKeys.removeAll()
         if let eventHandler {
@@ -202,7 +208,7 @@ private enum GlobalHotKeyError: LocalizedError {
         case let .handlerRegistrationFailed(status):
             return "无法启动全局快捷键监听（错误码：\(status)）"
         case let .shortcutRegistrationFailed(action, status):
-            return "无法注册“\(action.title)”快捷键，可能已被其他应用占用（错误码：\(status)）"
+            return "无法注册 [\(action.title)] 快捷键，可能已被其他应用占用（错误码：\(status)）"
         }
     }
 }

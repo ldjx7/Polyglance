@@ -80,7 +80,7 @@ public sealed record ShortcutDefinition(uint Modifiers, uint VirtualKey)
             return false;
         }
 
-        if ((modifiers & RequiredModifiers) == 0)
+        if (!IsFunctionKey(virtualKey) && (modifiers & RequiredModifiers) == 0)
         {
             error = "快捷键至少需要 Ctrl、Alt 或 Win 之一";
             return false;
@@ -89,6 +89,9 @@ public sealed record ShortcutDefinition(uint Modifiers, uint VirtualKey)
         definition = new ShortcutDefinition(modifiers, virtualKey);
         return true;
     }
+
+    private static bool IsFunctionKey(uint virtualKey) =>
+        virtualKey >= 0x70 && virtualKey <= 0x87;
 
     /// <summary>
     /// Some <see cref="Key"/> members stand for an input-method or menu state

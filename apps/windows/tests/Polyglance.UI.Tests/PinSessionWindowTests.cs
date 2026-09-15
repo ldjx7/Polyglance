@@ -29,9 +29,9 @@ public sealed class PinSessionWindowTests
                 Wait(controller.PinNextClipboardContent(null, "最近原文", null, null));
                 Assert.Equal(1, controller.ActiveCount);
                 Wait(controller.PinNextClipboardContent(null, "最近原文", null, null));
-                Assert.Equal(2, controller.ActiveCount);
+                Assert.Equal(1, controller.ActiveCount);
                 Wait(controller.PinNextClipboardContent(null, "最近原文", null, null));
-                Assert.Equal(2, controller.ActiveCount);
+                Assert.Equal(1, controller.ActiveCount);
                 Wait(store.DrainAsync());
                 Assert.Equal(2, store.List().Count);
                 Wait(controller.DestroyAll());

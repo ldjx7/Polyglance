@@ -317,16 +317,16 @@
                     <Button x:Name="BtnFinish" Style="{StaticResource ToolbarButtonStyle}" ToolTip="完成标注" AutomationProperties.Name="完成标注" Click="OnActionClicked" Tag="Finish" Visibility="Collapsed">
                         <Path Data="M9,16.17 L4.83,12 L3.41,13.41 L9,19 L21,7 L19.59,5.59 Z" Fill="#10B981" Width="14" Height="14" Stretch="Uniform"/>
                     </Button>
-                    <Button x:Name="BtnOCR" Style="{StaticResource ToolbarButtonStyle}" ToolTip="文字识别 (OCR)" AutomationProperties.Name="文字识别 (OCR)" Click="OnActionClicked" Tag="OCR">
+                    <Button x:Name="BtnOCR" Style="{StaticResource ToolbarButtonStyle}" ToolTip="文字识别 (O)" AutomationProperties.Name="文字识别 (OCR)" Click="OnActionClicked" Tag="OCR">
                         <Path Data="M3,5 V3 H5 M19,3 H21 V5 M3,19 V21 H5 M19,21 H21 V19 M7,7 H17 V9 H13 V17 H11 V9 H7 Z" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="14" Height="14" Stretch="Uniform"/>
                     </Button>
-                    <Button x:Name="BtnTranslate" Style="{StaticResource ToolbarButtonStyle}" ToolTip="OCR翻译" AutomationProperties.Name="OCR翻译" Click="OnActionClicked" Tag="OCRTranslate">
+                    <Button x:Name="BtnTranslate" Style="{StaticResource ToolbarButtonStyle}" ToolTip="OCR翻译 (T)" AutomationProperties.Name="OCR翻译" Click="OnActionClicked" Tag="OCRTranslate">
                         <Path Data="M12.87,15.07 L10.33,12.56 L10.36,12.53 C12.1,10.59 13.34,8.36 14.07,6 H17 V4 H10 V2 H8 V4 H1 V6 H12.17 C11.5,7.92 10.44,9.75 9,11.35 C8.07,10.32 7.3,9.19 6.69,8 H4.69 C5.42,9.63 6.42,11.17 7.67,12.56 L2.58,17.58 L4,19 L9,14 L12.11,17.11 L12.87,15.07 Z M18.5,10 H16.5 L12,22 H14 L15.12,19 H19.87 L21,22 H23 L18.5,10 Z M15.88,17 L17.5,12.67 L19.12,17 H15.88 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="14" Height="14" Stretch="Uniform"/>
                     </Button>
                     <Button x:Name="BtnBarcode" Style="{StaticResource ToolbarButtonStyle}" ToolTip="二维码/条形码识别" AutomationProperties.Name="二维码/条形码识别" Click="OnActionClicked" Tag="Barcode">
                         <Path Data="M2,2 H10 V10 H2 Z M4,4 H8 V8 H4 Z M14,2 H22 V10 H14 Z M16,4 H20 V8 H16 Z M2,14 H10 V22 H2 Z M4,16 H8 V20 H4 Z M14,14 H18 V18 H14 Z M18,18 H22 V22 H18 Z M14,20 H16 V22 H14 Z M20,14 H22 V16 H20 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="14" Height="14" Stretch="Uniform"/>
                     </Button>
-                    <Button x:Name="BtnPin" Style="{StaticResource ToolbarButtonStyle}" ToolTip="贴图" AutomationProperties.Name="贴图" Click="OnActionClicked" Tag="Pin">
+                    <Button x:Name="BtnPin" Style="{StaticResource ToolbarButtonStyle}" ToolTip="贴图 (P)" AutomationProperties.Name="贴图" Click="OnActionClicked" Tag="Pin">
                         <Path Data="M16,12 V4 H17 V2 H7 V4 H8 V12 L6,14 V16 H11 V22 L12,23 L13,22 V16 H18 V14 L16,12 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="14" Height="14" Stretch="Uniform"/>
                     </Button>
                     <Button x:Name="BtnLongScreenshot" Style="{StaticResource ToolbarButtonStyle}" ToolTip="长截图" AutomationProperties.Name="长截图" Click="OnActionClicked" Tag="LongScreenshot">
@@ -335,13 +335,13 @@
                     <Button x:Name="BtnScreenRecording" Style="{StaticResource ToolbarButtonStyle}" ToolTip="录屏" AutomationProperties.Name="录屏" Click="OnActionClicked" Tag="ScreenRecording">
                         <Path Data="M2,6 C2,4.9 2.9,4 4,4 H14 C15.1,4 16,4.9 16,6 V18 C16,19.1 15.1,20 14,20 H4 C2.9,20 2,19.1 2,18 Z M16,10 L22,6 V18 L16,14 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="14" Height="14" Stretch="Uniform"/>
                     </Button>
-                    <Button x:Name="BtnSave" Style="{StaticResource ToolbarButtonStyle}" ToolTip="保存" AutomationProperties.Name="保存" Click="OnActionClicked" Tag="Save">
+                    <Button x:Name="BtnSave" Style="{StaticResource ToolbarButtonStyle}" ToolTip="保存 (Ctrl+S / S)" AutomationProperties.Name="保存" Click="OnActionClicked" Tag="Save">
                         <Path Data="M4,3 H17 L20,6 V20 C20,20.6 19.6,21 19,21 H5 C4.4,21 4,20.6 4,20 Z M7,3 V8 H15 V3 Z M6,13 H18 V20 H6 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="14" Height="14" Stretch="Uniform"/>
                     </Button>
-                    <Button x:Name="BtnCancel" Style="{StaticResource ToolbarButtonStyle}" ToolTip="取消" AutomationProperties.Name="取消" Click="OnActionClicked" Tag="Cancel">
+                    <Button x:Name="BtnCancel" Style="{StaticResource ToolbarButtonStyle}" ToolTip="取消 (Esc)" AutomationProperties.Name="取消" Click="OnActionClicked" Tag="Cancel">
                         <Path Data="M5,5 L19,19 M19,5 L5,19" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" StrokeStartLineCap="Round" Width="13" Height="13" Stretch="Uniform"/>
                     </Button>
-                    <Button x:Name="BtnCopy" Style="{StaticResource ToolbarButtonStyle}" ToolTip="复制" AutomationProperties.Name="复制" Click="OnActionClicked" Tag="Copy">
+                    <Button x:Name="BtnCopy" Style="{StaticResource ToolbarButtonStyle}" ToolTip="复制 (Ctrl+C / C / Enter)" AutomationProperties.Name="复制" Click="OnActionClicked" Tag="Copy">
                         <Path Data="M16,3 H5 C3.9,3 3,3.9 3,5 V16 M8,7 H19 C20.1,7 21,7.9 21,9 V20 C21,21.1 20.1,22 19,22 H8 C6.9,22 6,21.1 6,20 V9 C6,7.9 6.9,7 8,7 Z" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Fill="Transparent" Width="14" Height="14" Stretch="Uniform"/>
                     </Button>
                 </StackPanel>

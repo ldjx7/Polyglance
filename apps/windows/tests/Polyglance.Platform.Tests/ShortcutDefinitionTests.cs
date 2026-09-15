@@ -12,6 +12,9 @@ public sealed class ShortcutDefinitionTests
     [InlineData("Ctrl+OemComma", 0xBC)]
     [InlineData("Ctrl+NumPad5", 0x65)]
     [InlineData("Ctrl+F5", 0x74)]
+    [InlineData("F1", 0x70)]
+    [InlineData("F3", 0x72)]
+    [InlineData("Shift+F3", 0x72)]
     public void RecordedKeyNamesResolveToVirtualKeyCodes(string value, uint expectedVirtualKey)
     {
         Assert.True(ShortcutDefinition.TryParse(value, out ShortcutDefinition? definition, out _));

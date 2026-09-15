@@ -195,6 +195,15 @@ public partial class InPlaceTranslationOverlayWindow : Window
     {
         if (e.RightButton == MouseButtonState.Pressed)
         {
+            e.Handled = true;
+        }
+    }
+
+    private void OnMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Right)
+        {
+            e.Handled = true;
             Close();
         }
     }

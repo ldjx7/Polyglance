@@ -118,13 +118,13 @@ final class InlineAppUpdateDriver: NSObject, SPUUserDriver {
     func showUpdateReleaseNotesFailedToDownloadWithError(_ error: Error) {}
 
     func showUpdateNotFoundWithError(_ error: Error, acknowledgement: @escaping () -> Void) {
-        acknowledgement()
         updater?.state = .upToDate(checkedAt: Date())
+        acknowledgement()
     }
 
     func showUpdaterError(_ error: Error, acknowledgement: @escaping () -> Void) {
-        acknowledgement()
         updater?.state = .failed(message: error.localizedDescription)
+        acknowledgement()
     }
 
     func showDownloadInitiated(cancellation: @escaping () -> Void) {
@@ -173,7 +173,12 @@ final class InlineAppUpdateDriver: NSObject, SPUUserDriver {
         downloadCancellation = nil
         updateFoundReply = nil
         readyToInstallReply = nil
-        updater?.state = .idle
+        switch updater?.state {
+        case .upToDate, .failed:
+            break
+        default:
+            updater?.state = .idle
+        }
     }
 
     func showUpdateInFocus() {

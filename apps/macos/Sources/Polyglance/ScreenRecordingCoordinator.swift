@@ -791,7 +791,7 @@ extension ScreenRecordingCoordinator: ScreenRecordingEngineDelegate {
     }
 }
 
-private enum ScreenRecordingCoordinatorError: LocalizedError {
+enum ScreenRecordingCoordinatorError: LocalizedError {
     case alreadyRecording
     case permissionRequired(restartRequired: Bool)
     case microphonePermissionRequired

@@ -7,30 +7,54 @@ final class GlobalShortcutConfigurationTests: XCTestCase {
         let configuration = GlobalShortcutConfiguration.default
 
         XCTAssertNoThrow(try configuration.validate())
-        XCTAssertEqual(Set(configuration.allShortcuts).count, 5)
+        XCTAssertEqual(Set(configuration.allShortcuts).count, 7)
         XCTAssertEqual(
             configuration.screenshotAndPin,
-            RecordedShortcut(keyCode: 18, modifiers: [.control, .shift])
+            RecordedShortcut(keyCode: 0, modifiers: [.option])
         )
         XCTAssertEqual(
             configuration.pinClipboardImage,
-            RecordedShortcut(keyCode: 19, modifiers: [.control, .shift])
-        )
-        XCTAssertEqual(
-            configuration.translateSelection,
-            RecordedShortcut(keyCode: 20, modifiers: [.control, .shift])
-        )
-        XCTAssertEqual(
-            configuration.screenTranslation,
-            RecordedShortcut(keyCode: 21, modifiers: [.control, .shift])
+            RecordedShortcut(keyCode: 13, modifiers: [.option])
         )
         XCTAssertEqual(
             configuration.restoreMostRecentPin,
-            RecordedShortcut(keyCode: 23, modifiers: [.control, .shift])
+            RecordedShortcut(keyCode: 13, modifiers: [.option, .shift])
+        )
+        XCTAssertEqual(
+            configuration.translateSelection,
+            RecordedShortcut(keyCode: 2, modifiers: [.option])
+        )
+        XCTAssertEqual(
+            configuration.screenTranslation,
+            RecordedShortcut(keyCode: 1, modifiers: [.option])
+        )
+        XCTAssertEqual(
+            configuration.translateAndReplace,
+            RecordedShortcut(keyCode: 15, modifiers: [.option])
+        )
+        XCTAssertEqual(
+            configuration.ocrWorkspace,
+            RecordedShortcut(keyCode: 8, modifiers: [.option])
         )
         XCTAssertNil(configuration.longScreenshot)
         XCTAssertNil(configuration.screenRecording)
         XCTAssertNil(configuration.openTranslator)
+    }
+
+    func testPresetsAreValid() throws {
+        XCTAssertNoThrow(try GlobalShortcutConfiguration.recommended.validate())
+        XCTAssertNoThrow(try GlobalShortcutConfiguration.snipaste.validate())
+        XCTAssertNoThrow(try GlobalShortcutConfiguration.pixpin.validate())
+
+        XCTAssertEqual(GlobalShortcutConfiguration.snipaste.screenshotAndPin, RecordedShortcut(keyCode: 122, modifiers: []))
+        XCTAssertEqual(GlobalShortcutConfiguration.snipaste.pinClipboardImage, RecordedShortcut(keyCode: 99, modifiers: []))
+        XCTAssertEqual(GlobalShortcutConfiguration.snipaste.restoreMostRecentPin, RecordedShortcut(keyCode: 99, modifiers: [.shift]))
+    }
+
+    func testFunctionKeysWithoutModifiersAreAllowed() throws {
+        var configuration = GlobalShortcutConfiguration.default
+        configuration.screenshotAndPin = RecordedShortcut(keyCode: 122, modifiers: [])
+        XCTAssertNoThrow(try configuration.validate())
     }
 
     func testDuplicateShortcutIsRejected() {
@@ -105,7 +129,7 @@ final class GlobalShortcutConfigurationTests: XCTestCase {
         configuration[.longScreenshot] = nil
 
         XCTAssertNoThrow(try configuration.validate())
-        XCTAssertEqual(configuration.allShortcuts.count, 5)
+        XCTAssertEqual(configuration.allShortcuts.count, 7)
     }
 
     func testStoreRoundTripsCustomConfiguration() throws {
@@ -179,6 +203,36 @@ final class GlobalShortcutConfigurationTests: XCTestCase {
         let legacy = GlobalShortcutConfiguration.legacyDefault
         defaults.set(
             try JSONEncoder().encode(legacy),
+            forKey: GlobalShortcutConfigurationStore.storageKey
+        )
+
+        let configuration = GlobalShortcutConfigurationStore(defaults: defaults).load()
+
+        XCTAssertEqual(configuration, .default)
+    }
+
+    func testStoreMigratesPreviousControlShiftDefaultShortcuts() throws {
+        let suiteName = "GlobalShortcutConfigurationTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let previous = GlobalShortcutConfiguration(
+            translateSelection: RecordedShortcut(keyCode: 20, modifiers: [.control, .shift]),
+            captureSelection: nil,
+            screenshotAndPin: RecordedShortcut(keyCode: 18, modifiers: [.control, .shift]),
+            screenshotAndCopy: nil,
+            translateAndReplace: nil,
+            pinClipboardImage: RecordedShortcut(keyCode: 19, modifiers: [.control, .shift]),
+            longScreenshot: nil,
+            screenRecording: nil,
+            restoreMostRecentPin: RecordedShortcut(keyCode: 23, modifiers: [.control, .shift]),
+            screenTranslation: RecordedShortcut(keyCode: 21, modifiers: [.control, .shift]),
+            openTranslator: nil,
+            ocrTranslate: nil,
+            ocrWorkspace: nil,
+            ocrTranslationCard: nil
+        )
+        defaults.set(
+            try JSONEncoder().encode(previous),
             forKey: GlobalShortcutConfigurationStore.storageKey
         )
 

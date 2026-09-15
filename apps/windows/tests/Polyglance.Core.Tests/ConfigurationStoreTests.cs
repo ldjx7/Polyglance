@@ -115,19 +115,19 @@ public sealed class ConfigurationStoreTests : IDisposable
         var configuration = new AppConfiguration();
 
         Assert.Equal("en", configuration.SecondTargetLanguage);
-        Assert.Equal("Ctrl+Shift+D1", configuration.HotkeyScreenshotPin);
-        Assert.Equal(string.Empty, configuration.HotkeyScreenshotCopy);
-        Assert.Equal("Ctrl+Shift+D2", configuration.HotkeyPinClipboardImage);
-        Assert.Equal("Ctrl+Shift+D3", configuration.HotkeySelectedText);
-        Assert.Equal("Ctrl+Shift+D4", configuration.HotkeyScreenTranslate);
-        Assert.Equal(string.Empty, configuration.HotkeyLongScreenshot);
-        Assert.Equal(string.Empty, configuration.HotkeyScreenRecording);
-        Assert.Equal("Ctrl+Shift+D5", configuration.HotkeyRestoreMostRecentPin);
-        Assert.Equal(string.Empty, configuration.HotkeyMainTranslator);
-        Assert.Equal(string.Empty, configuration.HotkeyOcrTranslate);
-        Assert.Equal(string.Empty, configuration.HotkeyOcrWorkspace);
-        Assert.Equal(string.Empty, configuration.HotkeyOcrTranslationCard);
-        Assert.Equal(string.Empty, configuration.HotkeyTranslateAndReplace);
+        Assert.Equal(GlobalShortcutDefaults.Screenshot, configuration.HotkeyScreenshotPin);
+        Assert.Equal(GlobalShortcutDefaults.ScreenshotCopy, configuration.HotkeyScreenshotCopy);
+        Assert.Equal(GlobalShortcutDefaults.PinClipboardImage, configuration.HotkeyPinClipboardImage);
+        Assert.Equal(GlobalShortcutDefaults.SelectedText, configuration.HotkeySelectedText);
+        Assert.Equal(GlobalShortcutDefaults.ScreenTranslate, configuration.HotkeyScreenTranslate);
+        Assert.Equal(GlobalShortcutDefaults.LongScreenshot, configuration.HotkeyLongScreenshot);
+        Assert.Equal(GlobalShortcutDefaults.ScreenRecording, configuration.HotkeyScreenRecording);
+        Assert.Equal(GlobalShortcutDefaults.RestoreMostRecentPin, configuration.HotkeyRestoreMostRecentPin);
+        Assert.Equal(GlobalShortcutDefaults.MainTranslator, configuration.HotkeyMainTranslator);
+        Assert.Equal(GlobalShortcutDefaults.OcrTranslate, configuration.HotkeyOcrTranslate);
+        Assert.Equal(GlobalShortcutDefaults.OcrWorkspace, configuration.HotkeyOcrWorkspace);
+        Assert.Equal(GlobalShortcutDefaults.OcrTranslationCard, configuration.HotkeyOcrTranslationCard);
+        Assert.Equal(GlobalShortcutDefaults.TranslateAndReplace, configuration.HotkeyTranslateAndReplace);
     }
 
     [Fact]
@@ -149,10 +149,42 @@ public sealed class ConfigurationStoreTests : IDisposable
 
         AppConfiguration configuration = store.Load();
 
-        Assert.Equal("Ctrl+Shift+D1", configuration.HotkeyScreenshotPin);
-        Assert.Equal("Ctrl+Shift+D2", configuration.HotkeyPinClipboardImage);
-        Assert.Equal("Ctrl+Shift+D3", configuration.HotkeySelectedText);
-        Assert.Equal("Ctrl+Shift+D4", configuration.HotkeyScreenTranslate);
+        Assert.Equal(GlobalShortcutDefaults.Screenshot, configuration.HotkeyScreenshotPin);
+        Assert.Equal(GlobalShortcutDefaults.PinClipboardImage, configuration.HotkeyPinClipboardImage);
+        Assert.Equal(GlobalShortcutDefaults.SelectedText, configuration.HotkeySelectedText);
+        Assert.Equal(GlobalShortcutDefaults.ScreenTranslate, configuration.HotkeyScreenTranslate);
+        Assert.Equal(GlobalShortcutDefaults.RestoreMostRecentPin, configuration.HotkeyRestoreMostRecentPin);
+        Assert.Equal(GlobalShortcutDefaults.OcrWorkspace, configuration.HotkeyOcrWorkspace);
+        Assert.Equal(GlobalShortcutDefaults.TranslateAndReplace, configuration.HotkeyTranslateAndReplace);
+        Assert.Equal(string.Empty, configuration.HotkeyLongScreenshot);
+        Assert.Equal(string.Empty, configuration.HotkeyMainTranslator);
+    }
+
+    [Fact]
+    public void LoadMigratesThePreviousControlShiftDefaultShortcutSet()
+    {
+        var store = CreateStore(new InMemoryCredentialStore());
+        Directory.CreateDirectory(_directory);
+        File.WriteAllText(
+            Path.Combine(_directory, "config.json"),
+            """
+            {
+              "hotkey_screenshot_pin":"Ctrl+Shift+D1",
+              "hotkey_pin_clipboard_image":"Ctrl+Shift+D2",
+              "hotkey_selected_text":"Ctrl+Shift+D3",
+              "hotkey_screen_translate":"Ctrl+Shift+D4"
+            }
+            """);
+
+        AppConfiguration configuration = store.Load();
+
+        Assert.Equal(GlobalShortcutDefaults.Screenshot, configuration.HotkeyScreenshotPin);
+        Assert.Equal(GlobalShortcutDefaults.PinClipboardImage, configuration.HotkeyPinClipboardImage);
+        Assert.Equal(GlobalShortcutDefaults.SelectedText, configuration.HotkeySelectedText);
+        Assert.Equal(GlobalShortcutDefaults.ScreenTranslate, configuration.HotkeyScreenTranslate);
+        Assert.Equal(GlobalShortcutDefaults.RestoreMostRecentPin, configuration.HotkeyRestoreMostRecentPin);
+        Assert.Equal(GlobalShortcutDefaults.OcrWorkspace, configuration.HotkeyOcrWorkspace);
+        Assert.Equal(GlobalShortcutDefaults.TranslateAndReplace, configuration.HotkeyTranslateAndReplace);
         Assert.Equal(string.Empty, configuration.HotkeyLongScreenshot);
         Assert.Equal(string.Empty, configuration.HotkeyMainTranslator);
     }

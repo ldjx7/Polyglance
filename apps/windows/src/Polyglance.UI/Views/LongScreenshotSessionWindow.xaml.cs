@@ -102,7 +102,7 @@ public partial class LongScreenshotSessionWindow : Window
 
         if (e.RightButton == MouseButtonState.Pressed)
         {
-            CloseSession();
+            e.Handled = true;
             return;
         }
 
@@ -129,6 +129,13 @@ public partial class LongScreenshotSessionWindow : Window
 
     private void OnMouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (e.ChangedButton == MouseButton.Right)
+        {
+            e.Handled = true;
+            CloseSession();
+            return;
+        }
+
         if (_phase == SessionPhase.SelectingRegion && _cropRect.Width > 50 && _cropRect.Height > 50)
         {
             StartCapturingSession();

@@ -24,6 +24,14 @@ public struct RecordedShortcut: Codable, Hashable, Sendable {
         self.keyCode = keyCode
         self.modifiers = modifiers
     }
+
+    public var isFunctionKey: Bool {
+        Self.functionKeyCodes.contains(keyCode)
+    }
+
+    public static let functionKeyCodes: Set<UInt32> = [
+        122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111
+    ]
 }
 
 public enum GlobalShortcutAction: String, Codable, CaseIterable, Sendable {
@@ -143,22 +151,58 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
         self.ocrTranslationCard = ocrTranslationCard
     }
 
-    public static let `default` = GlobalShortcutConfiguration(
-        translateSelection: RecordedShortcut(keyCode: 20, modifiers: [.control, .shift]),
+    public static let recommended = GlobalShortcutConfiguration(
+        translateSelection: RecordedShortcut(keyCode: 2, modifiers: [.option]),
         captureSelection: nil,
-        screenshotAndPin: RecordedShortcut(keyCode: 18, modifiers: [.control, .shift]),
+        screenshotAndPin: RecordedShortcut(keyCode: 0, modifiers: [.option]),
         screenshotAndCopy: nil,
-        translateAndReplace: nil,
-        pinClipboardImage: RecordedShortcut(keyCode: 19, modifiers: [.control, .shift]),
+        translateAndReplace: RecordedShortcut(keyCode: 15, modifiers: [.option]),
+        pinClipboardImage: RecordedShortcut(keyCode: 13, modifiers: [.option]),
         longScreenshot: nil,
         screenRecording: nil,
-        restoreMostRecentPin: RecordedShortcut(keyCode: 23, modifiers: [.control, .shift]),
-        screenTranslation: RecordedShortcut(keyCode: 21, modifiers: [.control, .shift]),
+        restoreMostRecentPin: RecordedShortcut(keyCode: 13, modifiers: [.option, .shift]),
+        screenTranslation: RecordedShortcut(keyCode: 1, modifiers: [.option]),
         openTranslator: nil,
         ocrTranslate: nil,
-        ocrWorkspace: nil,
+        ocrWorkspace: RecordedShortcut(keyCode: 8, modifiers: [.option]),
         ocrTranslationCard: nil
     )
+
+    public static let snipaste = GlobalShortcutConfiguration(
+        translateSelection: RecordedShortcut(keyCode: 2, modifiers: [.option]),
+        captureSelection: nil,
+        screenshotAndPin: RecordedShortcut(keyCode: 122, modifiers: []),
+        screenshotAndCopy: nil,
+        translateAndReplace: RecordedShortcut(keyCode: 15, modifiers: [.option]),
+        pinClipboardImage: RecordedShortcut(keyCode: 99, modifiers: []),
+        longScreenshot: nil,
+        screenRecording: nil,
+        restoreMostRecentPin: RecordedShortcut(keyCode: 99, modifiers: [.shift]),
+        screenTranslation: RecordedShortcut(keyCode: 1, modifiers: [.option]),
+        openTranslator: nil,
+        ocrTranslate: nil,
+        ocrWorkspace: RecordedShortcut(keyCode: 8, modifiers: [.option]),
+        ocrTranslationCard: nil
+    )
+
+    public static let pixpin = GlobalShortcutConfiguration(
+        translateSelection: RecordedShortcut(keyCode: 12, modifiers: [.option]),
+        captureSelection: nil,
+        screenshotAndPin: RecordedShortcut(keyCode: 18, modifiers: [.control]),
+        screenshotAndCopy: nil,
+        translateAndReplace: RecordedShortcut(keyCode: 15, modifiers: [.option]),
+        pinClipboardImage: RecordedShortcut(keyCode: 19, modifiers: [.control]),
+        longScreenshot: nil,
+        screenRecording: nil,
+        restoreMostRecentPin: RecordedShortcut(keyCode: 19, modifiers: [.control, .shift]),
+        screenTranslation: RecordedShortcut(keyCode: 12, modifiers: [.control]),
+        openTranslator: nil,
+        ocrTranslate: nil,
+        ocrWorkspace: RecordedShortcut(keyCode: 20, modifiers: [.control]),
+        ocrTranslationCard: nil
+    )
+
+    public static let `default` = recommended
 
     public static let legacyDefault = GlobalShortcutConfiguration(
         translateSelection: RecordedShortcut(keyCode: 2, modifiers: [.option]),
@@ -176,6 +220,17 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
         ocrWorkspace: nil,
         ocrTranslationCard: nil
     )
+
+    public var isCompleteLegacyOrPreviousDefaultSet: Bool {
+        if self == .legacyDefault {
+            return true
+        }
+        return screenshotAndPin == RecordedShortcut(keyCode: 18, modifiers: [.control, .shift])
+            && pinClipboardImage == RecordedShortcut(keyCode: 19, modifiers: [.control, .shift])
+            && translateSelection == RecordedShortcut(keyCode: 20, modifiers: [.control, .shift])
+            && screenTranslation == RecordedShortcut(keyCode: 21, modifiers: [.control, .shift])
+            && restoreMostRecentPin == RecordedShortcut(keyCode: 23, modifiers: [.control, .shift])
+    }
 
     public subscript(action: GlobalShortcutAction) -> RecordedShortcut? {
         get {
@@ -289,7 +344,7 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
             guard shortcut.keyCode <= 127 else {
                 throw GlobalShortcutValidationError.invalidKey(action)
             }
-            guard !shortcut.modifiers.intersection(.primary).isEmpty else {
+            guard shortcut.isFunctionKey || !shortcut.modifiers.intersection(.primary).isEmpty else {
                 throw GlobalShortcutValidationError.missingPrimaryModifier(action)
             }
             guard shortcut.modifiers.subtracting(.supported).isEmpty else {
@@ -312,13 +367,13 @@ public enum GlobalShortcutValidationError: LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case let .invalidKey(action):
-            return "“\(action.title)”使用了不支持的按键"
+            return "[\(action.title)] 使用了不支持的按键"
         case let .missingPrimaryModifier(action):
-            return "“\(action.title)”至少需要包含 Command、Option 或 Control"
+            return "[\(action.title)] 至少需要包含 Command、Option 或 Control"
         case let .unsupportedModifier(action):
-            return "“\(action.title)”包含不支持的修饰键"
+            return "[\(action.title)] 包含不支持的修饰键"
         case let .duplicate(first, second):
-            return "“\(first.title)”和“\(second.title)”不能使用相同快捷键"
+            return "[\(first.title)] 和 [\(second.title)] 不能使用相同快捷键"
         }
     }
 }
@@ -341,7 +396,7 @@ public final class GlobalShortcutConfigurationStore: @unchecked Sendable {
               (try? configuration.validate()) != nil else {
             return .default
         }
-        if configuration == .legacyDefault {
+        if configuration.isCompleteLegacyOrPreviousDefaultSet {
             let migrated = GlobalShortcutConfiguration.default
             defaults.set(try? JSONEncoder().encode(migrated), forKey: Self.storageKey)
             return migrated

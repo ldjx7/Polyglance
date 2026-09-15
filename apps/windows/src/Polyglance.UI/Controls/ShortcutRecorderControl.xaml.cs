@@ -11,7 +11,14 @@ public partial class ShortcutRecorderControl : UserControl
 {
     public static readonly DependencyProperty HotkeyProperty = DependencyProperty.Register(
         nameof(Hotkey), typeof(string), typeof(ShortcutRecorderControl),
-        new PropertyMetadata("", (d, e) => ((ShortcutRecorderControl)d).UpdateDisplayText()));
+        new PropertyMetadata("", (d, e) =>
+        {
+            var control = (ShortcutRecorderControl)d;
+            control.UpdateDisplayText();
+            control.HotkeyChanged?.Invoke(control, EventArgs.Empty);
+        }));
+
+    public event EventHandler? HotkeyChanged;
 
     public string Hotkey
     {
@@ -153,10 +160,8 @@ public partial class ShortcutRecorderControl : UserControl
             return;
         }
 
-        // Windows treats a shortcut without Ctrl, Alt or Win as a global claim
-        // on an ordinary key, which would swallow that key everywhere. Keep
-        // recording rather than storing something that cannot work.
-        if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) == 0)
+        bool isFnKey = key >= Key.F1 && key <= Key.F24;
+        if (!isFnKey && (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) == 0)
         {
             ShowHint("请搭配 Ctrl / Alt / Win");
             e.Handled = true;

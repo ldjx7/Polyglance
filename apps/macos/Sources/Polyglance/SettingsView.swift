@@ -10,12 +10,13 @@ struct SettingsView: View {
     let shortcutStore: GlobalShortcutConfigurationStore
     let recordingSettingsStore: RecordingSettingsStore
     let launchAtLoginManager: LaunchAtLoginManager
+    var initialHotKeyFailures: [GlobalShortcutAction: String] = [:]
     let onSave: (
         AppConfiguration,
         GlobalShortcutConfiguration,
         RecordingSettings,
         Bool
-    ) throws -> Void
+    ) throws -> [GlobalShortcutAction: String]
 
     @ObservedObject private var navigation = SettingsNavigation.shared
     private var selectedTab: SettingsTab {
@@ -49,6 +50,7 @@ struct SettingsView: View {
     @State private var targetLanguage = "zh-CN"
     @State private var secondTargetLanguage = "en"
     @State private var shortcuts = GlobalShortcutConfiguration.default
+    @State private var hotKeyFailures: [GlobalShortcutAction: String] = [:]
     @State private var recordingSettings = RecordingSettings.default
     @State private var launchAtLoginEnabled = false
     @State private var includeBetaUpdates = false
@@ -77,6 +79,9 @@ struct SettingsView: View {
         }
         .frame(width: 860, height: 600)
         .task { load() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            permissionsRefreshTrigger += 1
+        }
     }
 
     // MARK: - Sidebar
@@ -249,9 +254,13 @@ struct SettingsView: View {
                     Label("辅助功能权限", systemImage: "hand.raised.fill")
                     Spacer()
                     PermissionBadge(isGranted: isAccessibilityGranted)
-                    Button("检查/请求") {
-                        SelectedTextReader().requestAccessibilityPermission()
-                        permissionsRefreshTrigger += 1
+                    Button(isAccessibilityGranted ? "检查" : (isAccessibilityRequested ? "打开系统设置" : "请求授权")) {
+                        if isAccessibilityGranted {
+                            permissionsRefreshTrigger += 1
+                        } else {
+                            PermissionRequestCoordinator.shared.openFromSettings(.accessibility)
+                            permissionsRefreshTrigger += 1
+                        }
                     }
                     .controlSize(.small)
                 }
@@ -260,9 +269,13 @@ struct SettingsView: View {
                     Label("屏幕录制权限", systemImage: "rectangle.inset.filled.and.cursorarrow")
                     Spacer()
                     PermissionBadge(isGranted: isScreenRecordingGranted)
-                    Button("检查/请求") {
-                        _ = CGRequestScreenCaptureAccess()
-                        permissionsRefreshTrigger += 1
+                    Button(isScreenRecordingGranted ? "检查" : (isScreenRecordingRequested ? "打开系统设置" : "请求授权")) {
+                        if isScreenRecordingGranted {
+                            permissionsRefreshTrigger += 1
+                        } else {
+                            PermissionRequestCoordinator.shared.openFromSettings(.screenRecording)
+                            permissionsRefreshTrigger += 1
+                        }
                     }
                     .controlSize(.small)
                 }
@@ -1145,19 +1158,49 @@ struct SettingsView: View {
         .ocrWorkspace
     ]
 
+    private var duplicateShortcutActions: Set<GlobalShortcutAction> {
+        var counts: [RecordedShortcut: Int] = [:]
+        for action in visibleShortcutActions {
+            if let sc = shortcuts[action] {
+                counts[sc, default: 0] += 1
+            }
+        }
+        var duplicates = Set<GlobalShortcutAction>()
+        for action in visibleShortcutActions {
+            if let sc = shortcuts[action], (counts[sc] ?? 0) > 1 {
+                duplicates.insert(action)
+            }
+        }
+        return duplicates
+    }
+
     private var shortcutsTab: some View {
         Form {
             Section {
                 ForEach(visibleShortcutActions, id: \.self) { action in
                     let info = shortcutActionInfo(action)
                     LabeledContent {
-                        ShortcutRecorder(
-                            shortcut: Binding(
-                                get: { shortcuts[action] },
-                                set: { shortcuts[action] = $0 }
+                        HStack(spacing: 6) {
+                            if duplicateShortcutActions.contains(action) {
+                                Text("[重复冲突]")
+                                    .font(.caption2)
+                                    .foregroundStyle(.red)
+                            } else if hotKeyFailures[action] != nil {
+                                Text("[已被占用]")
+                                    .font(.caption2)
+                                    .foregroundStyle(.orange)
+                            }
+                            ShortcutRecorder(
+                                shortcut: Binding(
+                                    get: { shortcuts[action] },
+                                    set: {
+                                        shortcuts[action] = $0
+                                        hotKeyFailures.removeValue(forKey: action)
+                                    }
+                                )
                             )
-                        )
-                        .frame(width: 140, height: 26)
+                            .frame(width: 140, height: 26)
+                        }
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: info.icon)
@@ -1173,11 +1216,37 @@ struct SettingsView: View {
                     }
                 }
             } header: {
-                HStack {
-                    Text("全局快捷键")
+                HStack(spacing: 8) {
+                    Text("预设方案：")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Button("Snipaste 风格") {
+                        shortcuts = .snipaste
+                        hotKeyFailures.removeAll()
+                        statusMessage = nil
+                    }
+                    .font(.caption)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.accentColor)
+
+                    Text("·")
+                        .foregroundStyle(.tertiary)
+
+                    Button("PixPin 风格") {
+                        shortcuts = .pixpin
+                        hotKeyFailures.removeAll()
+                        statusMessage = nil
+                    }
+                    .font(.caption)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.accentColor)
+
                     Spacer()
+
                     Button("恢复默认") {
                         shortcuts = .default
+                        hotKeyFailures.removeAll()
                         statusMessage = nil
                     }
                     .font(.caption)
@@ -1206,6 +1275,46 @@ struct SettingsView: View {
                 }
             } header: {
                 Text("主窗口内快捷键（固定）")
+            }
+
+            Section {
+                LabeledContent {
+                    KeycapBadge("C / ⌘ C / ↩︎")
+                } label: {
+                    Text("复制选区并关闭")
+                }
+
+                LabeledContent {
+                    KeycapBadge("P")
+                } label: {
+                    Text("贴图到屏幕")
+                }
+
+                LabeledContent {
+                    KeycapBadge("S / ⌘ S")
+                } label: {
+                    Text("保存到文件")
+                }
+
+                LabeledContent {
+                    KeycapBadge("T")
+                } label: {
+                    Text("选区文本翻译")
+                }
+
+                LabeledContent {
+                    KeycapBadge("O")
+                } label: {
+                    Text("唤起 OCR 工作台")
+                }
+
+                LabeledContent {
+                    KeycapBadge("⎋")
+                } label: {
+                    Text("退出截图")
+                }
+            } header: {
+                Text("截图选区内快捷键（固定）")
             }
         }
         .formStyle(.grouped)
@@ -1769,6 +1878,16 @@ struct SettingsView: View {
         return CGPreflightScreenCaptureAccess()
     }
 
+    private var isAccessibilityRequested: Bool {
+        _ = permissionsRefreshTrigger
+        return PermissionRequestCoordinator.shared.hasRequested(.accessibility)
+    }
+
+    private var isScreenRecordingRequested: Bool {
+        _ = permissionsRefreshTrigger
+        return PermissionRequestCoordinator.shared.hasRequested(.screenRecording)
+    }
+
     private func shortcutActionInfo(_ action: GlobalShortcutAction) -> (icon: String, color: Color) {
         switch action {
         case .translateSelection: return ("character.book.closed", .blue)
@@ -1990,6 +2109,7 @@ struct SettingsView: View {
             screenshotToolbarItems = configuration.screenshotToolbarItems
             saveCompletedScreenshotsToHistory = configuration.saveCompletedScreenshotsToHistory
             shortcuts = shortcutStore.load()
+            hotKeyFailures = initialHotKeyFailures
             recordingSettings = recordingSettingsStore.load()
             launchAtLoginEnabled = launchAtLoginManager.isEnabled
             enabledProviders = configuration.enabledProviders
@@ -2059,15 +2179,21 @@ struct SettingsView: View {
                 providerOrder: providerOrder,
                 customAIConfigs: customAIConfigs
             )
-            try onSave(configuration, shortcuts, recordingSettings, launchAtLoginEnabled)
-            isStatusError = false
-            statusMessage = "设置已保存"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                if statusMessage == "设置已保存" {
-                    withAnimation {
-                        statusMessage = nil
+            let failures = try onSave(configuration, shortcuts, recordingSettings, launchAtLoginEnabled)
+            hotKeyFailures = failures
+            if failures.isEmpty {
+                isStatusError = false
+                statusMessage = "设置已保存"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                    if statusMessage == "设置已保存" {
+                        withAnimation {
+                            statusMessage = nil
+                        }
                     }
                 }
+            } else {
+                isStatusError = true
+                statusMessage = "设置已保存，但部分快捷键已被占用"
             }
         } catch {
             isStatusError = true
@@ -2189,19 +2315,26 @@ private struct KeycapBadge: View {
 
     var body: some View {
         HStack(spacing: 3) {
-            ForEach(keys, id: \.self) { key in
-                Text(key)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2.5)
-                    .background(Color(NSColor.controlBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(Color.primary.opacity(0.15), lineWidth: 1)
-                    )
-                    .shadow(color: .black.opacity(0.04), radius: 1, x: 0, y: 1)
+            ForEach(Array(keys.enumerated()), id: \.offset) { _, key in
+                if key == "/" {
+                    Text("/")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 1)
+                } else {
+                    Text(key)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2.5)
+                        .background(Color(NSColor.controlBackgroundColor))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+                        )
+                        .shadow(color: .black.opacity(0.04), radius: 1, x: 0, y: 1)
+                }
             }
         }
     }

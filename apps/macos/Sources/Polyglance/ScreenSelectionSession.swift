@@ -1812,7 +1812,27 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         if applyKeyboardSelectionAdjustment(for: event, modifiers: modifiers) {
             return
         }
-        if confirmedSelection != nil {
+        if confirmedSelection != nil, activeTextField == nil {
+            if event.keyCode == 8, modifiers.isEmpty || modifiers == .command {
+                copySelection()
+                return
+            }
+            if event.keyCode == 35, modifiers.isEmpty {
+                pinSelection()
+                return
+            }
+            if event.keyCode == 1, modifiers.isEmpty || modifiers == .command {
+                saveSelection()
+                return
+            }
+            if event.keyCode == 17, modifiers.isEmpty {
+                ocrTranslateSelection()
+                return
+            }
+            if event.keyCode == 31, modifiers.isEmpty {
+                ocrCopySelection()
+                return
+            }
             if event.keyCode == 8, modifiers == .shift {
                 ocrCopyAllSelection()
                 return

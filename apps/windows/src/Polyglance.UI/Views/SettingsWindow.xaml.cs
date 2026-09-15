@@ -299,6 +299,16 @@ public partial class SettingsWindow : FluentWindow
         RecHotkeyRestoreMostRecentPin.Hotkey = _config.HotkeyRestoreMostRecentPin;
         RecHotkeyMainTranslator.Hotkey = _config.HotkeyMainTranslator;
 
+        foreach (var (label, control, _) in GetShortcutRowDefinitions())
+        {
+            control.HotkeyChanged += (_, _) =>
+            {
+                App.CurrentApp?.ActiveHotkeyFailures.Remove(label);
+                RefreshConflictBadges();
+            };
+        }
+        RefreshConflictBadges();
+
         SwIncludeBetaUpdates.IsChecked = _config.IncludeBetaUpdates;
         SelectComboBoxItemByTag(CmbDefaultRecordFormat, _config.DefaultRecordingFormat, "MP4");
         SelectComboBoxItemByTag(CmbDefaultRecordFps, _config.DefaultRecordingFps.ToString(), "30");
@@ -553,21 +563,103 @@ public partial class SettingsWindow : FluentWindow
     private static string SelectedTag(System.Windows.Controls.ComboBox comboBox, string fallback) =>
         (comboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? fallback;
 
+    private (string Label, ShortcutRecorderControl Control, TextBlock ConflictBadge)[] GetShortcutRowDefinitions() =>
+    [
+        ("截图", RecHotkeyScreenshotPin, ConflictHotkeyScreenshotPin),
+        ("截图并复制", RecHotkeyScreenshotCopy, ConflictHotkeyScreenshotCopy),
+        ("剪贴板贴图", RecHotkeyPinClipboardImage, ConflictHotkeyPinClipboardImage),
+        ("划词翻译", RecHotkeySelectedText, ConflictHotkeySelectedText),
+        ("划词翻译并替换", RecHotkeyTranslateAndReplace, ConflictHotkeyTranslateAndReplace),
+        ("截图翻译", RecHotkeyScreenTranslate, ConflictHotkeyScreenTranslate),
+        ("文字识别", RecHotkeyOcrWorkspace, ConflictHotkeyOcrWorkspace),
+        ("双语对照卡", RecHotkeyOcrTranslationCard, ConflictHotkeyOcrTranslationCard),
+        ("长截图", RecHotkeyLongScreenshot, ConflictHotkeyLongScreenshot),
+        ("屏幕录制", RecHotkeyScreenRecording, ConflictHotkeyScreenRecording),
+        ("恢复最近贴图", RecHotkeyRestoreMostRecentPin, ConflictHotkeyRestoreMostRecentPin),
+        ("主窗口", RecHotkeyMainTranslator, ConflictHotkeyMainTranslator),
+    ];
+
+    private void RefreshConflictBadges()
+    {
+        var rows = GetShortcutRowDefinitions();
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (_, control, _) in rows)
+        {
+            string val = control.Hotkey?.Trim() ?? "";
+            if (!string.IsNullOrEmpty(val))
+            {
+                counts[val] = counts.GetValueOrDefault(val, 0) + 1;
+            }
+        }
+
+        var activeFailures = App.CurrentApp?.ActiveHotkeyFailures;
+
+        foreach (var (label, control, badge) in rows)
+        {
+            string val = control.Hotkey?.Trim() ?? "";
+            if (string.IsNullOrEmpty(val))
+            {
+                badge.Visibility = Visibility.Collapsed;
+            }
+            else if (counts.GetValueOrDefault(val, 0) > 1)
+            {
+                badge.Text = "[重复冲突]";
+                badge.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
+                badge.Visibility = Visibility.Visible;
+            }
+            else if (activeFailures != null && activeFailures.TryGetValue(label, out string? failureReason))
+            {
+                badge.Text = $"[{failureReason}]";
+                badge.Foreground = new SolidColorBrush(Color.FromRgb(0xF5, 0x9E, 0x0B));
+                badge.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                badge.Visibility = Visibility.Collapsed;
+            }
+        }
+    }
+
+    private void ApplyShortcutConfig(AppConfiguration config)
+    {
+        RecHotkeyScreenshotPin.Hotkey = config.HotkeyScreenshotPin;
+        RecHotkeyScreenshotCopy.Hotkey = config.HotkeyScreenshotCopy;
+        RecHotkeyPinClipboardImage.Hotkey = config.HotkeyPinClipboardImage;
+        RecHotkeySelectedText.Hotkey = config.HotkeySelectedText;
+        RecHotkeyTranslateAndReplace.Hotkey = config.HotkeyTranslateAndReplace;
+        RecHotkeyScreenTranslate.Hotkey = config.HotkeyScreenTranslate;
+        RecHotkeyOcrWorkspace.Hotkey = config.HotkeyOcrWorkspace;
+        RecHotkeyOcrTranslationCard.Hotkey = config.HotkeyOcrTranslationCard;
+        RecHotkeyLongScreenshot.Hotkey = config.HotkeyLongScreenshot;
+        RecHotkeyScreenRecording.Hotkey = config.HotkeyScreenRecording;
+        RecHotkeyRestoreMostRecentPin.Hotkey = config.HotkeyRestoreMostRecentPin;
+        RecHotkeyMainTranslator.Hotkey = config.HotkeyMainTranslator;
+        RefreshConflictBadges();
+    }
+
+    private void OnPresetSnipasteClick(object sender, RoutedEventArgs e)
+    {
+        var temp = new AppConfiguration();
+        GlobalShortcutDefaults.ApplySnipastePreset(temp);
+        ApplyShortcutConfig(temp);
+        ShowStatus("已应用 Snipaste 风格快捷键方案");
+    }
+
+    private void OnPresetPixPinClick(object sender, RoutedEventArgs e)
+    {
+        var temp = new AppConfiguration();
+        GlobalShortcutDefaults.ApplyPixPinPreset(temp);
+        ApplyShortcutConfig(temp);
+        ShowStatus("已应用 PixPin 风格快捷键方案");
+    }
+
     private void OnResetShortcutsClick(object sender, RoutedEventArgs e)
     {
-        RecHotkeyScreenshotPin.Hotkey = GlobalShortcutDefaults.Screenshot;
-        RecHotkeyScreenshotCopy.Hotkey = GlobalShortcutDefaults.ScreenshotCopy;
-        RecHotkeyPinClipboardImage.Hotkey = GlobalShortcutDefaults.PinClipboardImage;
-        RecHotkeySelectedText.Hotkey = GlobalShortcutDefaults.SelectedText;
-        RecHotkeyTranslateAndReplace.Hotkey = GlobalShortcutDefaults.TranslateAndReplace;
-        RecHotkeyScreenTranslate.Hotkey = GlobalShortcutDefaults.ScreenTranslate;
-        RecHotkeyOcrWorkspace.Hotkey = GlobalShortcutDefaults.OcrWorkspace;
-        RecHotkeyOcrTranslationCard.Hotkey = GlobalShortcutDefaults.OcrTranslationCard;
-        RecHotkeyLongScreenshot.Hotkey = GlobalShortcutDefaults.LongScreenshot;
-        RecHotkeyScreenRecording.Hotkey = GlobalShortcutDefaults.ScreenRecording;
-        RecHotkeyRestoreMostRecentPin.Hotkey = GlobalShortcutDefaults.RestoreMostRecentPin;
-        RecHotkeyMainTranslator.Hotkey = GlobalShortcutDefaults.MainTranslator;
-        ShowStatus("快捷键已恢复默认");
+        var temp = new AppConfiguration();
+        GlobalShortcutDefaults.ApplyRecommendedDefaults(temp);
+        ApplyShortcutConfig(temp);
+        ShowStatus("全局快捷键已恢复默认设置");
     }
 
     private void OnResetToolbarItemsClick(object sender, RoutedEventArgs e)
