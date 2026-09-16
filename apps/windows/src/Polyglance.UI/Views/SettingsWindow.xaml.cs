@@ -8,10 +8,12 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using Polyglance.Core.Models;
 using Polyglance.Core.Services;
 using Polyglance.Platform.HotKey;
+using Polyglance.Platform.Packaging;
 using Polyglance.Platform.Startup;
 using Polyglance.Platform.Update;
 using Polyglance.Platform.Translation;
@@ -29,6 +31,7 @@ public partial class SettingsWindow : FluentWindow
     private readonly ConfigurationStore _configStore;
     private readonly AppConfiguration _config;
     private readonly StartupRegistrationManager _startupRegistration;
+    private readonly IAppUpdateProvider _updateProvider;
     private UpdateInfo? _latestFoundUpdate;
     private PreparedUpdate? _preparedUpdate;
     private readonly ObservableCollection<ToolbarItemViewModel> _toolbarItems = new();
@@ -77,7 +80,8 @@ public partial class SettingsWindow : FluentWindow
         ConfigurationStore configStore,
         StartupRegistrationManager? startupRegistration = null,
         string initialTab = "General",
-        bool autoCheckUpdate = false)
+        bool autoCheckUpdate = false,
+        IAppUpdateProvider? updateProvider = null)
     {
         InitializeComponent();
         SourceInitialized += (_, _) => CenterOnCurrentScreen();
@@ -96,6 +100,8 @@ public partial class SettingsWindow : FluentWindow
             _config = new AppConfiguration();
             Loaded += (_, _) => ShowStatus(error.Message, isError: true);
         }
+
+        _updateProvider = updateProvider ?? UpdateProviderFactory.Create(() => _config.AppcastUrl);
 
         string versionStr = AppVersionDisplay.FromAssembly(Assembly.GetEntryAssembly());
         bool isCurrentBeta = versionStr.Contains("-beta", StringComparison.OrdinalIgnoreCase);
@@ -117,8 +123,28 @@ public partial class SettingsWindow : FluentWindow
             BadgeVersionType.Background = new SolidColorBrush(Color.FromArgb(0x20, 0x10, 0xB9, 0x81));
         }
 
+        ConfigureUpdateChannelUi();
         LoadConfigToUi();
         SelectTab(initialTab, autoCheckUpdate);
+    }
+
+    private void ConfigureUpdateChannelUi()
+    {
+        if (_updateProvider.Channel == DistributionChannel.MicrosoftStore)
+        {
+            TxtUpdateChannelSource.Text = "更新渠道：Microsoft Store";
+            SwIncludeBetaUpdates.IsEnabled = false;
+            TxtBetaDescription.Text = "Microsoft Store 版本的更新通道由 Microsoft Store 统一管理。";
+            TxtStoreChannelNote.Visibility = Visibility.Visible;
+            BtnSkipVersion.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            TxtUpdateChannelSource.Text = "更新渠道：GitHub Releases";
+            SwIncludeBetaUpdates.IsEnabled = true;
+            TxtBetaDescription.Text = "开启后优先接收包含实验性新特性的测试版本；关闭后仅接收稳定的正式版。";
+            TxtStoreChannelNote.Visibility = Visibility.Collapsed;
+        }
     }
 
     public void SelectTab(string tab, bool autoCheckUpdate = false)
@@ -712,7 +738,9 @@ public partial class SettingsWindow : FluentWindow
         BtnCheckUpdate.IsEnabled = false;
         BtnCheckUpdate.Content = "检查中...";
         TxtUpdateStatus.Visibility = Visibility.Visible;
-        TxtUpdateStatus.Text = "正在连接更新服务器...";
+        TxtUpdateStatus.Text = _updateProvider.Channel == DistributionChannel.MicrosoftStore
+            ? "正在连接 Microsoft Store 检查更新..."
+            : "正在连接更新服务器...";
         TxtUpdateStatus.SetResourceReference(
             System.Windows.Controls.TextBlock.ForegroundProperty,
             "TextFillColorSecondaryBrush");
@@ -721,14 +749,14 @@ public partial class SettingsWindow : FluentWindow
         PbUpdateProgress.Visibility = Visibility.Collapsed;
         PbUpdateProgress.Value = 0;
 
-        bool includeBeta = SwIncludeBetaUpdates.IsChecked == true;
+        bool includeBeta = _updateProvider.SupportsBetaChannel && SwIncludeBetaUpdates.IsChecked == true;
+        string? skippedVer = _updateProvider.SupportsSkippedVersions ? _config.SkippedUpdateVersion : null;
 
         try
         {
-            UpdateCheckResult check = await AppUpdater.CheckForUpdatesAsync(
-                _config.AppcastUrl,
+            UpdateCheckResult check = await _updateProvider.CheckForUpdatesAsync(
                 includeBeta,
-                _config.SkippedUpdateVersion);
+                skippedVer);
 
             if (check.Status == UpdateCheckStatus.UpdateAvailable)
             {
@@ -736,24 +764,39 @@ public partial class SettingsWindow : FluentWindow
                 TxtUpdateStatus.Visibility = Visibility.Collapsed;
                 BorderAvailableUpdate.Visibility = Visibility.Visible;
 
-                TxtNewVersionTitle.Text = $"发现新版本 v{_latestFoundUpdate.Version}";
-                if (_latestFoundUpdate.IsBeta)
+                if (_updateProvider.Channel == DistributionChannel.MicrosoftStore)
                 {
-                    TxtNewVersionType.Text = "Beta 测试版";
-                    TxtNewVersionType.Foreground = new SolidColorBrush(Color.FromRgb(0x8B, 0x5C, 0xF6));
-                    BadgeNewVersionType.Background = new SolidColorBrush(Color.FromArgb(0x20, 0x8B, 0x5C, 0xF6));
-                    BtnSkipVersion.Visibility = Visibility.Visible;
+                    TxtNewVersionTitle.Text = string.IsNullOrWhiteSpace(_latestFoundUpdate.Version) || _latestFoundUpdate.Version == "最新版"
+                        ? "Microsoft Store 发现新版本"
+                        : $"发现新版本 v{_latestFoundUpdate.Version}";
+                    TxtNewVersionType.Text = "Store 渠道";
+                    TxtNewVersionType.Foreground = new SolidColorBrush(Color.FromRgb(0x0A, 0x84, 0xFF));
+                    BadgeNewVersionType.Background = new SolidColorBrush(Color.FromArgb(0x20, 0x0A, 0x84, 0xFF));
+                    BtnSkipVersion.Visibility = Visibility.Collapsed;
                 }
                 else
                 {
-                    TxtNewVersionType.Text = "正式版";
-                    TxtNewVersionType.Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
-                    BadgeNewVersionType.Background = new SolidColorBrush(Color.FromArgb(0x20, 0x10, 0xB9, 0x81));
-                    BtnSkipVersion.Visibility = Visibility.Collapsed;
+                    TxtNewVersionTitle.Text = $"发现新版本 v{_latestFoundUpdate.Version}";
+                    if (_latestFoundUpdate.IsBeta)
+                    {
+                        TxtNewVersionType.Text = "Beta 测试版";
+                        TxtNewVersionType.Foreground = new SolidColorBrush(Color.FromRgb(0x8B, 0x5C, 0xF6));
+                        BadgeNewVersionType.Background = new SolidColorBrush(Color.FromArgb(0x20, 0x8B, 0x5C, 0xF6));
+                        BtnSkipVersion.Visibility = Visibility.Visible;
+                    }
+                    else
+                    {
+                        TxtNewVersionType.Text = "正式版";
+                        TxtNewVersionType.Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
+                        BadgeNewVersionType.Background = new SolidColorBrush(Color.FromArgb(0x20, 0x10, 0xB9, 0x81));
+                        BtnSkipVersion.Visibility = Visibility.Collapsed;
+                    }
                 }
 
                 TxtReleaseNotes.Text = string.IsNullOrWhiteSpace(_latestFoundUpdate.ReleaseNotes)
-                    ? "包含多项体验优化与功能更新。"
+                    ? (_updateProvider.Channel == DistributionChannel.MicrosoftStore
+                        ? "Microsoft Store 准备了新的应用程序包更新，点击立即更新即可开始安装。"
+                        : "包含多项体验优化与功能更新。")
                     : _latestFoundUpdate.ReleaseNotes;
             }
             else if (check.Status == UpdateCheckStatus.UpToDate)
@@ -817,7 +860,9 @@ public partial class SettingsWindow : FluentWindow
         PbUpdateProgress.Visibility = Visibility.Visible;
         PbUpdateProgress.Value = 0;
         TxtUpdateStatus.Visibility = Visibility.Visible;
-        TxtUpdateStatus.Text = "正在连接下载更新包...";
+        TxtUpdateStatus.Text = _updateProvider.Channel == DistributionChannel.MicrosoftStore
+            ? "正在请求 Microsoft Store 下载并安装更新..."
+            : "正在连接下载更新包...";
         TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
 
         var progress = new Progress<UpdateDownloadProgress>(p =>
@@ -825,27 +870,74 @@ public partial class SettingsWindow : FluentWindow
             PbUpdateProgress.Value = p.Percent;
             string receivedStr = FormatBytes(p.BytesReceived);
             string totalStr = p.TotalBytes > 0 ? FormatBytes(p.TotalBytes) : "未知大小";
-            TxtUpdateStatus.Text = $"正在下载更新包: {receivedStr} / {totalStr} ({p.Percent}%)...";
+            TxtUpdateStatus.Text = _updateProvider.Channel == DistributionChannel.MicrosoftStore
+                ? (p.Percent < 80 ? $"正在下载 Microsoft Store 更新: {p.Percent}%..." : $"正在安装 Microsoft Store 更新: {p.Percent}%...")
+                : $"正在下载更新包: {receivedStr} / {totalStr} ({p.Percent}%)...";
         });
 
-        PreparedUpdate? prepared = await AppUpdater.DownloadAndPrepareUpdateAsync(_latestFoundUpdate.DownloadUrl, progress);
-        if (prepared == null)
+        IntPtr ownerHwnd = IntPtr.Zero;
+        try
         {
-            TxtUpdateStatus.Text = "更新包下载或校验失败，请稍后重试。";
-            TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
-            BtnApplyUpdate.IsEnabled = true;
-            BtnSkipVersion.IsEnabled = true;
-            BtnDismissUpdate.IsEnabled = true;
-            BtnCheckUpdate.IsEnabled = true;
+            ownerHwnd = new WindowInteropHelper(this).Handle;
+        }
+        catch { }
+
+        if (_updateProvider is GitHubUpdateProvider gitHubProvider)
+        {
+            PreparedUpdate? prepared = await gitHubProvider.PrepareUpdateAsync(_latestFoundUpdate, progress);
+            if (prepared == null)
+            {
+                TxtUpdateStatus.Text = "更新包下载或校验失败，请稍后重试。";
+                TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
+                BtnApplyUpdate.IsEnabled = true;
+                BtnSkipVersion.IsEnabled = true;
+                BtnDismissUpdate.IsEnabled = true;
+                BtnCheckUpdate.IsEnabled = true;
+            }
+            else
+            {
+                _preparedUpdate = prepared;
+                PbUpdateProgress.Visibility = Visibility.Collapsed;
+                TxtUpdateStatus.Visibility = Visibility.Collapsed;
+                BorderAvailableUpdate.Visibility = Visibility.Collapsed;
+                BorderReadyUpdate.Visibility = Visibility.Visible;
+                BtnCheckUpdate.IsEnabled = true;
+            }
         }
         else
         {
-            _preparedUpdate = prepared;
+            UpdateInstallResult result = await _updateProvider.InstallUpdateAsync(
+                _latestFoundUpdate,
+                progress,
+                ownerHwnd);
+
             PbUpdateProgress.Visibility = Visibility.Collapsed;
-            TxtUpdateStatus.Visibility = Visibility.Collapsed;
-            BorderAvailableUpdate.Visibility = Visibility.Collapsed;
-            BorderReadyUpdate.Visibility = Visibility.Visible;
-            BtnCheckUpdate.IsEnabled = true;
+            if (result.Status == UpdateInstallStatus.Completed)
+            {
+                TxtUpdateStatus.Text = string.IsNullOrWhiteSpace(result.Message)
+                    ? "Microsoft Store 更新已安装完成。"
+                    : result.Message;
+                TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
+                BorderAvailableUpdate.Visibility = Visibility.Collapsed;
+            }
+            else if (result.Status == UpdateInstallStatus.Cancelled)
+            {
+                TxtUpdateStatus.Text = result.Message;
+                TxtUpdateStatus.SetResourceReference(
+                    System.Windows.Controls.TextBlock.ForegroundProperty,
+                    "TextFillColorSecondaryBrush");
+                BtnApplyUpdate.IsEnabled = true;
+                BtnDismissUpdate.IsEnabled = true;
+                BtnCheckUpdate.IsEnabled = true;
+            }
+            else
+            {
+                TxtUpdateStatus.Text = result.Message;
+                TxtUpdateStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
+                BtnApplyUpdate.IsEnabled = true;
+                BtnDismissUpdate.IsEnabled = true;
+                BtnCheckUpdate.IsEnabled = true;
+            }
         }
     }
 
@@ -861,7 +953,14 @@ public partial class SettingsWindow : FluentWindow
 
     private void OnRestartNowClick(object sender, RoutedEventArgs e)
     {
-        _preparedUpdate?.ApplyAndRestart();
+        if (_updateProvider is GitHubUpdateProvider gitHubProvider && gitHubProvider.PreparedUpdate != null)
+        {
+            gitHubProvider.ApplyPreparedUpdate();
+        }
+        else
+        {
+            _preparedUpdate?.ApplyAndRestart();
+        }
     }
 
     private static string FormatBytes(long bytes)

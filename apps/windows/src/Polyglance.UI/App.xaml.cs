@@ -13,6 +13,7 @@ using Polyglance.Core.Services;
 using Polyglance.Platform.Capture;
 using Polyglance.Platform.HotKey;
 using Polyglance.Platform.Interop;
+using Polyglance.Platform.Packaging;
 using Polyglance.Platform.Pin;
 using Polyglance.Platform.Startup;
 using Polyglance.Platform.Text;
@@ -606,10 +607,11 @@ public partial class App : Application
                 var config = LoadConfigurationOrDefault();
                 if (config.AutoCheckUpdates)
                 {
-                    UpdateCheckResult check = await AppUpdater.CheckForUpdatesAsync(
-                        config.AppcastUrl,
+                    IAppUpdateProvider provider = UpdateProviderFactory.Create(() => LoadConfigurationOrDefault().AppcastUrl);
+                    UpdateCheckResult check = await provider.CheckForUpdatesAsync(
                         config.IncludeBetaUpdates,
-                        config.SkippedUpdateVersion);
+                        config.SkippedUpdateVersion,
+                        cancellationToken);
 
                     if (check.Status == UpdateCheckStatus.UpdateAvailable && check.Update != null)
                     {
@@ -641,9 +643,11 @@ public partial class App : Application
     {
         if (_notifyIcon?.ContextMenuStrip == null) return;
 
-        string updateTitle = update.IsBeta
-            ? $"🧪 发现新测试版 v{update.Version}"
-            : $"🚀 发现新版本 v{update.Version}";
+        string updateTitle = update.Channel == DistributionChannel.MicrosoftStore
+            ? "🚀 Microsoft Store 发现新版本"
+            : (update.IsBeta
+                ? $"🧪 发现新测试版 v{update.Version}"
+                : $"🚀 发现新版本 v{update.Version}");
 
         if (_dynamicUpdateMenuItem == null)
         {

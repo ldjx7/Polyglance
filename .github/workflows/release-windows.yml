@@ -110,6 +110,13 @@ jobs:
           ./scripts/test-windows-installer.ps1 `
             -InstallerPath (Join-Path $releaseDirectory $setupName)
 
+          $msixName = "Polyglance-$version-Windows-x64.msix"
+          ./scripts/build-windows-msix.ps1 `
+            -Version $version `
+            -BuildNumber "${{ github.run_number }}" `
+            -SourceDirectory "dist/windows" `
+            -OutputDirectory $releaseDirectory
+
           $downloadUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:RELEASE_TAG/$archiveName"
           $buildVersion = "$numericVersion.${{ github.run_number }}"
           $appcast = @"
@@ -132,6 +139,7 @@ jobs:
           "directory=$releaseDirectory" >> $env:GITHUB_OUTPUT
           "archive=$archiveName" >> $env:GITHUB_OUTPUT
           "setup=$setupName" >> $env:GITHUB_OUTPUT
+          "msix=$msixName" >> $env:GITHUB_OUTPUT
 
       - name: Upload Windows assets to the GitHub Release
         shell: pwsh
@@ -140,6 +148,7 @@ jobs:
           RELEASE_DIRECTORY: ${{ steps.package.outputs.directory }}
           ARCHIVE_NAME: ${{ steps.package.outputs.archive }}
           SETUP_NAME: ${{ steps.package.outputs.setup }}
+          MSIX_NAME: ${{ steps.package.outputs.msix }}
         run: |
           $version = "${{ steps.version.outputs.number }}"
           $requiredMacAssets = @(
@@ -170,6 +179,7 @@ jobs:
             (Join-Path $env:RELEASE_DIRECTORY $env:ARCHIVE_NAME) `
             (Join-Path $env:RELEASE_DIRECTORY $env:SETUP_NAME) `
             (Join-Path $env:RELEASE_DIRECTORY "appcast-windows.xml") `
+            (Join-Path $env:RELEASE_DIRECTORY $env:MSIX_NAME) `
             --clobber
           if ($env:RELEASE_TAG -like "*-*") {
             gh release edit $env:RELEASE_TAG --draft=false --prerelease

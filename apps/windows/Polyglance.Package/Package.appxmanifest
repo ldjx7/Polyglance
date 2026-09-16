@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <!--
+    TODO: 登录 Microsoft Partner Center -> 你的应用 -> Product management -> Product Identity
+    将下列字段替换为实际的数值：
+    1. Name: 填写 Partner Center 分配的 Package/Identity Name (例如 12345YourName.Polyglance)
+    2. Publisher: 填写 Package/Identity Publisher (例如 CN=12345678-ABCD-EF01-2345-6789ABCDEF01)
+    3. PublisherDisplayName: 填写 Publisher display name
+  -->
+  <Identity
+    Name="Polyglance.Desktop"
+    ProcessorArchitecture="x64"
+    Publisher="CN=TODO-REPLACE-WITH-PARTNER-CENTER-PUBLISHER"
+    Version="0.0.8.2" />
+
+  <Properties>
+    <DisplayName>Polyglance</DisplayName>
+    <PublisherDisplayName>Polyglance Open Source</PublisherDisplayName>
+    <Logo>Images\StoreLogo.png</Logo>
+    <Description>Polyglance - 原生跨平台翻译与截图工具</Description>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.19041.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="zh-CN" />
+    <Resource Language="en-US" />
+  </Resources>
+
+  <Applications>
+    <Application Id="PolyglanceApp"
+      Executable="Polyglance.exe"
+      EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Polyglance"
+        Description="Polyglance - 原生跨平台翻译与截图工具"
+        BackgroundColor="transparent"
+        Square150x150Logo="Images\Square150x150Logo.png"
+        Square44x44Logo="Images\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Images\Wide310x150Logo.png" ShortName="Polyglance" />
+        <uap:SplashScreen Image="Images\SplashScreen.png" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

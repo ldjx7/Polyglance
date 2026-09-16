@@ -85,3 +85,10 @@ jobs:
       - name: Test Windows install and uninstall
         shell: pwsh
         run: ./scripts/test-windows-installer.ps1 -InstallerPath "dist/installer/Polyglance-0.0.0-ci-Windows-x64-Setup.exe"
+
+      - name: Build the Windows MSIX package
+        shell: pwsh
+        run: |
+          ./scripts/build-windows-msix.ps1 `
+            -Version "0.0.0-ci" `
+            -BuildNumber "${{ github.run_number }}"

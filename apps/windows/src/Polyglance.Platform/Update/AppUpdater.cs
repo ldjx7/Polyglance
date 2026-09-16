@@ -11,6 +11,7 @@ using System.Windows;
 using System.Xml;
 using System.Xml.Linq;
 using Polyglance.Core.Services;
+using Polyglance.Platform.Packaging;
 
 namespace Polyglance.Platform.Update;
 
@@ -22,6 +23,7 @@ public sealed class UpdateInfo
     public string ReleaseNotes { get; set; } = "";
     public string Title { get; set; } = "";
     public bool IsBeta => Version.Contains("-beta", StringComparison.OrdinalIgnoreCase);
+    public DistributionChannel Channel { get; set; } = DistributionChannel.GitHub;
 }
 
 public enum UpdateCheckStatus
@@ -53,6 +55,11 @@ public sealed class PreparedUpdate
 
     public void ApplyAndRestart()
     {
+        if (PackageEnvironment.IsPackaged)
+        {
+            throw new InvalidOperationException("Microsoft Store MSIX 版本禁止执行外部批处理文件替换更新。");
+        }
+
         Process.Start(new ProcessStartInfo
         {
             FileName = "cmd.exe",
@@ -61,7 +68,7 @@ public sealed class PreparedUpdate
             UseShellExecute = false
         });
 
-        Application.Current.Dispatcher.Invoke(() => Application.Current.Shutdown());
+        Application.Current?.Dispatcher?.Invoke(() => Application.Current.Shutdown());
     }
 }
 
@@ -369,6 +376,11 @@ public static class AppUpdater
         string downloadUrl,
         IProgress<UpdateDownloadProgress>? progress = null)
     {
+        if (PackageEnvironment.IsPackaged)
+        {
+            throw new InvalidOperationException("Microsoft Store MSIX 版本禁止执行基于文件替换的 GitHub 更新机制。");
+        }
+
         try
         {
             string tempZip = Path.Combine(Path.GetTempPath(), $"Polyglance_Update_{Guid.NewGuid():N}.zip");

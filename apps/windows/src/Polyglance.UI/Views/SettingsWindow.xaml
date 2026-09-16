@@ -1581,6 +1581,7 @@
                                                 </Border>
                                             </StackPanel>
                                             <TextBlock x:Name="TxtCurrentVersion" Text="v0.0.5" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
+                                            <TextBlock x:Name="TxtUpdateChannelSource" Text="更新渠道：GitHub Releases" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0"/>
                                         </StackPanel>
                                         <ui:Button x:Name="BtnCheckUpdate" Grid.Column="1" Appearance="Secondary" Content="立即检查更新" Padding="14,6" Click="OnCheckUpdateClick"/>
                                     </Grid>
@@ -1640,7 +1641,8 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0" Margin="0,0,16,0" VerticalAlignment="Center">
                                             <TextBlock Text="接收测试版更新 (Beta Channel)" FontSize="12.5" FontWeight="Medium" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-                                            <TextBlock Text="开启后优先接收包含实验性新特性的测试版本；关闭后仅接收稳定的正式版。" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                                            <TextBlock x:Name="TxtBetaDescription" Text="开启后优先接收包含实验性新特性的测试版本；关闭后仅接收稳定的正式版。" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                                            <TextBlock x:Name="TxtStoreChannelNote" Text="Microsoft Store 版本的更新由 Microsoft Store 统一托管。" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,4,0,0" Visibility="Collapsed"/>
                                         </StackPanel>
                                         <ui:ToggleSwitch x:Name="SwIncludeBetaUpdates" Grid.Column="1" VerticalAlignment="Center"/>
                                     </Grid>
