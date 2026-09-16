@@ -13,14 +13,14 @@
     3. PublisherDisplayName: 填写 Publisher display name
   -->
   <Identity
-    Name="Polyglance.Desktop"
+    Name="LDJX.Polyglance"
     ProcessorArchitecture="x64"
-    Publisher="CN=TODO-REPLACE-WITH-PARTNER-CENTER-PUBLISHER"
-    Version="0.0.8.2" />
+    Publisher="CN=0CA53EC8-ABFE-4253-8161-E7FC2449C171"
+    Version="0.0.8.1" />
 
   <Properties>
     <DisplayName>Polyglance</DisplayName>
-    <PublisherDisplayName>Polyglance Open Source</PublisherDisplayName>
+    <PublisherDisplayName>LDJX</PublisherDisplayName>
     <Logo>Images\StoreLogo.png</Logo>
     <Description>Polyglance - 原生跨平台翻译与截图工具</Description>
   </Properties>
