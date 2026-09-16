@@ -862,6 +862,156 @@ const totalDownloads = getTotalDownloads(releases) || 140;
       flex-wrap: wrap;
       gap: 1.25rem;
     }
+
+    /* Real Screenshots Gallery */
+    .gallery-section {
+      padding: 5rem 0 3.5rem;
+    }
+
+    .gallery-tabs {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 0.65rem;
+      margin: 2.25rem 0 2rem;
+    }
+
+    .gallery-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 1.15rem;
+      font-size: 0.86rem;
+      font-weight: 600;
+      color: var(--text-2);
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 9999px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+    }
+
+    .gallery-tab:hover {
+      color: var(--text-1);
+      border-color: var(--border-strong);
+      transform: translateY(-1px);
+    }
+
+    .gallery-tab.active {
+      color: #ffffff;
+      background: var(--accent);
+      border-color: var(--accent);
+      box-shadow: 0 4px 14px rgba(0, 102, 204, 0.3);
+    }
+
+    :root[data-theme='dark'] .gallery-tab.active {
+      box-shadow: 0 4px 14px rgba(41, 151, 255, 0.4);
+    }
+
+    .gallery-panes {
+      max-width: 1080px;
+      margin: 0 auto;
+    }
+
+    .gallery-pane {
+      display: none;
+      animation: fadeInPane 0.25s ease forwards;
+    }
+
+    .gallery-pane.active {
+      display: block;
+    }
+
+    @keyframes fadeInPane {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .gallery-card {
+      display: grid;
+      grid-template-columns: 1.25fr 1fr;
+      gap: 2.5rem;
+      align-items: center;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 20px;
+      padding: 2.25rem;
+      box-shadow: var(--shadow-float);
+    }
+
+    @media (max-width: 860px) {
+      .gallery-card {
+        grid-template-columns: 1fr;
+        gap: 1.75rem;
+        padding: 1.5rem;
+      }
+    }
+
+    .gallery-img-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 1.25rem;
+      overflow: hidden;
+    }
+
+    .gallery-img-wrap img {
+      max-width: 100%;
+      height: auto;
+      max-height: 480px;
+      object-fit: contain;
+      border-radius: 8px;
+      box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.16);
+      transition: transform 0.25s ease;
+    }
+
+    .gallery-img-wrap:hover img {
+      transform: scale(1.02);
+    }
+
+    .gallery-info h3 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--text-1);
+      margin-bottom: 0.75rem;
+      letter-spacing: -0.01em;
+    }
+
+    .gallery-info p {
+      font-size: 0.92rem;
+      color: var(--text-2);
+      line-height: 1.6;
+      margin-bottom: 1.5rem;
+    }
+
+    .gallery-features {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+
+    .gallery-features li {
+      font-size: 0.86rem;
+      color: var(--text-2);
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      padding-left: 1rem;
+      border-left: 2px solid var(--accent);
+    }
+
+    .gallery-features li span {
+      font-weight: 700;
+      color: var(--text-1);
+      font-size: 0.88rem;
+    }
   </style>
 </head>
 <body>
@@ -877,6 +1027,7 @@ const totalDownloads = getTotalDownloads(releases) || 140;
       </div>
 
       <ul class="nav-menu">
+        <li><a href="#gallery" class="nav-link">Screenshots</a></li>
         <li><a href="#features" class="nav-link">Features</a></li>
         <li><a href="/en/guides/usage" class="nav-link">User Guide</a></li>
         <li><a href="/en/guides/shortcuts" class="nav-link">Shortcuts</a></li>
@@ -1076,6 +1227,149 @@ const totalDownloads = getTotalDownloads(releases) || 140;
                 </div>
                 <span>Pin</span>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    <!-- Real Screenshots Gallery -->
+    <section id="gallery" class="gallery-section container">
+      <div class="section-header">
+        <span class="section-label">Visual Walkthrough</span>
+        <h2 class="section-title">Native Design, Pixel Perfection</h2>
+      </div>
+
+      <div class="gallery-tabs">
+        <button class="gallery-tab active" data-target="gallery-macos-trans">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.37c.62-.75 1.04-1.8 1.01-2.87-.96.04-2.12.64-2.8 1.44-.59.68-1.11 1.76-.97 2.8 1.07.08 2.14-.54 2.76-1.37z"/></svg>
+          Selection (macOS)
+        </button>
+        <button class="gallery-tab" data-target="gallery-win-trans">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg>
+          Selection (Windows)
+        </button>
+        <button class="gallery-tab" data-target="gallery-ocr">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+          Offline OCR
+        </button>
+        <button class="gallery-tab" data-target="gallery-toolbar">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          Toolbar Setup
+        </button>
+        <button class="gallery-tab" data-target="gallery-recording">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="#ff4d4f"/></svg>
+          Recording Settings
+        </button>
+        <button class="gallery-tab" data-target="gallery-shortcuts">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M18 16H6"/></svg>
+          Shortcut Presets
+        </button>
+      </div>
+
+      <div class="gallery-panes">
+        <!-- macOS Translator -->
+        <div id="gallery-macos-trans" class="gallery-pane active">
+          <div class="gallery-card">
+            <div class="gallery-img-wrap">
+              <img src="/screenshots/macos-translator-window.png" alt="Polyglance macOS Selection Translation" loading="lazy" />
+            </div>
+            <div class="gallery-info">
+              <h3>Native macOS Vibrancy Window</h3>
+              <p>Built natively with Swift and SwiftUI, featuring real system frosted glass materials and dynamic dark/light mode support. Seamlessly streams concurrent translations from multiple engines with inline retry, original text editing, and instant replacement.</p>
+              <ul class="gallery-features">
+                <li><span>Multi-engine concurrent streaming</span>Compare Official AI, Google, DeepL, Bing, Baidu, and Youdao in one view</li>
+                <li><span>One-key replace (⌥R)</span>Replace highlighted source text in any app with the translation</li>
+                <li><span>Streaming output</span>Near-zero latency streaming directly to your cursor</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Windows Translator -->
+        <div id="gallery-win-trans" class="gallery-pane">
+          <div class="gallery-card">
+            <div class="gallery-img-wrap">
+              <img src="/screenshots/windows-translator-window.png" alt="Polyglance Windows Selection Translation" loading="lazy" />
+            </div>
+            <div class="gallery-info">
+              <h3>Native Windows Lightweight Flyout</h3>
+              <p>Crafted specifically for Windows 10 and 11 following Fluent Design principles. Powered by .NET 9 and native Rust with minimal memory footprint and zero Chromium overhead.</p>
+              <ul class="gallery-features">
+                <li><span>Instant selection translation</span>Alt+D triggers an instant popover next to your selection</li>
+                <li><span>In-place replacement</span>Alt+R writes the translated text straight into your document</li>
+                <li><span>Concurrent multi-engine</span>Official AI, Bing, and offline engines side by side</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- OCR Workspace -->
+        <div id="gallery-ocr" class="gallery-pane">
+          <div class="gallery-card">
+            <div class="gallery-img-wrap">
+              <img src="/screenshots/macos-ocr-workspace.png" alt="Polyglance Native Offline OCR Workspace" loading="lazy" />
+            </div>
+            <div class="gallery-info">
+              <h3>On-Device Vision OCR Workspace</h3>
+              <p>Powered by Apple Vision and PaddleOCR offline models. Extract words and text blocks from screen captures completely on-device without sending images to the cloud.</p>
+              <ul class="gallery-features">
+                <li><span>Privacy first</span>100% on-device local recognition, images never leave your computer</li>
+                <li><span>Continuous recognition</span>Take sequential captures without reopening windows</li>
+                <li><span>Clean layout preservation</span>Automatic line merge, whitespace cleanup, and one-click export</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Toolbar Customization -->
+        <div id="gallery-toolbar" class="gallery-pane">
+          <div class="gallery-card">
+            <div class="gallery-img-wrap">
+              <img src="/screenshots/macos-toolbar-customization.png" alt="Polyglance Screenshot Toolbar Customization" loading="lazy" />
+            </div>
+            <div class="gallery-info">
+              <h3>Deep Toolbar Customization</h3>
+              <p>Reorder pins and active tools by dragging capsules, or toggle tools from the reserve pool. Pin brush, text, mosaic, scrolling capture, region screen recording, and QR code tools tailored to your workflow.</p>
+              <ul class="gallery-features">
+                <li><span>Direct drag & drop reorder</span>Intuitive drag sorting for screenshot tools</li>
+                <li><span>Responsive UI scaling</span>Toolbar elements scale proportionally with mouse drag and zoom</li>
+                <li><span>One-click restore</span>Instantly reset to recommended default tools</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recording Settings -->
+        <div id="gallery-recording" class="gallery-pane">
+          <div class="gallery-card">
+            <div class="gallery-img-wrap">
+              <img src="/screenshots/macos-recording-settings.png" alt="Polyglance Recording Settings Panel" loading="lazy" />
+            </div>
+            <div class="gallery-info">
+              <h3>Dedicated Capture & Recording Settings</h3>
+              <p>A dedicated settings panel introduced in v0.0.8. Manage auto-pin history archiving, export formats (crisp MP4 or optimized GIF), framerates, countdown timers, and audio inputs.</p>
+              <ul class="gallery-features">
+                <li><span>Internal & microphone audio</span>Record crisp internal system sound with optional voiceover</li>
+                <li><span>High-quality GIF export</span>Flexible FPS and quality presets for animated demos</li>
+                <li><span>Automatic history archive</span>Captured and copied images auto-archive into pin history</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Shortcuts Settings -->
+        <div id="gallery-shortcuts" class="gallery-pane">
+          <div class="gallery-card">
+            <div class="gallery-img-wrap">
+              <img src="/screenshots/macos-shortcuts-settings.png" alt="Polyglance Global Shortcut Presets" loading="lazy" />
+            </div>
+            <div class="gallery-info">
+              <h3>Global Shortcuts & Industry Presets</h3>
+              <p>Every action supports customizable hotkeys. Includes built-in Snipaste and PixPin preset schemes so you can retain your existing muscle memory effortlessly.</p>
+              <ul class="gallery-features">
+                <li><span>One-click preset switch</span>Instant migration between Snipaste and PixPin keybindings</li>
+                <li><span>Real-time conflict detection</span>Alerts you immediately if a shortcut is reserved by the OS</li>
+                <li><span>macOS & Windows consistency</span>Matching keyboard logic and intuitive mappings</li>
+              </ul>
             </div>
           </div>
         </div>
@@ -1334,6 +1628,19 @@ const totalDownloads = getTotalDownloads(releases) || 140;
           }
         })
         .catch(() => {});
+
+      // Gallery Tab Switching
+      document.querySelectorAll('.gallery-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          const targetId = tab.getAttribute('data-target');
+          if (!targetId) return;
+          document.querySelectorAll('.gallery-tab').forEach(t => t.classList.remove('active'));
+          document.querySelectorAll('.gallery-pane').forEach(p => p.classList.remove('active'));
+          tab.classList.add('active');
+          const targetPane = document.getElementById(targetId);
+          if (targetPane) targetPane.classList.add('active');
+        });
+      });
     })();
   </script>
 </body>
