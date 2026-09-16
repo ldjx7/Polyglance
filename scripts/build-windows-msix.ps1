@@ -40,10 +40,10 @@ $parts = $numericVersion -split '\.'
 $major = if ($parts.Length -ge 1) { $parts[0] } else { "0" }
 $minor = if ($parts.Length -ge 2) { $parts[1] } else { "0" }
 $build = if ($parts.Length -ge 3) { $parts[2] } else { "0" }
-$revision = $BuildNumber
+$revision = "0"
 $fourPartVersion = "$major.$minor.$build.$revision"
 
-Write-Host "Configuring MSIX version: $fourPartVersion (from $Version-$BuildNumber)"
+Write-Host "Configuring MSIX version: $fourPartVersion (from $Version)"
 
 # Find MakeAppx.exe
 $makeAppxCandidates = @()
