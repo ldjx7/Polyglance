@@ -16,6 +16,8 @@
     <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-3DA639?style=flat"></a>
   <a href="https://github.com/ldjx7/Polyglance/releases">
     <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/ldjx7/Polyglance/total?style=flat&label=Downloads&color=10B981"></a>
+  <a href="https://linux.do">
+    <img alt="LINUX DO" src="https://img.shields.io/badge/LINUX%20DO-Community-2563eb?style=flat&logo=linux&logoColor=white"></a>
 </p>
 
 纯原生技术栈打造（macOS 基于 Swift / SwiftUI，Windows 基于 C# / .NET 9 / WPF，核心基于 Rust），**零臃肿 Web 视图**，告别 Electron，绝不上报用户隐私与屏幕数据。内置开箱即用的免费翻译服务与系统原生离线 OCR 识别。免费、透明开源，且始终如一。
@@ -129,6 +131,12 @@ dotnet test apps\windows\Polyglance.sln --configuration Release
 欢迎提交 Issue 与 Pull Request！在提交代码前，请确保：
 1. 本地单元测试全部通过（macOS: `swift test --package-path apps/macos`，Windows: `dotnet test`）。
 2. 代码风格清晰自然，保持原生轻盈特性，避免引入不必要的第三方重量级依赖。
+
+---
+
+## 社区与致谢
+
+- [LINUX DO](https://linux.do) — 高品质开源与前沿技术交流社区
 
 ---
 
