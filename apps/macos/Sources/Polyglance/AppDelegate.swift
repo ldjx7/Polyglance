@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let recordingSettingsStore = RecordingSettingsStore()
     let launchAtLoginManager = LaunchAtLoginManager()
 
+    private var appleTranslationBridgeWindow: NSWindow?
     private lazy var translationClient: any TranslationClient = makeTranslationClient()
     private(set) lazy var viewModel = TranslatorViewModel(client: translationClient)
     private let selectedTextReader = SelectedTextReader()
@@ -133,6 +134,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NotificationCenter.default.addObserver(self, selector: #selector(showArchiveWriteFailure), name: PinArchiveStore.writeFailedNotification, object: nil)
         NSApp.mainMenu = PolyglanceApplicationMenu.make(settingsTarget: self)
+        #if canImport(Translation)
+        if #available(macOS 15.0, *) {
+            setupAppleTranslationBridge()
+        }
+        #endif
         createTranslatorPanel()
         pinHistoryViewModel.onPinContent = { [weak self] image, id, text in
             self?.pinWindowManager.pinHistoryItem(image, id: id, text: text)
@@ -746,6 +752,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return UnavailableTranslationClient(error: error)
         }
     }
+
+    #if canImport(Translation)
+    @available(macOS 15.0, *)
+    private func setupAppleTranslationBridge() {
+        let bridgeView = AppleTranslationBridgeView()
+        let hostingView = NSHostingView(rootView: bridgeView)
+        let window = NSWindow(
+            contentRect: NSRect(x: -2000, y: -2000, width: 1, height: 1),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = hostingView
+        window.orderFront(nil)
+        self.appleTranslationBridgeWindow = window
+    }
+    #endif
 }
 
 private enum AppCaptureActionError: LocalizedError {

@@ -1263,6 +1263,10 @@ const totalDownloads = getTotalDownloads(releases) || 140;
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
           文字识别 (OCR)
         </button>
+        <button class="gallery-tab" data-target="gallery-qrcode">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          二维码识别
+        </button>
         <button class="gallery-tab" data-target="gallery-toolbar">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
           工具栏定制
@@ -1286,9 +1290,9 @@ const totalDownloads = getTotalDownloads(releases) || 140;
             </div>
             <div class="gallery-info">
               <h3>macOS 原生毛玻璃翻译窗口</h3>
-              <p>采用纯 Swift / SwiftUI 深度开发，原生系统模糊材质与自适应深浅配色。支持多翻译引擎并行并发输出、原文输入、自动检测、全局重新翻译（⌘R）与独立服务卡片重试。</p>
+              <p>采用纯 Swift / SwiftUI 深度开发，原生系统模糊材质与自适应深浅配色。支持 Apple 原生离线翻译、官方 AI、Google、微软等多源并行并发输出，支持原文编辑、重试与一键原位替换。</p>
               <ul class="gallery-features">
-                <li><span>多引擎支持</span>官方 AI、Google、DeepL、微软、百度、有道等多源即时对比</li>
+                <li><span>多引擎支持</span>Apple 离线翻译、官方 AI、Google、微软等多源即时对比</li>
                 <li><span>一键替换</span>⌥R 直接将译文写回当前光标处</li>
                 <li><span>流式逐字输出</span>超低延迟实时呈现译文</li>
               </ul>
@@ -1304,11 +1308,11 @@ const totalDownloads = getTotalDownloads(releases) || 140;
             </div>
             <div class="gallery-info">
               <h3>Windows 原生轻量划词浮窗</h3>
-              <p>针对 Windows 10/11 深度打造，遵循 Windows 现代设计规范。原生 .NET 9 与 Rust 核心无缝协作，超低内存占用，无需笨重 Chromium 运行时。</p>
+              <p>针对 Windows 10/11 深度打造，遵循 Windows 现代设计规范。原生 .NET 9 与 Rust 核心无缝协作，支持本地离线模型、官方 AI、微软与 Google 翻译，一键替换原文，超低内存占用。</p>
               <ul class="gallery-features">
                 <li><span>划词即译</span>Alt+D 全局划词，秒级响应</li>
                 <li><span>划词替换</span>Alt+R 快捷替换原文本</li>
-                <li><span>多服务并行</span>官方 AI、必应、本地离线引擎同时呈现</li>
+                <li><span>多服务并行</span>本地离线模型、官方 AI、微软与 Google 翻译同时呈现</li>
               </ul>
             </div>
           </div>
@@ -1327,6 +1331,24 @@ const totalDownloads = getTotalDownloads(releases) || 140;
                 <li><span>隐私第一</span>全离线本地识别，图片与文字均不出机</li>
                 <li><span>连续识别</span>无需反复开关窗口，连续截屏自动追加</li>
                 <li><span>智能排版</span>支持段落合并、去换行与快捷导出</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- QR Code Detection -->
+        <div id="gallery-qrcode" class="gallery-pane">
+          <div class="gallery-card">
+            <div class="gallery-img-wrap">
+              <img src="/screenshots/macos-qrcode-recognition.png" alt="Polyglance 多二维码并发识别与智能解析" loading="lazy" />
+            </div>
+            <div class="gallery-info">
+              <h3>多二维码并发识别与智能解析</h3>
+              <p>截屏区域内任意数量二维码秒级同步侦测定位。深度解析 Wi-Fi 配置、网页链接、联系人名片、邮箱、电话与自定义 Scheme 等多种编码类型，支持一键连接或复制密码。</p>
+              <ul class="gallery-features">
+                <li><span>多码同屏高亮</span>画面内多个二维码全自动并发捕获与交互指示</li>
+                <li><span>Wi-Fi 密码直拷</span>智能解析无线网络 SSID 与密码，一键提取入剪贴板</li>
+                <li><span>多格式协议支持</span>支持网页 URL、vCard、邮件、电话与 Deep Link 等结构化协议</li>
               </ul>
             </div>
           </div>

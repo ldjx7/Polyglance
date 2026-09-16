@@ -6,6 +6,7 @@ enum TranslationProvider: String, CaseIterable, Codable, Sendable {
     case freeAI = "free-ai"
     case microsoft
     case google
+    case apple
     case deepl
     case baidu
     case youdao
@@ -20,6 +21,8 @@ enum TranslationProvider: String, CaseIterable, Codable, Sendable {
             return "Microsoft 翻译"
         case .google:
             return "Google 翻译"
+        case .apple:
+            return "Apple 翻译"
         case .deepl:
             return "DeepL"
         case .baidu:
@@ -35,7 +38,7 @@ enum TranslationProvider: String, CaseIterable, Codable, Sendable {
 
     var requiresUserAPIKey: Bool {
         switch self {
-        case .freeAI, .microsoft, .google:
+        case .freeAI, .microsoft, .google, .apple:
             return false
         case .deepl, .baidu, .youdao, .volcano, .openAICompatible:
             return true
@@ -97,6 +100,7 @@ struct ScreenshotToolbarItemConfig: Codable, Equatable, Hashable, Sendable {
 struct AppConfiguration: Equatable, Sendable {
     static let defaultProviderOrder: [String] = [
         "free-ai",
+        "apple",
         "microsoft",
         "google",
         "deepl",

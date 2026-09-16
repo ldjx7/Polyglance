@@ -325,7 +325,15 @@ struct SettingsView: View {
 
                                         Spacer()
 
-                                        if item.isBuiltin {
+                                        if let reason = item.unavailableReason {
+                                            Text(reason)
+                                                .font(.system(size: 9.5))
+                                                .padding(.horizontal, 5)
+                                                .padding(.vertical, 1.5)
+                                                .background(Color.orange.opacity(0.12))
+                                                .foregroundStyle(.orange)
+                                                .clipShape(Capsule())
+                                        } else if item.isBuiltin {
                                             Text("内置")
                                                 .font(.system(size: 9.5))
                                                 .padding(.horizontal, 5)
@@ -346,6 +354,7 @@ struct SettingsView: View {
                                         Toggle("", isOn: Binding(
                                             get: { enabledProviders.contains(item.id) },
                                             set: { isChecked in
+                                                guard item.isAvailable else { return }
                                                 if isChecked {
                                                     if !enabledProviders.contains(item.id) {
                                                         enabledProviders.append(item.id)
@@ -358,6 +367,7 @@ struct SettingsView: View {
                                         .labelsHidden()
                                         .toggleStyle(.switch)
                                         .controlSize(.mini)
+                                        .disabled(!item.isAvailable)
                                     }
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 6)
@@ -431,19 +441,22 @@ struct SettingsView: View {
                                 Divider()
 
                                 ForEach(TranslationProvider.allCases, id: \.self) { p in
+                                    let isAvailable = isProviderAvailable(p)
                                     Button {
+                                        guard isAvailable else { return }
                                         if !enabledProviders.contains(p.rawValue) {
                                             enabledProviders.append(p.rawValue)
                                         }
                                         configuringProviderId = p.rawValue
                                     } label: {
                                         HStack {
-                                            Text(p.displayName)
+                                            Text(providerLabel(p))
                                             if enabledProviders.contains(p.rawValue) {
                                                 Image(systemName: "checkmark")
                                             }
                                         }
                                     }
+                                    .disabled(!isAvailable)
                                 }
                             } label: {
                                 Image(systemName: "plus")
@@ -583,6 +596,29 @@ struct SettingsView: View {
                                             Toggle("开启 AI 流式逐字输出", isOn: $aiStreamingEnabled)
                                                 .font(.system(size: 12.5))
                                                 .padding(.top, 4)
+                                        }
+
+                                    case .apple:
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            #if canImport(Translation)
+                                            if #available(macOS 15.0, *) {
+                                                Text("使用 Apple 系统内置离线翻译，基于本地神经引擎，免密钥且数据不出机。")
+                                                    .font(.system(size: 12))
+                                                    .foregroundStyle(.secondary)
+                                                Text("提示：若翻译时提示语言包未安装，请打开「系统设置」➔「通用」➔「语言与地区」➔ 滑动至最底部点击「翻译语言...」下载对应语言包。")
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                                    .padding(.top, 4)
+                                            } else {
+                                                Text("当前系统版本为 macOS 14.x，Apple Translation 框架仅在 macOS 15.0（Sequoia）及更高版本受支持。")
+                                                    .font(.system(size: 12))
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            #else
+                                            Text("当前系统版本不支持 Apple Translation 框架。")
+                                                .font(.system(size: 12))
+                                                .foregroundStyle(.secondary)
+                                            #endif
                                         }
 
                                     case .deepl:
@@ -1950,7 +1986,7 @@ struct SettingsView: View {
 
     private func hasKeyConfigured(_ p: TranslationProvider) -> Bool {
         switch p {
-        case .freeAI, .microsoft, .google:
+        case .freeAI, .microsoft, .google, .apple:
             return true
         case .deepl:
             return !deeplAuthKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1972,6 +2008,7 @@ struct SettingsView: View {
         case .freeAI: return "sparkles"
         case .microsoft: return "text.bubble"
         case .google: return "globe"
+        case .apple: return "apple.logo"
         case .deepl: return "d.circle.fill"
         case .baidu: return "b.circle.fill"
         case .youdao: return "y.circle.fill"
@@ -1985,6 +2022,7 @@ struct SettingsView: View {
         case .freeAI: return .purple
         case .microsoft: return .blue
         case .google: return .teal
+        case .apple: return .primary
         case .deepl: return .indigo
         case .baidu: return .blue
         case .youdao: return .red
@@ -2001,6 +2039,16 @@ struct SettingsView: View {
             return "微软必应翻译服务，免密钥直接调用"
         case .google:
             return "Google 网页翻译服务，免密钥直接调用"
+        case .apple:
+            #if canImport(Translation)
+            if #available(macOS 15.0, *) {
+                return "Apple 系统离线翻译，基于本地神经引擎，免密钥且数据不出机"
+            } else {
+                return "Apple 系统翻译仅支持 macOS 15.0（Sequoia）及更高版本"
+            }
+            #else
+            return "Apple 系统翻译仅支持 macOS 15.0（Sequoia）及更高版本"
+            #endif
         case .deepl:
             return "DeepL 高质量翻译，需要配置 Authentication Key"
         case .baidu:
@@ -2052,6 +2100,18 @@ struct SettingsView: View {
         let isBuiltin: Bool
         let requiresKey: Bool
         let iconProvider: String
+        let isAvailable: Bool
+        let unavailableReason: String?
+
+        init(id: String, displayName: String, isBuiltin: Bool, requiresKey: Bool, iconProvider: String, isAvailable: Bool = true, unavailableReason: String? = nil) {
+            self.id = id
+            self.displayName = displayName
+            self.isBuiltin = isBuiltin
+            self.requiresKey = requiresKey
+            self.iconProvider = iconProvider
+            self.isAvailable = isAvailable
+            self.unavailableReason = unavailableReason
+        }
     }
 
     private var currentServiceItems: [ServiceListItem] {
@@ -2060,12 +2120,16 @@ struct SettingsView: View {
 
         for id in providerOrder {
             if let p = TranslationProvider(rawValue: id) {
+                let available = isProviderAvailable(p)
+                let reason = available ? nil : (p == .apple ? "需 macOS 15.0+" : "未就绪")
                 items.append(ServiceListItem(
                     id: id,
                     displayName: p.displayName,
                     isBuiltin: !p.requiresUserAPIKey,
                     requiresKey: p.requiresUserAPIKey,
-                    iconProvider: p.rawValue
+                    iconProvider: p.rawValue,
+                    isAvailable: available,
+                    unavailableReason: reason
                 ))
                 seen.insert(id)
             } else if let custom = customAIConfigs.first(where: { $0.id == id }) {
@@ -2154,6 +2218,19 @@ struct SettingsView: View {
             recordingSettings = recordingSettingsStore.load()
             launchAtLoginEnabled = launchAtLoginManager.isEnabled
             enabledProviders = configuration.enabledProviders
+            #if canImport(Translation)
+            if #available(macOS 15.0, *) {} else {
+                enabledProviders.removeAll { $0 == "apple" }
+                if provider == .apple {
+                    provider = .freeAI
+                }
+            }
+            #else
+            enabledProviders.removeAll { $0 == "apple" }
+            if provider == .apple {
+                provider = .freeAI
+            }
+            #endif
             screenshotTranslationStyle = configuration.screenshotTranslationStyle
             deeplAuthKey = configuration.deeplAuthKey
             deeplEndpoint = configuration.deeplEndpoint
@@ -2246,13 +2323,34 @@ struct SettingsView: View {
         switch provider {
         case .freeAI:
             return BundledFreeAIConfiguration() != nil
+        case .apple:
+            #if canImport(Translation)
+            if #available(macOS 15.0, *) {
+                return true
+            } else {
+                return false
+            }
+            #else
+            return false
+            #endif
         default:
             return true
         }
     }
 
     private func providerLabel(_ provider: TranslationProvider) -> String {
-        isProviderAvailable(provider)
+        if provider == .apple {
+            #if canImport(Translation)
+            if #available(macOS 15.0, *) {
+                return "\(provider.displayName)（内置离线）"
+            } else {
+                return "\(provider.displayName)（需 macOS 15.0+）"
+            }
+            #else
+            return "\(provider.displayName)（需 macOS 15.0+）"
+            #endif
+        }
+        return isProviderAvailable(provider)
             ? provider.displayName
             : "\(provider.displayName)（当前构建未配置）"
     }

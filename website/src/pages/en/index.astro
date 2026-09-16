@@ -1251,6 +1251,10 @@ const totalDownloads = getTotalDownloads(releases) || 140;
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
           Offline OCR
         </button>
+        <button class="gallery-tab" data-target="gallery-qrcode">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          QR Code
+        </button>
         <button class="gallery-tab" data-target="gallery-toolbar">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
           Toolbar Setup
@@ -1274,9 +1278,9 @@ const totalDownloads = getTotalDownloads(releases) || 140;
             </div>
             <div class="gallery-info">
               <h3>Native macOS Vibrancy Window</h3>
-              <p>Built natively with Swift and SwiftUI, featuring real system frosted glass materials and dynamic dark/light mode support. Seamlessly streams concurrent translations from multiple engines with inline retry, original text editing, and instant replacement.</p>
+              <p>Built natively with Swift and SwiftUI, featuring real system frosted glass materials and dynamic dark/light mode support. Streams concurrent translations from Apple native offline translation, Official AI, Google, Microsoft, and custom models with inline retry and instant replacement.</p>
               <ul class="gallery-features">
-                <li><span>Multi-engine concurrent streaming</span>Compare Official AI, Google, DeepL, Bing, Baidu, and Youdao in one view</li>
+                <li><span>Multi-engine concurrent streaming</span>Compare Apple Offline, Official AI, Google, and Microsoft in one view</li>
                 <li><span>One-key replace (⌥R)</span>Replace highlighted source text in any app with the translation</li>
                 <li><span>Streaming output</span>Near-zero latency streaming directly to your cursor</li>
               </ul>
@@ -1292,11 +1296,11 @@ const totalDownloads = getTotalDownloads(releases) || 140;
             </div>
             <div class="gallery-info">
               <h3>Native Windows Lightweight Flyout</h3>
-              <p>Crafted specifically for Windows 10 and 11 following Fluent Design principles. Powered by .NET 9 and native Rust with minimal memory footprint and zero Chromium overhead.</p>
+              <p>Crafted specifically for Windows 10 and 11 following Fluent Design principles. Powered by .NET 9 and native Rust, supporting local offline models, Official AI, Bing, and Google with one-click in-place replacement.</p>
               <ul class="gallery-features">
                 <li><span>Instant selection translation</span>Alt+D triggers an instant popover next to your selection</li>
                 <li><span>In-place replacement</span>Alt+R writes the translated text straight into your document</li>
-                <li><span>Concurrent multi-engine</span>Official AI, Bing, and offline engines side by side</li>
+                <li><span>Concurrent multi-engine</span>Local offline models, Official AI, Bing, and Google side by side</li>
               </ul>
             </div>
           </div>
@@ -1315,6 +1319,24 @@ const totalDownloads = getTotalDownloads(releases) || 140;
                 <li><span>Privacy first</span>100% on-device local recognition, images never leave your computer</li>
                 <li><span>Continuous recognition</span>Take sequential captures without reopening windows</li>
                 <li><span>Clean layout preservation</span>Automatic line merge, whitespace cleanup, and one-click export</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- QR Code Detection -->
+        <div id="gallery-qrcode" class="gallery-pane">
+          <div class="gallery-card">
+            <div class="gallery-img-wrap">
+              <img src="/screenshots/macos-qrcode-recognition.png" alt="Polyglance Multi-QR Code Recognition" loading="lazy" />
+            </div>
+            <div class="gallery-info">
+              <h3>Multi-QR Code Recognition &amp; Parsing</h3>
+              <p>Simultaneously detects and parses all QR codes in any capture region. Deeply analyzes Wi-Fi credentials, URLs, vCards, emails, phone numbers, and custom schemes with one-click copy and connect.</p>
+              <ul class="gallery-features">
+                <li><span>Multi-code detection</span>Highlights and tracks multiple QR codes concurrently on screen</li>
+                <li><span>Wi-Fi auto-extract</span>Parses wireless network SSID and password with one-click copy</li>
+                <li><span>Structured protocols</span>Supports web URLs, contact cards, mailto, tel, and deep links</li>
               </ul>
             </div>
           </div>

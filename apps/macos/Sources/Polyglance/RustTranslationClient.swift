@@ -51,8 +51,13 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
             } else {
                 activeProvider = configuration.provider
             }
+            if activeProvider == .apple {
+                return try await AppleTranslationClient.shared.translate(request)
+            }
             effectiveProviderString = activeProvider.rawValue
             switch activeProvider {
+            case .apple:
+                return try await AppleTranslationClient.shared.translate(request)
             case .google:
                 endpoint = ""
                 apiKey = ""
