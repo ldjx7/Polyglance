@@ -36,8 +36,55 @@ public sealed class TranslationRecord
 
 public sealed class TranslationHistoryStore
 {
-    private static readonly Lazy<TranslationHistoryStore> _shared = new(() => new TranslationHistoryStore());
-    public static TranslationHistoryStore Shared => _shared.Value;
+    private static readonly object _instanceLock = new();
+    private static TranslationHistoryStore? _shared;
+    private static string? _customFilePath;
+
+    static TranslationHistoryStore()
+    {
+        DataDirectoryManager.RootDirectoryChanged += ResetShared;
+    }
+
+    public static string DefaultFilePath => DataDirectoryManager.TranslationHistoryFilePath;
+
+    public static string? CustomFilePath
+    {
+        get => _customFilePath;
+        set
+        {
+            lock (_instanceLock)
+            {
+                if (_customFilePath != value)
+                {
+                    _customFilePath = value;
+                    _shared = null;
+                }
+            }
+        }
+    }
+
+    public static string EffectiveFilePath => !string.IsNullOrWhiteSpace(_customFilePath)
+        ? _customFilePath
+        : DataDirectoryManager.TranslationHistoryFilePath;
+
+    public static TranslationHistoryStore Shared
+    {
+        get
+        {
+            lock (_instanceLock)
+            {
+                return _shared ??= new TranslationHistoryStore(EffectiveFilePath);
+            }
+        }
+    }
+
+    public static void ResetShared()
+    {
+        lock (_instanceLock)
+        {
+            _shared = null;
+        }
+    }
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private readonly string _filePath;
@@ -52,8 +99,7 @@ public sealed class TranslationHistoryStore
         }
         else
         {
-            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            _filePath = Path.Combine(appData, "Polyglance", "translation_history.json");
+            _filePath = EffectiveFilePath;
         }
 
         Load();
@@ -195,6 +241,19 @@ public sealed class TranslationHistoryStore
                 {
                     string json = File.ReadAllText(_filePath);
                     _records = JsonSerializer.Deserialize<List<TranslationRecord>>(json) ?? new();
+                }
+                else
+                {
+                    string legacyPath = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                        "Polyglance",
+                        "translation_history.json");
+                    if (File.Exists(legacyPath))
+                    {
+                        string json = File.ReadAllText(legacyPath);
+                        _records = JsonSerializer.Deserialize<List<TranslationRecord>>(json) ?? new();
+                        Save();
+                    }
                 }
             }
             catch

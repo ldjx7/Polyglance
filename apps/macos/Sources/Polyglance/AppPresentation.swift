@@ -12,9 +12,13 @@ enum SettingsApplicationPresentation {
 
 enum SettingsWindowPlacement {
     static func centeredOrigin(windowSize: CGSize, visibleFrame: CGRect) -> CGPoint {
-        CGPoint(
-            x: visibleFrame.midX - windowSize.width / 2,
-            y: visibleFrame.midY - windowSize.height / 2
+        let rawX = visibleFrame.midX - windowSize.width / 2
+        let rawY = visibleFrame.midY - windowSize.height / 2
+        let maxX = max(visibleFrame.minX, visibleFrame.maxX - windowSize.width)
+        let maxY = max(visibleFrame.minY, visibleFrame.maxY - windowSize.height)
+        return CGPoint(
+            x: min(max(rawX, visibleFrame.minX), maxX),
+            y: min(max(rawY, visibleFrame.minY), maxY)
         )
     }
 
@@ -24,10 +28,21 @@ enum SettingsWindowPlacement {
             window.center()
             return
         }
-        window.setFrameOrigin(centeredOrigin(
-            windowSize: window.frame.size,
-            visibleFrame: screen.visibleFrame
-        ))
+        let visibleFrame = screen.visibleFrame
+        var size = window.frame.size
+
+        if size.width > visibleFrame.width - 20 {
+            size.width = max(window.minSize.width > 0 ? window.minSize.width : 760, visibleFrame.width - 20)
+        }
+        if size.height > visibleFrame.height - 30 {
+            size.height = max(window.minSize.height > 0 ? window.minSize.height : 480, visibleFrame.height - 30)
+        }
+
+        let origin = centeredOrigin(
+            windowSize: size,
+            visibleFrame: visibleFrame
+        )
+        window.setFrame(NSRect(origin: origin, size: size), display: true)
     }
 }
 
@@ -39,6 +54,61 @@ enum PolyglanceApplicationMenu {
         let applicationMenu = NSMenu(title: SettingsBranding.name)
         applicationItem.submenu = applicationMenu
         mainMenu.addItem(applicationItem)
+
+        let editItem = NSMenuItem(title: "编辑", action: nil, keyEquivalent: "")
+        let editMenu = NSMenu(title: "编辑")
+        editItem.submenu = editMenu
+        mainMenu.addItem(editItem)
+
+        let undoItem = NSMenuItem(
+            title: "撤销",
+            action: #selector(UndoManager.undo),
+            keyEquivalent: "z"
+        )
+        undoItem.keyEquivalentModifierMask = [.command]
+        editMenu.addItem(undoItem)
+
+        let redoItem = NSMenuItem(
+            title: "重做",
+            action: #selector(UndoManager.redo),
+            keyEquivalent: "Z"
+        )
+        redoItem.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(redoItem)
+
+        editMenu.addItem(.separator())
+
+        let cutItem = NSMenuItem(
+            title: "剪切",
+            action: #selector(NSText.cut(_:)),
+            keyEquivalent: "x"
+        )
+        cutItem.keyEquivalentModifierMask = [.command]
+        editMenu.addItem(cutItem)
+
+        let copyItem = NSMenuItem(
+            title: "复制",
+            action: #selector(NSText.copy(_:)),
+            keyEquivalent: "c"
+        )
+        copyItem.keyEquivalentModifierMask = [.command]
+        editMenu.addItem(copyItem)
+
+        let pasteItem = NSMenuItem(
+            title: "粘贴",
+            action: #selector(NSText.paste(_:)),
+            keyEquivalent: "v"
+        )
+        pasteItem.keyEquivalentModifierMask = [.command]
+        editMenu.addItem(pasteItem)
+
+        let selectAllItem = NSMenuItem(
+            title: "全选",
+            action: #selector(NSText.selectAll(_:)),
+            keyEquivalent: "a"
+        )
+        selectAllItem.keyEquivalentModifierMask = [.command]
+        editMenu.addItem(selectAllItem)
 
         let aboutItem = NSMenuItem(
             title: "关于 \(SettingsBranding.name)",

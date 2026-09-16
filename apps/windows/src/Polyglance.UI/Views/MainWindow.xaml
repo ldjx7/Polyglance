@@ -326,6 +326,15 @@
                     <ComboBoxItem Content="西班牙语" Tag="es"/>
                     <ComboBoxItem Content="俄语 (RU)" Tag="ru"/>
                 </ComboBox>
+
+                <ui:Button Appearance="Transparent"
+                           Icon="{ui:SymbolIcon ArrowClockwise24}"
+                           ToolTip="重新翻译 (Ctrl+R / Ctrl+Enter)"
+                           Margin="4,0,0,0"
+                           Width="28" Height="28"
+                           Padding="0"
+                           CornerRadius="14"
+                           Click="OnRetranslateClick"/>
             </StackPanel>
 
             <!-- 钉住的服务图标条 (对齐 Bob 12) -->
@@ -348,6 +357,7 @@
                 <ComboBoxItem Content="有道翻译" Tag="youdao"/>
                 <ComboBoxItem Content="火山翻译" Tag="volcano"/>
                 <ComboBoxItem Content="OpenAI" Tag="openaicompatible"/>
+                <ComboBoxItem Content="本地离线翻译" Tag="offline"/>
             </ComboBox>
         </Grid>
 
@@ -401,6 +411,17 @@
 
                                         <!-- 右侧：设置模式菜单与折叠按钮 -->
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <ui:Button Appearance="Transparent"
+                                                       Icon="{ui:SymbolIcon ArrowClockwise24}"
+                                                       Width="24" Height="24"
+                                                       Padding="0"
+                                                       BorderThickness="0"
+                                                       CornerRadius="12"
+                                                       ToolTip="重新翻译"
+                                                       Margin="0,0,2,0"
+                                                       Tag="{Binding}"
+                                                       Click="OnRetrySingleProviderClick"/>
+
                                             <ui:Button Appearance="Transparent"
                                                        Icon="{ui:SymbolIcon Options24}"
                                                        Width="24" Height="24"

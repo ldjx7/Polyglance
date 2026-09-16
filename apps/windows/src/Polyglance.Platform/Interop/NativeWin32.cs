@@ -49,6 +49,13 @@ public static partial class NativeWin32
     [LibraryImport("user32.dll")]
     public static partial uint GetClipboardSequenceNumber();
 
+    [LibraryImport("user32.dll")]
+    public static partial IntPtr GetForegroundWindow();
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SetForegroundWindow(IntPtr hWnd);
+
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool SetWindowPos(

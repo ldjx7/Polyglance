@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media.Imaging;
+using Polyglance.Core.Services;
 
 namespace Polyglance.Platform.Pin;
 
@@ -80,14 +81,55 @@ public sealed class PinArchiveOperationResult
 
 public sealed class PinArchiveStore
 {
-    public static string DefaultDirectory => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "Polyglance",
-        "PinHistory"
-    );
+    private static readonly object _sharedLock = new();
+    private static PinArchiveStore? _shared;
+    private static string? _customDirectory;
 
-    private static readonly Lazy<PinArchiveStore> _shared = new(() => new PinArchiveStore());
-    public static PinArchiveStore Shared => _shared.Value;
+    static PinArchiveStore()
+    {
+        DataDirectoryManager.RootDirectoryChanged += ResetShared;
+    }
+
+    public static string DefaultDirectory => DataDirectoryManager.PinHistoryDirectory;
+
+    public static string? CustomDirectory
+    {
+        get => _customDirectory;
+        set
+        {
+            lock (_sharedLock)
+            {
+                if (_customDirectory != value)
+                {
+                    _customDirectory = value;
+                    _shared = null;
+                }
+            }
+        }
+    }
+
+    public static string EffectiveDirectory => !string.IsNullOrWhiteSpace(_customDirectory)
+        ? _customDirectory
+        : DataDirectoryManager.PinHistoryDirectory;
+
+    public static PinArchiveStore Shared
+    {
+        get
+        {
+            lock (_sharedLock)
+            {
+                return _shared ??= new PinArchiveStore(EffectiveDirectory);
+            }
+        }
+    }
+
+    public static void ResetShared()
+    {
+        lock (_sharedLock)
+        {
+            _shared = null;
+        }
+    }
 
     private readonly object _lock = new();
     private readonly JsonSerializerOptions _jsonOptions;
@@ -198,7 +240,7 @@ public sealed class PinArchiveStore
 
     public PinArchiveStore(string? directoryPath = null, int maxCount = 30, long maxTotalBytes = 512 * 1024 * 1024)
     {
-        DirectoryPath = directoryPath ?? DefaultDirectory;
+        DirectoryPath = directoryPath ?? EffectiveDirectory;
         MaxCount = Math.Max(0, maxCount);
         MaxTotalBytes = Math.Max(0, maxTotalBytes);
 

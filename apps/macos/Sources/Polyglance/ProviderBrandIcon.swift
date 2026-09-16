@@ -24,6 +24,8 @@ struct ProviderBrandIcon: View {
             return "volcano"
         case "openai", "openai-compatible", "openaicompatible":
             return "openai"
+        case "apple", "builtin":
+            return "apple"
         default:
             if cleaned.starts(with: "custom") {
                 return "openai"
@@ -77,6 +79,15 @@ struct ProviderBrandIcon: View {
                 Image(systemName: "sparkles")
                     .font(.system(size: size * 0.55, weight: .bold))
                     .foregroundStyle(.white)
+            }
+            .frame(width: size, height: size)
+        case "apple":
+            ZStack {
+                RoundedRectangle(cornerRadius: size * 0.22)
+                    .fill(Color.primary.opacity(0.08))
+                Image(systemName: "apple.logo")
+                    .font(.system(size: size * 0.6, weight: .semibold))
+                    .foregroundStyle(Color.primary)
             }
             .frame(width: size, height: size)
         case "microsoft":

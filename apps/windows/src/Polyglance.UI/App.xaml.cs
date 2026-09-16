@@ -16,6 +16,7 @@ using Polyglance.Platform.Interop;
 using Polyglance.Platform.Pin;
 using Polyglance.Platform.Startup;
 using Polyglance.Platform.Text;
+using Polyglance.Platform.Translation;
 using Polyglance.Platform.Update;
 using Polyglance.UI.Services;
 using Polyglance.UI.Views;
@@ -39,6 +40,8 @@ public partial class App : Application
     private ToolStripMenuItem? _dynamicUpdateMenuItem;
     private ToolStripSeparator? _dynamicUpdateSeparator;
     private PinHistoryWindow? _pinHistoryWindow;
+    private SettingsWindow? _settingsWindow;
+    private IntPtr _lastActiveWindowBeforeTray = IntPtr.Zero;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -61,7 +64,10 @@ public partial class App : Application
         try
         {
             _configStore = new ConfigurationStore();
+            var startupConfig = LoadConfigurationOrDefault();
+            DataDirectoryManager.ApplyRootDirectory(startupConfig.DataStorageDirectory);
             _translationService = new TranslationService();
+            TranslationService.OfflineHandler = new OfflineTranslationEngine();
             RefreshStartupRegistration();
         }
         catch (Exception ex)
@@ -144,6 +150,14 @@ public partial class App : Application
         var contextMenu = new ContextMenuStrip();
         contextMenu.RenderMode = ToolStripRenderMode.System;
         contextMenu.ShowImageMargin = true;
+        contextMenu.Opening += (s, e) => RecordActiveWindowBeforeTray();
+        _notifyIcon.MouseDown += (s, e) =>
+        {
+            if (e.Button == MouseButtons.Right)
+            {
+                RecordActiveWindowBeforeTray();
+            }
+        };
 
         // Group 1: 截图与屏幕录制
         contextMenu.Items.Add("截图", null, (s, e) => TriggerScreenshot());
@@ -155,7 +169,7 @@ public partial class App : Application
 
         // Group 2: 文本翻译
         contextMenu.Items.Add("截图翻译", null, (s, e) => TriggerScreenTranslate());
-        contextMenu.Items.Add("划词翻译", null, (s, e) => TriggerSelectedTextTranslate());
+        contextMenu.Items.Add("划词翻译", null, (s, e) => TriggerSelectedTextTranslateFromTray());
         contextMenu.Items.Add("输入翻译", null, (s, e) => ShowMainWindow());
 
         contextMenu.Items.Add(new ToolStripSeparator());
@@ -330,6 +344,30 @@ public partial class App : Application
                 MessageBoxImage.Warning);
             return new AppConfiguration();
         }
+    }
+
+    private void RecordActiveWindowBeforeTray()
+    {
+        IntPtr fg = NativeWin32.GetForegroundWindow();
+        if (fg != IntPtr.Zero)
+        {
+            NativeWin32.GetWindowThreadProcessId(fg, out uint pid);
+            if (pid != (uint)Environment.ProcessId)
+            {
+                _lastActiveWindowBeforeTray = fg;
+            }
+        }
+    }
+
+    public async void TriggerSelectedTextTranslateFromTray()
+    {
+        if (_lastActiveWindowBeforeTray != IntPtr.Zero)
+        {
+            NativeWin32.SetForegroundWindow(_lastActiveWindowBeforeTray);
+            _lastActiveWindowBeforeTray = IntPtr.Zero;
+            await Task.Delay(150);
+        }
+        TriggerSelectedTextTranslate();
     }
 
     public async void TriggerSelectedTextTranslate()
@@ -515,15 +553,38 @@ public partial class App : Application
     {
         Dispatcher.Invoke(() =>
         {
-            if (_configStore != null)
+            if (_configStore == null) return;
+
+            if (_settingsWindow != null && _settingsWindow.IsLoaded)
             {
-                var settings = new SettingsWindow(_configStore, initialTab: initialTab, autoCheckUpdate: autoCheckUpdate);
-                if (settings.ShowDialog() == true)
+                if (_settingsWindow.WindowState == WindowState.Minimized)
                 {
+                    _settingsWindow.WindowState = WindowState.Normal;
+                }
+                _settingsWindow.SelectTab(initialTab, autoCheckUpdate);
+                _settingsWindow.Show();
+                _settingsWindow.Activate();
+                _settingsWindow.Topmost = true;
+                _settingsWindow.Topmost = false;
+                _settingsWindow.Focus();
+                return;
+            }
+
+            var settings = new SettingsWindow(_configStore, initialTab: initialTab, autoCheckUpdate: autoCheckUpdate);
+            _settingsWindow = settings;
+            settings.Closed += (_, _) =>
+            {
+                _settingsWindow = null;
+                if (settings.IsSaved)
+                {
+                    var savedConfig = LoadConfigurationOrDefault();
+                    DataDirectoryManager.ApplyRootDirectory(savedConfig.DataStorageDirectory);
                     RegisterDynamicHotKeys();
                     _mainWindow?.ReloadConfiguration();
                 }
-            }
+            };
+            settings.Show();
+            settings.Activate();
         });
     }
 
@@ -628,6 +689,11 @@ public partial class App : Application
         _updateCts?.Dispose();
         _updateCts = null;
         _notifyIcon?.Dispose();
+        if (TranslationService.OfflineHandler is IDisposable offlineDisposable)
+        {
+            offlineDisposable.Dispose();
+            TranslationService.OfflineHandler = null;
+        }
         _translationService?.Dispose();
         _hiddenHwndSource?.Dispose();
         _mutex?.Dispose();

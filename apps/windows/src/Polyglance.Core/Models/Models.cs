@@ -164,6 +164,22 @@ public sealed class AppConfiguration
     [JsonPropertyName("ai_streaming_enabled")]
     public bool AiStreamingEnabled { get; set; } = true;
 
+    [JsonPropertyName("data_storage_directory")]
+    public string DataStorageDirectory { get; set; } = "";
+
+    [JsonPropertyName("model_storage_directory")]
+    public string ModelStorageDirectory
+    {
+        get => DataStorageDirectory;
+        set
+        {
+            if (string.IsNullOrWhiteSpace(DataStorageDirectory) && !string.IsNullOrWhiteSpace(value))
+            {
+                DataStorageDirectory = value;
+            }
+        }
+    }
+
     [JsonPropertyName("screenshot_translation_style")]
     public string ScreenshotTranslationStyle { get; set; } = "bob";
 

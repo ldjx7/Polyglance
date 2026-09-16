@@ -101,6 +101,7 @@ public sealed class ConfigurationStoreTests : IDisposable
             HotkeyScreenshotCopy = "Ctrl+F9",
             SecondTargetLanguage = "en",
             HotkeyTranslateAndReplace = "Ctrl+F10",
+            DataStorageDirectory = @"D:\Data\Polyglance",
         };
 
         store.Save(expected);

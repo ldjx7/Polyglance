@@ -192,21 +192,50 @@ internal sealed class WindowsSelectedTextCaptureEnvironment : ISelectedTextCaptu
 
     public string? ReadFocusedSelection()
     {
-        AutomationElement? focusedElement = AutomationElement.FocusedElement;
-        if (focusedElement == null
-            || !focusedElement.TryGetCurrentPattern(TextPattern.Pattern, out object? patternObject)
-            || patternObject is not TextPattern textPattern)
+        IntPtr foreground = NativeWin32.GetForegroundWindow();
+        if (foreground == IntPtr.Zero)
         {
             return null;
         }
 
-        string[] selectedRanges = textPattern.GetSelection()
-            .Select(range => range.GetText(-1).TrimEnd('\r', '\n'))
-            .Where(text => !string.IsNullOrWhiteSpace(text))
-            .ToArray();
-        return selectedRanges.Length == 0
-            ? null
-            : string.Join(Environment.NewLine, selectedRanges);
+        NativeWin32.GetWindowThreadProcessId(foreground, out uint foregroundPid);
+        if (foregroundPid == (uint)Environment.ProcessId)
+        {
+            return null;
+        }
+
+        try
+        {
+            var uiaTask = Task.Run(() =>
+            {
+                AutomationElement? focusedElement = AutomationElement.FocusedElement;
+                if (focusedElement == null
+                    || !focusedElement.TryGetCurrentPattern(TextPattern.Pattern, out object? patternObject)
+                    || patternObject is not TextPattern textPattern)
+                {
+                    return null;
+                }
+
+                string[] selectedRanges = textPattern.GetSelection()
+                    .Select(range => range.GetText(-1).TrimEnd('\r', '\n'))
+                    .Where(text => !string.IsNullOrWhiteSpace(text))
+                    .ToArray();
+                return selectedRanges.Length == 0
+                    ? null
+                    : string.Join(Environment.NewLine, selectedRanges);
+            });
+
+            if (uiaTask.Wait(TimeSpan.FromMilliseconds(500)))
+            {
+                return uiaTask.Result;
+            }
+        }
+        catch
+        {
+            return null;
+        }
+
+        return null;
     }
 
     public ClipboardSnapshot CaptureClipboard()
@@ -244,6 +273,16 @@ internal sealed class WindowsSelectedTextCaptureEnvironment : ISelectedTextCaptu
 
     public bool SendCopyShortcut()
     {
+        IntPtr foreground = NativeWin32.GetForegroundWindow();
+        if (foreground != IntPtr.Zero)
+        {
+            NativeWin32.GetWindowThreadProcessId(foreground, out uint foregroundPid);
+            if (foregroundPid == (uint)Environment.ProcessId)
+            {
+                return false;
+            }
+        }
+
         INPUT[] inputs =
         [
             KeyboardInput(VirtualKeyControl, keyUp: false),
@@ -291,7 +330,7 @@ internal sealed class WindowsSelectedTextCaptureEnvironment : ISelectedTextCaptu
         public IntPtr extraInfo;
     }
 
-    [StructLayout(LayoutKind.Explicit)]
+    [StructLayout(LayoutKind.Explicit, Size = 40)]
     private struct INPUT
     {
         [FieldOffset(0)]

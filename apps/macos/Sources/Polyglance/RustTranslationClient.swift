@@ -51,8 +51,24 @@ final class RustTranslationClient: TranslationClient, @unchecked Sendable {
             } else {
                 activeProvider = configuration.provider
             }
+            if activeProvider == .apple {
+                if #available(macOS 26.0, *) {
+                    return try await AppleTranslationClient.shared.translate(request)
+                } else {
+                    throw NSError(
+                        domain: "Polyglance.AppleTranslation",
+                        code: 1000,
+                        userInfo: [NSLocalizedDescriptionKey: "Apple 翻译离线直接调用需要 macOS 26.0 或更高版本系统支持。"]
+                    )
+                }
+            }
             effectiveProviderString = activeProvider.rawValue
             switch activeProvider {
+            case .apple:
+                endpoint = ""
+                apiKey = ""
+                model = ""
+                region = nil
             case .google:
                 endpoint = ""
                 apiKey = ""

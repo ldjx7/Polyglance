@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -13,6 +14,7 @@ using Polyglance.Core.Services;
 using Polyglance.Platform.HotKey;
 using Polyglance.Platform.Startup;
 using Polyglance.Platform.Update;
+using Polyglance.Platform.Translation;
 using Polyglance.UI.Controls;
 using Wpf.Ui.Controls;
 using DragEventArgs = System.Windows.DragEventArgs;
@@ -23,6 +25,7 @@ namespace Polyglance.UI.Views;
 
 public partial class SettingsWindow : FluentWindow
 {
+    public bool IsSaved { get; private set; }
     private readonly ConfigurationStore _configStore;
     private readonly AppConfiguration _config;
     private readonly StartupRegistrationManager _startupRegistration;
@@ -77,6 +80,7 @@ public partial class SettingsWindow : FluentWindow
         bool autoCheckUpdate = false)
     {
         InitializeComponent();
+        SourceInitialized += (_, _) => CenterOnCurrentScreen();
         _configStore = configStore;
         _startupRegistration = startupRegistration ?? new StartupRegistrationManager(
             new RegistryStartupValueStore(),
@@ -114,48 +118,64 @@ public partial class SettingsWindow : FluentWindow
         }
 
         LoadConfigToUi();
+        SelectTab(initialTab, autoCheckUpdate);
+    }
 
-        if (string.Equals(initialTab, "About", StringComparison.OrdinalIgnoreCase))
+    public void SelectTab(string tab, bool autoCheckUpdate = false)
+    {
+        if (string.Equals(tab, "About", StringComparison.OrdinalIgnoreCase))
         {
             NavAbout.IsChecked = true;
             OnNavChanged(NavAbout, new RoutedEventArgs());
             if (autoCheckUpdate)
             {
-                Loaded += (_, _) => OnCheckUpdateClick(BtnCheckUpdate, new RoutedEventArgs());
+                if (IsLoaded)
+                {
+                    OnCheckUpdateClick(BtnCheckUpdate, new RoutedEventArgs());
+                }
+                else
+                {
+                    Loaded += (_, _) => OnCheckUpdateClick(BtnCheckUpdate, new RoutedEventArgs());
+                }
             }
         }
-        else if (string.Equals(initialTab, "Toolbar", StringComparison.OrdinalIgnoreCase))
+        else if (string.Equals(tab, "Toolbar", StringComparison.OrdinalIgnoreCase))
         {
             NavToolbar.IsChecked = true;
             OnNavChanged(NavToolbar, new RoutedEventArgs());
         }
-        else if (string.Equals(initialTab, "Favorites", StringComparison.OrdinalIgnoreCase))
+        else if (string.Equals(tab, "ScreenshotRecording", StringComparison.OrdinalIgnoreCase))
+        {
+            NavScreenshotRecording.IsChecked = true;
+            OnNavChanged(NavScreenshotRecording, new RoutedEventArgs());
+        }
+        else if (string.Equals(tab, "Favorites", StringComparison.OrdinalIgnoreCase))
         {
             NavFavorites.IsChecked = true;
             OnNavChanged(NavFavorites, new RoutedEventArgs());
         }
-        else if (string.Equals(initialTab, "History", StringComparison.OrdinalIgnoreCase))
+        else if (string.Equals(tab, "History", StringComparison.OrdinalIgnoreCase))
         {
             NavHistory.IsChecked = true;
             OnNavChanged(NavHistory, new RoutedEventArgs());
         }
-        else if (string.Equals(initialTab, "Translation", StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(initialTab, "Services", StringComparison.OrdinalIgnoreCase))
+        else if (string.Equals(tab, "Translation", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(tab, "Services", StringComparison.OrdinalIgnoreCase))
         {
             NavTranslation.IsChecked = true;
             OnNavChanged(NavTranslation, new RoutedEventArgs());
         }
-        else if (string.Equals(initialTab, "Shortcuts", StringComparison.OrdinalIgnoreCase))
+        else if (string.Equals(tab, "Shortcuts", StringComparison.OrdinalIgnoreCase))
         {
             NavShortcuts.IsChecked = true;
             OnNavChanged(NavShortcuts, new RoutedEventArgs());
         }
-        else if (string.Equals(initialTab, "OcrSettings", StringComparison.OrdinalIgnoreCase))
+        else if (string.Equals(tab, "OcrSettings", StringComparison.OrdinalIgnoreCase))
         {
             NavOcrSettings.IsChecked = true;
             OnNavChanged(NavOcrSettings, new RoutedEventArgs());
         }
-        else if (string.Equals(initialTab, "OcrServices", StringComparison.OrdinalIgnoreCase))
+        else if (string.Equals(tab, "OcrServices", StringComparison.OrdinalIgnoreCase))
         {
             NavTranslation.IsChecked = true;
             OnNavChanged(NavTranslation, new RoutedEventArgs());
@@ -200,9 +220,13 @@ public partial class SettingsWindow : FluentWindow
                 TxtHeaderTitle.Text = "快捷键";
                 TxtHeaderSubtitle.Text = "全局快捷键自定义";
                 break;
+            case "ScreenshotRecording":
+                TxtHeaderTitle.Text = "截图与录屏";
+                TxtHeaderSubtitle.Text = "截图历史存储与录屏音视频参数偏好";
+                break;
             case "Toolbar":
-                TxtHeaderTitle.Text = "录屏与工具栏";
-                TxtHeaderSubtitle.Text = "截图工具栏定制与录屏参数配置";
+                TxtHeaderTitle.Text = "工具栏";
+                TxtHeaderSubtitle.Text = "截图工具栏图标排布与定制";
                 break;
             case "About":
                 TxtHeaderTitle.Text = "关于";
@@ -220,6 +244,7 @@ public partial class SettingsWindow : FluentWindow
         PanelHistory.Visibility = tag == "History" ? Visibility.Visible : Visibility.Collapsed;
         PanelOcrSettings.Visibility = tag == "OcrSettings" ? Visibility.Visible : Visibility.Collapsed;
         PanelShortcuts.Visibility = tag == "Shortcuts" ? Visibility.Visible : Visibility.Collapsed;
+        PanelScreenshotRecording.Visibility = tag == "ScreenshotRecording" ? Visibility.Visible : Visibility.Collapsed;
         PanelToolbar.Visibility = tag == "Toolbar" ? Visibility.Visible : Visibility.Collapsed;
         PanelAbout.Visibility = tag == "About" ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -346,6 +371,7 @@ public partial class SettingsWindow : FluentWindow
             _toolbarItems.Add(CreateToolbarItemViewModel(item.Id, item.IsVisible));
         }
         UpdatePreviewItems();
+        UpdateDataDirectoryDisplay();
     }
 
     private ToolbarItemViewModel CreateToolbarItemViewModel(string id, bool isVisible)
@@ -1036,7 +1062,7 @@ public partial class SettingsWindow : FluentWindow
             _startupRegistration.SetEnabled(ChkLaunchAtLogin.IsChecked == true);
             startupSettingWasApplied = true;
             _configStore.Save(_config);
-            DialogResult = true;
+            IsSaved = true;
             Close();
         }
         catch (Exception error)
@@ -1063,7 +1089,6 @@ public partial class SettingsWindow : FluentWindow
 
     private void OnCancelClick(object sender, RoutedEventArgs e)
     {
-        DialogResult = false;
         Close();
     }
 
@@ -1271,7 +1296,7 @@ public partial class SettingsWindow : FluentWindow
     private void PopulateServiceProviders()
     {
         _providerList.Clear();
-        var defaultOrder = new List<string> { "freeai", "microsoft", "google", "deepl", "baidu", "youdao", "volcano", "openaicompatible" };
+        var defaultOrder = new List<string> { "freeai", "microsoft", "google", "deepl", "baidu", "youdao", "volcano", "openaicompatible", "offline" };
         var order = _config.ProviderOrder != null && _config.ProviderOrder.Count > 0 ? _config.ProviderOrder : defaultOrder;
         var enabled = _config.EnabledProviders ?? new List<string> { "freeai" };
         var customConfigs = _config.CustomAIConfigs ?? new List<CustomAIServiceConfig>();
@@ -1344,6 +1369,7 @@ public partial class SettingsWindow : FluentWindow
     {
         "openai-compatible" or "openaicompatible" => "openaicompatible",
         "free-ai" or "freeai" => "freeai",
+        "offline" or "local" or "marian" => "offline",
         _ => id.ToLowerInvariant()
     };
 
@@ -1428,6 +1454,15 @@ public partial class SettingsWindow : FluentWindow
                 IsBuiltin = false,
                 IsEnabled = isEnabled
             },
+            "offline" => new ProviderItem
+            {
+                Id = "offline",
+                DisplayName = "本地离线翻译",
+                Subtitle = "基于 MarianMT ONNX 模型的本地神经机器翻译",
+                IconPath = "pack://application:,,,/Polyglance;component/Resources/ProviderIcons/offline.png",
+                IsBuiltin = true,
+                IsEnabled = isEnabled
+            },
             _ => new ProviderItem
             {
                 Id = id,
@@ -1483,6 +1518,13 @@ public partial class SettingsWindow : FluentWindow
         FormVolcano.Visibility = item.Id == "volcano" ? Visibility.Visible : Visibility.Collapsed;
         FormOpenAi.Visibility = (item.Id == "openaicompatible" || item.IsCustom) ? Visibility.Visible : Visibility.Collapsed;
         FormBuiltin.Visibility = (item.Id == "microsoft" || item.Id == "google") ? Visibility.Visible : Visibility.Collapsed;
+        FormOffline.Visibility = item.Id == "offline" ? Visibility.Visible : Visibility.Collapsed;
+
+        if (item.Id == "offline")
+        {
+            OfflineModelManager.Instance.RefreshInstalledStatus();
+            ListOfflineModels.ItemsSource = OfflineModelManager.Instance.Models;
+        }
 
         if (item.IsCustom && item.CustomConfig != null)
         {
@@ -1561,6 +1603,7 @@ public partial class SettingsWindow : FluentWindow
 
     private Point _providerDragStart;
     private ProviderItem? _draggedProviderItem;
+    private ProviderItem? _currentDropTargetItem;
     private FrameworkElement? _capturedProviderDragElement;
     private bool _isProviderDragging;
 
@@ -1600,33 +1643,47 @@ public partial class SettingsWindow : FluentWindow
                 Math.Abs(diff.Y) > SystemParameters.MinimumVerticalDragDistance)
             {
                 _isProviderDragging = true;
+                _draggedProviderItem.IsDragging = true;
                 _capturedProviderDragElement.CaptureMouse();
             }
             return;
         }
 
+        double deltaY = current.Y - _providerDragStart.Y;
+        _capturedProviderDragElement.RenderTransform = new TranslateTransform(0, deltaY);
+        var dragContainer = ListServiceProviders.ItemContainerGenerator.ContainerFromItem(_draggedProviderItem) as FrameworkElement;
+        if (dragContainer != null)
+        {
+            System.Windows.Controls.Panel.SetZIndex(dragContainer, 999);
+        }
+
         Point posInList = e.GetPosition(ListServiceProviders);
         HitTestResult hitResult = VisualTreeHelper.HitTest(ListServiceProviders, posInList);
+        ProviderItem? hitItem = null;
         if (hitResult?.VisualHit is DependencyObject hit)
         {
             var element = hit as FrameworkElement;
             while (element != null && element != ListServiceProviders)
             {
-                if (element.DataContext is ProviderItem targetItem && targetItem != _draggedProviderItem)
+                if (element.DataContext is ProviderItem targetItem)
                 {
-                    int oldIdx = _providerList.IndexOf(_draggedProviderItem);
-                    int newIdx = _providerList.IndexOf(targetItem);
-                    if (oldIdx >= 0 && newIdx >= 0 && oldIdx != newIdx)
-                    {
-                        _providerList.Move(oldIdx, newIdx);
-                        if (_config != null)
-                        {
-                            _config.ProviderOrder = _providerList.Select(p => p.Id).ToList();
-                        }
-                    }
+                    hitItem = targetItem;
                     break;
                 }
                 element = VisualTreeHelper.GetParent(element) as FrameworkElement;
+            }
+        }
+
+        if (hitItem != _currentDropTargetItem)
+        {
+            if (_currentDropTargetItem != null)
+            {
+                _currentDropTargetItem.IsDropTarget = false;
+            }
+            _currentDropTargetItem = (hitItem != null && hitItem != _draggedProviderItem) ? hitItem : null;
+            if (_currentDropTargetItem != null)
+            {
+                _currentDropTargetItem.IsDropTarget = true;
             }
         }
     }
@@ -1635,17 +1692,52 @@ public partial class SettingsWindow : FluentWindow
     {
         if (_capturedProviderDragElement != null)
         {
+            _capturedProviderDragElement.RenderTransform = null;
             if (_capturedProviderDragElement.IsMouseCaptured)
             {
                 _capturedProviderDragElement.ReleaseMouseCapture();
             }
             _capturedProviderDragElement = null;
         }
+
+        var dropTarget = _currentDropTargetItem;
+        if (dropTarget != null)
+        {
+            dropTarget.IsDropTarget = false;
+        }
+
         if (_draggedProviderItem != null)
         {
+            var dragContainer = ListServiceProviders.ItemContainerGenerator.ContainerFromItem(_draggedProviderItem) as FrameworkElement;
+            if (dragContainer != null)
+            {
+                System.Windows.Controls.Panel.SetZIndex(dragContainer, 0);
+            }
+        }
+
+        if (_isProviderDragging && _draggedProviderItem != null && dropTarget != null)
+        {
+            int oldIdx = _providerList.IndexOf(_draggedProviderItem);
+            int newIdx = _providerList.IndexOf(dropTarget);
+            if (oldIdx >= 0 && newIdx >= 0 && oldIdx != newIdx)
+            {
+                _providerList.Move(oldIdx, newIdx);
+                UpdateProviderMovementState();
+                if (_config != null)
+                {
+                    _config.ProviderOrder = _providerList.Select(p => p.Id).ToList();
+                }
+            }
+        }
+
+        if (_draggedProviderItem != null)
+        {
+            _draggedProviderItem.IsDragging = false;
             ListServiceProviders.SelectedItem = _draggedProviderItem;
         }
+
         _draggedProviderItem = null;
+        _currentDropTargetItem = null;
         _isProviderDragging = false;
     }
 
@@ -1788,6 +1880,163 @@ public partial class SettingsWindow : FluentWindow
         LoadConfigToUi();
     }
 
+    private async void OnDownloadOfflineModelClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement elem && elem.Tag is OfflineModelInfo model)
+        {
+            try
+            {
+                await OfflineModelManager.Instance.DownloadModelAsync(model);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(
+                    $"下载离线模型失败: {ex.Message}",
+                    "Polyglance",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
+    }
+
+    private void OnDeleteOfflineModelClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement elem && elem.Tag is OfflineModelInfo model)
+        {
+            var result = System.Windows.MessageBox.Show(
+                $"确定要删除离线模型 [{model.Name}] 吗？",
+                "删除模型",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result == System.Windows.MessageBoxResult.Yes)
+            {
+                OfflineModelManager.Instance.DeleteModel(model.Id);
+            }
+        }
+    }
+
+    private async void OnImportOfflineModelZipClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "ZIP 压缩包 (*.zip)|*.zip|所有文件 (*.*)|*.*",
+            Title = "选择离线翻译模型压缩包"
+        };
+
+        if (dialog.ShowDialog(this) == true)
+        {
+            try
+            {
+                string modelId = await OfflineModelManager.Instance.ImportZipAsync(dialog.FileName);
+                System.Windows.MessageBox.Show(
+                    "离线翻译模型已成功导入！",
+                    "Polyglance",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(
+                    $"导入模型失败: {ex.Message}",
+                    "Polyglance",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+    }
+
+    private void OnOpenOfflineModelsDirClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            OfflineModelManager.OpenModelsDirectory();
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(
+                $"打开目录失败: {ex.Message}",
+                "Polyglance",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
+
+    private void UpdateDataDirectoryDisplay()
+    {
+        string path = !string.IsNullOrWhiteSpace(_config.DataStorageDirectory)
+            ? _config.DataStorageDirectory
+            : DataDirectoryManager.DefaultRootDirectory;
+        if (TxtGeneralDataStorageDir != null) TxtGeneralDataStorageDir.Text = path;
+    }
+
+    private void OnChangeDataStorageDirClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "选择数据存储根目录",
+            Multiselect = false
+        };
+
+        if (dialog.ShowDialog(this) == true && !string.IsNullOrWhiteSpace(dialog.FolderName))
+        {
+            string newPath = dialog.FolderName;
+            string oldPath = !string.IsNullOrWhiteSpace(_config.DataStorageDirectory)
+                ? _config.DataStorageDirectory
+                : DataDirectoryManager.DefaultRootDirectory;
+
+            _config.DataStorageDirectory = newPath;
+            DataDirectoryManager.ApplyRootDirectory(newPath);
+            UpdateDataDirectoryDisplay();
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    DataDirectoryManager.Migrate(oldPath, newPath);
+                }
+                catch { }
+                Dispatcher.Invoke(() => OfflineModelManager.Instance.RefreshInstalledStatus());
+            });
+
+            ShowStatus($"数据存储目录已更改为: {newPath}");
+        }
+    }
+
+    private void OnResetDataStorageDirClick(object sender, RoutedEventArgs e)
+    {
+        string oldPath = !string.IsNullOrWhiteSpace(_config.DataStorageDirectory)
+            ? _config.DataStorageDirectory
+            : DataDirectoryManager.DefaultRootDirectory;
+        _config.DataStorageDirectory = string.Empty;
+        DataDirectoryManager.ApplyRootDirectory(null);
+        UpdateDataDirectoryDisplay();
+        OfflineModelManager.Instance.RefreshInstalledStatus();
+        ShowStatus("已恢复默认数据存储目录");
+    }
+
+    private void OnOpenDataStorageDirClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string path = DataDirectoryManager.EffectiveRootDirectory;
+            Directory.CreateDirectory(path);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(
+                $"打开目录失败: {ex.Message}",
+                "Polyglance",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
+
     private void OnAiStreamingFreeAiClick(object sender, RoutedEventArgs e)
     {
         ChkAiStreaming.IsChecked = ChkAiStreamingFreeAi.IsChecked;
@@ -1809,6 +2058,41 @@ public partial class SettingsWindow : FluentWindow
         ViewServiceOcr.Visibility = isOcr ? Visibility.Visible : Visibility.Collapsed;
         ViewServiceTts.Visibility = isTts ? Visibility.Visible : Visibility.Collapsed;
         ViewServicePreferences.Visibility = isPrefs ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void CenterOnCurrentScreen()
+    {
+        try
+        {
+            var cursorPoint = System.Windows.Forms.Cursor.Position;
+            var screen = System.Windows.Forms.Screen.FromPoint(cursorPoint) ?? System.Windows.Forms.Screen.PrimaryScreen;
+            if (screen == null) return;
+
+            var source = PresentationSource.FromVisual(this);
+            double dpiX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+            double dpiY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+
+            double workLeft = screen.WorkingArea.Left / dpiX;
+            double workTop = screen.WorkingArea.Top / dpiY;
+            double workWidth = screen.WorkingArea.Width / dpiX;
+            double workHeight = screen.WorkingArea.Height / dpiY;
+
+            if (Width > workWidth - 20)
+            {
+                Width = Math.Max(MinWidth, workWidth - 20);
+            }
+            if (Height > workHeight - 30)
+            {
+                Height = Math.Max(MinHeight, workHeight - 30);
+            }
+
+            Left = workLeft + Math.Max(0, (workWidth - Width) / 2);
+            Top = workTop + Math.Max(0, (workHeight - Height) / 2);
+        }
+        catch
+        {
+            WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        }
     }
 }
 
@@ -2005,6 +2289,40 @@ public sealed class ProviderItem : System.ComponentModel.INotifyPropertyChanged
             }
         }
     }
+
+    private bool _isDropTarget;
+    public bool IsDropTarget
+    {
+        get => _isDropTarget;
+        set
+        {
+            if (_isDropTarget != value)
+            {
+                _isDropTarget = value;
+                OnPropertyChanged(nameof(IsDropTarget));
+                OnPropertyChanged(nameof(DropIndicatorVisibility));
+            }
+        }
+    }
+
+    public Visibility DropIndicatorVisibility => _isDropTarget ? Visibility.Visible : Visibility.Collapsed;
+
+    private bool _isDragging;
+    public bool IsDragging
+    {
+        get => _isDragging;
+        set
+        {
+            if (_isDragging != value)
+            {
+                _isDragging = value;
+                OnPropertyChanged(nameof(IsDragging));
+                OnPropertyChanged(nameof(DragOpacity));
+            }
+        }
+    }
+
+    public double DragOpacity => _isDragging ? 0.45 : 1.0;
 
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(name));

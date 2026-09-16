@@ -385,6 +385,20 @@ struct TranslationView: View {
                 .fixedSize()
                 .help("目标语言，即译文语言")
 
+                // 重新翻译全部服务 (⌘R)
+                Button {
+                    viewModel.retranslate()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(4)
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut("r", modifiers: .command)
+                .disabled(viewModel.sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .help("重新翻译 (⌘R)")
+
                 Spacer()
 
                 // 12 钉住的服务，点击时触发 (对齐 Bob)
@@ -433,6 +447,19 @@ struct TranslationView: View {
                                 }
 
                                 Spacer()
+
+                                // 重新翻译
+                                Button {
+                                    viewModel.retranslateSingleProvider(state.provider)
+                                } label: {
+                                    Image(systemName: "arrow.clockwise")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundStyle(Color.secondary)
+                                        .padding(4)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(viewModel.sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || state.isTranslating)
+                                .help("重新翻译")
 
                                 // 设置菜单 (Image 2: 🎚️)
                                 Menu {
@@ -515,6 +542,13 @@ struct TranslationView: View {
                                             Text(errorMessage)
                                                 .font(.system(size: 11))
                                                 .foregroundStyle(.red)
+                                            Spacer()
+                                            Button("重新翻译") {
+                                                viewModel.retranslateSingleProvider(state.provider)
+                                            }
+                                            .font(.system(size: 11, weight: .medium))
+                                            .buttonStyle(.plain)
+                                            .foregroundStyle(Color.accentColor)
                                         }
                                         .padding(.top, 2)
                                     }
@@ -658,6 +692,7 @@ struct TranslationView: View {
     private func providerIconName(for provider: String) -> String {
         switch provider.lowercased() {
         case "freeai", "free-ai", "official-ai", "polyglance-ai": return "sparkles"
+        case "apple": return "apple.logo"
         case "microsoft": return "globe.americas.fill"
         case "google": return "g.circle.fill"
         case "deepl": return "d.circle.fill"
@@ -672,6 +707,7 @@ struct TranslationView: View {
     private func providerColor(for provider: String) -> Color {
         switch provider.lowercased() {
         case "freeai", "free-ai", "official-ai", "polyglance-ai": return .purple
+        case "apple": return .primary
         case "microsoft": return .blue
         case "google": return .teal
         case "deepl": return .indigo
@@ -686,6 +722,7 @@ struct TranslationView: View {
     private func providerBadgeLabel(for provider: String) -> String {
         switch provider.lowercased() {
         case "freeai", "free-ai", "official-ai", "polyglance-ai": return "官方 AI"
+        case "apple": return "Apple"
         case "microsoft": return "MS"
         case "google": return "Google"
         case "deepl": return "DeepL"

@@ -77,7 +77,7 @@ struct SettingsView: View {
 
             detailView
         }
-        .frame(width: 860, height: 600)
+        .frame(minWidth: 800, idealWidth: 900, maxWidth: 1100, minHeight: 500, idealHeight: 580, maxHeight: 850)
         .task { load() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             permissionsRefreshTrigger += 1
@@ -180,6 +180,8 @@ struct SettingsView: View {
                     generalTab
                 case .shortcuts:
                     shortcutsTab
+                case .screenshotRecording:
+                    screenshotRecordingTab
                 case .toolbar:
                     toolbarTab
                 case .about:
@@ -286,17 +288,6 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-
-            Section {
-                Toggle("保存已完成截图到历史记录", isOn: $saveCompletedScreenshotsToHistory)
-            } header: {
-                Text("截图历史")
-            } footer: {
-                Text("开启后，成功复制或另存为的截图与长截图将自动存入历史记录。历史记录只保存在本机，最多保留 30 条 / 512 MiB。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
         }
         .formStyle(.grouped)
     }
@@ -584,6 +575,33 @@ struct SettingsView: View {
                                     }
                                 } else if let p = TranslationProvider(rawValue: configuringProviderId) {
                                     switch p {
+                                    case .apple:
+                                        VStack(alignment: .leading, spacing: 10) {
+                                            Text("无需配置 API Key，完全在本地由系统原生神经引擎 (Neural Engine) 进行离线推理。")
+                                                .font(.system(size: 12))
+                                                .foregroundStyle(.secondary)
+
+                                            Button("打开系统「语言与地区」设置...") {
+                                                if let url = URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension") {
+                                                    NSWorkspace.shared.open(url)
+                                                }
+                                            }
+                                            .controlSize(.small)
+
+                                            VStack(alignment: .leading, spacing: 5) {
+                                                Text("离线语言包下载指引：")
+                                                    .font(.system(size: 11.5, weight: .medium))
+                                                    .foregroundStyle(.primary)
+                                                Text("1. 点击上方按钮打开「语言与地区」设置页\n2. 将页面向下滑动至最底部，点击右下角的「翻译语言...」\n3. 在弹出的语言列表中，找到所需语言（如英语、中文）点击「下载」")
+                                                    .font(.system(size: 11))
+                                                    .foregroundStyle(.secondary)
+                                                    .lineSpacing(3)
+                                            }
+                                            .padding(10)
+                                            .background(Color.primary.opacity(0.04))
+                                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                                        }
+
                                     case .freeAI:
                                         VStack(alignment: .leading, spacing: 8) {
                                             Text("无需配置 API Key，使用内置分发的免费 AI 翻译服务。")
@@ -1320,8 +1338,18 @@ struct SettingsView: View {
         .formStyle(.grouped)
     }
 
-    private var recordingTab: some View {
+    private var screenshotRecordingTab: some View {
         Form {
+            Section {
+                Toggle("保存已完成截图到历史记录", isOn: $saveCompletedScreenshotsToHistory)
+            } header: {
+                Text("截图偏好")
+            } footer: {
+                Text("开启后，成功复制或另存为的截图与长截图将自动存入历史记录与贴图库。历史记录只保存在本机，最多保留 30 条 / 512 MiB。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section {
                 Picker("默认格式", selection: recordingFormatBinding) {
                     ForEach(ScreenRecordingFormat.allCases, id: \.self) { format in
@@ -1350,7 +1378,7 @@ struct SettingsView: View {
                     }
                 }
             } header: {
-                Text("视频与格式")
+                Text("录屏视频与格式")
             }
 
             Section {
@@ -1360,7 +1388,7 @@ struct SettingsView: View {
                     .disabled(!recordingSettings.format.supportsAudio)
                 Toggle("显示鼠标指针", isOn: $recordingSettings.showsCursor)
             } header: {
-                Text("音频与鼠标")
+                Text("录屏音频与鼠标")
             } footer: {
                 if !recordingSettings.format.supportsAudio {
                     Text("GIF 格式不支持录制音频。")
@@ -1395,155 +1423,195 @@ struct SettingsView: View {
     }
 
     private var toolbarTab: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("生效工具栏")
-                                .font(.headline)
-                            Text("实时展示当前截图工具栏排布。支持直接拖拽图标排序，点击可快速移除。")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button("恢复默认设置") {
-                            screenshotToolbarItems = ScreenshotToolbarItemConfig.defaultItems
-                        }
-                        .font(.caption)
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Color.accentColor)
-                    }
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let scale = min(max(width / 680.0, 0.88), 1.35)
 
-                    HStack {
-                        Spacer()
-                        let visibleItems = screenshotToolbarItems.filter(\.isVisible)
-                        if visibleItems.isEmpty {
-                            Text("未启用任何工具（截图时将自动回退为默认全量工具栏）")
-                                .font(.caption)
+            let capsuleItemSize: CGFloat = round(23.0 * scale)
+            let capsuleIconFont: CGFloat = round(11.5 * scale)
+            let capsuleSpacing: CGFloat = round(2.0 * scale)
+            let capsuleHeight: CGFloat = capsuleItemSize + 11.0
+
+            let gridIconSize: CGFloat = round(17.0 * scale)
+            let gridIconFont: CGFloat = round(11.0 * scale)
+            let gridTextFont: CGFloat = round(11.0 * scale)
+            let gridCheckFont: CGFloat = round(11.5 * scale)
+            let gridPadH: CGFloat = round(7.0 * scale)
+            let gridPadV: CGFloat = round(5.0 * scale)
+            let gridSpacing: CGFloat = round(6.0 * scale)
+
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .center) {
+                            Text("生效工具栏")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("支持直接拖拽图标排序，点击快速移除")
+                                .font(.caption2)
                                 .foregroundStyle(.secondary)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
+                            Spacer()
+                            Button("恢复默认设置") {
+                                screenshotToolbarItems = ScreenshotToolbarItemConfig.defaultItems
+                            }
+                            .font(.caption)
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Color.accentColor)
+                        }
+
+                        HStack {
+                            Spacer()
+                            let visibleItems = screenshotToolbarItems.filter(\.isVisible)
+                            if visibleItems.isEmpty {
+                                Text("未启用任何工具（截图时将自动回退为默认全量工具栏）")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 6)
+                                    .background(Color(NSColor.controlBackgroundColor))
+                                    .clipShape(Capsule())
+                                    .overlay(
+                                        Capsule().stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                                    )
+                            } else {
+                                HStack(spacing: capsuleSpacing) {
+                                    ForEach(visibleItems, id: \.id) { item in
+                                        let info = toolbarItemInfos[item.id] ?? (item.id, "circle")
+                                        ToolbarCapsuleItemView(
+                                            item: item,
+                                            info: info,
+                                            size: capsuleItemSize,
+                                            iconFontSize: capsuleIconFont,
+                                            isDragging: draggingItemID == item.id
+                                        ) {
+                                            if let idx = screenshotToolbarItems.firstIndex(where: { $0.id == item.id }) {
+                                                screenshotToolbarItems[idx].isVisible = false
+                                            }
+                                        }
+                                        .onDrag {
+                                            self.draggingItemID = item.id
+                                            return NSItemProvider(object: item.id as NSString)
+                                        } preview: {
+                                            Image(systemName: info.icon)
+                                                .font(.system(size: capsuleIconFont, weight: .medium))
+                                                .frame(width: capsuleItemSize, height: capsuleItemSize)
+                                                .background(Color(NSColor.controlBackgroundColor))
+                                                .clipShape(RoundedRectangle(cornerRadius: 5))
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 5)
+                                                        .stroke(Color.primary.opacity(0.15), lineWidth: 1)
+                                                )
+                                                .shadow(color: .black.opacity(0.12), radius: 3, x: 0, y: 1)
+                                        }
+                                        .onDrop(of: [.text], delegate: ToolbarDropDelegate(
+                                            targetItem: item,
+                                            items: $screenshotToolbarItems,
+                                            draggingItem: $draggingItemID
+                                        ))
+                                    }
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
                                 .background(Color(NSColor.controlBackgroundColor))
                                 .clipShape(Capsule())
                                 .overlay(
-                                    Capsule().stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                                    Capsule().stroke(Color.primary.opacity(0.12), lineWidth: 1)
                                 )
-                        } else {
-                            HStack(spacing: 3) {
-                                ForEach(visibleItems, id: \.id) { item in
-                                    let info = toolbarItemInfos[item.id] ?? (item.id, "circle")
-                                    ToolbarCapsuleItemView(
-                                        item: item,
-                                        info: info,
-                                        isDragging: draggingItemID == item.id
-                                    ) {
-                                        if let idx = screenshotToolbarItems.firstIndex(where: { $0.id == item.id }) {
-                                            screenshotToolbarItems[idx].isVisible = false
+                                .shadow(color: .black.opacity(0.08), radius: 5, x: 0, y: 1.5)
+                            }
+                            Spacer()
+                        }
+                        .frame(height: capsuleHeight)
+                        .padding(.vertical, 2)
+                    }
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color(nsColor: .textBackgroundColor).opacity(0.6))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                    )
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("功能储备池")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("点击卡片快速启用或停用工具栏按钮")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                        }
+
+                        LazyVGrid(columns: [
+                            GridItem(.flexible(), spacing: gridSpacing),
+                            GridItem(.flexible(), spacing: gridSpacing),
+                            GridItem(.flexible(), spacing: gridSpacing),
+                            GridItem(.flexible(), spacing: gridSpacing),
+                            GridItem(.flexible(), spacing: gridSpacing)
+                        ], spacing: gridSpacing) {
+                            ForEach(screenshotToolbarItems, id: \.id) { item in
+                                let info = toolbarItemInfos[item.id] ?? (item.id, "circle")
+                                let isEnabled = item.isVisible
+                                Button {
+                                    if let idx = screenshotToolbarItems.firstIndex(where: { $0.id == item.id }) {
+                                        screenshotToolbarItems[idx].isVisible.toggle()
+                                    }
+                                } label: {
+                                    HStack(spacing: round(5.0 * scale)) {
+                                        Image(systemName: info.icon)
+                                            .font(.system(size: gridIconFont, weight: .medium))
+                                            .frame(width: gridIconSize, height: gridIconSize)
+                                            .foregroundStyle(isEnabled ? Color.accentColor : Color.secondary)
+
+                                        Text(info.title)
+                                            .font(.system(size: gridTextFont, weight: isEnabled ? .medium : .regular))
+                                            .foregroundStyle(isEnabled ? Color.primary : Color.secondary)
+                                            .lineLimit(1)
+                                            .minimumScaleFactor(0.85)
+
+                                        Spacer(minLength: 2)
+
+                                        if isEnabled {
+                                            Image(systemName: "checkmark.square.fill")
+                                                .font(.system(size: gridCheckFont, weight: .medium))
+                                                .foregroundStyle(Color.accentColor)
+                                        } else {
+                                            Image(systemName: "square")
+                                                .font(.system(size: gridCheckFont))
+                                                .foregroundStyle(Color.secondary.opacity(0.4))
                                         }
                                     }
-                                    .onDrag {
-                                        self.draggingItemID = item.id
-                                        return NSItemProvider(object: item.id as NSString)
-                                    } preview: {
-                                        Image(systemName: info.icon)
-                                            .font(.system(size: 12.5, weight: .medium))
-                                            .frame(width: 26, height: 26)
-                                            .background(Color(NSColor.controlBackgroundColor))
-                                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 6)
-                                                    .stroke(Color.primary.opacity(0.15), lineWidth: 1)
-                                            )
-                                            .shadow(color: .black.opacity(0.12), radius: 3, x: 0, y: 1)
-                                    }
-                                    .onDrop(of: [.text], delegate: ToolbarDropDelegate(
-                                        targetItem: item,
-                                        items: $screenshotToolbarItems,
-                                        draggingItem: $draggingItemID
-                                    ))
+                                    .padding(.horizontal, gridPadH)
+                                    .padding(.vertical, gridPadV)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .fill(isEnabled ? Color.accentColor.opacity(0.09) : Color.primary.opacity(0.03))
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(isEnabled ? Color.accentColor.opacity(0.28) : Color.primary.opacity(0.08), lineWidth: 1)
+                                    )
                                 }
+                                .buttonStyle(.plain)
                             }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(Color(NSColor.controlBackgroundColor))
-                            .clipShape(Capsule())
-                            .overlay(
-                                Capsule().stroke(Color.primary.opacity(0.12), lineWidth: 1)
-                            )
-                            .shadow(color: .black.opacity(0.08), radius: 6, x: 0, y: 2)
-                        }
-                        Spacer()
-                    }
-                    .frame(height: 46)
-                    .padding(.vertical, 4)
-                }
-            }
-
-            Section {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("功能储备池")
-                        .font(.headline)
-                    Text("点击卡片快速启用或停用工具栏按钮。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    LazyVGrid(columns: [
-                        GridItem(.flexible(), spacing: 8),
-                        GridItem(.flexible(), spacing: 8),
-                        GridItem(.flexible(), spacing: 8),
-                        GridItem(.flexible(), spacing: 8)
-                    ], spacing: 8) {
-                        ForEach(screenshotToolbarItems, id: \.id) { item in
-                            let info = toolbarItemInfos[item.id] ?? (item.id, "circle")
-                            let isEnabled = item.isVisible
-                            Button {
-                                if let idx = screenshotToolbarItems.firstIndex(where: { $0.id == item.id }) {
-                                    screenshotToolbarItems[idx].isVisible.toggle()
-                                }
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: info.icon)
-                                        .font(.system(size: 13, weight: .medium))
-                                        .frame(width: 24, height: 24)
-                                        .foregroundStyle(isEnabled ? Color.accentColor : Color.secondary)
-
-                                    Text(info.title)
-                                        .font(.system(size: 12, weight: isEnabled ? .medium : .regular))
-                                        .foregroundStyle(isEnabled ? Color.primary : Color.secondary)
-                                        .lineLimit(1)
-
-                                    Spacer(minLength: 2)
-
-                                    if isEnabled {
-                                        Image(systemName: "checkmark.square.fill")
-                                            .font(.system(size: 14, weight: .medium))
-                                            .foregroundStyle(Color.accentColor)
-                                    } else {
-                                        Image(systemName: "square")
-                                            .font(.system(size: 14))
-                                            .foregroundStyle(Color.secondary.opacity(0.4))
-                                    }
-                                }
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 8)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(isEnabled ? Color.accentColor.opacity(0.09) : Color.primary.opacity(0.03))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(isEnabled ? Color.accentColor.opacity(0.28) : Color.primary.opacity(0.08), lineWidth: 1)
-                                )
-                            }
-                            .buttonStyle(.plain)
                         }
                     }
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color(nsColor: .textBackgroundColor).opacity(0.6))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                    )
                 }
-                .padding(.vertical, 4)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+                .frame(width: width)
             }
         }
-        .formStyle(.grouped)
         .onDrop(of: [.text], isTargeted: nil) { _ in
             draggingItemID = nil
             return false
@@ -1909,7 +1977,7 @@ struct SettingsView: View {
 
     private func hasKeyConfigured(_ p: TranslationProvider) -> Bool {
         switch p {
-        case .freeAI, .microsoft, .google:
+        case .freeAI, .microsoft, .google, .apple:
             return true
         case .deepl:
             return !deeplAuthKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1929,6 +1997,7 @@ struct SettingsView: View {
     private func providerIconName(_ p: TranslationProvider) -> String {
         switch p {
         case .freeAI: return "sparkles"
+        case .apple: return "apple.logo"
         case .microsoft: return "text.bubble"
         case .google: return "globe"
         case .deepl: return "d.circle.fill"
@@ -1942,6 +2011,7 @@ struct SettingsView: View {
     private func providerIconColor(_ p: TranslationProvider) -> Color {
         switch p {
         case .freeAI: return .purple
+        case .apple: return .primary
         case .microsoft: return .blue
         case .google: return .teal
         case .deepl: return .indigo
@@ -1956,6 +2026,8 @@ struct SettingsView: View {
         switch p {
         case .freeAI:
             return "官方内置 AI 翻译服务，无需配置密钥"
+        case .apple:
+            return "Apple 原生系统级翻译框架，通过神经引擎本地执行，免密钥"
         case .microsoft:
             return "微软必应翻译服务，免密钥直接调用"
         case .google:
@@ -2205,15 +2277,25 @@ struct SettingsView: View {
         switch provider {
         case .freeAI:
             return BundledFreeAIConfiguration() != nil
+        case .apple:
+            if #available(macOS 26.0, *) {
+                return true
+            } else {
+                return false
+            }
         default:
             return true
         }
     }
 
     private func providerLabel(_ provider: TranslationProvider) -> String {
-        isProviderAvailable(provider)
-            ? provider.displayName
-            : "\(provider.displayName)（当前构建未配置）"
+        if isProviderAvailable(provider) {
+            return provider.displayName
+        }
+        if provider == .apple {
+            return "\(provider.displayName)（需 macOS 26+）"
+        }
+        return "\(provider.displayName)（当前构建未配置）"
     }
 
     private var recordingFormatBinding: Binding<ScreenRecordingFormat> {
@@ -2345,6 +2427,8 @@ private struct KeycapBadge: View {
 private struct ToolbarCapsuleItemView: View {
     let item: ScreenshotToolbarItemConfig
     let info: (title: String, icon: String)
+    let size: CGFloat
+    let iconFontSize: CGFloat
     let isDragging: Bool
     let onRemove: () -> Void
     @State private var isHovered = false
@@ -2355,17 +2439,17 @@ private struct ToolbarCapsuleItemView: View {
         } label: {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: info.icon)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .frame(width: 26, height: 26)
+                    .font(.system(size: iconFontSize, weight: .medium))
+                    .frame(width: size, height: size)
                     .background(Color.primary.opacity(isHovered && !isDragging ? 0.12 : 0.06))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
 
                 if isHovered && !isDragging {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 9))
+                        .font(.system(size: max(8.0, iconFontSize * 0.75)))
                         .foregroundStyle(Color.red)
                         .background(Color.white.clipShape(Circle()))
-                        .offset(x: 3, y: -3)
+                        .offset(x: 2.5, y: -2.5)
                 }
             }
             .opacity(isDragging ? 0.2 : 1.0)
@@ -2412,7 +2496,7 @@ private let toolbarItemInfos: [String: (title: String, icon: String)] = [
     "undo": ("撤销", "arrow.uturn.backward"),
     "redo": ("重做", "arrow.uturn.forward"),
     "ocr": ("文字识别", "text.viewfinder"),
-    "translate": ("识别并翻译", "character.bubble"),
+    "translate": ("识别翻译", "character.bubble"),
     "barcode": ("二维码", "qrcode"),
     "pin": ("贴图", "pin.fill"),
     "longScreenshot": ("长截图", "arrow.up.and.down.square"),
@@ -2436,7 +2520,7 @@ private enum SettingsTabSection: String, CaseIterable, Identifiable {
         case .ocr:
             return [.ocrSettings]
         case .general:
-            return [.general, .shortcuts, .toolbar, .about]
+            return [.general, .shortcuts, .screenshotRecording, .toolbar, .about]
         }
     }
 }
@@ -2454,6 +2538,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case ocrSettings = "ocr_settings"
     case general = "general"
     case shortcuts = "shortcuts"
+    case screenshotRecording = "screenshot_recording"
     case toolbar = "toolbar"
     case about = "about"
 
@@ -2467,7 +2552,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .ocrSettings: return "OCR 设置"
         case .general: return "通用设置"
         case .shortcuts: return "快捷键"
-        case .toolbar: return "录屏与工具栏"
+        case .screenshotRecording: return "截图与录屏"
+        case .toolbar: return "工具栏"
         case .about: return "关于"
         }
     }
@@ -2480,7 +2566,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .ocrSettings: return "文字识别引擎、格式与自动复制偏好"
         case .general: return "系统权限、启动项与基础偏好"
         case .shortcuts: return "全局快捷键自定义"
-        case .toolbar: return "截图工具栏定制与录屏参数配置"
+        case .screenshotRecording: return "截图历史存储与录屏音视频参数偏好"
+        case .toolbar: return "截图工具栏图标排布与定制"
         case .about: return "版本信息与技术架构"
         }
     }
@@ -2493,7 +2580,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .ocrSettings: return "text.viewfinder"
         case .general: return "gearshape"
         case .shortcuts: return "keyboard"
-        case .toolbar: return "camera"
+        case .screenshotRecording: return "video.badge.waveform"
+        case .toolbar: return "wrench.and.screwdriver"
         case .about: return "info.circle"
         }
     }
@@ -2506,6 +2594,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .ocrSettings: return .teal
         case .general: return .gray
         case .shortcuts: return .indigo
+        case .screenshotRecording: return .pink
         case .toolbar: return .purple
         case .about: return .secondary
         }

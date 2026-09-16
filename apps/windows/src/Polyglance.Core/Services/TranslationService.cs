@@ -22,6 +22,8 @@ public sealed class TranslationService : IDisposable
         }
     }
 
+    public static IOfflineTranslationHandler? OfflineHandler { get; set; }
+
     public Task<TranslationResult> TranslateAsync(
         string text,
         string targetLanguage,
@@ -32,9 +34,18 @@ public sealed class TranslationService : IDisposable
         if (_disposed || _engine == IntPtr.Zero)
             throw new ObjectDisposedException(nameof(TranslationService));
 
+        string effectiveProvider = (providerOverride ?? config.Provider).ToLowerInvariant();
+        if (effectiveProvider == "offline")
+        {
+            if (OfflineHandler != null)
+            {
+                return OfflineHandler.TranslateAsync(text, targetLanguage, sourceLanguage);
+            }
+            throw new InvalidOperationException("未初始化本地离线翻译引擎");
+        }
+
         return Task.Run(() =>
         {
-            string effectiveProvider = (providerOverride ?? config.Provider).ToLowerInvariant();
             string endpoint = config.Endpoint;
             string apiKey = config.ApiKey;
             string model = config.Model;

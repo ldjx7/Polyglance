@@ -39,7 +39,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var settingsWindowCoordinator = AuxiliaryWindowCoordinator<NSWindow>(
         makeWindow: { [unowned self] in makeSettingsWindow() },
         present: { [unowned self] window in
-            SettingsWindowPlacement.center(window, on: settingsPresentationScreen())
+            if !window.isVisible {
+                SettingsWindowPlacement.center(window, on: settingsPresentationScreen())
+            }
             window.makeKeyAndOrderFront(nil)
         },
         close: { $0.close() }
@@ -589,11 +591,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let panel = FloatingTranslatorPanel(
             contentRect: NSRect(x: 0, y: 0, width: 440, height: 480),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView, .nonactivatingPanel],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
-        panel.becomesKeyOnlyIfNeeded = true
+        panel.becomesKeyOnlyIfNeeded = false
         panel.minSize = NSSize(width: 380, height: 340)
         panel.title = "Polyglance"
         panel.titlebarAppearsTransparent = true
@@ -656,11 +658,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         }
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 840, height: 580),
-            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 580),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
+        window.minSize = NSSize(width: 800, height: 500)
         window.title = "Polyglance 设置"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
@@ -772,6 +775,95 @@ private final class FloatingTranslatorPanel: NSPanel {
     override var canBecomeMain: Bool { true }
     override func cancelOperation(_ sender: Any?) {
         orderOut(nil)
+    }
+
+    override func becomeKey() {
+        super.becomeKey()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if !isKeyWindow {
+            makeKey()
+        }
+        super.mouseDown(with: event)
+    }
+
+    private var targetTextView: NSTextView? {
+        if let tv = firstResponder as? NSTextView {
+            return tv
+        }
+        func findEditableTextView(_ view: NSView) -> NSTextView? {
+            if let tv = view as? NSTextView, tv.isEditable {
+                return tv
+            }
+            for sub in view.subviews {
+                if let found = findEditableTextView(sub) {
+                    return found
+                }
+            }
+            return nil
+        }
+        if let cv = contentView {
+            return findEditableTextView(cv)
+        }
+        return nil
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.type == .keyDown && event.modifierFlags.contains(.command) {
+            let chars = event.charactersIgnoringModifiers?.lowercased()
+            let hasShift = event.modifierFlags.contains(.shift)
+
+            if (chars == "a" || event.keyCode == 0) && !hasShift {
+                if let tv = targetTextView {
+                    tv.selectAll(nil)
+                    return true
+                }
+            } else if chars == "z" || event.keyCode == 6 {
+                if let tv = targetTextView {
+                    let um = tv.undoManager ?? undoManager
+                    if hasShift {
+                        if um?.canRedo == true {
+                            um?.redo()
+                            tv.didChangeText()
+                            return true
+                        }
+                    } else {
+                        if um?.canUndo == true {
+                            um?.undo()
+                            tv.didChangeText()
+                            return true
+                        }
+                    }
+                }
+            } else if (chars == "c" || event.keyCode == 8) && !hasShift {
+                if let tv = targetTextView {
+                    tv.copy(nil)
+                    return true
+                }
+            } else if (chars == "v" || event.keyCode == 9) && !hasShift {
+                if let tv = targetTextView, tv.isEditable {
+                    tv.paste(nil)
+                    tv.didChangeText()
+                    return true
+                }
+            } else if (chars == "x" || event.keyCode == 7) && !hasShift {
+                if let tv = targetTextView, tv.isEditable {
+                    tv.cut(nil)
+                    tv.didChangeText()
+                    return true
+                }
+            }
+        }
+
+        if super.performKeyEquivalent(with: event) {
+            return true
+        }
+        if let mainMenu = NSApp.mainMenu, mainMenu.performKeyEquivalent(with: event) {
+            return true
+        }
+        return false
     }
 
     override func makeKeyAndOrderFront(_ sender: Any?) {

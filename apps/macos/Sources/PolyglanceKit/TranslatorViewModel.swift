@@ -335,6 +335,20 @@ public final class TranslatorViewModel: ObservableObject {
         }
     }
 
+    public func retranslate() {
+        let trimmed = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        startTranslation()
+    }
+
+    public func retranslateSingleProvider(_ prov: String) {
+        let trimmed = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        Task {
+            await translateSingleProvider(prov)
+        }
+    }
+
     public func translateSingleProvider(_ prov: String) async {
         let trimmedText = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }

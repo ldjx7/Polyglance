@@ -8,6 +8,7 @@ using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using Polyglance.Core.Models;
 using Polyglance.Core.Services;
+using Polyglance.Platform.Translation;
 
 namespace Polyglance.Platform.Ocr;
 
@@ -29,11 +30,15 @@ public sealed class PpOcrEngine : IOcrEngine, IDisposable
 
     public PpOcrEngine()
     {
-        string[] searchPaths =
-        [
-            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "models", "ocr"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Polyglance", "models", "ocr")
-        ];
+        List<string> searchPaths = [];
+        if (!string.IsNullOrWhiteSpace(OfflineModelManager.CustomModelDirectory))
+        {
+            searchPaths.Add(Path.Combine(OfflineModelManager.CustomModelDirectory, "ocr"));
+            searchPaths.Add(Path.Combine(OfflineModelManager.CustomModelDirectory));
+        }
+        searchPaths.Add(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "models", "ocr"));
+        searchPaths.Add(Path.Combine(OfflineModelManager.DefaultModelDirectory, "ocr"));
+        searchPaths.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Polyglance", "models", "ocr"));
 
         foreach (var dir in searchPaths)
         {

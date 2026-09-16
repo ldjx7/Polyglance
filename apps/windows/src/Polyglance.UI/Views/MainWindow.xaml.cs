@@ -245,6 +245,7 @@ public partial class MainWindow : FluentWindow
             "youdao" => "youdao",
             "volcano" or "volcengine" => "volcano",
             "openaicompatible" or "openai-compatible" or "openai" => "openai",
+            "offline" or "local" or "marian" => "offline",
             var s when s.StartsWith("custom") => "openai",
             _ => provider.ToLowerInvariant()
         };
@@ -300,6 +301,7 @@ public partial class MainWindow : FluentWindow
             "youdao" => "有道翻译",
             "volcano" or "volcengine" => "火山翻译",
             "openaicompatible" or "openai-compatible" => "OpenAI 兼容",
+            "offline" or "local" or "marian" => "本地离线翻译",
             _ => provider
         };
     }
@@ -766,6 +768,28 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    private void OnRetranslateClick(object sender, RoutedEventArgs e)
+    {
+        OnTranslateClick(sender, e);
+    }
+
+    private async void OnRetrySingleProviderClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: ProviderCardItem card })
+        {
+            string text = TxtSource.Text.Trim();
+            if (string.IsNullOrEmpty(text))
+                return;
+
+            card.IsCollapsed = false;
+            card.Text = "";
+            card.IsTranslating = true;
+            card.ErrorMessage = null;
+
+            await TranslateSingleCardAsync(card, text, CancellationToken.None);
+        }
+    }
+
     private void OnToggleCardCollapseClick(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { Tag: ProviderCardItem card })
@@ -962,7 +986,7 @@ public partial class MainWindow : FluentWindow
         var menu = new ContextMenu();
         var allProviders = _config.ProviderOrder != null && _config.ProviderOrder.Count > 0
             ? _config.ProviderOrder
-            : new List<string> { "freeai", "microsoft", "google", "deepl", "baidu", "youdao", "volcano", "openaicompatible" };
+            : new List<string> { "freeai", "microsoft", "google", "deepl", "baidu", "youdao", "volcano", "openaicompatible", "offline" };
 
         foreach (var p in allProviders)
         {
@@ -1055,11 +1079,9 @@ public partial class MainWindow : FluentWindow
 
     private void OnOpenSettingsClick(object sender, RoutedEventArgs e)
     {
-        var settingsWin = new SettingsWindow(_configStore);
-        settingsWin.Owner = this;
-        if (settingsWin.ShowDialog() == true)
+        if (System.Windows.Application.Current is App app)
         {
-            ReloadConfiguration();
+            app.ShowSettings();
         }
     }
 
@@ -1079,7 +1101,7 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
-        if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        if ((e.Key == Key.R || e.Key == Key.Enter) && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
         {
             _debounceTimer?.Stop();
             OnTranslateClick(this, new RoutedEventArgs());

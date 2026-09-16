@@ -17,16 +17,19 @@ public sealed class PinHistoryItem
 public static class PinHistoryManager
 {
     private static PinArchiveStore? _overrideStore;
-    private static readonly Lazy<PinArchiveStore> _defaultStore = new(() =>
+    private static readonly Lazy<PinArchiveStore> _testStore = new(() =>
+        new PinArchiveStore(Path.Combine(Path.GetTempPath(), "PolyglanceTestArchive-" + Guid.NewGuid().ToString("N"))));
+
+    public static PinArchiveStore DefaultStore
     {
-        // Existing UI tests create pins without supplying a store; never write to real history.
-        bool testing = AppDomain.CurrentDomain.GetAssemblies().Any(assembly =>
-            assembly.GetName().Name?.StartsWith("xunit", StringComparison.OrdinalIgnoreCase) == true);
-        return testing
-            ? new PinArchiveStore(Path.Combine(Path.GetTempPath(), "PolyglanceTestArchive-" + Guid.NewGuid().ToString("N")))
-            : PinArchiveStore.Shared;
-    });
-    public static PinArchiveStore DefaultStore => _overrideStore ?? _defaultStore.Value;
+        get
+        {
+            if (_overrideStore != null) return _overrideStore;
+            bool testing = AppDomain.CurrentDomain.GetAssemblies().Any(assembly =>
+                assembly.GetName().Name?.StartsWith("xunit", StringComparison.OrdinalIgnoreCase) == true);
+            return testing ? _testStore.Value : PinArchiveStore.Shared;
+        }
+    }
 
     public static void SetOverrideStore(PinArchiveStore? store) => _overrideStore = store;
 

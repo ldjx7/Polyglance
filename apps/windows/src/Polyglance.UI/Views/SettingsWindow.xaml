@@ -7,9 +7,9 @@
         xmlns:controls="clr-namespace:Polyglance.UI.Controls"
         mc:Ignorable="d"
         Title="偏好设置 - Polyglance"
-        Width="940" Height="630"
-        MinWidth="900" MinHeight="580"
-        WindowStartupLocation="CenterOwner"
+        Width="900" Height="600"
+        MinWidth="760" MinHeight="500"
+        WindowStartupLocation="Manual"
         WindowBackdropType="Mica"
         ExtendsContentIntoTitleBar="True"
         WindowCornerPreference="Round"
@@ -86,6 +86,61 @@
                                 <Setter Property="Foreground" Value="White"/>
                                 <Setter Property="FontWeight" Value="SemiBold"/>
                             </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="RecordListItemStyle" TargetType="ListBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="Margin" Value="2,2"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <Grid>
+                                <Border x:Name="Indicator"
+                                        Width="3"
+                                        Height="18"
+                                        HorizontalAlignment="Left"
+                                        Background="#0A84FF"
+                                        CornerRadius="1.5"
+                                        Visibility="Collapsed"
+                                        Margin="-6,0,0,0"/>
+                                <ContentPresenter Margin="4,0,0,0"
+                                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#180A84FF"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#330A84FF"/>
+                                <Setter TargetName="Indicator" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsSelected" Value="True"/>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="Bd" Property="Background" Value="#240A84FF"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#4D0A84FF"/>
+                            </MultiTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -188,10 +243,17 @@
                                 </StackPanel>
                             </RadioButton>
 
+                            <RadioButton x:Name="NavScreenshotRecording" Style="{StaticResource NavItemStyle}" Tag="ScreenshotRecording" Click="OnNavChanged">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="VideoClip24" FontSize="15" Margin="0,0,10,0"/>
+                                    <TextBlock Text="截图与录屏" FontSize="12.5" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+
                             <RadioButton x:Name="NavToolbar" Style="{StaticResource NavItemStyle}" Tag="Toolbar" Click="OnNavChanged">
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                     <ui:SymbolIcon Symbol="Toolbox24" FontSize="15" Margin="0,0,10,0"/>
-                                    <TextBlock Text="录屏与工具栏" FontSize="12.5" VerticalAlignment="Center"/>
+                                    <TextBlock Text="工具栏" FontSize="12.5" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </RadioButton>
 
@@ -266,24 +328,37 @@
                                         <TextBlock Text="关闭主窗口时最小化到系统托盘" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                         <TextBlock Text="点击主窗口关闭按钮时继续在后台保持运行" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
                                     </StackPanel>
-                                    <ui:ToggleSwitch x:Name="ChkMinimizeToTray" Grid.Column="2" VerticalAlignment="Center" IsChecked="True"/>
+                                     <ui:ToggleSwitch x:Name="ChkMinimizeToTray" Grid.Column="2" VerticalAlignment="Center" IsChecked="True"/>
                                 </Grid>
                             </ui:Card>
 
+                            <!-- 模型与离线数据存储目录 -->
                             <ui:Card Padding="16,14" Margin="0,0,0,10">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <ui:SymbolIcon Symbol="History24" FontSize="20" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,14,0"/>
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
-                                        <TextBlock Text="保存已完成截图到历史记录" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-                                        <TextBlock Text="开启后，成功复制或另存为的截图与长截图将自动存入历史记录" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
-                                    </StackPanel>
-                                    <ui:ToggleSwitch x:Name="ToggleSaveCompletedScreenshotsToHistory" Grid.Column="2" VerticalAlignment="Center"/>
-                                </Grid>
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <ui:SymbolIcon Symbol="Folder24" FontSize="20" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="数据存储目录" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                            <TextBlock Text="程序将自动在选定目录下划分子目录存放离线模型 (models/)、翻译历史 (history/) 以及截图贴图 (PinHistory/)" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <Grid Margin="34,0,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <ui:TextBox x:Name="TxtGeneralDataStorageDir" Grid.Column="0" IsReadOnly="True" Height="32" Padding="8,0,8,0" VerticalContentAlignment="Center" Margin="0,0,8,0"/>
+                                        <ui:Button Grid.Column="1" Content="更改目录…" Appearance="Secondary" Height="32" Padding="12,0" Margin="0,0,6,0" Click="OnChangeDataStorageDirClick"/>
+                                        <ui:Button Grid.Column="2" Content="恢复默认" Appearance="Secondary" Height="32" Padding="10,0" Margin="0,0,6,0" Click="OnResetDataStorageDirClick"/>
+                                        <ui:Button Grid.Column="3" Content="打开目录" Appearance="Transparent" Height="32" Padding="10,0" Click="OnOpenDataStorageDirClick"/>
+                                    </Grid>
+                                </StackPanel>
                             </ui:Card>
                         </StackPanel>
                     </ScrollViewer>
@@ -342,6 +417,7 @@
                                             <Setter Property="Margin" Value="4,1"/>
                                             <Setter Property="Background" Value="Transparent"/>
                                             <Setter Property="BorderThickness" Value="0"/>
+                                            <Setter Property="ClipToBounds" Value="False"/>
                                             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
                                             <Setter Property="Template">
                                                 <Setter.Value>
@@ -379,6 +455,7 @@
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
                                             <Grid Height="34" Margin="0,2" Background="Transparent"
+                                                  Opacity="{Binding DragOpacity}"
                                                   PreviewMouseLeftButtonDown="OnProviderItemPreviewMouseDown"
                                                   MouseMove="OnProviderItemMouseMove"
                                                   PreviewMouseLeftButtonUp="OnProviderItemMouseUp">
@@ -388,6 +465,10 @@
                                                     <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
+
+                                                <!-- 拖拽目标指示线 -->
+                                                <Border Grid.ColumnSpan="4" Height="2" Background="#0A84FF" VerticalAlignment="Top" Margin="0,-2,0,0" CornerRadius="1"
+                                                        Visibility="{Binding DropIndicatorVisibility}" Panel.ZIndex="10"/>
 
                                                 <Image Grid.Column="0" Source="{Binding IconPath}" Width="18" Height="18" Margin="4,0,8,0" VerticalAlignment="Center"/>
 
@@ -521,6 +602,55 @@
                                         <StackPanel x:Name="FormBuiltin" Visibility="Collapsed">
                                             <TextBlock Text="该服务内置系统网络协议，无需额外参数。" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
                                         </StackPanel>
+
+                                        <!-- 本地离线翻译设置 (MarianMT ONNX) -->
+                                        <StackPanel x:Name="FormOffline" Visibility="Collapsed">
+                                            <TextBlock Text="本地离线翻译模型管理" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" Margin="0,0,0,4"/>
+                                            <TextBlock Text="基于神经网络 MarianMT 与 ONNX 引擎，完全在本地运行，保护隐私且无需联网。" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+
+
+
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                                <ui:Button Content="导入模型包 (.zip)" Appearance="Secondary" Margin="0,0,8,0" Click="OnImportOfflineModelZipClick"/>
+                                                <ui:Button Content="打开模型存储目录" Appearance="Secondary" Click="OnOpenOfflineModelsDirClick"/>
+                                            </StackPanel>
+
+                                            <ItemsControl x:Name="ListOfflineModels">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border Background="{DynamicResource ControlFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6" Padding="12,10" Margin="0,0,0,8">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,0">
+                                                                    <StackPanel Orientation="Horizontal">
+                                                                        <TextBlock Text="{Binding Name}" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                                                        <TextBlock Text="{Binding SizeFormatted, StringFormat='  ({0})'}" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                                                                    </StackPanel>
+                                                                    <TextBlock Text="{Binding Description}" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,4" TextWrapping="Wrap"/>
+                                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                                        <TextBlock Text="状态: " FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+                                                                        <TextBlock Text="{Binding StatusText}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                                                                    </StackPanel>
+                                                                    <ProgressBar Value="{Binding DownloadProgress, Mode=OneWay}" Maximum="1.0" Height="4" Margin="0,6,0,0"
+                                                                                 Visibility="{Binding DownloadingVisibility}"/>
+                                                                </StackPanel>
+                                                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <ui:Button Content="下载" Appearance="Primary" Padding="12,4" Margin="4,0,0,0"
+                                                                               Tag="{Binding}" Click="OnDownloadOfflineModelClick"
+                                                                               Visibility="{Binding NotInstalledVisibility}"/>
+                                                                    <ui:Button Content="删除" Appearance="Danger" Padding="12,4" Margin="4,0,0,0"
+                                                                               Tag="{Binding}" Click="OnDeleteOfflineModelClick"
+                                                                               Visibility="{Binding InstalledVisibility}"/>
+                                                                </StackPanel>
+                                                            </Grid>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
                                     </StackPanel>
                                 </ScrollViewer>
 
@@ -631,6 +761,12 @@
                                                     <TextBlock Text="OpenAI 兼容协议" VerticalAlignment="Center"/>
                                                 </StackPanel>
                                             </ComboBoxItem>
+                                            <ComboBoxItem Tag="offline">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Image Source="pack://application:,,,/Polyglance;component/Resources/ProviderIcons/offline.png" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="本地离线翻译" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </ComboBoxItem>
                                         </ComboBox>
                                     </Grid>
                                 </ui:Card>
@@ -736,10 +872,12 @@
                                      Grid.Row="1"
                                      BorderThickness="0"
                                      Background="Transparent"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ItemContainerStyle="{StaticResource RecordListItemStyle}"
                                      SelectionChanged="OnFavoriteSelectionChanged">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
-                                        <StackPanel Margin="0,3">
+                                        <StackPanel Margin="0,1">
                                             <TextBlock Text="{Binding SourceText}" FontSize="12.5" FontWeight="Medium" Foreground="{DynamicResource TextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
                                             <TextBlock Text="{Binding TargetText}" FontSize="12" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis" Margin="0,2,0,3"/>
                                             <StackPanel Orientation="Horizontal">
@@ -844,10 +982,12 @@
                                      Grid.Row="1"
                                      BorderThickness="0"
                                      Background="Transparent"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ItemContainerStyle="{StaticResource RecordListItemStyle}"
                                      SelectionChanged="OnHistorySelectionChanged">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
-                                        <StackPanel Margin="0,3">
+                                        <StackPanel Margin="0,1">
                                             <TextBlock Text="{Binding SourceText}" FontSize="12.5" FontWeight="Medium" Foreground="{DynamicResource TextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
                                             <TextBlock Text="{Binding TargetText}" FontSize="12" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis" Margin="0,2,0,3"/>
                                             <StackPanel Orientation="Horizontal">
@@ -1229,18 +1369,27 @@
                     </ScrollViewer>
                 </Grid>
 
-                <!-- 5. 录屏与工具栏 (Toolbar) -->
-                <Grid x:Name="PanelToolbar" Visibility="Collapsed">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    <Grid Grid.Row="0" Margin="0,0,12,10">
-                        <ui:Button x:Name="BtnResetToolbarItems" Appearance="Secondary" Content="恢复默认" HorizontalAlignment="Right" Padding="14,4" Click="OnResetToolbarItemsClick" VerticalAlignment="Center"/>
-                    </Grid>
-
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
+                <!-- 5. 截图与录屏 (Screenshot & Recording) -->
+                <Grid x:Name="PanelScreenshotRecording" Visibility="Collapsed">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
                         <StackPanel>
+                            <!-- 截图设置 -->
+                            <ui:Card Margin="0,0,0,10" Padding="16,14">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ui:SymbolIcon Symbol="History24" FontSize="20" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Text="保存已完成截图到历史记录" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock Text="开启后，成功复制或另存为的截图与长截图将自动存入历史记录" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <ui:ToggleSwitch x:Name="ToggleSaveCompletedScreenshotsToHistory" Grid.Column="2" VerticalAlignment="Center"/>
+                                </Grid>
+                            </ui:Card>
+
                             <!-- 录屏参数 -->
                             <ui:Card Margin="0,0,0,10" Padding="16,14">
                                 <Grid>
@@ -1295,6 +1444,22 @@
                                     </ComboBox>
                                 </Grid>
                             </ui:Card>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+
+                <!-- 6. 工具栏 (Toolbar) -->
+                <Grid x:Name="PanelToolbar" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0" Margin="0,0,12,10">
+                        <ui:Button x:Name="BtnResetToolbarItems" Appearance="Secondary" Content="恢复默认" HorizontalAlignment="Right" Padding="14,4" Click="OnResetToolbarItemsClick" VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
+                        <StackPanel>
                             <!-- 实时生效工具栏卡片 -->
                             <ui:Card Margin="0,0,0,12" Padding="16,14">
                                 <StackPanel>
