@@ -19,11 +19,51 @@ import PageLayout from '../../../layouts/PageLayout.astro';
       <h3 style="font-size:1.05rem; color:var(--text-1); margin:1rem 0 0.5rem;">1. Installation</h3>
       <p>Download the latest <code>.dmg</code> from the <a href="/en/download" style="color:var(--accent); text-decoration:underline;">Download page</a> and drag <strong>Polyglance</strong> into your Applications folder.</p>
 
-      <h3 style="font-size:1.05rem; color:var(--text-1); margin:1.25rem 0 0.5rem;">2. If prompted "Damaged and cannot be opened"</h3>
-      <p>As an open-source project without Apple Developer notarization, macOS Gatekeeper might block execution. Open your <strong>Terminal</strong> and run:</p>
+      <h3 style="font-size:1.05rem; color:var(--text-1); margin:1.25rem 0 0.5rem;">2. Resolving "Damaged and cannot be opened" Prompt</h3>
       
-      <div style="background:var(--bg-subtle); border:1px solid var(--border-subtle); border-radius:8px; padding:0.85rem 1.1rem; margin:0.75rem 0; font-family:var(--font-code); font-size:0.88rem; color:var(--text-1);">
-        <code>xattr -cr /Applications/Polyglance.app</code>
+      <div style="background:var(--bg-subtle); border-left:3px solid var(--accent); padding:0.75rem 1rem; margin:0.75rem 0 1rem; border-radius:4px; font-size:0.88rem; color:var(--text-2);">
+        <strong style="color:var(--text-1);">Why does macOS block it?</strong><br />
+        Polyglance is a 100% free and open-source productivity app without an annual \$99 Apple Developer commercial notarization subscription. macOS Gatekeeper flags newly downloaded non-notarized applications with quarantine attributes, triggering alerts like "Damaged and cannot be opened" or "Unidentified Developer". The full codebase is transparently open on GitHub and completely safe to use. You can unblock it via any of the following methods:
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:1rem; margin:1rem 0;">
+        <div style="background:var(--bg-subtle); border:1px solid var(--border-subtle); border-radius:8px; padding:1rem 1.15rem;">
+          <h4 style="font-size:0.95rem; color:var(--text-1); margin-bottom:0.4rem; display:flex; align-items:center; gap:0.4rem;">
+            <span style="background:var(--accent); color:#fff; font-size:0.75rem; padding:0.1rem 0.4rem; border-radius:4px; font-weight:700;">Method 1</span>
+            Allow in "System Settings" (Recommended)
+          </h4>
+          <ol style="padding-left:1.25rem; font-size:0.9rem; line-height:1.6; color:var(--text-2); margin-top:0.4rem;">
+            <li><strong>Dismiss Warning</strong>: Click "Cancel" or "Done" on the warning prompt (do NOT move to Trash).</li>
+            <li><strong>Open Privacy &amp; Security</strong>: Click top-left  menu → "System Settings" → select "Privacy &amp; Security" in the sidebar.</li>
+            <li><strong>Click "Open Anyway"</strong>: Scroll down to "Security". Locate "Polyglance was blocked from use because it is not from an identified developer", click "Open Anyway", verify your password or Touch ID, and click "Open" on the confirmation prompt.</li>
+          </ol>
+        </div>
+
+        <div style="background:var(--bg-subtle); border:1px solid var(--border-subtle); border-radius:8px; padding:1rem 1.15rem;">
+          <h4 style="font-size:0.95rem; color:var(--text-1); margin-bottom:0.4rem; display:flex; align-items:center; gap:0.4rem;">
+            <span style="background:var(--text-2); color:#fff; font-size:0.75rem; padding:0.1rem 0.4rem; border-radius:4px; font-weight:700;">Method 2</span>
+            Finder Right-Click Open (Fastest)
+          </h4>
+          <ol style="padding-left:1.25rem; font-size:0.9rem; line-height:1.6; color:var(--text-2); margin-top:0.4rem;">
+            <li>Open "Finder" and go to the "Applications" folder.</li>
+            <li>Locate Polyglance, hold <kbd style="background:var(--bg-card); border:1px solid var(--border-subtle); padding:0.1rem 0.35rem; border-radius:4px;">Control</kbd> and click it (or right-click).</li>
+            <li>Select "Open" from the context menu.</li>
+            <li>Click the "Open" button on the popup to launch and permanently whitelist the app.</li>
+          </ol>
+        </div>
+
+        <div style="background:var(--bg-subtle); border:1px solid var(--border-subtle); border-radius:8px; padding:1rem 1.15rem;">
+          <h4 style="font-size:0.95rem; color:var(--text-1); margin-bottom:0.4rem; display:flex; align-items:center; gap:0.4rem;">
+            <span style="background:var(--text-2); color:#fff; font-size:0.75rem; padding:0.1rem 0.4rem; border-radius:4px; font-weight:700;">Method 3</span>
+            Terminal Command (Removes Quarantine Attribute)
+          </h4>
+          <p style="font-size:0.9rem; color:var(--text-2); margin-top:0.3rem;">
+            If the system reports that the app is damaged, open "Terminal" and run:
+          </p>
+          <div style="background:var(--bg-card); border:1px solid var(--border-subtle); border-radius:6px; padding:0.6rem 0.85rem; margin-top:0.5rem; font-family:var(--font-code); font-size:0.86rem; color:var(--text-1);">
+            <code>xattr -cr /Applications/Polyglance.app</code>
+          </div>
+        </div>
       </div>
 
       <h3 style="font-size:1.05rem; color:var(--text-1); margin:1.25rem 0 0.5rem;">3. Required Permissions</h3>

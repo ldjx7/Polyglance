@@ -639,27 +639,23 @@ const totalDownloads = getTotalDownloads(releases) || 140;
       gap: 1.5rem;
     }
 
-    @media (max-width: 860px) {
+    @media (max-width: 980px) {
       .bento-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, 1fr);
       }
     }
 
-    .bento-card-large {
-      grid-column: span 2;
-    }
-
-    @media (max-width: 860px) {
-      .bento-card-large {
-        grid-column: span 1;
+    @media (max-width: 640px) {
+      .bento-grid {
+        grid-template-columns: 1fr;
       }
     }
 
     .card {
       background: var(--bg-card);
       border: 1px solid var(--border-subtle);
-      border-radius: 14px;
-      padding: 2rem;
+      border-radius: 16px;
+      padding: 1.75rem;
       box-shadow: var(--shadow-card);
       display: flex;
       flex-direction: column;
@@ -674,16 +670,25 @@ const totalDownloads = getTotalDownloads(releases) || 140;
     }
 
     .card-icon-wrap {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
-      background: var(--bg-subtle);
-      border: 1px solid var(--border-subtle);
+      width: 44px;
+      height: 44px;
+      border-radius: 11px;
+      background: var(--accent-light);
+      border: 1px solid rgba(0, 102, 204, 0.16);
       display: flex;
       align-items: center;
       justify-content: center;
       margin-bottom: 1.25rem;
-      color: var(--text-1);
+      color: var(--accent);
+      transition: transform 0.2s ease;
+    }
+
+    :root[data-theme='dark'] .card-icon-wrap {
+      border-color: rgba(41, 151, 255, 0.25);
+    }
+
+    .card:hover .card-icon-wrap {
+      transform: scale(1.05);
     }
 
     .card-icon {
@@ -872,45 +877,64 @@ const totalDownloads = getTotalDownloads(releases) || 140;
       padding: 5rem 0 3.5rem;
     }
 
-    .gallery-tabs {
+    .gallery-tabs-wrap {
       display: flex;
       justify-content: center;
-      flex-wrap: wrap;
-      gap: 0.65rem;
-      margin: 2.25rem 0 2rem;
+      margin: 2rem 0 2.25rem;
+      max-width: 100%;
+      overflow-x: auto;
+      padding: 4px 2px 8px;
+      scrollbar-width: none;
+    }
+
+    .gallery-tabs-wrap::-webkit-scrollbar {
+      display: none;
+    }
+
+    .gallery-tabs {
+      display: inline-flex;
+      align-items: center;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-subtle);
+      border-radius: 9999px;
+      padding: 5px;
+      gap: 3px;
+      white-space: nowrap;
     }
 
     .gallery-tab {
       display: inline-flex;
       align-items: center;
-      gap: 0.5rem;
-      padding: 0.6rem 1.15rem;
-      font-size: 0.86rem;
+      gap: 0.45rem;
+      padding: 0.5rem 0.85rem;
+      font-size: 0.83rem;
       font-weight: 600;
       color: var(--text-2);
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
+      background: transparent;
+      border: none;
       border-radius: 9999px;
       cursor: pointer;
-      transition: all 0.2s ease;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+      transition: all 0.18s ease;
+      white-space: nowrap;
     }
 
     .gallery-tab:hover {
       color: var(--text-1);
-      border-color: var(--border-strong);
-      transform: translateY(-1px);
+      background: rgba(0, 0, 0, 0.05);
+    }
+
+    :root[data-theme='dark'] .gallery-tab:hover {
+      background: rgba(255, 255, 255, 0.08);
     }
 
     .gallery-tab.active {
       color: #ffffff;
       background: var(--accent);
-      border-color: var(--accent);
-      box-shadow: 0 4px 14px rgba(0, 102, 204, 0.3);
+      box-shadow: 0 2px 10px rgba(0, 102, 204, 0.35);
     }
 
     :root[data-theme='dark'] .gallery-tab.active {
-      box-shadow: 0 4px 14px rgba(41, 151, 255, 0.4);
+      box-shadow: 0 2px 10px rgba(41, 151, 255, 0.4);
     }
 
     .gallery-panes {
@@ -934,21 +958,21 @@ const totalDownloads = getTotalDownloads(releases) || 140;
 
     .gallery-card {
       display: grid;
-      grid-template-columns: 1.25fr 1fr;
-      gap: 2.5rem;
+      grid-template-columns: 1.35fr 1fr;
+      gap: 2.25rem;
       align-items: center;
       background: var(--bg-card);
       border: 1px solid var(--border-subtle);
       border-radius: 20px;
-      padding: 2.25rem;
+      padding: 1.75rem 2rem;
       box-shadow: var(--shadow-float);
     }
 
-    @media (max-width: 860px) {
+    @media (max-width: 900px) {
       .gallery-card {
         grid-template-columns: 1fr;
-        gap: 1.75rem;
-        padding: 1.5rem;
+        gap: 1.5rem;
+        padding: 1.25rem;
       }
     }
 
@@ -959,14 +983,14 @@ const totalDownloads = getTotalDownloads(releases) || 140;
       background: var(--bg-subtle);
       border: 1px solid var(--border-subtle);
       border-radius: 14px;
-      padding: 1.25rem;
+      padding: 0.65rem;
       overflow: hidden;
     }
 
     .gallery-img-wrap img {
       max-width: 100%;
       height: auto;
-      max-height: 480px;
+      max-height: 500px;
       object-fit: contain;
       border-radius: 8px;
       box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.16);
@@ -974,7 +998,7 @@ const totalDownloads = getTotalDownloads(releases) || 140;
     }
 
     .gallery-img-wrap:hover img {
-      transform: scale(1.02);
+      transform: scale(1.015);
     }
 
     .gallery-info h3 {
@@ -1245,40 +1269,41 @@ const totalDownloads = getTotalDownloads(releases) || 140;
     <!-- Real App Screenshot Showcase Gallery -->
     <section id="gallery" class="gallery-section container">
       <div class="section-header">
-        <span class="section-label">Real Screenshots</span>
         <h2 class="section-title">真实界面效果</h2>
         <p class="section-desc">基于 macOS 与 Windows 系统原生技术栈深度构建，拒绝套壳。告别臃肿的 Web 视图，体验极致流畅的原生质感。</p>
       </div>
 
-      <div class="gallery-tabs">
-        <button class="gallery-tab active" data-target="gallery-macos-trans">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.37c.62-.75 1.04-1.8 1.01-2.87-.96.04-2.12.64-2.8 1.44-.59.68-1.11 1.76-.97 2.8 1.07.08 2.14-.54 2.76-1.37z"/></svg>
-          划词翻译 (macOS)
-        </button>
-        <button class="gallery-tab" data-target="gallery-win-trans">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M0 0h11.377v11.377H0zm12.623 0H24v11.377H12.623zM0 12.623h11.377V24H0zm12.623 0H24V24H12.623z"/></svg>
-          划词翻译 (Windows)
-        </button>
-        <button class="gallery-tab" data-target="gallery-ocr">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
-          文字识别 (OCR)
-        </button>
-        <button class="gallery-tab" data-target="gallery-qrcode">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-          二维码识别
-        </button>
-        <button class="gallery-tab" data-target="gallery-toolbar">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-          工具栏定制
-        </button>
-        <button class="gallery-tab" data-target="gallery-recording">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="#ff4d4f"/></svg>
-          截图与录屏设置
-        </button>
-        <button class="gallery-tab" data-target="gallery-shortcuts">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M18 16H6"/></svg>
-          快捷键预设
-        </button>
+      <div class="gallery-tabs-wrap">
+        <div class="gallery-tabs">
+          <button class="gallery-tab active" data-target="gallery-macos-trans">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.37c.62-.75 1.04-1.8 1.01-2.87-.96.04-2.12.64-2.8 1.44-.59.68-1.11 1.76-.97 2.8 1.07.08 2.14-.54 2.76-1.37z"/></svg>
+            划词翻译 (macOS)
+          </button>
+          <button class="gallery-tab" data-target="gallery-win-trans">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M0 0h11.377v11.377H0zm12.623 0H24v11.377H12.623zM0 12.623h11.377V24H0zm12.623 0H24V24H12.623z"/></svg>
+            划词翻译 (Windows)
+          </button>
+          <button class="gallery-tab" data-target="gallery-ocr">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+            文字识别 (OCR)
+          </button>
+          <button class="gallery-tab" data-target="gallery-qrcode">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            二维码识别
+          </button>
+          <button class="gallery-tab" data-target="gallery-toolbar">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+            工具栏定制
+          </button>
+          <button class="gallery-tab" data-target="gallery-recording">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="#ff4d4f"/></svg>
+            截图与录屏设置
+          </button>
+          <button class="gallery-tab" data-target="gallery-shortcuts">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M18 16H6"/></svg>
+            快捷键预设
+          </button>
+        </div>
       </div>
 
       <div class="gallery-panes">
@@ -1413,15 +1438,15 @@ const totalDownloads = getTotalDownloads(releases) || 140;
     <!-- Bento Grid Features -->
     <section id="features" class="features container">
       <div class="section-header">
-        <span class="section-label">Core Capabilities</span>
         <h2 class="section-title">全能利器，化繁为简</h2>
       </div>
 
       <div class="bento-grid">
-        <div class="card bento-card-large">
+        <!-- 1. 划词翻译与原位替换 -->
+        <div class="card">
           <div>
             <div class="card-icon-wrap">
-              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>
+              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>
             </div>
             <h3 class="card-h3">极速划词翻译与原位替换</h3>
             <p class="card-p">内置免费翻译服务。划选文字按下 <kbd>⌥D</kbd> / <kbd>Alt+D</kbd> 原地弹出流式气泡；按下 <kbd>⌥R</kbd> / <kbd>Alt+R</kbd> 直接将译文替换原文本，多语言写作与代码国际化无需手动复制粘贴。</p>
@@ -1430,14 +1455,15 @@ const totalDownloads = getTotalDownloads(releases) || 140;
             <span class="tag">划词翻译 (⌥D / Alt+D)</span>
             <span class="tag">原位替换 (⌥R / Alt+R)</span>
             <span class="tag">免配置即用</span>
-            <span class="tag">支持 DeepSeek / OpenAI 自定义模型</span>
+            <span class="tag">自定义 AI 模型</span>
           </div>
         </div>
 
+        <!-- 2. 系统级离线 OCR 与截屏翻译 -->
         <div class="card">
           <div>
             <div class="card-icon-wrap">
-              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
+              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="14" y2="13"/><line x1="7" y1="17" x2="11" y2="17"/></svg>
             </div>
             <h3 class="card-h3">系统级离线 OCR 与截屏翻译</h3>
             <p class="card-p">基于 Apple Vision 与 Windows Media OCR 原生引擎，完全在设备本地离线运算，数据绝不上云。支持 <kbd>⌥S</kbd> / <kbd>Alt+S</kbd> 原地双语对照与 <kbd>⌥C</kbd> / <kbd>Alt+O</kbd> 分词点选复制。</p>
@@ -1449,10 +1475,27 @@ const totalDownloads = getTotalDownloads(releases) || 140;
           </div>
         </div>
 
+        <!-- 3. 多二维码并发识别与智能解析 -->
         <div class="card">
           <div>
             <div class="card-icon-wrap">
-              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="6" y="6" width="1" height="1"/><rect x="17" y="6" width="1" height="1"/><rect x="6" y="17" width="1" height="1"/><path d="M14 17h3v3"/><path d="M17 14v3"/></svg>
+            </div>
+            <h3 class="card-h3">多二维码并发识别与解析</h3>
+            <p class="card-p">截屏画面内任意数量二维码秒级同步侦测定位。深度解析 Wi-Fi 配置并一键复制密码，支持网页 URL 快捷访问、联系人名片与各种 Scheme 协议。</p>
+          </div>
+          <div class="card-tags">
+            <span class="tag">多码同屏并发捕获</span>
+            <span class="tag">Wi-Fi 密码一键提取</span>
+            <span class="tag">协议结构化解析</span>
+          </div>
+        </div>
+
+        <!-- 4. 智能滚动长截图 -->
+        <div class="card">
+          <div>
+            <div class="card-icon-wrap">
+              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M12 6v6"/><path d="m9 9 3 3 3-3"/><line x1="9" y1="15" x2="15" y2="15"/><line x1="9" y1="18" x2="13" y2="18"/></svg>
             </div>
             <h3 class="card-h3">智能滚动长截图</h3>
             <p class="card-p">滚动网页、长代码或聊天记录时自动对齐与拼接特征像素，轻松生成完整高分辨率长图，支持二次编辑与快速导出。</p>
@@ -1460,13 +1503,15 @@ const totalDownloads = getTotalDownloads(releases) || 140;
           <div class="card-tags">
             <span class="tag">自动特征拼接</span>
             <span class="tag">无损高 DPI 导出</span>
+            <span class="tag">智能边界吸附</span>
           </div>
         </div>
 
+        <!-- 5. 高清区域录屏与音频内录 -->
         <div class="card">
           <div>
             <div class="card-icon-wrap">
-              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg>
+              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="14" height="14" rx="3"/><path d="m16 10 5-3v10l-5-3"/><circle cx="9" cy="12" r="2.5" fill="currentColor"/></svg>
             </div>
             <h3 class="card-h3">高清区域录屏与音频内录</h3>
             <p class="card-p">自由框选指定窗口或区域，快速录制高清 MP4 视频或轻量 GIF 动图；支持系统内部声音内录与麦克风旁白同步收音，配备独立录屏配置选项。</p>
@@ -1478,10 +1523,11 @@ const totalDownloads = getTotalDownloads(releases) || 140;
           </div>
         </div>
 
+        <!-- 6. 像素取色与桌面贴图 -->
         <div class="card">
           <div>
             <div class="card-icon-wrap">
-              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 0-2H8a1 1 0 0 0 0 2h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>
             </div>
             <h3 class="card-h3">像素取色与桌面贴图</h3>
             <p class="card-p">截图时按 <kbd>C</kbd> 放大镜精确取色并复制 HEX / RGB；剪贴板图片或截图按 <kbd>⌥W</kbd> / <kbd>Alt+V</kbd> 一键置顶悬浮在屏幕最前端，按 <kbd>⌥⇧W</kbd> / <kbd>Alt+Shift+V</kbd> 顺序恢复历史贴图。</p>
@@ -1498,7 +1544,6 @@ const totalDownloads = getTotalDownloads(releases) || 140;
     <!-- Comparison Section -->
     <section id="compare" class="compare-section container">
       <div class="section-header">
-        <span class="section-label">Comparison</span>
         <h2 class="section-title">为什么选择 Polyglance？</h2>
       </div>
 
@@ -1551,7 +1596,6 @@ const totalDownloads = getTotalDownloads(releases) || 140;
     <!-- FAQ Section -->
     <section id="faq" class="faq-section container">
       <div class="section-header">
-        <span class="section-label">FAQ</span>
         <h2 class="section-title">常见问题</h2>
       </div>
 
@@ -1567,8 +1611,14 @@ const totalDownloads = getTotalDownloads(releases) || 140;
         </div>
 
         <div class="faq-card">
-          <h4 class="faq-h4">macOS 首次启动提示已损坏、无法打开如何解决？</h4>
-          <p class="faq-p">因本工具为开源项目，未加入付费的 Apple 开发者公证。若打开提示损坏，请打开<strong>终端 (Terminal)</strong> 运行：<code style="font-family:var(--font-code); font-size:0.82rem; background:var(--bg-subtle); padding:0.15rem 0.35rem; border-radius:4px; border:1px solid var(--border-subtle); color:var(--text-1);">xattr -cr /Applications/Polyglance.app</code> 即可正常启动。</p>
+          <h4 class="faq-h4">macOS 首次启动提示已损坏或无法打开如何解决？</h4>
+          <p class="faq-p" style="margin-bottom:0.5rem;">因 Polyglance 为免费开源项目，未向 Apple 购买每年 99 美元的商业公证，系统 Gatekeeper 机制会标记隔离。可通过以下三种方式放行：</p>
+          <ul style="font-size:0.87rem; color:var(--text-2); line-height:1.6; padding-left:1.15rem; display:flex; flex-direction:column; gap:0.35rem;">
+            <li><strong>方法一（系统设置放行·推荐）</strong>：先关闭报错弹窗（切勿点废纸篓），前往「系统设置 → 隐私与安全性」，在安全性区域点击「仍要打开」(Open Anyway) 并确认。</li>
+            <li><strong>方法二（访达快捷右键）</strong>：在访达「应用程序」目录中，按住 <kbd style="background:var(--bg-subtle); padding:0.1rem 0.3rem; border-radius:3px; border:1px solid var(--border-subtle);">Control</kbd> 键点击 Polyglance 并选择「打开」，确认即可加入白名单。</li>
+            <li><strong>方法三（终端解除隔离）</strong>：打开终端运行 <code style="font-family:var(--font-code); font-size:0.82rem; background:var(--bg-subtle); padding:0.12rem 0.35rem; border-radius:4px; border:1px solid var(--border-subtle); color:var(--text-1);">xattr -cr /Applications/Polyglance.app</code> 即可直接移除隔离属性。</li>
+          </ul>
+          <p style="margin-top:0.6rem; font-size:0.84rem;"><a href="/guides/install" style="color:var(--accent); text-decoration:underline;">查看带图文的完整安装指南 →</a></p>
         </div>
 
         <div class="faq-card">

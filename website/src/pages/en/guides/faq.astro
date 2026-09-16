@@ -35,4 +35,17 @@ import PageLayout from '../../../layouts/PageLayout.astro';
       You can re-record and customize every global shortcut in Preferences → Shortcuts.
     </p>
   </div>
+
+  <div class="card">
+    <h2 class="card-title">5. Prompted "Damaged and cannot be opened" on macOS?</h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7;">
+      As a free and open-source project without Apple Developer commercial notarization, macOS Gatekeeper blocks execution by default. You can unblock it via:
+    </p>
+    <ul style="color:var(--text-2); font-size:0.92rem; line-height:1.7; padding-left:1.25rem; margin-top:0.4rem;">
+      <li><strong>Method 1 (System Settings)</strong>: Dismiss the alert, open "System Settings → Privacy &amp; Security", and click "Open Anyway".</li>
+      <li><strong>Method 2 (Finder Right-Click)</strong>: In Applications, hold Control and click Polyglance, choose "Open", then confirm.</li>
+      <li><strong>Method 3 (Terminal Command)</strong>: Run <code>xattr -cr /Applications/Polyglance.app</code> to remove the quarantine flag.</li>
+    </ul>
+    <p style="margin-top:0.6rem; font-size:0.9rem;"><a href="/en/guides/install" style="color:var(--accent); text-decoration:underline;">View full installation and permission guide →</a></p>
+  </div>
 </PageLayout>

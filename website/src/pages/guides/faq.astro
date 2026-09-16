@@ -35,4 +35,17 @@ import PageLayout from '../../layouts/PageLayout.astro';
       所有功能快捷键均可在 偏好设置 → 快捷键 中录制更改为您习惯的组合按键，且支持一键切换推荐方案、Snipaste 方案或 PixPin 方案。
     </p>
   </div>
+
+  <div class="card">
+    <h2 class="card-title">5. macOS 首次启动提示已损坏或无法打开如何解决？</h2>
+    <p style="color:var(--text-2); font-size:0.95rem; line-height:1.7;">
+      因 Polyglance 为开源免费工具，未向 Apple 购买每年 99 美元的商业公证，系统 Gatekeeper 机制会进行安全拦截。可通过三种方法放行：
+    </p>
+    <ul style="color:var(--text-2); font-size:0.92rem; line-height:1.7; padding-left:1.25rem; margin-top:0.4rem;">
+      <li><strong>方法一（系统设置放行）</strong>：先关闭报错弹窗（切勿移到废纸篓），前往「系统设置 → 隐私与安全性」，在安全性区域点击「仍要打开」(Open Anyway) 并确认。</li>
+      <li><strong>方法二（访达快捷右键）</strong>：在访达「应用程序」目录中，按住 Control 键点击 Polyglance 图标选择「打开」，在随后弹窗中点击「打开」即可永久加入白名单。</li>
+      <li><strong>方法三（终端命令）</strong>：打开终端运行 <code>xattr -cr /Applications/Polyglance.app</code> 即可直接移除隔离属性。</li>
+    </ul>
+    <p style="margin-top:0.6rem; font-size:0.9rem;"><a href="/guides/install" style="color:var(--accent); text-decoration:underline;">查看详细安装与放行指引 →</a></p>
+  </div>
 </PageLayout>

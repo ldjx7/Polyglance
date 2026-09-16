@@ -19,11 +19,51 @@ import PageLayout from '../../layouts/PageLayout.astro';
       <h3 style="font-size:1.05rem; color:var(--text-1); margin:1rem 0 0.5rem;">1. 安装</h3>
       <p>前往 <a href="/download" style="color:var(--accent); text-decoration:underline;">下载页面</a> 获取最新的 <code>.dmg</code> 文件，双击打开后将 <strong>Polyglance</strong> 拖入应用程序 (Applications) 目录。</p>
 
-      <h3 style="font-size:1.05rem; color:var(--text-1); margin:1.25rem 0 0.5rem;">2. 首次启动提示已损坏、无法打开解决办法</h3>
-      <p>因本工具为开源项目，未加入苹果开发者公证。若打开时提示已损坏、无法打开、你应该将它移到废纸篓，请打开系统<strong>终端 (Terminal)</strong>，复制并运行以下命令清除隔离属性：</p>
+      <h3 style="font-size:1.05rem; color:var(--text-1); margin:1.25rem 0 0.5rem;">2. 首次启动提示已损坏或无法打开的解决办法</h3>
       
-      <div style="background:var(--bg-subtle); border:1px solid var(--border-subtle); border-radius:8px; padding:0.85rem 1.1rem; margin:0.75rem 0; font-family:var(--font-code); font-size:0.88rem; color:var(--text-1);">
-        <code>xattr -cr /Applications/Polyglance.app</code>
+      <div style="background:var(--bg-subtle); border-left:3px solid var(--accent); padding:0.75rem 1rem; margin:0.75rem 0 1rem; border-radius:4px; font-size:0.88rem; color:var(--text-2);">
+        <strong style="color:var(--text-1);">为什么 macOS 会拦截？</strong><br />
+        Polyglance 为 100% 透明开源的免费效率工具，未向 Apple 购买每年 99 美元的付费开发者签名与公证。macOS Gatekeeper 安全机制会对从网络下载的未签名应用添加下载隔离属性，进而弹出「已损坏，打不开。你应该将它移到废纸篓」或「来自身份不明的开发者」的拦截警告。代码在 GitHub 全开源，安全无害，可通过以下三种方式正常放行：
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:1rem; margin:1rem 0;">
+        <div style="background:var(--bg-subtle); border:1px solid var(--border-subtle); border-radius:8px; padding:1rem 1.15rem;">
+          <h4 style="font-size:0.95rem; color:var(--text-1); margin-bottom:0.4rem; display:flex; align-items:center; gap:0.4rem;">
+            <span style="background:var(--accent); color:#fff; font-size:0.75rem; padding:0.1rem 0.4rem; border-radius:4px; font-weight:700;">方法一</span>
+            在「系统设置」中放行（推荐）
+          </h4>
+          <ol style="padding-left:1.25rem; font-size:0.9rem; line-height:1.6; color:var(--text-2); margin-top:0.4rem;">
+            <li><strong>关闭报错弹窗</strong>：点击弹窗中的「完成」或「取消」（切记不要点击「移到废纸篓」）。</li>
+            <li><strong>打开隐私与安全性设置</strong>：点击屏幕左上角  苹果图标 → 打开「系统设置」(System Settings)，在左侧边栏找到并点击「隐私与安全性」(Privacy &amp; Security)。</li>
+            <li><strong>点击「仍要打开」</strong>：向下滑动到「安全性」区域，会看到提示「已阻止使用 Polyglance，因为来自身份不明的开发者」，点击右侧的「仍要打开」(Open Anyway) 按钮，输入开机密码或触控 ID 确认，在随后弹出的确认对话框中点击「打开」即可正常启动。</li>
+          </ol>
+        </div>
+
+        <div style="background:var(--bg-subtle); border:1px solid var(--border-subtle); border-radius:8px; padding:1rem 1.15rem;">
+          <h4 style="font-size:0.95rem; color:var(--text-1); margin-bottom:0.4rem; display:flex; align-items:center; gap:0.4rem;">
+            <span style="background:var(--text-2); color:#fff; font-size:0.75rem; padding:0.1rem 0.4rem; border-radius:4px; font-weight:700;">方法二</span>
+            访达快捷右键打开（更快速）
+          </h4>
+          <ol style="padding-left:1.25rem; font-size:0.9rem; line-height:1.6; color:var(--text-2); margin-top:0.4rem;">
+            <li>打开「访达」(Finder)，进入「应用程序」(Applications) 文件夹。</li>
+            <li>找到 Polyglance，按住键盘上的 <kbd style="background:var(--bg-card); border:1px solid var(--border-subtle); padding:0.1rem 0.35rem; border-radius:4px;">Control</kbd> 键并点击它（或者直接鼠标右键点击）。</li>
+            <li>在弹出的上下文菜单中选择「打开」。</li>
+            <li>此时系统弹出的提示框中会多出一个直接的「打开」按钮，点击即可正常运行并永久加入白名单。</li>
+          </ol>
+        </div>
+
+        <div style="background:var(--bg-subtle); border:1px solid var(--border-subtle); border-radius:8px; padding:1rem 1.15rem;">
+          <h4 style="font-size:0.95rem; color:var(--text-1); margin-bottom:0.4rem; display:flex; align-items:center; gap:0.4rem;">
+            <span style="background:var(--text-2); color:#fff; font-size:0.75rem; padding:0.1rem 0.4rem; border-radius:4px; font-weight:700;">方法三</span>
+            终端执行命令移除隔离属性（彻底解决提示已损坏）
+          </h4>
+          <p style="font-size:0.9rem; color:var(--text-2); margin-top:0.3rem;">
+            若打开时系统直接提示「已损坏，你应该将它移到废纸篓」，请打开系统「终端」(Terminal)，复制并运行以下命令清除隔离属性：
+          </p>
+          <div style="background:var(--bg-card); border:1px solid var(--border-subtle); border-radius:6px; padding:0.6rem 0.85rem; margin-top:0.5rem; font-family:var(--font-code); font-size:0.86rem; color:var(--text-1);">
+            <code>xattr -cr /Applications/Polyglance.app</code>
+          </div>
+        </div>
       </div>
 
       <h3 style="font-size:1.05rem; color:var(--text-1); margin:1.25rem 0 0.5rem;">3. 系统权限授予</h3>
