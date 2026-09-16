@@ -15,10 +15,9 @@ final class AppConfigurationStoreTests: XCTestCase {
         XCTAssertEqual(configuration.apiKey, "")
         XCTAssertEqual(
             TranslationProvider.allCases,
-            [.freeAI, .microsoft, .google, .deepl, .baidu, .youdao, .volcano, .openAICompatible, .apple]
+            [.freeAI, .microsoft, .google, .deepl, .baidu, .youdao, .volcano, .openAICompatible]
         )
         XCTAssertFalse(TranslationProvider.freeAI.requiresUserAPIKey)
-        XCTAssertFalse(TranslationProvider.apple.requiresUserAPIKey)
         XCTAssertFalse(TranslationProvider.microsoft.requiresUserAPIKey)
         XCTAssertFalse(TranslationProvider.google.requiresUserAPIKey)
         XCTAssertTrue(TranslationProvider.deepl.requiresUserAPIKey)

@@ -1,66 +1,79 @@
 ---
 title: User Guide
-description: Complete instructions and workflows for Polyglance
+description: Complete feature guide and core workflows for Polyglance
 ---
 
-## 1. Selected Text Translation
+## 1. Selected Text Translation & In-Place Replacement
 
-Translate text across browsers, documents, and editors in-place:
+Work with foreign text seamlessly across all editors, documents, and browsers:
 
-1. Select text on screen with your mouse.
-2. Press default shortcut `Ctrl+Shift+3` (macOS: `⌃⇧3`).
-3. A streaming translation bubble appears near the cursor.
-4. The translated text is automatically copied to your clipboard.
+- **Floating Translation**: Select text and press `⌥D` (macOS) or `Alt+D` (Windows). A streaming translation bubble appears beside your cursor with auto-detection and clipboard copying.
+- **Translate & Replace**: Select text and press `⌥R` (macOS) or `Alt+R` (Windows). Polyglance automatically translates the selection and directly replaces the original text in-place without manual copy-paste.
+
+---
 
 ## 2. Offline OCR & Screen Translation
 
-Extract and translate text from non-selectable areas:
+Extract and translate text from images, videos, and non-selectable UI:
 
-- **Screen Translation**: Press `Ctrl+Shift+4` (macOS: `⌃⇧4`), select region, and view native side-by-side translation immediately.
-- **Word Selection**: Press `Ctrl+Shift+1`, click the OCR button on the toolbar, and click highlighted words to copy, or press `Shift+C` to copy all text.
-- **Privacy First**: Powered by Apple Vision on macOS and Windows Media OCR on Windows. 100% on-device processing.
+- **Screen Translation**: Press `⌥S` (macOS) or `Alt+S` (Windows), drag across the screen, and view immediate side-by-side translated overlays.
+- **Text Recognition (OCR Workspace)**: Press `⌥C` (macOS) or `Alt+O` (Windows) to enter word selection mode. Click words or drag sentences to copy, or press `Shift+C` to copy all recognized text.
+- **Zero-Cloud Privacy**: Built with Apple Vision on macOS and Windows Media OCR on Windows. 100% on-device processing.
+
+---
 
 ## 3. Screenshot & Drawing Toolkit
 
-Rich annotation tools for screenshots:
+- Press `⌥A` (macOS) or `Alt+C` (Windows) to capture the screen with smart window snapping.
+- Annotation tools include: Rectangles, ellipses, arrows, lines, freehand pen, text, blur/mosaic, and auto-increment badges.
+- Press `Enter` to finish and copy; press `Esc` to cancel; use arrow keys to nudge selection by pixel.
 
-- Press `Ctrl+Shift+1` to capture screen with smart window snapping.
-- Tools include: Rectangles, ellipses, arrows, lines, pen, text, mosaic blur, and auto-increment numbered badges.
-- Quick actions: `Enter` to copy, `Ctrl+Z` to undo, `Ctrl+Y` / `Cmd+Shift+Z` to redo, and arrow keys to nudge pixels.
+---
 
 ## 4. Desktop Pinned Images
 
-Float reference images on top of all windows:
+Keep reference materials floating on top of all windows:
 
-- **Pin from Screenshot**: Click pin icon in the toolbar.
-- **Pin from Clipboard**: Press `Ctrl+Shift+2` to pin clipboard image on desktop.
-- **Restore Pin**: Press `Ctrl+Shift+5` to reopen dismissed pins in sequence.
-- **Interactions**: Mouse wheel to zoom, double click to reset scale, `Space` to edit annotations.
+- **Pin from Clipboard**: Press `⌥W` (macOS) or `Alt+V` (Windows) to pin the current clipboard image immediately.
+- **Pin from Screenshot**: Click the pin icon in the toolbar after making a selection.
+- **Restore Pins**: Press `⌥⇧W` (macOS) or `Alt+Shift+V` (Windows) to reopen dismissed pins in order.
+- **Interactions**: Mouse wheel to zoom, double-click to reset scale to 100%, and press `Space` to edit drawings directly on the pin.
 
-## 5. Pixel Color Picker
+---
 
-- In screenshot mode, inspect crosshair loupe with live pixel coordinates.
-- Press `C`: Copy pixel color.
+## 5. Pixel Loupe & Color Picker
+
+- Inspect exact pixel coordinates and colors under the crosshair in screenshot mode.
+- Press `C`: Copy pixel color code.
 - Press `Shift+C`: Toggle format between HEX and RGB.
+
+---
 
 ## 6. Scrolling Long Screenshot
 
-Capture full-page documents and chats:
+Stitch entire web pages, chat transcripts, or code listings:
 
-1. Select scrollable area and click the Long Screenshot icon.
-2. Smoothly scroll down with your mouse wheel.
-3. Feature alignment automatically stitches frames into a continuous image.
-4. Click finish to crop, annotate, or export high-res picture.
+1. Select scrollable region and click the Long Screenshot icon on the toolbar.
+2. Scroll downward smoothly with your mouse wheel.
+3. Feature alignment automatically aligns and stitches incoming frames.
+4. Review the result, crop or annotate, and export high-resolution images.
+
+---
 
 ## 7. Region Screen Recording
 
-Record crisp demonstrations:
+Record crisp animations and tutorials:
 
-- Click record icon on toolbar or trigger via custom shortcut.
-- Select region and output as GIF animation or MP4 video.
-- Supports system audio and microphone recording.
+- Click the record icon on the toolbar or trigger your custom hotkey.
+- Select region and export as animated GIF or MP4 video.
+- Supports simultaneous recording of system internal audio and microphone narration.
 
-## 8. Translation Provider Setup
+---
 
-- **Zero Configuration**: Built-in Microsoft and Google translation services work out of the box.
-- **Custom LLMs**: Configure OpenAI-compatible endpoints (DeepSeek, OpenAI, Ollama) in Preferences → Providers.
+## 8. Toolbar & Screen Recording Preferences
+
+Dedicated settings tabs in **Preferences**:
+
+- **Screenshot & Recording**: Configure video formats (MP4/GIF), frame rate, system sound capture, microphone inputs, and long screenshot stitching sensitivity.
+- **Toolbar Settings**: Customize toolbar scale, centering behavior, and visible action buttons.
+- **Translation Providers**: Built-in Microsoft and Google translation channels work out of the box, with support for custom OpenAI-compatible models (DeepSeek, OpenAI, Ollama).

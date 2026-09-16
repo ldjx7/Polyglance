@@ -5,11 +5,11 @@ import PageLayout from '../../layouts/PageLayout.astro';
 <PageLayout title="快捷键列表" description="Polyglance 全局默认快捷键与交互操作一览，支持自定义" lang="zh-CN">
   <div class="page-header">
     <h1 class="page-title">快捷键列表</h1>
-    <p class="page-desc">所有全局快捷键均可在偏好设置中自由修改与绑定。</p>
+    <p class="page-desc">所有全局快捷键均可在偏好设置中自由录制修改，或一键切换预设方案。</p>
   </div>
 
   <div class="card">
-    <h2 class="card-title">全局核心快捷键</h2>
+    <h2 class="card-title">全局默认快捷键（推荐方案）</h2>
     <table class="data-table">
       <thead>
         <tr>
@@ -20,29 +20,69 @@ import PageLayout from '../../layouts/PageLayout.astro';
       </thead>
       <tbody>
         <tr>
-          <td><strong>截图工具</strong>（截图、标注与置顶贴图）</td>
-          <td><kbd>⌃ Control</kbd> + <kbd>⇧ Shift</kbd> + <kbd>1</kbd></td>
-          <td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>1</kbd></td>
+          <td><strong>截图工具</strong>（框选、标注、取色与贴图）</td>
+          <td><kbd>⌥ Option</kbd> + <kbd>A</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>C</kbd></td>
+        </tr>
+        <tr>
+          <td><strong>划词翻译</strong>（选中文本原地弹出流式气泡）</td>
+          <td><kbd>⌥ Option</kbd> + <kbd>D</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>D</kbd></td>
+        </tr>
+        <tr>
+          <td><strong>划词翻译并替换</strong>（翻译并直接替换原文本）</td>
+          <td><kbd>⌥ Option</kbd> + <kbd>R</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>R</kbd></td>
+        </tr>
+        <tr>
+          <td><strong>截图翻译</strong>（框选屏幕区域离线 OCR 与对照翻译）</td>
+          <td><kbd>⌥ Option</kbd> + <kbd>S</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>S</kbd></td>
         </tr>
         <tr>
           <td><strong>贴出剪贴板图片</strong>（将剪贴板图像钉在桌面）</td>
-          <td><kbd>⌃ Control</kbd> + <kbd>⇧ Shift</kbd> + <kbd>2</kbd></td>
-          <td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>2</kbd></td>
-        </tr>
-        <tr>
-          <td><strong>划词翻译</strong>（选中文本原地弹出翻译气泡）</td>
-          <td><kbd>⌃ Control</kbd> + <kbd>⇧ Shift</kbd> + <kbd>3</kbd></td>
-          <td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>3</kbd></td>
-        </tr>
-        <tr>
-          <td><strong>截屏翻译</strong>（框选屏幕区域进行 OCR 与翻译）</td>
-          <td><kbd>⌃ Control</kbd> + <kbd>⇧ Shift</kbd> + <kbd>4</kbd></td>
-          <td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>4</kbd></td>
+          <td><kbd>⌥ Option</kbd> + <kbd>W</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>V</kbd></td>
         </tr>
         <tr>
           <td><strong>恢复最近关闭的贴图</strong>（按顺序恢复关闭的贴图）</td>
-          <td><kbd>⌃ Control</kbd> + <kbd>⇧ Shift</kbd> + <kbd>5</kbd></td>
-          <td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>5</kbd></td>
+          <td><kbd>⌥ Option</kbd> + <kbd>⇧ Shift</kbd> + <kbd>W</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>V</kbd></td>
+        </tr>
+        <tr>
+          <td><strong>文字识别 (OCR)</strong>（框选提取文本与分词点选）</td>
+          <td><kbd>⌥ Option</kbd> + <kbd>C</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>O</kbd></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">快捷键方案预设（偏好设置一键切换）</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>预设方案</th>
+          <th>核心键位特征</th>
+          <th>适用人群</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>推荐方案（默认）</strong></td>
+          <td>以 Option (macOS) / Alt (Windows) 为基础前缀，如 ⌥A / ⌥D / ⌥R / ⌥S</td>
+          <td>单手即可快速触发所有高频翻译与截图操作</td>
+        </tr>
+        <tr>
+          <td><strong>Snipaste 风格</strong></td>
+          <td>F1 截图、F3 贴图、Shift+F3 恢复贴图、Alt+D 划词翻译</td>
+          <td>习惯经典截图贴图工具键位的用户</td>
+        </tr>
+        <tr>
+          <td><strong>PixPin 风格</strong></td>
+          <td>Ctrl+1 截图、Ctrl+2 贴图、Ctrl+Q 划词翻译、Alt+Q 截图翻译、Ctrl+3 文字识别</td>
+          <td>习惯数字快捷键组合的用户</td>
         </tr>
       </tbody>
     </table>
@@ -60,9 +100,14 @@ import PageLayout from '../../layouts/PageLayout.astro';
       </thead>
       <tbody>
         <tr>
-          <td><strong>唤起主翻译窗口</strong></td>
+          <td><strong>输入翻译 (主窗口)</strong></td>
           <td><span style="color:var(--text-3);">未预设</span></td>
           <td>可在 偏好设置 → 快捷键 中录制绑定任意按键</td>
+        </tr>
+        <tr>
+          <td><strong>截图并复制</strong></td>
+          <td><span style="color:var(--text-3);">未预设</span></td>
+          <td>框选后直接保存图片至剪贴板，跳过标注工具栏</td>
         </tr>
         <tr>
           <td><strong>智能滚动长截图</strong></td>
@@ -157,12 +202,12 @@ import PageLayout from '../../layouts/PageLayout.astro';
         <tr>
           <td><strong>贴图缩放</strong></td>
           <td>鼠标滚轮 / 双击</td>
-          <td>滚轮无级缩放贴图；双击快速缩放或还原尺寸</td>
+          <td>滚轮无级平滑缩放贴图；双击快速还原至 100% 原始比例</td>
         </tr>
         <tr>
           <td><strong>贴图上下文菜单</strong></td>
           <td>鼠标右键</td>
-          <td>呼出菜单：复制、保存图像、历史贴图、关闭</td>
+          <td>呼出菜单：复制、保存图像、历史贴图、销毁</td>
         </tr>
         <tr>
           <td><strong>关闭贴图</strong></td>

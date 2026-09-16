@@ -5,11 +5,11 @@ import PageLayout from '../../../layouts/PageLayout.astro';
 <PageLayout title="Keyboard Shortcuts" description="Default global shortcut bindings and controls in Polyglance" lang="en">
   <div class="page-header">
     <h1 class="page-title">Keyboard Shortcuts</h1>
-    <p class="page-desc">All global shortcuts can be customized in Preferences.</p>
+    <p class="page-desc">All global shortcuts can be customized in Preferences or switched to preset layouts.</p>
   </div>
 
   <div class="card">
-    <h2 class="card-title">Core Global Shortcuts</h2>
+    <h2 class="card-title">Global Default Shortcuts (Recommended Preset)</h2>
     <table class="data-table">
       <thead>
         <tr>
@@ -21,28 +21,68 @@ import PageLayout from '../../../layouts/PageLayout.astro';
       <tbody>
         <tr>
           <td><strong>Screenshot Tool</strong> (Region capture, annotate &amp; pin)</td>
-          <td><kbd>⌃ Control</kbd> + <kbd>⇧ Shift</kbd> + <kbd>1</kbd></td>
-          <td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>1</kbd></td>
-        </tr>
-        <tr>
-          <td><strong>Pin Clipboard Image</strong> (Float clipboard image on desktop)</td>
-          <td><kbd>⌃ Control</kbd> + <kbd>⇧ Shift</kbd> + <kbd>2</kbd></td>
-          <td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>2</kbd></td>
+          <td><kbd>⌥ Option</kbd> + <kbd>A</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>C</kbd></td>
         </tr>
         <tr>
           <td><strong>Selected Text Translation</strong> (Floating translation popover)</td>
-          <td><kbd>⌃ Control</kbd> + <kbd>⇧ Shift</kbd> + <kbd>3</kbd></td>
-          <td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>3</kbd></td>
+          <td><kbd>⌥ Option</kbd> + <kbd>D</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>D</kbd></td>
         </tr>
         <tr>
-          <td><strong>Screen Translation</strong> (Select region for OCR &amp; translation)</td>
-          <td><kbd>⌃ Control</kbd> + <kbd>⇧ Shift</kbd> + <kbd>4</kbd></td>
-          <td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>4</kbd></td>
+          <td><strong>Translate &amp; Replace</strong> (Translate and replace original text in-place)</td>
+          <td><kbd>⌥ Option</kbd> + <kbd>R</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>R</kbd></td>
+        </tr>
+        <tr>
+          <td><strong>Screen Translation</strong> (Select region for offline OCR &amp; translation)</td>
+          <td><kbd>⌥ Option</kbd> + <kbd>S</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>S</kbd></td>
+        </tr>
+        <tr>
+          <td><strong>Pin Clipboard Image</strong> (Float clipboard image on desktop)</td>
+          <td><kbd>⌥ Option</kbd> + <kbd>W</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>V</kbd></td>
         </tr>
         <tr>
           <td><strong>Restore Recently Closed Pin</strong> (Recover closed pinned images)</td>
-          <td><kbd>⌃ Control</kbd> + <kbd>⇧ Shift</kbd> + <kbd>5</kbd></td>
-          <td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>5</kbd></td>
+          <td><kbd>⌥ Option</kbd> + <kbd>⇧ Shift</kbd> + <kbd>W</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>V</kbd></td>
+        </tr>
+        <tr>
+          <td><strong>Text Recognition (OCR)</strong> (Extract text with word-level selection)</td>
+          <td><kbd>⌥ Option</kbd> + <kbd>C</kbd></td>
+          <td><kbd>Alt</kbd> + <kbd>O</kbd></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">Shortcut Preset Schemes (One-Click in Preferences)</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Preset</th>
+          <th>Key Characteristics</th>
+          <th>Best For</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Recommended (Default)</strong></td>
+          <td>Uses Option (macOS) / Alt (Windows) prefixes (⌥A / ⌥D / ⌥R / ⌥S)</td>
+          <td>Ergonomic single-hand triggers for high-frequency workflows</td>
+        </tr>
+        <tr>
+          <td><strong>Snipaste Style</strong></td>
+          <td>F1 Capture, F3 Pin, Shift+F3 Restore Pin, Alt+D Translate</td>
+          <td>Users accustomed to classic screenshot-and-pin keybindings</td>
+        </tr>
+        <tr>
+          <td><strong>PixPin Style</strong></td>
+          <td>Ctrl+1 Capture, Ctrl+2 Pin, Ctrl+Q Translate, Alt+Q Screen Translate, Ctrl+3 OCR</td>
+          <td>Users who prefer number-based modifier combinations</td>
         </tr>
       </tbody>
     </table>
@@ -63,6 +103,11 @@ import PageLayout from '../../../layouts/PageLayout.astro';
           <td><strong>Open Main Translator Window</strong></td>
           <td><span style="color:var(--text-3);">Unassigned</span></td>
           <td>Record and bind custom key in Preferences &rarr; Shortcuts</td>
+        </tr>
+        <tr>
+          <td><strong>Capture &amp; Copy Directly</strong></td>
+          <td><span style="color:var(--text-3);">Unassigned</span></td>
+          <td>Save image directly to clipboard without opening the toolbar</td>
         </tr>
         <tr>
           <td><strong>Scrolling Long Screenshot</strong></td>
@@ -102,27 +147,27 @@ import PageLayout from '../../../layouts/PageLayout.astro';
         <tr>
           <td><strong>Cancel / Exit</strong></td>
           <td><kbd>Esc</kbd></td>
-          <td>Exit screenshot or cancel active selection</td>
+          <td>Exit screenshot mode or cancel current selection</td>
         </tr>
         <tr>
           <td><strong>Delete Selected Element</strong></td>
           <td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td>
-          <td>Remove selected annotation item</td>
+          <td>Delete selected drawing element (shape, arrow, text)</td>
         </tr>
         <tr>
           <td><strong>Nudge Selection</strong></td>
-          <td><kbd>&uarr;</kbd> <kbd>&darr;</kbd> <kbd>&larr;</kbd> <kbd>&rarr;</kbd></td>
-          <td>Move selection by 1px (hold <kbd>Shift</kbd> for 10px)</td>
+          <td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></td>
+          <td>Move selection by 1 pixel (hold <kbd>Shift</kbd> for 10 pixels)</td>
         </tr>
         <tr>
-          <td><strong>Undo Annotation</strong></td>
+          <td><strong>Undo</strong></td>
           <td><kbd>⌘ Cmd</kbd> / <kbd>Ctrl</kbd> + <kbd>Z</kbd></td>
-          <td>Undo last drawing action</td>
+          <td>Undo last annotation action</td>
         </tr>
         <tr>
-          <td><strong>Redo Annotation</strong></td>
+          <td><strong>Redo</strong></td>
           <td><kbd>⌘ Cmd</kbd> + <kbd>⇧ Shift</kbd> + <kbd>Z</kbd> / <kbd>Ctrl</kbd> + <kbd>Y</kbd></td>
-          <td>Redo undone drawing action</td>
+          <td>Redo undone annotation action</td>
         </tr>
       </tbody>
     </table>
@@ -133,41 +178,41 @@ import PageLayout from '../../../layouts/PageLayout.astro';
     <table class="data-table">
       <thead>
         <tr>
-          <th>Context</th>
-          <th>Shortcut / Interaction</th>
+          <th>Action</th>
+          <th>Shortcut / Input</th>
           <th>Description</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td><strong>Pick Color</strong></td>
+          <td><strong>Copy Color Code</strong></td>
           <td><kbd>C</kbd></td>
-          <td>Copy pixel color at crosshair</td>
+          <td>Copy current pixel color at the crosshair</td>
         </tr>
         <tr>
           <td><strong>Toggle Color Format</strong></td>
           <td><kbd>⇧ Shift</kbd> + <kbd>C</kbd></td>
-          <td>Switch between HEX and RGB formats</td>
+          <td>Switch between HEX and RGB color formats</td>
         </tr>
         <tr>
-          <td><strong>Edit Pin Annotation</strong></td>
+          <td><strong>Toggle Drawing on Pin</strong></td>
           <td><kbd>Space</kbd></td>
-          <td>Toggle drawing toolbar on pinned image</td>
+          <td>Show or hide annotation toolbar on pinned window</td>
         </tr>
         <tr>
-          <td><strong>Zoom Pinned Image</strong></td>
+          <td><strong>Zoom Pin</strong></td>
           <td>Mouse Wheel / Double Click</td>
-          <td>Zoom continuously or reset scale</td>
+          <td>Smoothly zoom pinned image; double click resets to 100% original scale</td>
         </tr>
         <tr>
           <td><strong>Context Menu</strong></td>
           <td>Right Click</td>
-          <td>Open menu: Copy, Save, History, Close</td>
+          <td>Menu actions: Copy, Save, Pin History, Close</td>
         </tr>
         <tr>
           <td><strong>Close Pin</strong></td>
           <td><kbd>Esc</kbd></td>
-          <td>Close active pin when not editing</td>
+          <td>Close active pin window (when not annotating)</td>
         </tr>
       </tbody>
     </table>
@@ -185,24 +230,24 @@ import PageLayout from '../../../layouts/PageLayout.astro';
       </thead>
       <tbody>
         <tr>
-          <td><strong>Select Text Blocks</strong></td>
-          <td>Drag / Click Word</td>
-          <td>Highlight specific line or single word</td>
+          <td><strong>Select Words / Lines</strong></td>
+          <td>Click / Drag selection</td>
+          <td>Highlight specific word blocks or sentences</td>
         </tr>
         <tr>
           <td><strong>Copy Selected Text</strong></td>
           <td><kbd>⌘ Cmd</kbd> / <kbd>Ctrl</kbd> + <kbd>C</kbd></td>
-          <td>Copy selected words to clipboard</td>
+          <td>Extract and copy highlighted text to clipboard</td>
         </tr>
         <tr>
-          <td><strong>Copy All Recognized Text</strong></td>
+          <td><strong>Copy All Text</strong></td>
           <td><kbd>⇧ Shift</kbd> + <kbd>C</kbd></td>
-          <td>Copy entire recognized text within region</td>
+          <td>Copy all recognized text in the region in one click</td>
         </tr>
         <tr>
           <td><strong>Exit OCR View</strong></td>
           <td><kbd>Esc</kbd></td>
-          <td>Dismiss OCR results popover</td>
+          <td>Close text recognition workspace</td>
         </tr>
       </tbody>
     </table>

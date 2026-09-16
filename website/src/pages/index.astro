@@ -970,14 +970,20 @@ const totalDownloads = getTotalDownloads(releases) || 140;
                   <span style="color:var(--text-3); font-size:0.75rem;">(</span>
                   <span class="key-badge-pair">
                     <svg class="key-os-icon" viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.37c.62-.75 1.04-1.8 1.01-2.87-.96.04-2.12.64-2.8 1.44-.59.68-1.11 1.76-.97 2.8 1.07.08 2.14-.54 2.76-1.37z"/></svg>
-                    <kbd>⌃⇧3</kbd>
+                    <kbd>⌥D</kbd>
                   </span>
                   <span class="key-badge-sep">/</span>
                   <span class="key-badge-pair">
                     <svg class="key-os-icon" viewBox="0 0 24 24"><path d="M0 0h11.377v11.377H0zm12.623 0H24v11.377H12.623zM0 12.623h11.377V24H0zm12.623 0H24V24H12.623z"/></svg>
-                    <kbd>Ctrl+Shift+3</kbd>
+                    <kbd>Alt+D</kbd>
                   </span>
                   <span style="color:var(--text-3); font-size:0.75rem;">)</span>
+                  <span style="display:inline-flex; align-items:center; gap:0.2rem; margin-left:0.35rem; font-size:0.72rem; color:var(--text-2);">
+                    <span>替换原词:</span>
+                    <kbd>⌥R</kbd>
+                    <span style="color:var(--text-3);">/</span>
+                    <kbd>Alt+R</kbd>
+                  </span>
                 </span>
                 <span>65 字符</span>
               </div>
@@ -993,7 +999,7 @@ const totalDownloads = getTotalDownloads(releases) || 140;
                 <span>已自动复制 📋</span>
               </div>
               <div class="target-content">
-                “简单性是软件可靠性与可维护性的首要前提。”
+                简单性是软件可靠性与可维护性的首要前提。
               </div>
               <div class="target-footer">
                 <span>服务：Microsoft 免费通道</span>
@@ -1034,12 +1040,12 @@ const totalDownloads = getTotalDownloads(releases) || 140;
               <div style="display:inline-flex; align-items:center; gap:0.25rem;">
                 <span class="key-badge-pair">
                   <svg class="key-os-icon" viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.37c.62-.75 1.04-1.8 1.01-2.87-.96.04-2.12.64-2.8 1.44-.59.68-1.11 1.76-.97 2.8 1.07.08 2.14-.54 2.76-1.37z"/></svg>
-                  <kbd>⌃⇧1</kbd>
+                  <kbd>⌥A</kbd>
                 </span>
                 <span class="key-badge-sep">/</span>
                 <span class="key-badge-pair">
                   <svg class="key-os-icon" viewBox="0 0 24 24"><path d="M0 0h11.377v11.377H0zm12.623 0H24v11.377H12.623zM0 12.623h11.377V24H0zm12.623 0H24V24H12.623z"/></svg>
-                  <kbd>Ctrl+Shift+1</kbd>
+                  <kbd>Alt+C</kbd>
                 </span>
               </div>
             </div>
@@ -1098,13 +1104,14 @@ const totalDownloads = getTotalDownloads(releases) || 140;
             <div class="card-icon-wrap">
               <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>
             </div>
-            <h3 class="card-h3">开箱即用，极速划词翻译</h3>
-            <p class="card-p">内置免费 Microsoft 与 Google 翻译服务。在任何阅读或网页界面选中文字，按下快捷键即可原地弹出流式翻译气泡，无需切换应用焦点，更无需繁琐申请配置 API Key。</p>
+            <h3 class="card-h3">极速划词翻译与原位替换</h3>
+            <p class="card-p">内置免费翻译服务。划选文字按下 <kbd>⌥D</kbd> / <kbd>Alt+D</kbd> 原地弹出流式气泡；按下 <kbd>⌥R</kbd> / <kbd>Alt+R</kbd> 直接将译文替换原文本，多语言写作与代码国际化无需手动复制粘贴。</p>
           </div>
           <div class="card-tags">
-            <span class="tag">免配置 API</span>
-            <span class="tag">毫秒级流式响应</span>
-            <span class="tag">支持自定义 AI Provider (DeepSeek/OpenAI)</span>
+            <span class="tag">划词翻译 (⌥D / Alt+D)</span>
+            <span class="tag">原位替换 (⌥R / Alt+R)</span>
+            <span class="tag">免配置即用</span>
+            <span class="tag">支持 DeepSeek / OpenAI 自定义模型</span>
           </div>
         </div>
 
@@ -1113,12 +1120,13 @@ const totalDownloads = getTotalDownloads(releases) || 140;
             <div class="card-icon-wrap">
               <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
             </div>
-            <h3 class="card-h3">系统级离线 OCR</h3>
-            <p class="card-p">基于 Apple Vision 与 Windows Media OCR 原生引擎，截屏完全在设备端完成本地运算，数据绝不上云。</p>
+            <h3 class="card-h3">系统级离线 OCR 与截屏翻译</h3>
+            <p class="card-p">基于 Apple Vision 与 Windows Media OCR 原生引擎，完全在设备本地离线运算，数据绝不上云。支持 <kbd>⌥S</kbd> / <kbd>Alt+S</kbd> 原地双语对照与 <kbd>⌥C</kbd> / <kbd>Alt+O</kbd> 分词点选复制。</p>
           </div>
           <div class="card-tags">
             <span class="tag">100% 离线运算</span>
-            <span class="tag">排版自适应提取</span>
+            <span class="tag">截屏翻译 (⌥S / Alt+S)</span>
+            <span class="tag">文字识别 (⌥C / Alt+O)</span>
           </div>
         </div>
 
@@ -1128,11 +1136,11 @@ const totalDownloads = getTotalDownloads(releases) || 140;
               <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
             </div>
             <h3 class="card-h3">智能滚动长截图</h3>
-            <p class="card-p">滚动网页或聊天记录时自动对齐与拼接特征像素，轻松生成完整高分辨率长图，支持实时画质预览。</p>
+            <p class="card-p">滚动网页、长代码或聊天记录时自动对齐与拼接特征像素，轻松生成完整高分辨率长图，支持二次编辑与快速导出。</p>
           </div>
           <div class="card-tags">
-            <span class="tag">自动无缝拼接</span>
-            <span class="tag">高 DPI 导出</span>
+            <span class="tag">自动特征拼接</span>
+            <span class="tag">无损高 DPI 导出</span>
           </div>
         </div>
 
@@ -1141,12 +1149,13 @@ const totalDownloads = getTotalDownloads(releases) || 140;
             <div class="card-icon-wrap">
               <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg>
             </div>
-            <h3 class="card-h3">高清区域录屏</h3>
-            <p class="card-p">自由框选指定窗口或区域，快速录制高清 MP4 视频或轻量 GIF 动图，支持系统音频内录与麦克风旁白。</p>
+            <h3 class="card-h3">高清区域录屏与音频内录</h3>
+            <p class="card-p">自由框选指定窗口或区域，快速录制高清 MP4 视频或轻量 GIF 动图；支持系统内部声音内录与麦克风旁白同步收音，配备独立录屏配置选项。</p>
           </div>
           <div class="card-tags">
-            <span class="tag">MP4 & GIF 一键导出</span>
+            <span class="tag">MP4 & GIF 双格式</span>
             <span class="tag">系统声音内录</span>
+            <span class="tag">独立录屏设置</span>
           </div>
         </div>
 
@@ -1155,12 +1164,13 @@ const totalDownloads = getTotalDownloads(releases) || 140;
             <div class="card-icon-wrap">
               <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
             </div>
-            <h3 class="card-h3">像素取色 & 桌面贴图</h3>
-            <p class="card-p">截图时按下 <kbd>C</kbd> 放大镜精确取色并复制 HEX / RGB；常用截图一键置顶悬浮在屏幕最上层。</p>
+            <h3 class="card-h3">像素取色与桌面贴图</h3>
+            <p class="card-p">截图时按 <kbd>C</kbd> 放大镜精确取色并复制 HEX / RGB；剪贴板图片或截图按 <kbd>⌥W</kbd> / <kbd>Alt+V</kbd> 一键置顶悬浮在屏幕最前端，按 <kbd>⌥⇧W</kbd> / <kbd>Alt+Shift+V</kbd> 顺序恢复历史贴图。</p>
           </div>
           <div class="card-tags">
-            <span class="tag">放大镜取色</span>
-            <span class="tag">多图置顶悬浮</span>
+            <span class="tag">放大镜取色 (C)</span>
+            <span class="tag">贴图置顶 (⌥W / Alt+V)</span>
+            <span class="tag">贴图历史恢复</span>
           </div>
         </div>
       </div>
@@ -1238,7 +1248,7 @@ const totalDownloads = getTotalDownloads(releases) || 140;
         </div>
 
         <div class="faq-card">
-          <h4 class="faq-h4">macOS 首次启动提示“已损坏，无法打开”如何解决？</h4>
+          <h4 class="faq-h4">macOS 首次启动提示已损坏、无法打开如何解决？</h4>
           <p class="faq-p">因本工具为开源项目，未加入付费的 Apple 开发者公证。若打开提示损坏，请打开<strong>终端 (Terminal)</strong> 运行：<code style="font-family:var(--font-code); font-size:0.82rem; background:var(--bg-subtle); padding:0.15rem 0.35rem; border-radius:4px; border:1px solid var(--border-subtle); color:var(--text-1);">xattr -cr /Applications/Polyglance.app</code> 即可正常启动。</p>
         </div>
 

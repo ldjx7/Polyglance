@@ -575,33 +575,6 @@ struct SettingsView: View {
                                     }
                                 } else if let p = TranslationProvider(rawValue: configuringProviderId) {
                                     switch p {
-                                    case .apple:
-                                        VStack(alignment: .leading, spacing: 10) {
-                                            Text("无需配置 API Key，完全在本地由系统原生神经引擎 (Neural Engine) 进行离线推理。")
-                                                .font(.system(size: 12))
-                                                .foregroundStyle(.secondary)
-
-                                            Button("打开系统「语言与地区」设置...") {
-                                                if let url = URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension") {
-                                                    NSWorkspace.shared.open(url)
-                                                }
-                                            }
-                                            .controlSize(.small)
-
-                                            VStack(alignment: .leading, spacing: 5) {
-                                                Text("离线语言包下载指引：")
-                                                    .font(.system(size: 11.5, weight: .medium))
-                                                    .foregroundStyle(.primary)
-                                                Text("1. 点击上方按钮打开「语言与地区」设置页\n2. 将页面向下滑动至最底部，点击右下角的「翻译语言...」\n3. 在弹出的语言列表中，找到所需语言（如英语、中文）点击「下载」")
-                                                    .font(.system(size: 11))
-                                                    .foregroundStyle(.secondary)
-                                                    .lineSpacing(3)
-                                            }
-                                            .padding(10)
-                                            .background(Color.primary.opacity(0.04))
-                                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                                        }
-
                                     case .freeAI:
                                         VStack(alignment: .leading, spacing: 8) {
                                             Text("无需配置 API Key，使用内置分发的免费 AI 翻译服务。")
@@ -1977,7 +1950,7 @@ struct SettingsView: View {
 
     private func hasKeyConfigured(_ p: TranslationProvider) -> Bool {
         switch p {
-        case .freeAI, .microsoft, .google, .apple:
+        case .freeAI, .microsoft, .google:
             return true
         case .deepl:
             return !deeplAuthKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1997,7 +1970,6 @@ struct SettingsView: View {
     private func providerIconName(_ p: TranslationProvider) -> String {
         switch p {
         case .freeAI: return "sparkles"
-        case .apple: return "apple.logo"
         case .microsoft: return "text.bubble"
         case .google: return "globe"
         case .deepl: return "d.circle.fill"
@@ -2011,7 +1983,6 @@ struct SettingsView: View {
     private func providerIconColor(_ p: TranslationProvider) -> Color {
         switch p {
         case .freeAI: return .purple
-        case .apple: return .primary
         case .microsoft: return .blue
         case .google: return .teal
         case .deepl: return .indigo
@@ -2026,8 +1997,6 @@ struct SettingsView: View {
         switch p {
         case .freeAI:
             return "官方内置 AI 翻译服务，无需配置密钥"
-        case .apple:
-            return "Apple 原生系统级翻译框架，通过神经引擎本地执行，免密钥"
         case .microsoft:
             return "微软必应翻译服务，免密钥直接调用"
         case .google:
@@ -2277,25 +2246,15 @@ struct SettingsView: View {
         switch provider {
         case .freeAI:
             return BundledFreeAIConfiguration() != nil
-        case .apple:
-            if #available(macOS 26.0, *) {
-                return true
-            } else {
-                return false
-            }
         default:
             return true
         }
     }
 
     private func providerLabel(_ provider: TranslationProvider) -> String {
-        if isProviderAvailable(provider) {
-            return provider.displayName
-        }
-        if provider == .apple {
-            return "\(provider.displayName)（需 macOS 26+）"
-        }
-        return "\(provider.displayName)（当前构建未配置）"
+        isProviderAvailable(provider)
+            ? provider.displayName
+            : "\(provider.displayName)（当前构建未配置）"
     }
 
     private var recordingFormatBinding: Binding<ScreenRecordingFormat> {

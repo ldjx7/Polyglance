@@ -17,3 +17,5 @@
 *.xcuserstate
 .DS_Store
 /output/
+.wrangler/
+

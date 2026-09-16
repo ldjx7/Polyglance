@@ -17,10 +17,10 @@ import PageLayout from '../../layouts/PageLayout.astro';
 
     <div style="font-size:0.95rem; color:var(--text-2); line-height:1.7;">
       <h3 style="font-size:1.05rem; color:var(--text-1); margin:1rem 0 0.5rem;">1. 安装</h3>
-      <p>前往 <a href="/download" style="color:var(--accent); text-decoration:underline;">下载页面</a> 获取最新的 <code>.dmg</code> 文件，双击打开后将 <strong>Polyglance</strong> 拖入“应用程序 (Applications)”目录。</p>
+      <p>前往 <a href="/download" style="color:var(--accent); text-decoration:underline;">下载页面</a> 获取最新的 <code>.dmg</code> 文件，双击打开后将 <strong>Polyglance</strong> 拖入应用程序 (Applications) 目录。</p>
 
-      <h3 style="font-size:1.05rem; color:var(--text-1); margin:1.25rem 0 0.5rem;">2. 首次启动提示“已损坏，无法打开”解决办法</h3>
-      <p>因本工具为开源项目，未加入苹果开发者公证。若打开时提示“已损坏，无法打开。你应该将它移到废纸篓”，请打开系统<strong>终端 (Terminal)</strong>，复制并运行以下命令清除隔离属性：</p>
+      <h3 style="font-size:1.05rem; color:var(--text-1); margin:1.25rem 0 0.5rem;">2. 首次启动提示已损坏、无法打开解决办法</h3>
+      <p>因本工具为开源项目，未加入苹果开发者公证。若打开时提示已损坏、无法打开、你应该将它移到废纸篓，请打开系统<strong>终端 (Terminal)</strong>，复制并运行以下命令清除隔离属性：</p>
       
       <div style="background:var(--bg-subtle); border:1px solid var(--border-subtle); border-radius:8px; padding:0.85rem 1.1rem; margin:0.75rem 0; font-family:var(--font-code); font-size:0.88rem; color:var(--text-1);">
         <code>xattr -cr /Applications/Polyglance.app</code>
@@ -50,7 +50,7 @@ import PageLayout from '../../layouts/PageLayout.astro';
       <p>前往 <a href="/download" style="color:var(--accent); text-decoration:underline;">下载页面</a> 获取 <code>Windows-x64-Portable.zip</code>，解压至任意目录后直接双击 <code>Polyglance.exe</code> 即可使用。</p>
 
       <h3 style="font-size:1.05rem; color:var(--text-1); margin:1.25rem 0 0.5rem;">3. SmartScreen 提示</h3>
-      <p>首次运行如提示“Windows 已保护你的电脑”，点击<strong>“更多信息” → “仍要运行”</strong>即可。</p>
+      <p>首次运行如提示 Windows 已保护你的电脑，点击<strong>更多信息 → 仍要运行</strong>即可。</p>
     </div>
   </div>
 </PageLayout>

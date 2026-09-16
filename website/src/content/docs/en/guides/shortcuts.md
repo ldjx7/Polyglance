@@ -1,53 +1,84 @@
 ---
 title: Keyboard Shortcuts
-description: Overview of default shortcut bindings and operations in Polyglance
+description: Complete overview of default shortcuts, presets, and common interactions
 ---
 
-## Core Global Shortcuts
+## Global Default Shortcuts (Recommended Preset)
 
-| Feature | macOS Default | Windows Default |
-| --- | --- | --- |
-| **Screenshot Tool** (Capture, annotate & pin) | `Ctrl+Shift+1` | `Ctrl+Shift+1` |
-| **Pin Clipboard Image** (Desktop pin) | `Ctrl+Shift+2` | `Ctrl+Shift+2` |
-| **Selected Text Translation** (Floating popover) | `Ctrl+Shift+3` | `Ctrl+Shift+3` |
-| **Screen Translation** (OCR & translate) | `Ctrl+Shift+4` | `Ctrl+Shift+4` |
-| **Restore Most Recent Pin** | `Ctrl+Shift+5` | `Ctrl+Shift+5` |
+All shortcuts can be modified or unbound in **Preferences → Shortcuts**.
 
-## Optional Actions (Customizable)
+| Action | macOS Default | Windows Default | Description |
+| --- | --- | --- | --- |
+| **Screenshot Tool** | `⌥A` (`Option+A`) | `Alt+C` | Region capture, annotation, color picker, and pin |
+| **Selected Text Translation** | `⌥D` (`Option+D`) | `Alt+D` | In-place floating translation popover for selected text |
+| **Translate & Replace** | `⌥R` (`Option+R`) | `Alt+R` | Translate selected text and immediately replace original text |
+| **Screen Translation** | `⌥S` (`Option+S`) | `Alt+S` | Offline OCR and side-by-side translation of any screen area |
+| **Pin Clipboard Image** | `⌥W` (`Option+W`) | `Alt+V` | Pin clipboard image directly on top of all windows |
+| **Restore Most Recent Pin** | `⌥⇧W` (`Option+Shift+W`) | `Alt+Shift+V` | Reopen the most recently closed desktop pin in sequence |
+| **Text Recognition (OCR)** | `⌥C` (`Option+C`) | `Alt+O` | Extract pure text with clickable word/sentence selection |
 
-- **Open Main Translator Window**: Unassigned (bind in Preferences → Shortcuts)
-- **Scrolling Long Screenshot**: Unassigned (bind in Preferences → Shortcuts)
-- **Region Screen Recording**: Unassigned (bind in Preferences → Shortcuts)
-- **Read Selected Text (No Auto-Translate)**: Unassigned (bind in Preferences → Shortcuts)
+---
 
-## Screenshot Selection & Annotation
+## Built-in Preset Schemes
 
-| Shortcut | Description |
+Easily switch between standard workflows in Preferences:
+
+- **Recommended (Default)**: Uses `Option` (macOS) / `Alt` (Windows) for ergonomic single-hand triggers.
+- **Snipaste Style**: `F1` Capture, `F3` Pin, `Shift+F3` Restore Pin.
+- **PixPin Style**: `Ctrl+1` Capture, `Ctrl+2` Pin, `Ctrl+Q` Translate, `Alt+Q` Screen Translate, `Ctrl+3` OCR.
+
+---
+
+## Optional Bindings
+
+These actions have no default global shortcut and can be assigned as needed:
+
+- **Open Main Translator Window**: Launch the standalone dictionary and multi-language translator window
+- **Capture & Copy**: Directly copy screenshot area to clipboard, skipping annotation toolbar
+- **Scrolling Long Screenshot**: Enter scrolling screenshot stitcher
+- **Region Screen Recording**: Enter region screen recording mode
+- **Read Selection (No Auto-Translate)**: Copy selected text into main translator without translating immediately
+
+---
+
+## Screenshot & Annotation Controls
+
+Active during screenshot capture:
+
+| Key / Action | Description |
 | --- | --- |
 | `Enter` | Complete capture and copy image to clipboard |
-| `Esc` | Cancel selection or exit screenshot tool |
-| `Delete` / `Backspace` | Delete selected annotation element |
+| `Esc` | Cancel selection or exit screenshot mode |
+| `Delete` / `Backspace` | Delete currently selected annotation item |
 | Arrow Keys `↑ / ↓ / ← / →` | Nudge selection by 1px (hold `Shift` for 10px) |
-| `Cmd+Z` / `Ctrl+Z` | Undo last drawing operation |
-| `Cmd+Shift+Z` / `Ctrl+Y` | Redo undone drawing operation |
+| `Cmd+Z` / `Ctrl+Z` | Undo last drawing action |
+| `Cmd+Shift+Z` / `Ctrl+Y` | Redo undone drawing action |
+| `C` | Copy color value at crosshair cursor |
+| `Shift+C` | Toggle color format between HEX and RGB |
 
-## Color Picker & Pinned Images
+---
 
-| Input / Shortcut | Description |
+## Desktop Pin Window Controls
+
+Active on pinned image windows:
+
+| Key / Action | Description |
 | --- | --- |
-| `C` | Copy current crosshair pixel color in magnifier mode |
-| `Shift+C` | Toggle color format (HEX / RGB) |
-| `Space` | Toggle annotation toolbar on pinned window |
-| Double Click | Zoom pin window or reset to 100% scale |
-| Mouse Wheel | Continuously zoom pinned image |
-| Right Click | Context menu (Copy, Save, History, Close) |
-| `Esc` | Close active pinned window (when not editing) |
+| `Space` | Toggle drawing and annotation toolbar on pin |
+| Mouse Wheel | Smoothly zoom pinned image |
+| Double Click | Reset scale to 100% original dimensions |
+| Right Click | Context menu (Copy, Save, History, Color, Close) |
+| `Esc` | Close active pin window (when not drawing) |
 
-## Offline OCR Text Extraction
+---
 
-| Input / Shortcut | Description |
+## Offline OCR Text Controls
+
+Active in the text recognition workspace:
+
+| Key / Action | Description |
 | --- | --- |
-| Click / Drag | Select word blocks or lines |
+| Click / Drag | Select individual words or full text blocks |
 | `Cmd+C` / `Ctrl+C` | Copy selected text |
 | `Shift+C` | Copy all recognized text in region |
-| `Esc` | Dismiss OCR results popover |
+| `Esc` | Dismiss OCR window |
