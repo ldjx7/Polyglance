@@ -109,7 +109,7 @@ session = winrm.Session(
 - 安装包：`D:\Develop\native-translator\dist\installer\Polyglance-<version>-Windows-x64-Setup.exe`
 - 便携包：`D:\Develop\native-translator\dist\installer\Polyglance-<version>-Windows-x64-Portable.zip`
 
-完成后确认：测试全部通过、`dist\installer` 只保留本次产物，并且没有遗留 Polyglance 进程。除非用户明确要求，不要安装、提交、推送或创建 tag。
+完成后确认：测试全部通过、`dist\installer` 只保留本次产物，并且没有遗留 Polyglance 进程。日常开发修改不要随意打 tag 或推送；但当用户要求构建具体版本（如构建 beta 版本或指定版本号）时，即代表需要同步更新发布说明文档、执行双端完整测试与构建、提交代码、创建对应版本 tag 并推送到远程仓库触发 Release。
 
 ## 每次开发完成后的双端构建
 
