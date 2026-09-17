@@ -213,6 +213,200 @@ final class PinContentViewTests: XCTestCase {
         panel.close()
     }
 
+    func testTextSelectionByClickAndDragSelectsOCRItemsAndCopiesWithCommandC() throws {
+        _ = NSApplication.shared
+        let items = [
+            OCRTextItem(id: 1, lineIndex: 0, indexInLine: 0, text: "Hello", boundingBox: CGRect(x: 0.1, y: 0.5, width: 0.3, height: 0.3), separatorBefore: ""),
+            OCRTextItem(id: 2, lineIndex: 0, indexInLine: 1, text: "World", boundingBox: CGRect(x: 0.5, y: 0.5, width: 0.3, height: 0.3), separatorBefore: " ")
+        ]
+        let line = OCRTextLine(index: 0, text: "Hello World", boundingBox: CGRect(x: 0.1, y: 0.5, width: 0.7, height: 0.3), items: items)
+        let doc = OCRDocument(lines: [line])
+
+        let (panel, view) = makePinnedWindow()
+        panel.contentView = view
+        panel.orderFront(nil)
+        view.setRecognizedDocument(doc)
+
+        // View bounds: 200 x 120.
+        // item 1 viewRect: x: 20..80, y: 60..96
+        // item 2 viewRect: x: 100..160, y: 60..96
+        let clickPoint = CGPoint(x: 40, y: 75)
+        let downEvent = NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: clickPoint,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: panel.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        )!
+        view.mouseDown(with: downEvent)
+        XCTAssertEqual(view.selectedTextItemIDs, [1])
+
+        // Drag to item 2
+        let dragPoint = CGPoint(x: 120, y: 75)
+        let dragEvent = NSEvent.mouseEvent(
+            with: .leftMouseDragged,
+            location: dragPoint,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: panel.windowNumber,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        )!
+        view.mouseDragged(with: dragEvent)
+        XCTAssertEqual(view.selectedTextItemIDs, [1, 2])
+        XCTAssertEqual(view.selectedText, "Hello World")
+
+        let upEvent = NSEvent.mouseEvent(
+            with: .leftMouseUp,
+            location: dragPoint,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: panel.windowNumber,
+            context: nil,
+            eventNumber: 2,
+            clickCount: 1,
+            pressure: 1
+        )!
+        view.mouseUp(with: upEvent)
+        XCTAssertEqual(view.selectedTextItemIDs, [1, 2])
+        XCTAssertFalse(view.textCapsuleBar.isHidden)
+
+        // Cmd+C copies selected text
+        let copyEvent = keyEvent(window: panel, modifiers: .command, characters: "c")
+        XCTAssertTrue(view.performKeyEquivalent(with: copyEvent))
+        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "Hello World")
+
+        // Context menu has "复制文本", "翻译文本" and annotation actions
+        let menu = view.makeContextMenu()
+        let copyTextItem = menu.items.first(where: { $0.title == "复制文本" })
+        XCTAssertNotNil(copyTextItem)
+        XCTAssertNotNil(menu.items.first(where: { $0.title == "翻译文本" }))
+        XCTAssertNotNil(menu.items.first(where: { $0.title == "荧光笔" }))
+        XCTAssertNotNil(menu.items.first(where: { $0.title == "波浪线" }))
+        XCTAssertNotNil(menu.items.first(where: { $0.title == "直线" }))
+        XCTAssertNotNil(menu.items.first(where: { $0.title == "删除线" }))
+
+        // Escape clears selection
+        let escapeEvent = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: panel.windowNumber,
+            context: nil,
+            characters: "",
+            charactersIgnoringModifiers: "",
+            isARepeat: false,
+            keyCode: 53
+        )!
+        view.keyDown(with: escapeEvent)
+        XCTAssertTrue(view.selectedTextItemIDs.isEmpty)
+        XCTAssertNil(view.selectedText)
+        XCTAssertTrue(view.textCapsuleBar.isHidden)
+
+        panel.close()
+    }
+
+    func testTextSelectionCapsuleBarAppliesHighlightWavyLineAndStrikethrough() {
+        _ = NSApplication.shared
+        let items = [
+            OCRTextItem(id: 1, lineIndex: 0, indexInLine: 0, text: "Hello", boundingBox: CGRect(x: 0.1, y: 0.5, width: 0.3, height: 0.3), separatorBefore: ""),
+            OCRTextItem(id: 2, lineIndex: 0, indexInLine: 1, text: "World", boundingBox: CGRect(x: 0.5, y: 0.5, width: 0.3, height: 0.3), separatorBefore: " ")
+        ]
+        let line = OCRTextLine(index: 0, text: "Hello World", boundingBox: CGRect(x: 0.1, y: 0.5, width: 0.7, height: 0.3), items: items)
+        let doc = OCRDocument(lines: [line])
+        let (panel, view) = makePinnedWindow()
+        panel.contentView = view
+        panel.orderFront(nil)
+        view.setRecognizedDocument(doc)
+
+        let pt = CGPoint(x: 40, y: 75)
+        let downEvent = NSEvent.mouseEvent(with: .leftMouseDown, location: pt, modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        view.mouseDown(with: downEvent)
+        let upEvent = NSEvent.mouseEvent(with: .leftMouseUp, location: pt, modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!
+        view.mouseUp(with: upEvent)
+        XCTAssertFalse(view.textCapsuleBar.isHidden)
+
+        // Highlight
+        view.applyTextHighlight()
+        XCTAssertTrue(view.textCapsuleBar.isHidden)
+        XCTAssertTrue(view.selectedTextItemIDs.isEmpty)
+        XCTAssertEqual(view.annotationEditor.elements.count, 1)
+        if case let .rectangle(_, _, style) = view.annotationEditor.elements[0] {
+            XCTAssertTrue(style.isFilled)
+        } else {
+            XCTFail("Expected rectangle highlight")
+        }
+
+        // Reselect & Wavy
+        view.mouseDown(with: downEvent)
+        view.mouseUp(with: upEvent)
+        view.applyTextWavy()
+        XCTAssertEqual(view.annotationEditor.elements.count, 2)
+        if case let .freehand(points, _) = view.annotationEditor.elements[1] {
+            XCTAssertGreaterThan(points.count, 2)
+        } else {
+            XCTFail("Expected wavy freehand line")
+        }
+
+        // Reselect & Line
+        view.mouseDown(with: downEvent)
+        view.mouseUp(with: upEvent)
+        view.applyTextLine()
+        XCTAssertEqual(view.annotationEditor.elements.count, 3)
+        if case .line = view.annotationEditor.elements[2] {
+        } else {
+            XCTFail("Expected line")
+        }
+
+        // Reselect & Strikethrough
+        view.mouseDown(with: downEvent)
+        view.mouseUp(with: upEvent)
+        view.applyTextStrikethrough()
+        // Cmd+Z undoes the strikethrough
+        let undoEvent = keyEvent(window: panel, modifiers: .command, characters: "z")
+        XCTAssertTrue(view.performKeyEquivalent(with: undoEvent))
+        XCTAssertEqual(view.annotationEditor.elements.count, 3)
+
+        // Menu now contains 撤销标注
+        let menuWithUndo = view.makeContextMenu()
+        XCTAssertNotNil(menuWithUndo.items.first(where: { $0.title == "撤销标注" }))
+
+        panel.close()
+    }
+
+    func testOptionOrControlDragForcesWindowMoveWithoutSelectingText() {
+        _ = NSApplication.shared
+        let items = [
+            OCRTextItem(id: 1, lineIndex: 0, indexInLine: 0, text: "Hello", boundingBox: CGRect(x: 0.1, y: 0.4, width: 0.8, height: 0.4))
+        ]
+        let line = OCRTextLine(index: 0, text: "Hello", boundingBox: CGRect(x: 0.1, y: 0.4, width: 0.8, height: 0.4), items: items)
+        let doc = OCRDocument(lines: [line])
+        let (panel, view) = makePinnedWindow()
+        panel.contentView = view
+        panel.orderFront(nil)
+        view.setRecognizedDocument(doc)
+
+        let pt = CGPoint(x: 100, y: 60)
+        let optionDown = NSEvent.mouseEvent(with: .leftMouseDown, location: pt, modifierFlags: [.option], timestamp: 0, windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        view.mouseDown(with: optionDown)
+        XCTAssertFalse(view.isTextSelecting)
+        XCTAssertTrue(view.selectedTextItemIDs.isEmpty)
+
+        let controlDown = NSEvent.mouseEvent(with: .leftMouseDown, location: pt, modifierFlags: [.control], timestamp: 0, windowNumber: panel.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!
+        view.mouseDown(with: controlDown)
+        XCTAssertFalse(view.isTextSelecting)
+        XCTAssertTrue(view.selectedTextItemIDs.isEmpty)
+
+        panel.close()
+    }
+
     private func makePinnedWindow() -> (NSPanel, PinContentView) {
         let image = NSImage(size: CGSize(width: 200, height: 120))
         let view = PinContentView(image: image)

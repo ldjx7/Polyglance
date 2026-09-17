@@ -22,10 +22,18 @@ final class PinAnnotationOverlayView: NSView {
     private(set) var isEditing = false
     private(set) var toolbarPanel: NSPanel?
     var elements: [ScreenshotAnnotationElement] { history.elements }
+    var canUndo: Bool { history.canUndo }
+    var canRedo: Bool { history.canRedo }
     var onEditingChanged: ((Bool) -> Void)?
 
     func addElement(_ element: ScreenshotAnnotationElement) {
         history.append(element)
+        needsDisplay = true
+    }
+
+    func addElements(_ newElements: [ScreenshotAnnotationElement]) {
+        guard !newElements.isEmpty else { return }
+        history.append(newElements)
         needsDisplay = true
     }
 
@@ -582,13 +590,13 @@ final class PinAnnotationOverlayView: NSView {
         }
     }
 
-    private func undo() {
+    func undo() {
         _ = history.undo()
         updateToolbarState()
         needsDisplay = true
     }
 
-    private func redo() {
+    func redo() {
         _ = history.redo()
         updateToolbarState()
         needsDisplay = true

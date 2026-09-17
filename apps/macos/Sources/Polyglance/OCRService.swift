@@ -219,7 +219,7 @@ struct OCRService: Sendable {
         return OCRDocument(lines: lines)
     }
 
-    fileprivate static func isUsableNormalizedBox(_ box: CGRect) -> Bool {
+    static func isUsableNormalizedBox(_ box: CGRect) -> Bool {
         let box = box.standardized
         return box.origin.x.isFinite
             && box.origin.y.isFinite

@@ -593,10 +593,48 @@ final class OCRSelectionResultView: NSView {
 
     @objc private func highlightSelectedText() {
         let layout = canvasView.selectionLayout
-        for item in document.items where canvasView.selectedItemIDs.contains(item.id) {
-            let rect = layout.viewRect(forNormalizedRect: item.boundingBox)
-            let style = ScreenshotAnnotationStyle(color: NSColor.systemYellow.withAlphaComponent(0.4), lineWidth: 1)
-            annotationEditor.addElement(.rectangle(start: rect.origin, end: CGPoint(x: rect.maxX, y: rect.maxY), style: style))
+        let selectedItems = document.items.filter { canvasView.selectedItemIDs.contains($0.id) }
+        let style = ScreenshotAnnotationStyle(
+            color: NSColor.systemYellow.withAlphaComponent(0.4),
+            isFilled: true
+        )
+        let lineGroups = Dictionary(grouping: selectedItems, by: \.lineIndex)
+        for (_, lineItems) in lineGroups {
+            let sorted = lineItems.sorted { $0.indexInLine < $1.indexInLine }
+            var currentRun: [OCRTextItem] = []
+            for item in sorted {
+                if let last = currentRun.last, item.indexInLine > last.indexInLine + 1 {
+                    let rects = currentRun.map { layout.viewRect(forNormalizedRect: $0.boundingBox) }
+                    if let minX = rects.map(\.minX).min(),
+                       let maxX = rects.map(\.maxX).max(),
+                       let minY = rects.map(\.minY).min(),
+                       let maxY = rects.map(\.maxY).max(),
+                       maxX > minX, maxY > minY {
+                        annotationEditor.addElement(.rectangle(
+                            start: CGPoint(x: minX, y: minY),
+                            end: CGPoint(x: maxX, y: maxY),
+                            style: style
+                        ))
+                    }
+                    currentRun = [item]
+                } else {
+                    currentRun.append(item)
+                }
+            }
+            if !currentRun.isEmpty {
+                let rects = currentRun.map { layout.viewRect(forNormalizedRect: $0.boundingBox) }
+                if let minX = rects.map(\.minX).min(),
+                   let maxX = rects.map(\.maxX).max(),
+                   let minY = rects.map(\.minY).min(),
+                   let maxY = rects.map(\.maxY).max(),
+                   maxX > minX, maxY > minY {
+                    annotationEditor.addElement(.rectangle(
+                        start: CGPoint(x: minX, y: minY),
+                        end: CGPoint(x: maxX, y: maxY),
+                        style: style
+                    ))
+                }
+            }
         }
         canvasView.clearSelection()
     }

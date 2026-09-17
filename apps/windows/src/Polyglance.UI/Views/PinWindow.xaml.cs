@@ -36,7 +36,8 @@ public partial class PinWindow : Window
     private readonly System.Windows.Threading.DispatcherTimer _zoomBadgeTimer = new() { Interval = TimeSpan.FromMilliseconds(800) };
     private readonly System.Windows.Threading.DispatcherTimer _copyBadgeTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly List<UIElement> _annotationHistory = new();
-    private readonly List<UIElement> _annotationRedoStack = new();
+    private readonly List<List<UIElement>> _annotationUndoBatches = new();
+    private readonly List<List<UIElement>> _annotationRedoBatches = new();
     private FrameworkElement? _currentDrawingShape;
     private Canvas? _currentMosaicStroke;
     private Point _lastMosaicPoint;
@@ -296,8 +297,9 @@ public partial class PinWindow : Window
         }
         if (e.LeftButton == MouseButtonState.Pressed)
         {
+            bool isForceMove = (Keyboard.Modifiers & (ModifierKeys.Alt | ModifierKeys.Control)) != 0;
             Point pt = e.GetPosition(PinSurface);
-            if (_ocrDocument != null && (GetWordAt(pt) != null || (_selectedWords.Count > 0 && _textSelectionRect.Contains(pt))))
+            if (!isForceMove && _ocrDocument != null && (GetWordAt(pt) != null || (_selectedWords.Count > 0 && _textSelectionRect.Contains(pt))))
             {
                 _isTextSelecting = true;
                 _textSelectStart = pt;
@@ -392,6 +394,12 @@ public partial class PinWindow : Window
 
         if (!IsAnnotationEditing && !IsColorPicking && !_isLocked)
         {
+            bool isForceMove = (Keyboard.Modifiers & (ModifierKeys.Alt | ModifierKeys.Control)) != 0;
+            if (isForceMove)
+            {
+                Cursor = Cursors.SizeAll;
+                return;
+            }
             Point pt = e.GetPosition(PinSurface);
             if (_isTextSelecting)
             {
@@ -407,7 +415,10 @@ public partial class PinWindow : Window
             if (_ocrDocument != null)
             {
                 var word = GetWordAt(pt);
-                Cursor = word != null ? Cursors.IBeam : Cursors.Arrow;
+                double scaleX = _bitmap.PixelWidth > 0 ? PinImage.ActualWidth / _bitmap.PixelWidth : 1;
+                double scaleY = _bitmap.PixelHeight > 0 ? PinImage.ActualHeight / _bitmap.PixelHeight : 1;
+                bool isOverSelected = _selectedWords.Count > 0 && _selectedWords.Any(w => new Rect(w.X * scaleX, w.Y * scaleY, w.Width * scaleX, w.Height * scaleY).Contains(pt));
+                Cursor = (word != null || isOverSelected) ? Cursors.IBeam : Cursors.Arrow;
             }
         }
     }
@@ -462,12 +473,11 @@ public partial class PinWindow : Window
             : (UIElement)_currentMosaicStroke!;
 
         _annotationHistory.Add(finished);
-        _annotationRedoStack.Clear();
+        CommitAnnotationBatch(new[] { finished });
         _currentDrawingShape = null;
         _currentMosaicStroke = null;
         PinSurface.ReleaseMouseCapture();
         SelectAnnotationElement(finished);
-        UpdateAnnotationUndoRedoState();
         e.Handled = true;
     }
 
@@ -552,6 +562,21 @@ public partial class PinWindow : Window
 
     private void OnKeyDown(object sender, KeyEventArgs e)
     {
+        if (!IsAnnotationEditing && !IsColorPicking && !_isLocked)
+        {
+            if (e.Key == Key.System || e.Key == Key.LeftAlt || e.Key == Key.RightAlt || e.Key == Key.LeftCtrl || e.Key == Key.RightCtrl)
+            {
+                Cursor = Cursors.SizeAll;
+            }
+        }
+
+        if (e.Key == Key.Escape && _selectedWords.Count > 0)
+        {
+            ClearTextSelection();
+            e.Handled = true;
+            return;
+        }
+
         if (TextCapsuleBar.Visibility == Visibility.Visible)
         {
             if (e.Key == Key.Escape)
@@ -580,8 +605,8 @@ public partial class PinWindow : Window
                     }
                     _annotationHistory.Remove(_selectedAnnotationElement);
                     AnnotationCanvas.Children.Remove(_selectedAnnotationElement);
+                    RemoveFromBatches(_selectedAnnotationElement);
                     SelectAnnotationElement(null);
-                    _annotationRedoStack.Clear();
                     UpdateAnnotationUndoRedoState();
                     e.Handled = true;
                     return;
@@ -599,17 +624,30 @@ public partial class PinWindow : Window
                 e.Handled = true;
                 return;
             }
-            else if (e.Key == Key.Z && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        }
+
+        if (e.Key == Key.Z && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        {
+            if (!(IsAnnotationEditing && _selectedAnnotationElement is TextBox tb && !tb.IsReadOnly))
             {
-                OnAnnotationActionTriggered("Undo");
-                e.Handled = true;
-                return;
+                if (_annotationUndoBatches.Count > 0)
+                {
+                    UndoAnnotation();
+                    e.Handled = true;
+                    return;
+                }
             }
-            else if (e.Key == Key.Y && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        }
+        else if (e.Key == Key.Y && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        {
+            if (!(IsAnnotationEditing && _selectedAnnotationElement is TextBox tb && !tb.IsReadOnly))
             {
-                OnAnnotationActionTriggered("Redo");
-                e.Handled = true;
-                return;
+                if (_annotationRedoBatches.Count > 0)
+                {
+                    RedoAnnotation();
+                    e.Handled = true;
+                    return;
+                }
             }
         }
 
@@ -619,6 +657,15 @@ public partial class PinWindow : Window
             {
                 if (!IsColorPicking)
                 {
+                    if (_selectedWords.Count > 0)
+                    {
+                        var text = string.Join(" ", _selectedWords.Select(w => w.Text));
+                        Clipboard.SetText(TextFormattingService.ApplyPanguSpacing(text));
+                        ShowCopyBadge();
+                        ClearTextSelection();
+                        e.Handled = true;
+                        return;
+                    }
                     try
                     {
                         Clipboard.SetImage(CompositedBitmap());
@@ -673,6 +720,25 @@ public partial class PinWindow : Window
         }
         if (HandleColorShortcut(e.Key, Keyboard.Modifiers))
             e.Handled = true;
+    }
+
+    protected override void OnKeyUp(KeyEventArgs e)
+    {
+        base.OnKeyUp(e);
+        if (!IsAnnotationEditing && !IsColorPicking && !_isLocked)
+        {
+            bool isForceMove = (Keyboard.Modifiers & (ModifierKeys.Alt | ModifierKeys.Control)) != 0;
+            if (isForceMove)
+            {
+                Cursor = Cursors.SizeAll;
+            }
+            else
+            {
+                Point pt = Mouse.GetPosition(PinSurface);
+                var word = GetWordAt(pt);
+                Cursor = word != null ? Cursors.IBeam : Cursors.Arrow;
+            }
+        }
     }
 
     internal bool HandleColorShortcut(Key key, ModifierKeys modifiers)
@@ -838,6 +904,10 @@ public partial class PinWindow : Window
             SelectAnnotationElement(null);
             Cursor = Cursors.Arrow;
         }
+        else
+        {
+            UpdateAnnotationUndoRedoState();
+        }
         Activate();
         Keyboard.Focus(this);
     }
@@ -853,38 +923,104 @@ public partial class PinWindow : Window
         switch (action)
         {
             case "Undo":
-                if (_annotationHistory.Count > 0)
-                {
-                    UIElement element = _annotationHistory[^1];
-                    _annotationHistory.RemoveAt(_annotationHistory.Count - 1);
-                    _annotationRedoStack.Add(element);
-                    AnnotationCanvas.Children.Remove(element);
-                    if (_selectedAnnotationElement == element)
-                    {
-                        SelectAnnotationElement(null);
-                    }
-                }
+                UndoAnnotation();
                 break;
             case "Redo":
-                if (_annotationRedoStack.Count > 0)
-                {
-                    UIElement element = _annotationRedoStack[^1];
-                    _annotationRedoStack.RemoveAt(_annotationRedoStack.Count - 1);
-                    _annotationHistory.Add(element);
-                    AnnotationCanvas.Children.Add(element);
-                    SelectAnnotationElement(element);
-                }
+                RedoAnnotation();
                 break;
             case "Finish":
                 if (IsAnnotationEditing)
                     ToggleAnnotationEditing();
                 break;
         }
+    }
+
+    private void CommitAnnotationBatch(IReadOnlyList<UIElement> elements)
+    {
+        if (elements.Count == 0) return;
+        _annotationUndoBatches.Add(new List<UIElement>(elements));
+        _annotationRedoBatches.Clear();
         UpdateAnnotationUndoRedoState();
     }
 
-    private void UpdateAnnotationUndoRedoState() =>
-        AnnotationToolbar.SetUndoRedoState(_annotationHistory.Count > 0, _annotationRedoStack.Count > 0);
+    private void RemoveFromBatches(UIElement element)
+    {
+        for (int i = _annotationUndoBatches.Count - 1; i >= 0; i--)
+        {
+            _annotationUndoBatches[i].Remove(element);
+            if (_annotationUndoBatches[i].Count == 0)
+                _annotationUndoBatches.RemoveAt(i);
+        }
+        for (int i = _annotationRedoBatches.Count - 1; i >= 0; i--)
+        {
+            _annotationRedoBatches[i].Remove(element);
+            if (_annotationRedoBatches[i].Count == 0)
+                _annotationRedoBatches.RemoveAt(i);
+        }
+    }
+
+    private void UndoAnnotation()
+    {
+        if (_annotationUndoBatches.Count == 0)
+            return;
+
+        var batch = _annotationUndoBatches[^1];
+        _annotationUndoBatches.RemoveAt(_annotationUndoBatches.Count - 1);
+        _annotationRedoBatches.Add(batch);
+
+        foreach (var element in batch)
+        {
+            _annotationHistory.Remove(element);
+            AnnotationCanvas.Children.Remove(element);
+            if (_selectedAnnotationElement == element)
+            {
+                SelectAnnotationElement(null);
+            }
+        }
+        UpdateAnnotationUndoRedoState();
+    }
+
+    private void RedoAnnotation()
+    {
+        if (_annotationRedoBatches.Count == 0)
+            return;
+
+        var batch = _annotationRedoBatches[^1];
+        _annotationRedoBatches.RemoveAt(_annotationRedoBatches.Count - 1);
+        _annotationUndoBatches.Add(batch);
+
+        foreach (var element in batch)
+        {
+            if (!_annotationHistory.Contains(element))
+                _annotationHistory.Add(element);
+            if (!AnnotationCanvas.Children.Contains(element))
+                AnnotationCanvas.Children.Add(element);
+        }
+        if (batch.Count > 0)
+        {
+            SelectAnnotationElement(batch[^1]);
+        }
+        UpdateAnnotationUndoRedoState();
+    }
+
+    private void UpdateAnnotationUndoRedoState()
+    {
+        bool canUndo = _annotationUndoBatches.Count > 0;
+        bool canRedo = _annotationRedoBatches.Count > 0;
+        AnnotationToolbar.SetUndoRedoState(canUndo, canRedo);
+        if (UndoAnnotationMenuItem != null)
+        {
+            UndoAnnotationMenuItem.IsEnabled = canUndo;
+        }
+    }
+
+    private void OnUndoAnnotationClick(object sender, RoutedEventArgs e) => UndoAnnotation();
+
+    protected override void OnContextMenuOpening(ContextMenuEventArgs e)
+    {
+        base.OnContextMenuOpening(e);
+        UpdateAnnotationUndoRedoState();
+    }
 
     private void StartAnnotationDrawing(Point point)
     {
@@ -993,7 +1129,7 @@ public partial class PinWindow : Window
                 Canvas.SetTop(text, point.Y);
                 AnnotationCanvas.Children.Add(text);
                 _annotationHistory.Add(text);
-                _annotationRedoStack.Clear();
+                CommitAnnotationBatch(new[] { text });
                 text.Loaded += (_, _) => text.Focus();
                 text.LostFocus += (_, _) =>
                 {
@@ -1001,10 +1137,12 @@ public partial class PinWindow : Window
                     {
                         AnnotationCanvas.Children.Remove(text);
                         _annotationHistory.Remove(text);
+                        RemoveFromBatches(text);
                         if (_selectedAnnotationElement == text)
                         {
                             SelectAnnotationElement(null);
                         }
+                        UpdateAnnotationUndoRedoState();
                     }
                     else
                     {
@@ -1012,9 +1150,7 @@ public partial class PinWindow : Window
                         text.IsReadOnly = true;
                         SelectAnnotationElement(text);
                     }
-                    UpdateAnnotationUndoRedoState();
                 };
-                UpdateAnnotationUndoRedoState();
                 break;
             case "Mosaic":
                 if (AnnotationToolbar.MosaicShapeType == 1)
@@ -1070,9 +1206,8 @@ public partial class PinWindow : Window
                 Canvas.SetTop(marker, point.Y - radius);
                 AnnotationCanvas.Children.Add(marker);
                 _annotationHistory.Add(marker);
-                _annotationRedoStack.Clear();
+                CommitAnnotationBatch(new[] { marker });
                 SelectAnnotationElement(marker);
-                UpdateAnnotationUndoRedoState();
                 break;
         }
     }
@@ -1493,6 +1628,7 @@ public partial class PinWindow : Window
                 foreach (var word in line.Words)
                 {
                     var rect = new Rect(word.X * scaleX, word.Y * scaleY, word.Width * scaleX, word.Height * scaleY);
+                    rect.Inflate(2, 2);
                     if (rect.Contains(pt))
                         return word;
                 }
@@ -1500,6 +1636,7 @@ public partial class PinWindow : Window
             else
             {
                 var rect = new Rect(line.X * scaleX, line.Y * scaleY, line.Width * scaleX, line.Height * scaleY);
+                rect.Inflate(2, 2);
                 if (rect.Contains(pt))
                 {
                     return new LayoutTextWord
@@ -1588,6 +1725,7 @@ public partial class PinWindow : Window
         {
             var text = string.Join(" ", _selectedWords.Select(w => w.Text));
             Clipboard.SetText(TextFormattingService.ApplyPanguSpacing(text));
+            ShowCopyBadge();
         }
         ClearTextSelection();
     }
@@ -1596,6 +1734,7 @@ public partial class PinWindow : Window
     {
         double scaleX = _bitmap.PixelWidth > 0 ? PinImage.ActualWidth / _bitmap.PixelWidth : 1;
         double scaleY = _bitmap.PixelHeight > 0 ? PinImage.ActualHeight / _bitmap.PixelHeight : 1;
+        var batch = new List<UIElement>();
         foreach (var word in _selectedWords)
         {
             var rect = new Rectangle
@@ -1608,6 +1747,11 @@ public partial class PinWindow : Window
             Canvas.SetTop(rect, word.Y * scaleY);
             AnnotationCanvas.Children.Add(rect);
             _annotationHistory.Add(rect);
+            batch.Add(rect);
+        }
+        if (batch.Count > 0)
+        {
+            CommitAnnotationBatch(batch);
         }
         ClearTextSelection();
     }
@@ -1617,6 +1761,7 @@ public partial class PinWindow : Window
         double scaleX = _bitmap.PixelWidth > 0 ? PinImage.ActualWidth / _bitmap.PixelWidth : 1;
         double scaleY = _bitmap.PixelHeight > 0 ? PinImage.ActualHeight / _bitmap.PixelHeight : 1;
         var lines = _selectedWords.GroupBy(w => Math.Round(w.Y * scaleY / 10)).ToList();
+        var batch = new List<UIElement>();
         foreach (var lineGroup in lines)
         {
             double left = lineGroup.Min(w => w.X * scaleX);
@@ -1626,6 +1771,11 @@ public partial class PinWindow : Window
             var path = CreateWavyPath(left, right, bottom, Color.FromRgb(0xEF, 0x44, 0x44));
             AnnotationCanvas.Children.Add(path);
             _annotationHistory.Add(path);
+            batch.Add(path);
+        }
+        if (batch.Count > 0)
+        {
+            CommitAnnotationBatch(batch);
         }
         ClearTextSelection();
     }
@@ -1635,6 +1785,7 @@ public partial class PinWindow : Window
         double scaleX = _bitmap.PixelWidth > 0 ? PinImage.ActualWidth / _bitmap.PixelWidth : 1;
         double scaleY = _bitmap.PixelHeight > 0 ? PinImage.ActualHeight / _bitmap.PixelHeight : 1;
         var lines = _selectedWords.GroupBy(w => Math.Round(w.Y * scaleY / 10)).ToList();
+        var batch = new List<UIElement>();
         foreach (var lineGroup in lines)
         {
             double left = lineGroup.Min(w => w.X * scaleX);
@@ -1647,11 +1798,16 @@ public partial class PinWindow : Window
                 Y1 = bottom,
                 X2 = right,
                 Y2 = bottom,
-                Stroke = new SolidColorBrush(Color.FromRgb(0x3B, 0x82, 0xF6)),
+                Stroke = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44)),
                 StrokeThickness = 2
             };
             AnnotationCanvas.Children.Add(line);
             _annotationHistory.Add(line);
+            batch.Add(line);
+        }
+        if (batch.Count > 0)
+        {
+            CommitAnnotationBatch(batch);
         }
         ClearTextSelection();
     }
@@ -1661,6 +1817,7 @@ public partial class PinWindow : Window
         double scaleX = _bitmap.PixelWidth > 0 ? PinImage.ActualWidth / _bitmap.PixelWidth : 1;
         double scaleY = _bitmap.PixelHeight > 0 ? PinImage.ActualHeight / _bitmap.PixelHeight : 1;
         var lines = _selectedWords.GroupBy(w => Math.Round(w.Y * scaleY / 10)).ToList();
+        var batch = new List<UIElement>();
         foreach (var lineGroup in lines)
         {
             double left = lineGroup.Min(w => w.X * scaleX);
@@ -1678,42 +1835,26 @@ public partial class PinWindow : Window
             };
             AnnotationCanvas.Children.Add(line);
             _annotationHistory.Add(line);
+            batch.Add(line);
+        }
+        if (batch.Count > 0)
+        {
+            CommitAnnotationBatch(batch);
         }
         ClearTextSelection();
     }
 
-    private async void OnCapsuleTranslateClick(object sender, RoutedEventArgs e)
+    private void OnCapsuleTranslateClick(object sender, RoutedEventArgs e)
     {
-        if (_selectedWords.Count == 0 || _translationService == null || _configuration == null)
+        if (_selectedWords.Count == 0)
             return;
 
         var text = string.Join(" ", _selectedWords.Select(w => w.Text));
         ClearTextSelection();
 
-        try
-        {
-            var result = await _translationService.TranslateAsync(
-                text,
-                _configuration.TargetLanguage,
-                _configuration.SourceLanguage,
-                _configuration);
-
-            var window = new ScreenTranslationWindow(
-                text,
-                result.Text,
-                _bitmap,
-                _translationService,
-                _configuration)
-            {
-                Left = Left + 20,
-                Top = Top + 20
-            };
-            window.Show();
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(ex.Message, "翻译失败", MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
+        App.CurrentApp?.MainWindow?.SetAndTranslate(
+            TextFormattingService.ApplyPanguSpacing(text),
+            new Rect(Left + 20, Top + 20, 1, 1));
     }
 
     private static Path CreateWavyPath(double left, double right, double y, Color color)

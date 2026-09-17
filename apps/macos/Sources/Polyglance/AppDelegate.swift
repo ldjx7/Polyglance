@@ -143,6 +143,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pinHistoryViewModel.onPinContent = { [weak self] image, id, text in
             self?.pinWindowManager.pinHistoryItem(image, id: id, text: text)
         }
+        pinWindowManager.onTranslateText = { [weak self] text, frame in
+            self?.showTranslator(with: text, near: frame, shouldTranslate: true, takeFocus: true)
+        }
         Task { await pinWindowManager.restoreSessionWindows() }
         if let configuration = try? configurationStore.load() {
             apply(configuration)

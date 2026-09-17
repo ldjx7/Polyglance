@@ -42,7 +42,11 @@ struct VisionOCRBackend: OCRRecognitionBackend {
                     return OCRTextObservation(
                         text: cleaned,
                         boundingBox: observation.boundingBox,
-                        fragments: Self.selectableFragments(for: candidate, cleanedText: cleaned)
+                        fragments: Self.selectableFragments(
+                            for: candidate,
+                            observationBox: observation.boundingBox,
+                            cleanedText: cleaned
+                        )
                     )
                 } ?? []
             }.value
@@ -67,57 +71,185 @@ struct VisionOCRBackend: OCRRecognitionBackend {
         return request
     }
 
-    /// Vision exposes geometry for arbitrary recognized string ranges. Building
-    /// character-level items gives the overlay native-feeling partial selection
-    /// for both whitespace-delimited languages and CJK text. If Vision cannot
-    /// provide every non-whitespace range, the caller deliberately falls back to
-    /// the observation's line box rather than returning incomplete selectable
-    /// text.
     private static func selectableFragments(
         for candidate: VNRecognizedText,
+        observationBox: CGRect,
         cleanedText: String
     ) -> [OCRTextFragment] {
         let string = candidate.string
-        var fragments: [OCRTextFragment] = []
-        var separatorBefore = ""
-        var currentIndex = string.startIndex
+        guard !cleanedText.isEmpty else { return [] }
 
-        while currentIndex < string.endIndex {
-            let nextIndex = string.index(after: currentIndex)
-            let range = currentIndex..<nextIndex
-            let text = String(string[range])
-            if text.allSatisfy(\.isWhitespace) {
-                separatorBefore.append(text)
-                currentIndex = nextIndex
-                continue
+        func charWeight(_ c: Character) -> CGFloat {
+            if c.unicodeScalars.contains(where: {
+                (0x4E00...0x9FFF).contains($0.value) ||
+                (0x3400...0x4DBF).contains($0.value) ||
+                (0x20000...0x2A6DF).contains($0.value) ||
+                (0x3040...0x30FF).contains($0.value) ||
+                (0xAC00...0xD7AF).contains($0.value)
+            }) {
+                return 1.0
             }
-
-            guard let rectangle = try? candidate.boundingBox(for: range) else {
-                return []
+            if "mwWM@#%&".contains(c) {
+                return 0.85
             }
-            fragments.append(
-                OCRTextFragment(
-                    text: text,
-                    boundingBox: rectangle.boundingBox,
-                    separatorBefore: separatorBefore
-                )
-            )
-            separatorBefore = ""
-            currentIndex = nextIndex
+            if "ijl|!.,:;'`I1t ".contains(c) {
+                return 0.35
+            }
+            if c.isUppercase {
+                return 0.7
+            }
+            return 0.55
         }
 
-        if cleanedText != string {
-            let cleanedChars = Array(cleanedText.filter { !$0.isWhitespace })
-            var fragIdx = 0
-            var matchedFragments: [OCRTextFragment] = []
-            for frag in fragments {
-                if fragIdx < cleanedChars.count && frag.text == String(cleanedChars[fragIdx]) {
-                    matchedFragments.append(frag)
-                    fragIdx += 1
+        func subdivide(wordText: String, wordBox: CGRect, separatorBefore: String) -> [OCRTextFragment] {
+            guard !wordText.isEmpty else { return [] }
+            let chars = Array(wordText)
+            let weights = chars.map(charWeight)
+            let totalWeight = weights.reduce(0, +)
+            guard totalWeight > 0 else { return [] }
+
+            var frags: [OCRTextFragment] = []
+            var currentX = wordBox.minX
+            for (idx, char) in chars.enumerated() {
+                let w = wordBox.width * (weights[idx] / totalWeight)
+                let charBox = CGRect(
+                    x: currentX,
+                    y: wordBox.minY,
+                    width: max(0.001, w),
+                    height: wordBox.height
+                )
+                frags.append(
+                    OCRTextFragment(
+                        text: String(char),
+                        boundingBox: charBox,
+                        separatorBefore: idx == 0 ? separatorBefore : ""
+                    )
+                )
+                currentX += w
+            }
+            return frags
+        }
+
+        var tokens: [(text: String, separatorBefore: String)] = []
+        var curWord = ""
+        var curSep = ""
+        for char in cleanedText {
+            if char.isWhitespace {
+                if !curWord.isEmpty {
+                    tokens.append((curWord, curSep))
+                    curWord = ""
+                    curSep = ""
+                }
+                curSep.append(char)
+            } else {
+                curWord.append(char)
+            }
+        }
+        if !curWord.isEmpty {
+            tokens.append((curWord, curSep))
+        }
+
+        guard !tokens.isEmpty else { return [] }
+
+        let tokenWeights = tokens.map { token in
+            token.text.map(charWeight).reduce(0, +)
+        }
+        let totalTokenWeight = tokenWeights.reduce(0, +)
+
+        var fragments: [OCRTextFragment] = []
+        var runningWeight: CGFloat = 0
+
+        var searchStartIndex = string.startIndex
+        for (tIdx, token) in tokens.enumerated() {
+            let tWeight = tokenWeights[tIdx]
+            var tokenBox: CGRect? = nil
+            let tokenRange: Range<String.Index>?
+            if let range = string.range(of: token.text, range: searchStartIndex..<string.endIndex) {
+                tokenRange = range
+                searchStartIndex = range.upperBound
+                if let rect = try? candidate.boundingBox(for: range),
+                   OCRService.isUsableNormalizedBox(rect.boundingBox) {
+                    tokenBox = rect.boundingBox
+                }
+            } else if let range = string.range(of: token.text) {
+                tokenRange = range
+                if let rect = try? candidate.boundingBox(for: range),
+                   OCRService.isUsableNormalizedBox(rect.boundingBox) {
+                    tokenBox = rect.boundingBox
+                }
+            } else {
+                tokenRange = nil
+            }
+
+            let effectiveBox: CGRect
+            if let tokenBox {
+                effectiveBox = tokenBox
+            } else if totalTokenWeight > 0 {
+                let startFraction = runningWeight / totalTokenWeight
+                let widthFraction = tWeight / totalTokenWeight
+                effectiveBox = CGRect(
+                    x: observationBox.minX + startFraction * observationBox.width,
+                    y: observationBox.minY,
+                    width: max(0.001, widthFraction * observationBox.width),
+                    height: observationBox.height
+                )
+            } else {
+                effectiveBox = observationBox
+            }
+            runningWeight += tWeight
+
+            var charBoxes: [CGRect] = []
+            var allCharsFound = false
+            if let tokenRange {
+                var currentIdx = tokenRange.lowerBound
+                var tempBoxes: [CGRect] = []
+                var failed = false
+                while currentIdx < tokenRange.upperBound {
+                    let nextIdx = string.index(after: currentIdx)
+                    let charRange = currentIdx..<nextIdx
+                    if let cRect = try? candidate.boundingBox(for: charRange),
+                       OCRService.isUsableNormalizedBox(cRect.boundingBox) {
+                        tempBoxes.append(cRect.boundingBox)
+                    } else {
+                        failed = true
+                        break
+                    }
+                    currentIdx = nextIdx
+                }
+                if !failed && tempBoxes.count == token.text.count {
+                    if tempBoxes.count <= 1 {
+                        charBoxes = tempBoxes
+                        allCharsFound = true
+                    } else {
+                        let maxAllowedWidth = effectiveBox.width * 0.90
+                        let isActuallyPartitioned = zip(tempBoxes, tempBoxes.dropFirst()).allSatisfy { prev, next in
+                            prev.width <= maxAllowedWidth && next.width <= maxAllowedWidth && prev.maxX <= next.minX + 0.001
+                        }
+                        if isActuallyPartitioned {
+                            charBoxes = tempBoxes
+                            allCharsFound = true
+                        }
+                    }
                 }
             }
-            if matchedFragments.count == cleanedChars.count {
-                return matchedFragments
+
+            if allCharsFound {
+                for (cIdx, char) in token.text.enumerated() {
+                    fragments.append(
+                        OCRTextFragment(
+                            text: String(char),
+                            boundingBox: charBoxes[cIdx],
+                            separatorBefore: cIdx == 0 ? token.separatorBefore : ""
+                        )
+                    )
+                }
+            } else {
+                let subFrags = subdivide(
+                    wordText: token.text,
+                    wordBox: effectiveBox,
+                    separatorBefore: token.separatorBefore
+                )
+                fragments.append(contentsOf: subFrags)
             }
         }
 
@@ -168,9 +300,6 @@ struct VisionOCRBackend: OCRRecognitionBackend {
         if trimmed.count <= 2 {
             if isRoughlySquare && isSmallBox {
                 if trimmed.allSatisfy({ !$0.isLetter && !$0.isNumber }) {
-                    return true
-                }
-                if trimmed.count == 1, let first = trimmed.first, first.isASCII, first.isLetter {
                     return true
                 }
             }

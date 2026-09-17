@@ -623,6 +623,14 @@ struct ScreenshotAnnotationHistory {
         redoStack.removeAll()
     }
 
+    mutating func append(_ newElements: [ScreenshotAnnotationElement]) {
+        guard !newElements.isEmpty else { return }
+        undoStack.append(elements)
+        elements.append(contentsOf: newElements)
+        selectedIndex = elements.count - 1
+        redoStack.removeAll()
+    }
+
     @discardableResult
     mutating func undo() -> ScreenshotAnnotationElement? {
         guard !undoStack.isEmpty else { return nil }

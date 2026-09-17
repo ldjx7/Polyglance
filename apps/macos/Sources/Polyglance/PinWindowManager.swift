@@ -25,6 +25,7 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
     private var pendingDestructions: [String: Task<Void, Never>] = [:]
     private let historyStore: PinHistoryStore
     let archiveStore: PinArchiveStore
+    var onTranslateText: (@MainActor (String, CGRect) -> Void)?
     private static let isRunningTests: Bool = {
         NSClassFromString("XCTestCase") != nil
             || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
@@ -887,6 +888,7 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
             },
             hideAll: { [weak self] in self?.hideAllPins() },
             showAll: { [weak self] in self?.showAllPins() },
+            translateText: onTranslateText,
             currentState: { [weak self] in
                 self?.state ?? PinWindowManagerState(
                     activePinCount: 0,
@@ -1112,6 +1114,7 @@ struct PinWindowActions {
     let hideOthers: Action?
     let hideAll: Action?
     let showAll: Action?
+    let translateText: (@MainActor (String, CGRect) -> Void)?
     let currentState: StateProvider
 
     init(
@@ -1123,6 +1126,7 @@ struct PinWindowActions {
         hideOthers: Action? = nil,
         hideAll: Action? = nil,
         showAll: Action? = nil,
+        translateText: (@MainActor (String, CGRect) -> Void)? = nil,
         currentState: @escaping StateProvider = {
             PinWindowManagerState(
                 activePinCount: 1,
@@ -1140,6 +1144,7 @@ struct PinWindowActions {
         self.hideOthers = hideOthers
         self.hideAll = hideAll
         self.showAll = showAll
+        self.translateText = translateText
         self.currentState = currentState
     }
 }
@@ -1167,6 +1172,7 @@ final class PinContentView: NSView {
     private let colorMagnifierView: ScreenshotMagnifierView
     let annotationEditor: PinAnnotationOverlayView
     private let zoomIndicator = PinZoomIndicatorView()
+    private(set) var textCapsuleBar = PinTextCapsuleBarView()
     private var trackingAreaReference: NSTrackingArea?
     private var dragStartMouseLocation: CGPoint?
     private var dragStartWindowOrigin: CGPoint?
@@ -1180,10 +1186,23 @@ final class PinContentView: NSView {
     private(set) var magnifierPanel: NSPanel?
     private(set) var isSelectionHighlighted = false
     private var currentScale: CGFloat = 1.0
+    private(set) var ocrDocument: OCRDocument?
+    private(set) var ocrSelectionModel: OCRSelectionModel?
+    private(set) var selectedTextItemIDs: Set<Int> = []
+    private(set) var isTextSelecting = false
+    private var textSelectStart: CGPoint?
+    private var textSelectionAnchorIndex: Int?
+    private var textSelectionRect: CGRect = .zero
+    private var ocrTask: Task<Void, Never>?
+
+    deinit {
+        ocrTask?.cancel()
+    }
 
     init(
         image: NSImage,
         initialSize: CGSize? = nil,
+        ocrDocument: OCRDocument? = nil,
         copyImage: @escaping CopyImage = { try ImagePasteboard.write($0) },
         saveImage: @escaping SaveImage = { try ScreenshotFileSaver().save($0) },
         presentError: @escaping PresentError = PinContentView.presentOperationError,
@@ -1193,6 +1212,10 @@ final class PinContentView: NSView {
         actions: PinWindowActions? = nil
     ) {
         self.image = image
+        self.ocrDocument = ocrDocument
+        if let ocrDocument {
+            self.ocrSelectionModel = OCRSelectionModel(document: ocrDocument)
+        }
         self.copyImage = copyImage
         self.saveImage = saveImage
         self.presentError = presentError
@@ -1218,7 +1241,333 @@ final class PinContentView: NSView {
         addSubview(annotationEditor)
         addSubview(zoomIndicator)
         addSubview(copyToastIndicator)
+        addSubview(textCapsuleBar)
+        configureTextCapsuleBar()
         configureColorMagnifier()
+        if ocrDocument == nil {
+            startBackgroundOCR()
+        }
+    }
+
+    private func configureTextCapsuleBar() {
+        textCapsuleBar.onCopy = { [weak self] in
+            guard let self else { return }
+            self.copySelectedTextWithFeedback()
+            self.clearTextSelection()
+        }
+        textCapsuleBar.onHighlight = { [weak self] in
+            self?.applyTextHighlight()
+        }
+        textCapsuleBar.onWavy = { [weak self] in
+            self?.applyTextWavy()
+        }
+        textCapsuleBar.onLine = { [weak self] in
+            self?.applyTextLine()
+        }
+        textCapsuleBar.onStrikethrough = { [weak self] in
+            self?.applyTextStrikethrough()
+        }
+        textCapsuleBar.onTranslate = { [weak self] in
+            self?.translateSelectedText()
+        }
+    }
+
+    private func startBackgroundOCR() {
+        guard ocrDocument == nil else { return }
+        ocrTask = Task { [weak self, image] in
+            let service = OCRService()
+            do {
+                let doc = try await service.recognizeDocument(in: image)
+                guard !Task.isCancelled else { return }
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    self.setRecognizedDocument(doc)
+                }
+            } catch {
+                // Background OCR failure is non-blocking
+            }
+        }
+    }
+
+    func setRecognizedDocument(_ document: OCRDocument) {
+        ocrDocument = document
+        ocrSelectionModel = OCRSelectionModel(document: document)
+        window?.invalidateCursorRects(for: self)
+        needsDisplay = true
+    }
+
+    var selectionLayout: OCRSelectionLayout {
+        OCRSelectionLayout(imagePixelSize: initialSize, viewport: bounds)
+    }
+
+    func textItem(at point: CGPoint) -> OCRTextItem? {
+        guard let items = ocrDocument?.items else { return nil }
+        let layout = selectionLayout
+        if let direct = items.first(where: { layout.viewRect(forNormalizedRect: $0.boundingBox).contains(point) }) {
+            return direct
+        }
+        return items.first(where: { item in
+            let rect = layout.viewRect(forNormalizedRect: item.boundingBox).insetBy(dx: -2, dy: -2)
+            return rect.contains(point)
+        })
+    }
+
+    private func wordItemIDs(for hit: OCRTextItem, in items: [OCRTextItem]) -> Set<Int> {
+        let lineItems = items.filter { $0.lineIndex == hit.lineIndex }
+        guard let hitIdx = lineItems.firstIndex(where: { $0.id == hit.id }) else {
+            return [hit.id]
+        }
+        if let firstScalar = hit.text.unicodeScalars.first,
+           (0x4E00...0x9FFF).contains(firstScalar.value) ||
+           (0x3400...0x4DBF).contains(firstScalar.value) ||
+           (0x3040...0x30FF).contains(firstScalar.value) ||
+           (0xAC00...0xD7AF).contains(firstScalar.value) {
+            return [hit.id]
+        }
+        var start = hitIdx
+        while start > 0 && lineItems[start].separatorBefore.isEmpty {
+            start -= 1
+        }
+        var end = hitIdx
+        while end < lineItems.count - 1 && lineItems[end + 1].separatorBefore.isEmpty {
+            end += 1
+        }
+        return Set(lineItems[start...end].map(\.id))
+    }
+
+    private func isPointInSelection(_ point: CGPoint) -> Bool {
+        guard !selectedTextItemIDs.isEmpty, let items = ocrDocument?.items else { return false }
+        let layout = selectionLayout
+        for item in items where selectedTextItemIDs.contains(item.id) {
+            let rect = layout.viewRect(forNormalizedRect: item.boundingBox).insetBy(dx: -2, dy: -2)
+            if rect.contains(point) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func closestItemIndex(to point: CGPoint, items: [OCRTextItem], layout: OCRSelectionLayout) -> Int? {
+        guard !items.isEmpty else { return nil }
+        return items.indices.min(by: {
+            let r1 = layout.viewRect(forNormalizedRect: items[$0].boundingBox)
+            let r2 = layout.viewRect(forNormalizedRect: items[$1].boundingBox)
+            let d1 = Self.squaredDistance(from: point, to: r1)
+            let d2 = Self.squaredDistance(from: point, to: r2)
+            return d1 < d2
+        })
+    }
+
+    private static func squaredDistance(from point: CGPoint, to rect: CGRect) -> CGFloat {
+        let dx = max(rect.minX - point.x, 0, point.x - rect.maxX)
+        let dy = max(rect.minY - point.y, 0, point.y - rect.maxY)
+        return dx * dx + dy * dy
+    }
+
+    var selectedText: String? {
+        guard !selectedTextItemIDs.isEmpty, let doc = ocrDocument else { return nil }
+        return doc.text(forItemIDs: selectedTextItemIDs)
+    }
+
+    func clearTextSelection() {
+        isTextSelecting = false
+        textSelectStart = nil
+        textSelectionAnchorIndex = nil
+        textSelectionRect = .zero
+        selectedTextItemIDs = []
+        textCapsuleBar.hide()
+        needsDisplay = true
+    }
+
+    func showCapsuleBarIfNeeded() {
+        guard !selectedTextItemIDs.isEmpty,
+              let items = ocrDocument?.items,
+              !annotationEditor.isEditing,
+              !isLocked else {
+            textCapsuleBar.hide()
+            return
+        }
+        let layout = selectionLayout
+        let selectedItems = items.filter { selectedTextItemIDs.contains($0.id) }
+        guard let first = selectedItems.first else {
+            textCapsuleBar.hide()
+            return
+        }
+        var unionRect = layout.viewRect(forNormalizedRect: first.boundingBox)
+        for item in selectedItems.dropFirst() {
+            unionRect = unionRect.union(layout.viewRect(forNormalizedRect: item.boundingBox))
+        }
+        textCapsuleBar.show(above: unionRect, in: bounds)
+    }
+
+    @objc func translateSelectedText() {
+        guard let text = selectedText, !text.isEmpty else { return }
+        let targetFrame = window?.frame ?? CGRect(origin: NSEvent.mouseLocation, size: CGSize(width: 1, height: 1))
+        clearTextSelection()
+        if let translate = actions.translateText {
+            translate(text, targetFrame)
+        } else {
+            AppDelegate.shared?.showTranslator(with: text, near: targetFrame, shouldTranslate: true, takeFocus: true)
+        }
+    }
+
+    @discardableResult
+    @objc func undoAnnotationAction() -> Bool {
+        guard annotationEditor.canUndo else { return false }
+        annotationEditor.undo()
+        return true
+    }
+
+    @objc func applyTextHighlight() {
+        guard let items = ocrDocument?.items, !selectedTextItemIDs.isEmpty else { return }
+        let layout = selectionLayout
+        let selectedItems = items.filter { selectedTextItemIDs.contains($0.id) }
+        let style = ScreenshotAnnotationStyle(
+            color: NSColor(srgbRed: 0.99, green: 0.88, blue: 0.28, alpha: 0.38),
+            isFilled: true
+        )
+        let lineGroups = Dictionary(grouping: selectedItems, by: \.lineIndex)
+        var elements: [ScreenshotAnnotationElement] = []
+        for (_, lineItems) in lineGroups {
+            let sorted = lineItems.sorted { $0.indexInLine < $1.indexInLine }
+            var currentRun: [OCRTextItem] = []
+            for item in sorted {
+                if let last = currentRun.last, item.indexInLine > last.indexInLine + 1 {
+                    let rects = currentRun.map { annotationEditor.convert(layout.viewRect(forNormalizedRect: $0.boundingBox), from: self) }
+                    if let minX = rects.map(\.minX).min(),
+                       let maxX = rects.map(\.maxX).max(),
+                       let minY = rects.map(\.minY).min(),
+                       let maxY = rects.map(\.maxY).max(),
+                       maxX > minX, maxY > minY {
+                        elements.append(.rectangle(
+                            start: CGPoint(x: minX, y: minY),
+                            end: CGPoint(x: maxX, y: maxY),
+                            style: style
+                        ))
+                    }
+                    currentRun = [item]
+                } else {
+                    currentRun.append(item)
+                }
+            }
+            if !currentRun.isEmpty {
+                let rects = currentRun.map { annotationEditor.convert(layout.viewRect(forNormalizedRect: $0.boundingBox), from: self) }
+                if let minX = rects.map(\.minX).min(),
+                   let maxX = rects.map(\.maxX).max(),
+                   let minY = rects.map(\.minY).min(),
+                   let maxY = rects.map(\.maxY).max(),
+                   maxX > minX, maxY > minY {
+                    elements.append(.rectangle(
+                        start: CGPoint(x: minX, y: minY),
+                        end: CGPoint(x: maxX, y: maxY),
+                        style: style
+                    ))
+                }
+            }
+        }
+        annotationEditor.addElements(elements)
+        clearTextSelection()
+    }
+
+    @objc func applyTextWavy() {
+        guard let items = ocrDocument?.items, !selectedTextItemIDs.isEmpty else { return }
+        let layout = selectionLayout
+        let selectedItems = items.filter { selectedTextItemIDs.contains($0.id) }
+        let lineGroups = Dictionary(grouping: selectedItems, by: \.lineIndex)
+        let style = ScreenshotAnnotationStyle(
+            color: NSColor(srgbRed: 0.94, green: 0.27, blue: 0.27, alpha: 1.0),
+            lineWidth: 1.5
+        )
+        var elements: [ScreenshotAnnotationElement] = []
+        for (_, lineItems) in lineGroups {
+            let rects = lineItems.map { annotationEditor.convert(layout.viewRect(forNormalizedRect: $0.boundingBox), from: self) }
+            let minX = rects.map(\.minX).min() ?? 0
+            let maxX = rects.map(\.maxX).max() ?? 0
+            let minY = rects.map(\.minY).min() ?? 0
+            let lineY = minY - 1
+            guard maxX > minX else { continue }
+            var points: [CGPoint] = []
+            let step: CGFloat = 3
+            let amp: CGFloat = 2
+            let wavelength: CGFloat = 8
+            var currentX = minX
+            while currentX <= maxX {
+                let waveY = lineY + sin((currentX - minX) * (2 * .pi / wavelength)) * amp
+                points.append(CGPoint(x: currentX, y: waveY))
+                currentX += step
+            }
+            if points.last?.x != maxX {
+                let waveY = lineY + sin((maxX - minX) * (2 * .pi / wavelength)) * amp
+                points.append(CGPoint(x: maxX, y: waveY))
+            }
+            elements.append(.freehand(points: points, style: style))
+        }
+        annotationEditor.addElements(elements)
+        clearTextSelection()
+    }
+
+    @objc func applyTextLine() {
+        guard let items = ocrDocument?.items, !selectedTextItemIDs.isEmpty else { return }
+        let layout = selectionLayout
+        let selectedItems = items.filter { selectedTextItemIDs.contains($0.id) }
+        let lineGroups = Dictionary(grouping: selectedItems, by: \.lineIndex)
+        let style = ScreenshotAnnotationStyle(
+            color: NSColor(srgbRed: 0.94, green: 0.27, blue: 0.27, alpha: 1.0),
+            lineWidth: 2
+        )
+        var elements: [ScreenshotAnnotationElement] = []
+        for (_, lineItems) in lineGroups {
+            let rects = lineItems.map { annotationEditor.convert(layout.viewRect(forNormalizedRect: $0.boundingBox), from: self) }
+            let minX = rects.map(\.minX).min() ?? 0
+            let maxX = rects.map(\.maxX).max() ?? 0
+            let minY = rects.map(\.minY).min() ?? 0
+            let lineY = minY - 1
+            elements.append(.line(
+                start: CGPoint(x: minX, y: lineY),
+                end: CGPoint(x: maxX, y: lineY),
+                style: style
+            ))
+        }
+        annotationEditor.addElements(elements)
+        clearTextSelection()
+    }
+
+    @objc func applyTextStrikethrough() {
+        guard let items = ocrDocument?.items, !selectedTextItemIDs.isEmpty else { return }
+        let layout = selectionLayout
+        let selectedItems = items.filter { selectedTextItemIDs.contains($0.id) }
+        let lineGroups = Dictionary(grouping: selectedItems, by: \.lineIndex)
+        let style = ScreenshotAnnotationStyle(
+            color: NSColor(srgbRed: 0.61, green: 0.64, blue: 0.69, alpha: 1.0),
+            lineWidth: 2
+        )
+        var elements: [ScreenshotAnnotationElement] = []
+        for (_, lineItems) in lineGroups {
+            let rects = lineItems.map { annotationEditor.convert(layout.viewRect(forNormalizedRect: $0.boundingBox), from: self) }
+            let minX = rects.map(\.minX).min() ?? 0
+            let maxX = rects.map(\.maxX).max() ?? 0
+            let midY = rects.reduce(0) { $0 + $1.midY } / CGFloat(rects.count)
+            elements.append(.line(
+                start: CGPoint(x: minX, y: midY),
+                end: CGPoint(x: maxX, y: midY),
+                style: style
+            ))
+        }
+        annotationEditor.addElements(elements)
+        clearTextSelection()
+    }
+
+    @discardableResult
+    @objc func copySelectedTextWithFeedback() -> Bool {
+        guard let text = selectedText, !text.isEmpty else {
+            return false
+        }
+        let formatted = TextFormattingService.applyPanguSpacing(text)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(formatted, forType: .string)
+        copyToastIndicator.show(text: "已复制", in: bounds, duration: 1.0)
+        return true
     }
 
     @available(*, unavailable)
@@ -1245,6 +1594,7 @@ final class PinContentView: NSView {
         guard let window else {
             return
         }
+        window.acceptsMouseMovedEvents = true
         let sizeLimits = PinResizeGeometry.sizeLimits(for: initialSize)
         window.contentAspectRatio = initialSize
         window.contentMinSize = sizeLimits.minimum
@@ -1253,6 +1603,20 @@ final class PinContentView: NSView {
         applyLockState()
         if isColorPicking {
             attachMagnifierPanelIfNeeded()
+        }
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        guard !annotationEditor.isEditing, !isLocked, !isColorPicking, let items = ocrDocument?.items else {
+            return
+        }
+        let layout = selectionLayout
+        for item in items {
+            let rect = layout.viewRect(forNormalizedRect: item.boundingBox).insetBy(dx: -2, dy: -2)
+            if !rect.isEmpty {
+                addCursorRect(rect, cursor: .iBeam)
+            }
         }
     }
 
@@ -1301,7 +1665,11 @@ final class PinContentView: NSView {
             height: 26
         )
         annotationEditor.frame = contentRect
+        if !textCapsuleBar.isHidden {
+            showCapsuleBarIfNeeded()
+        }
         setSelectionHighlighted(isSelectionHighlighted)
+        window?.invalidateCursorRects(for: self)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -1317,6 +1685,23 @@ final class PinContentView: NSView {
             respectFlipped: true,
             hints: [.interpolation: NSImageInterpolation.high]
         )
+
+        if let items = ocrDocument?.items, !selectedTextItemIDs.isEmpty, !annotationEditor.isEditing {
+            let layout = selectionLayout
+            let context = NSGraphicsContext.current?.cgContext
+            context?.saveGState()
+            context?.setFillColor(NSColor.systemBlue.withAlphaComponent(0.28).cgColor)
+            context?.setStrokeColor(NSColor.systemBlue.withAlphaComponent(0.85).cgColor)
+            context?.setLineWidth(1)
+
+            for item in items where selectedTextItemIDs.contains(item.id) {
+                let itemRect = layout.viewRect(forNormalizedRect: item.boundingBox)
+                context?.fill(itemRect)
+                context?.stroke(itemRect)
+            }
+            context?.restoreGState()
+        }
+
         NSGraphicsContext.restoreGraphicsState()
     }
 
@@ -1361,13 +1746,44 @@ final class PinContentView: NSView {
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
         hideColorMagnifier()
+        NSCursor.arrow.set()
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard isColorPicking else {
+        if isColorPicking {
+            updateColorPicking(at: convert(event.locationInWindow, from: nil))
             return
         }
-        updateColorPicking(at: convert(event.locationInWindow, from: nil))
+        guard !annotationEditor.isEditing, !isLocked else {
+            return
+        }
+        let isForceMove = event.modifierFlags.contains(.option) || event.modifierFlags.contains(.control)
+        if isForceMove {
+            NSCursor.openHand.set()
+            return
+        }
+        let point = convert(event.locationInWindow, from: nil)
+        if textItem(at: point) != nil || isPointInSelection(point) {
+            NSCursor.iBeam.set()
+        } else {
+            NSCursor.arrow.set()
+        }
+    }
+
+    override func flagsChanged(with event: NSEvent) {
+        super.flagsChanged(with: event)
+        guard !annotationEditor.isEditing, !isLocked, !isColorPicking else { return }
+        let isForceMove = event.modifierFlags.contains(.option) || event.modifierFlags.contains(.control)
+        if isForceMove {
+            NSCursor.openHand.set()
+        } else {
+            let point = convert(event.locationInWindow, from: nil)
+            if textItem(at: point) != nil || isPointInSelection(point) {
+                NSCursor.iBeam.set()
+            } else {
+                NSCursor.arrow.set()
+            }
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -1387,17 +1803,72 @@ final class PinContentView: NSView {
             clearDragState()
             return
         }
+
+        let isForceMove = event.modifierFlags.contains(.option) || event.modifierFlags.contains(.control)
+        let point = convert(event.locationInWindow, from: nil)
+        if !annotationEditor.isEditing && !isForceMove {
+            if let hit = textItem(at: point), let items = ocrDocument?.items {
+                isTextSelecting = true
+                textSelectStart = point
+                textSelectionRect = CGRect(origin: point, size: .zero)
+                textSelectionAnchorIndex = items.firstIndex(where: { $0.id == hit.id })
+                selectedTextItemIDs = wordItemIDs(for: hit, in: items)
+                needsDisplay = true
+                return
+            } else if !selectedTextItemIDs.isEmpty && isPointInSelection(point) {
+                isTextSelecting = true
+                textSelectStart = point
+                textSelectionRect = CGRect(origin: point, size: .zero)
+                textSelectionAnchorIndex = closestItemIndex(to: point, items: ocrDocument?.items ?? [], layout: selectionLayout)
+                needsDisplay = true
+                return
+            } else {
+                if !selectedTextItemIDs.isEmpty {
+                    clearTextSelection()
+                }
+            }
+        }
+
         dragStartMouseLocation = screenLocation(for: event)
         dragStartWindowOrigin = window?.frame.origin
+        if isForceMove {
+            NSCursor.closedHand.set()
+        }
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if isTextSelecting, let textSelectStart, let items = ocrDocument?.items {
+            let point = convert(event.locationInWindow, from: nil)
+            let rect = CGRect(
+                x: min(textSelectStart.x, point.x),
+                y: min(textSelectStart.y, point.y),
+                width: max(1, abs(point.x - textSelectStart.x)),
+                height: max(1, abs(point.y - textSelectStart.y))
+            )
+            textSelectionRect = rect
+
+            if hypot(point.x - textSelectStart.x, point.y - textSelectStart.y) > 2 {
+                let layout = selectionLayout
+                let intersecting = items.filter { item in
+                    let itemRect = layout.viewRect(forNormalizedRect: item.boundingBox)
+                    return rect.intersects(itemRect)
+                }
+                selectedTextItemIDs = Set(intersecting.map(\.id))
+            }
+            NSCursor.iBeam.set()
+            needsDisplay = true
+            return
+        }
+
         guard let window,
               !isColorPicking,
               !isLocked,
               let dragStartMouseLocation,
               let dragStartWindowOrigin else {
             return
+        }
+        if event.modifierFlags.contains(.option) || event.modifierFlags.contains(.control) {
+            NSCursor.closedHand.set()
         }
         let currentLocation = screenLocation(for: event)
         let origin = CGPoint(
@@ -1417,7 +1888,20 @@ final class PinContentView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if isTextSelecting {
+            isTextSelecting = false
+            textSelectStart = nil
+            textSelectionAnchorIndex = nil
+            textSelectionRect = .zero
+            needsDisplay = true
+            showCapsuleBarIfNeeded()
+            return
+        }
         clearDragState()
+        let isForceMove = event.modifierFlags.contains(.option) || event.modifierFlags.contains(.control)
+        if isForceMove {
+            NSCursor.openHand.set()
+        }
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -1431,8 +1915,16 @@ final class PinContentView: NSView {
                responder is NSTextView || responder is NSTextField {
                 return super.performKeyEquivalent(with: event)
             }
+            if copySelectedTextWithFeedback() {
+                return true
+            }
             copyPinWithFeedback()
             return true
+        }
+        if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "z" {
+            if undoAnnotationAction() {
+                return true
+            }
         }
         return super.performKeyEquivalent(with: event)
     }
@@ -1455,6 +1947,12 @@ final class PinContentView: NSView {
                 return
             }
         }
+        if event.keyCode == 53 {
+            if !selectedTextItemIDs.isEmpty {
+                clearTextSelection()
+                return
+            }
+        }
         if let responder = window?.firstResponder,
            responder is NSTextView || responder is NSTextField {
             super.keyDown(with: event)
@@ -1462,8 +1960,16 @@ final class PinContentView: NSView {
         }
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "c" {
+            if copySelectedTextWithFeedback() {
+                return
+            }
             copyPinWithFeedback()
             return
+        }
+        if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "z" {
+            if undoAnnotationAction() {
+                return
+            }
         }
         if event.characters == " " {
             toggleAnnotationEditing()
@@ -1773,6 +2279,7 @@ final class PinContentView: NSView {
         window.setFrame(frame, display: true)
         let percent = Int(round(targetScale * 100))
         zoomIndicator.show(percent: percent, in: bounds)
+        window.invalidateCursorRects(for: self)
     }
 
     private func restoreInitialSize() {
@@ -1789,6 +2296,7 @@ final class PinContentView: NSView {
         )
         window.setFrame(frame, display: true)
         zoomIndicator.show(percent: 100, in: bounds)
+        window.invalidateCursorRects(for: self)
     }
 
     @discardableResult
@@ -1876,6 +2384,41 @@ final class PinContentView: NSView {
     func makeContextMenu() -> NSMenu {
         let menu = NSMenu()
 
+        if let text = selectedText, !text.isEmpty {
+            menu.addItem(menuItem(
+                title: "复制文本",
+                action: #selector(copySelectedTextWithFeedback),
+                symbol: "doc.on.doc",
+                keyEquivalent: "c"
+            ))
+            menu.addItem(menuItem(
+                title: "翻译文本",
+                action: #selector(translateSelectedText),
+                symbol: "character.book.closed"
+            ))
+            menu.addItem(menuItem(
+                title: "荧光笔",
+                action: #selector(applyTextHighlight),
+                symbol: "highlighter"
+            ))
+            menu.addItem(menuItem(
+                title: "波浪线",
+                action: #selector(applyTextWavy),
+                symbol: "waveform"
+            ))
+            menu.addItem(menuItem(
+                title: "直线",
+                action: #selector(applyTextLine),
+                symbol: "pencil.line"
+            ))
+            menu.addItem(menuItem(
+                title: "删除线",
+                action: #selector(applyTextStrikethrough),
+                symbol: "strikethrough"
+            ))
+            menu.addItem(.separator())
+        }
+
         let annotationItem = menuItem(
             title: annotationEditor.isEditing ? "完成标注" : "标注",
             action: #selector(toggleAnnotationEditing),
@@ -1884,6 +2427,16 @@ final class PinContentView: NSView {
             modifiers: []
         )
         menu.addItem(annotationItem)
+
+        if annotationEditor.canUndo {
+            let undoItem = menuItem(
+                title: "撤销标注",
+                action: #selector(undoAnnotationAction),
+                symbol: "arrow.uturn.backward",
+                keyEquivalent: "z"
+            )
+            menu.addItem(undoItem)
+        }
 
         let colorPickerItem = menuItem(
             title: isColorPicking ? "退出取色" : "取色",
@@ -1914,8 +2467,8 @@ final class PinContentView: NSView {
         menu.addItem(menuItem(
             title: "复制图片",
             action: #selector(copyPinWithFeedback),
-            symbol: "doc.on.doc",
-            keyEquivalent: "c"
+            symbol: "photo",
+            keyEquivalent: selectedText == nil ? "c" : ""
         ))
         menu.addItem(menuItem(
             title: "另存为…",
@@ -1938,9 +2491,9 @@ final class PinContentView: NSView {
             )
             item.target = self
             item.tag = value
-            item.state = abs((window?.alphaValue ?? 1) - CGFloat(value) / 100) < 0.001
-                ? .on
-                : .off
+            if (window?.alphaValue ?? 1.0) == CGFloat(value) / 100 {
+                item.state = .on
+            }
             opacityMenu.addItem(item)
         }
         menu.setSubmenu(opacityMenu, for: opacityItem)
@@ -1949,7 +2502,6 @@ final class PinContentView: NSView {
 
         let managerState = actions.currentState()
 
-        // 批量管理子菜单
         let batchItem = menuItem(
             title: "批量管理",
             action: nil,
@@ -2021,6 +2573,7 @@ final class PinContentView: NSView {
     }
 
     @objc private func toggleAnnotationEditing() {
+        clearTextSelection()
         if isColorPicking {
             finishColorPicking()
         }
@@ -2028,6 +2581,7 @@ final class PinContentView: NSView {
     }
 
     @objc private func toggleColorPicking() {
+        clearTextSelection()
         isColorPicking ? finishColorPicking() : beginColorPicking()
     }
 

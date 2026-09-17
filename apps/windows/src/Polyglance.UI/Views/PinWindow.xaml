@@ -63,23 +63,52 @@
                 <Border x:Name="TextCapsuleBar"
                         HorizontalAlignment="Left"
                         VerticalAlignment="Top"
-                        Background="#EE202124"
+                        Background="#FAFFFFFF"
+                        BorderBrush="#1F000000"
+                        BorderThickness="1"
                         CornerRadius="16"
                         Padding="6,3"
                         Visibility="Collapsed"
                         Panel.ZIndex="100">
                     <Border.Effect>
-                        <DropShadowEffect Color="#000000" Opacity="0.35" BlurRadius="12" ShadowDepth="2" Direction="270"/>
+                        <DropShadowEffect Color="#000000" Opacity="0.18" BlurRadius="10" ShadowDepth="2" Direction="270"/>
                     </Border.Effect>
+                    <Border.Resources>
+                        <Style TargetType="Button">
+                            <Setter Property="Height" Value="24"/>
+                            <Setter Property="Padding" Value="8,0"/>
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="Foreground" Value="#262626"/>
+                            <Setter Property="BorderThickness" Value="0"/>
+                            <Setter Property="Cursor" Value="Hand"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bd" Property="Background" Value="#14000000"/>
+                                            </Trigger>
+                                            <Trigger Property="IsPressed" Value="True">
+                                                <Setter TargetName="Bd" Property="Background" Value="#1F000000"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </Border.Resources>
                     <StackPanel Orientation="Horizontal">
-                        <Button x:Name="BtnCapsuleCopy" Content="复制" ToolTip="复制文本" Height="24" Padding="8,0" Background="Transparent" Foreground="#FFFFFF" BorderThickness="0" Cursor="Hand" Click="OnCapsuleCopyClick"/>
-                        <Rectangle Width="1" Height="14" Fill="#40FFFFFF" Margin="2,0"/>
-                        <Button x:Name="BtnCapsuleHighlight" Content="荧光笔" ToolTip="荧光高亮" Height="24" Padding="8,0" Background="Transparent" Foreground="#FDE047" BorderThickness="0" Cursor="Hand" Click="OnCapsuleHighlightClick"/>
-                        <Button x:Name="BtnCapsuleWavy" Content="波浪线" ToolTip="波浪下划线" Height="24" Padding="8,0" Background="Transparent" Foreground="#EF4444" BorderThickness="0" Cursor="Hand" Click="OnCapsuleWavyClick"/>
-                        <Button x:Name="BtnCapsuleLine" Content="直线" ToolTip="直线下划线" Height="24" Padding="8,0" Background="Transparent" Foreground="#3B82F6" BorderThickness="0" Cursor="Hand" Click="OnCapsuleLineClick"/>
-                        <Button x:Name="BtnCapsuleStrikethrough" Content="删除线" ToolTip="删除线" Height="24" Padding="8,0" Background="Transparent" Foreground="#9CA3AF" BorderThickness="0" Cursor="Hand" Click="OnCapsuleStrikethroughClick"/>
-                        <Rectangle Width="1" Height="14" Fill="#40FFFFFF" Margin="2,0"/>
-                        <Button x:Name="BtnCapsuleTranslate" Content="翻译" ToolTip="翻译选中文本" Height="24" Padding="8,0" Background="Transparent" Foreground="#A78BFA" BorderThickness="0" Cursor="Hand" Click="OnCapsuleTranslateClick"/>
+                        <Button x:Name="BtnCapsuleCopy" Content="复制" ToolTip="复制文本" Click="OnCapsuleCopyClick"/>
+                        <Rectangle Width="1" Height="14" Fill="#1F000000" Margin="2,0"/>
+                        <Button x:Name="BtnCapsuleHighlight" Content="荧光笔" ToolTip="荧光高亮" Click="OnCapsuleHighlightClick"/>
+                        <Button x:Name="BtnCapsuleWavy" Content="波浪线" ToolTip="波浪下划线" Click="OnCapsuleWavyClick"/>
+                        <Button x:Name="BtnCapsuleLine" Content="直线" ToolTip="直线" Click="OnCapsuleLineClick"/>
+                        <Button x:Name="BtnCapsuleStrikethrough" Content="删除线" ToolTip="删除线" Click="OnCapsuleStrikethroughClick"/>
+                        <Rectangle Width="1" Height="14" Fill="#1F000000" Margin="2,0"/>
+                        <Button x:Name="BtnCapsuleTranslate" Content="翻译" ToolTip="翻译选中文本" Click="OnCapsuleTranslateClick"/>
                     </StackPanel>
                 </Border>
             </Grid>
@@ -90,6 +119,7 @@
         </StackPanel>
         <Border.ContextMenu>
             <ContextMenu>
+                <MenuItem x:Name="UndoAnnotationMenuItem" Header="撤销标注" InputGestureText="Ctrl+Z" Click="OnUndoAnnotationClick" IsEnabled="False"/>
                 <MenuItem x:Name="AnnotationMenuItem" Header="标注" Click="OnAnnotationClick"/>
                 <MenuItem Header="复制图片 (Copy)" Click="OnCopyClick"/>
                 <MenuItem Header="保存图片 (Save)..." Click="OnSaveClick"/>
