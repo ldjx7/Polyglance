@@ -1,7 +1,7 @@
 # Build the Polyglance MSIX package using MakeAppx.
 param(
     [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$')]
-    [string]$Version = "0.0.8",
+    [string]$Version = "0.0.9",
     [ValidatePattern('^[0-9]+$')]
     [string]$BuildNumber = "1",
     [string]$SourceDirectory = "dist/windows",

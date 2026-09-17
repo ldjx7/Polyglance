@@ -1163,7 +1163,7 @@ final class PinContentView: NSView {
     private let presentError: PresentError
     private let actions: PinWindowActions
     private let colorPasteboard: NSPasteboard
-    private let closeButton: NSButton
+    private let copyToastIndicator = PinToastIndicatorView()
     private let colorMagnifierView: ScreenshotMagnifierView
     let annotationEditor: PinAnnotationOverlayView
     private let zoomIndicator = PinZoomIndicatorView()
@@ -1179,6 +1179,7 @@ final class PinContentView: NSView {
     private(set) var currentPixelSample: PixelSample?
     private(set) var magnifierPanel: NSPanel?
     private(set) var isSelectionHighlighted = false
+    private var currentScale: CGFloat = 1.0
 
     init(
         image: NSImage,
@@ -1203,11 +1204,6 @@ final class PinContentView: NSView {
         self.initialSize = proposedInitialSize.width > 0 && proposedInitialSize.height > 0
             ? proposedInitialSize
             : CGSize(width: 1, height: 1)
-        closeButton = NSButton(
-            image: NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "关闭贴图")!,
-            target: nil,
-            action: nil
-        )
         colorMagnifierView = ScreenshotMagnifierView(frame: CGRect(
             origin: .zero,
             size: ScreenshotMagnifierView.preferredSize
@@ -1219,15 +1215,9 @@ final class PinContentView: NSView {
         layer?.masksToBounds = false
         setSelectionHighlighted(true)
 
-        closeButton.target = self
-        closeButton.action = #selector(closePin)
-        closeButton.isBordered = false
-        closeButton.imageScaling = .scaleProportionallyUpOrDown
-        closeButton.contentTintColor = .white
-        closeButton.isHidden = true
-        addSubview(closeButton)
         addSubview(annotationEditor)
         addSubview(zoomIndicator)
+        addSubview(copyToastIndicator)
         configureColorMagnifier()
     }
 
@@ -1284,19 +1274,43 @@ final class PinContentView: NSView {
         magnifierPanel = panel
     }
 
+    private var contentRect: CGRect {
+        let imageAspect = initialSize.width / initialSize.height
+        guard bounds.height > 0, imageAspect.isFinite, imageAspect > 0 else {
+            return bounds
+        }
+        let boundsAspect = bounds.width / bounds.height
+        if abs(imageAspect - boundsAspect) < 0.002 {
+            return bounds
+        }
+        if boundsAspect > imageAspect {
+            let width = bounds.height * imageAspect
+            return CGRect(x: bounds.midX - width / 2, y: bounds.minY, width: width, height: bounds.height)
+        } else {
+            let height = bounds.width / imageAspect
+            return CGRect(x: bounds.minX, y: bounds.midY - height / 2, width: bounds.width, height: height)
+        }
+    }
+
     override func layout() {
         super.layout()
-        closeButton.frame = CGRect(x: bounds.maxX - 29, y: bounds.maxY - 29, width: 24, height: 24)
-        annotationEditor.frame = bounds
+        copyToastIndicator.frame = CGRect(
+            x: max(0, bounds.maxX - 60 - 8),
+            y: max(0, bounds.maxY - 26 - 8),
+            width: 60,
+            height: 26
+        )
+        annotationEditor.frame = contentRect
         setSelectionHighlighted(isSelectionHighlighted)
     }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         NSGraphicsContext.saveGraphicsState()
-        NSBezierPath(roundedRect: bounds, xRadius: 5, yRadius: 5).addClip()
+        let rect = contentRect
+        NSBezierPath(roundedRect: rect, xRadius: 5, yRadius: 5).addClip()
         image.draw(
-            in: bounds,
+            in: rect,
             from: .zero,
             operation: .sourceOver,
             fraction: 1,
@@ -1341,11 +1355,11 @@ final class PinContentView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        closeButton.isHidden = isColorPicking
+        super.mouseEntered(with: event)
     }
 
     override func mouseExited(with event: NSEvent) {
-        closeButton.isHidden = true
+        super.mouseExited(with: event)
         hideColorMagnifier()
     }
 
@@ -1410,6 +1424,19 @@ final class PinContentView: NSView {
         NSMenu.popUpContextMenu(makeContextMenu(), with: event, for: self)
     }
 
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "c" {
+            if let responder = window?.firstResponder,
+               responder is NSTextView || responder is NSTextField {
+                return super.performKeyEquivalent(with: event)
+            }
+            copyPinWithFeedback()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
     override func keyDown(with event: NSEvent) {
         if isColorPicking {
             if event.keyCode == 53 {
@@ -1428,9 +1455,52 @@ final class PinContentView: NSView {
                 return
             }
         }
+        if let responder = window?.firstResponder,
+           responder is NSTextView || responder is NSTextField {
+            super.keyDown(with: event)
+            return
+        }
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "c" {
+            copyPinWithFeedback()
+            return
+        }
         if event.characters == " " {
             toggleAnnotationEditing()
             return
+        }
+        if !isLocked {
+            let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
+            var deltaX: CGFloat = 0
+            var deltaY: CGFloat = 0
+            switch event.keyCode {
+            case 123:
+                deltaX = -step
+            case 124:
+                deltaX = step
+            case 125:
+                deltaY = -step
+            case 126:
+                deltaY = step
+            default:
+                break
+            }
+            if deltaX != 0 || deltaY != 0 {
+                if let window {
+                    let origin = CGPoint(x: window.frame.origin.x + deltaX, y: window.frame.origin.y + deltaY)
+                    let visibleFrame = NSScreen.screens.first(where: { $0.frame.intersects(window.frame) })?.visibleFrame
+                        ?? window.screen?.visibleFrame
+                    let constrainedOrigin = visibleFrame.map {
+                        PinResizeGeometry.originKeepingWindowVisible(
+                            proposedOrigin: origin,
+                            windowSize: window.frame.size,
+                            visibleFrame: $0
+                        )
+                    } ?? origin
+                    window.setFrameOrigin(constrainedOrigin)
+                    return
+                }
+            }
         }
         super.keyDown(with: event)
     }
@@ -1484,9 +1554,18 @@ final class PinContentView: NSView {
             return
         }
 
-        let sensitivity: CGFloat = modifiers.contains(.option) ? 0.025 : 0.1
-        let boundedDelta = min(10, max(-10, normalizedDelta))
-        resizeWindow(by: exp(boundedDelta * sensitivity), anchorInWindow: anchorInWindow)
+        let baseRatio: CGFloat = modifiers.contains(.option) ? 1.025 : 1.1
+        let scaleFactor: CGFloat
+        if hasPreciseScrollingDeltas {
+            let boundedDelta = min(1.0, max(-1.0, normalizedDelta))
+            scaleFactor = pow(baseRatio, boundedDelta)
+        } else {
+            scaleFactor = deltaY > 0 ? baseRatio : (1.0 / baseRatio)
+        }
+        resizeWindow(
+            by: scaleFactor,
+            anchorInWindow: anchorInWindow
+        )
     }
 
     func applyMagnification(_ magnification: CGFloat) {
@@ -1533,7 +1612,6 @@ final class PinContentView: NSView {
         colorDisplayFormat = .hex
         currentPixelSample = nil
         isColorPicking = true
-        closeButton.isHidden = true
         window?.makeKey()
         window?.makeFirstResponder(self)
         NSCursor.crosshair.set()
@@ -1655,19 +1733,45 @@ final class PinContentView: NSView {
         return window.convertPoint(toScreen: event.locationInWindow)
     }
 
-    private func resizeWindow(by scale: CGFloat, anchorInWindow: CGPoint) {
+    private func resizeWindow(by scaleFactor: CGFloat, anchorInWindow: CGPoint) {
         guard let window else {
             return
         }
-        let frame = PinResizeGeometry.scaledFrame(
-            window.frame,
-            requestedScale: scale,
-            anchorInWindow: anchorInWindow,
-            minimumSize: window.contentMinSize,
-            maximumSize: window.contentMaxSize
+        let currentWindowScale = window.frame.width / initialSize.width
+        if abs(currentWindowScale - currentScale) > 0.05 {
+            currentScale = currentWindowScale
+        }
+        let oldScale = currentScale
+        let candidateScale = oldScale * scaleFactor
+        var targetScale = candidateScale
+
+        if oldScale < 0.999 {
+            if candidateScale >= 0.98 {
+                targetScale = 1.0
+            }
+        } else if oldScale > 1.001 {
+            if candidateScale <= 1.02 {
+                targetScale = 1.0
+            }
+        }
+
+        let minScale = max(0.01, max(10.0 / initialSize.width, 10.0 / initialSize.height))
+        targetScale = max(minScale, min(8.0, targetScale))
+        currentScale = targetScale
+
+        let targetWidth = initialSize.width * targetScale
+        let targetHeight = initialSize.height * targetScale
+
+        let oldFrame = window.frame
+        let u = oldFrame.width > 0 ? (anchorInWindow.x / oldFrame.width) : 0.5
+        let v = oldFrame.height > 0 ? (anchorInWindow.y / oldFrame.height) : 0.5
+        let newOrigin = CGPoint(
+            x: oldFrame.origin.x + anchorInWindow.x - targetWidth * u,
+            y: oldFrame.origin.y + anchorInWindow.y - targetHeight * v
         )
+        let frame = CGRect(origin: newOrigin, size: CGSize(width: targetWidth, height: targetHeight))
         window.setFrame(frame, display: true)
-        let percent = Int(round((frame.width / initialSize.width) * 100))
+        let percent = Int(round(targetScale * 100))
         zoomIndicator.show(percent: percent, in: bounds)
     }
 
@@ -1675,6 +1779,7 @@ final class PinContentView: NSView {
         guard let window, !isLocked else {
             return
         }
+        currentScale = 1.0
         let oldFrame = window.frame
         let frame = CGRect(
             x: oldFrame.midX - initialSize.width / 2,
@@ -1686,11 +1791,20 @@ final class PinContentView: NSView {
         zoomIndicator.show(percent: 100, in: bounds)
     }
 
-    @objc private func copyPin() {
+    @discardableResult
+    @objc private func copyPin() -> Bool {
         do {
             try copyImage(annotationEditor.compositedImage())
+            return true
         } catch {
             presentError(error)
+            return false
+        }
+    }
+
+    @objc private func copyPinWithFeedback() {
+        if copyPin() {
+            copyToastIndicator.show(text: "已复制", in: bounds, duration: 1.0)
         }
     }
 
@@ -1799,7 +1913,7 @@ final class PinContentView: NSView {
 
         menu.addItem(menuItem(
             title: "复制图片",
-            action: #selector(copyPin),
+            action: #selector(copyPinWithFeedback),
             symbol: "doc.on.doc",
             keyEquivalent: "c"
         ))

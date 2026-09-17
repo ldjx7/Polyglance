@@ -18,6 +18,19 @@ final class PinWindowInteractionTests: XCTestCase {
         panel.close()
     }
 
+    func testZoomingDownToSmallestAndBackTo100PreservesAspectRatio() {
+        let (panel, view) = makePinnedWindow()
+        let initialAspect = panel.frame.width / panel.frame.height
+        for _ in 0..<30 {
+            view.applyScroll(deltaY: -1, modifiers: [], anchorInWindow: CGPoint(x: 50, y: 30))
+        }
+        for _ in 0..<100 {
+            view.applyScroll(deltaY: 1, modifiers: [], anchorInWindow: CGPoint(x: 50, y: 30))
+        }
+        XCTAssertEqual(panel.frame.width / panel.frame.height, initialAspect, accuracy: 0.01)
+        panel.close()
+    }
+
     func testOptionScrollUsesFinerZoomStep() {
         let (normalPanel, normalView) = makePinnedWindow(origin: CGPoint(x: 100, y: 100))
         let (precisePanel, preciseView) = makePinnedWindow(origin: CGPoint(x: 400, y: 100))
@@ -296,15 +309,80 @@ final class PinWindowInteractionTests: XCTestCase {
         XCTAssertEqual(pasteboard.string(forType: .string), "keep me")
     }
 
-    func testHoverStillShowsAndHidesCloseButton() {
+    func testPinContentViewHasNoCloseButton() {
         let (panel, view) = makePinnedWindow()
-        let closeButton = try! XCTUnwrap(view.subviews.compactMap { $0 as? NSButton }.first)
+        let closeButtons = view.subviews.compactMap { $0 as? NSButton }
+        XCTAssertTrue(closeButtons.isEmpty)
+        panel.close()
+    }
 
-        XCTAssertTrue(closeButton.isHidden)
-        view.mouseEntered(with: mouseEvent(.leftMouseDown, window: panel, location: .zero))
-        XCTAssertFalse(closeButton.isHidden)
-        view.mouseExited(with: mouseEvent(.leftMouseDown, window: panel, location: .zero))
-        XCTAssertTrue(closeButton.isHidden)
+    func testCommandCCopiesImageAndShowsToast() {
+        var copiedImage: NSImage?
+        let size = CGSize(width: 200, height: 120)
+        let view = PinContentView(
+            image: NSImage(size: size),
+            initialSize: size,
+            copyImage: { copiedImage = $0 }
+        )
+        let (panel, _) = makePinnedWindow(view: view)
+        let keyEvent = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [.command],
+            timestamp: 0,
+            windowNumber: panel.windowNumber,
+            context: nil,
+            characters: "c",
+            charactersIgnoringModifiers: "c",
+            isARepeat: false,
+            keyCode: 8
+        )!
+        let handled = view.performKeyEquivalent(with: keyEvent)
+        XCTAssertTrue(handled)
+        XCTAssertNotNil(copiedImage)
+        let toast = view.subviews.compactMap { $0 as? PinToastIndicatorView }.first
+        XCTAssertNotNil(toast)
+        XCTAssertFalse(toast?.isHidden ?? true)
+        panel.close()
+    }
+
+    func testArrowKeysAdjustWindowPosition() {
+        let (panel, view) = makePinnedWindow(origin: CGPoint(x: 200, y: 200))
+        panel.makeKey()
+        let initialOrigin = panel.frame.origin
+
+        // Left arrow (keyCode 123)
+        let leftEvent = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: panel.windowNumber,
+            context: nil,
+            characters: "",
+            charactersIgnoringModifiers: "",
+            isARepeat: false,
+            keyCode: 123
+        )!
+        view.keyDown(with: leftEvent)
+        XCTAssertEqual(panel.frame.origin.x, initialOrigin.x - 1, accuracy: 0.001)
+
+        // Right arrow with Shift (keyCode 124, 10px)
+        let rightEvent = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [.shift],
+            timestamp: 0,
+            windowNumber: panel.windowNumber,
+            context: nil,
+            characters: "",
+            charactersIgnoringModifiers: "",
+            isARepeat: false,
+            keyCode: 124
+        )!
+        view.keyDown(with: rightEvent)
+        XCTAssertEqual(panel.frame.origin.x, initialOrigin.x - 1 + 10, accuracy: 0.001)
+
         panel.close()
     }
 

@@ -34,6 +34,7 @@ public partial class PinWindow : Window
     private readonly Window _colorMagnifierWindow;
     private double _scale = 1.0;
     private readonly System.Windows.Threading.DispatcherTimer _zoomBadgeTimer = new() { Interval = TimeSpan.FromMilliseconds(800) };
+    private readonly System.Windows.Threading.DispatcherTimer _copyBadgeTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly List<UIElement> _annotationHistory = new();
     private readonly List<UIElement> _annotationRedoStack = new();
     private FrameworkElement? _currentDrawingShape;
@@ -155,6 +156,7 @@ public partial class PinWindow : Window
         // there is no inactive-to-active flash after Show().
         SetSelectionHighlight(true);
         _zoomBadgeTimer.Tick += (_, _) => { ZoomBadge.Visibility = Visibility.Collapsed; _zoomBadgeTimer.Stop(); };
+        _copyBadgeTimer.Tick += (_, _) => { CopyBadge.Visibility = Visibility.Collapsed; _copyBadgeTimer.Stop(); };
         Loaded += async (_, _) => await RecognizeTextInPinAsync();
     }
 
@@ -497,11 +499,22 @@ public partial class PinWindow : Window
         else
         {
             // Wheel: Zoom Scale
-            if (e.Delta > 0)
-                _scale = Math.Min(3.5, _scale * 1.1);
-            else
-                _scale = Math.Max(0.15, _scale / 1.1);
+            double oldScale = _scale;
+            double candidateScale = e.Delta > 0 ? oldScale * 1.1 : oldScale / 1.1;
+            double targetScale = candidateScale;
 
+            if (oldScale < 0.999)
+            {
+                if (candidateScale >= 0.98)
+                    targetScale = 1.0;
+            }
+            else if (oldScale > 1.001)
+            {
+                if (candidateScale <= 1.02)
+                    targetScale = 1.0;
+            }
+
+            _scale = Math.Clamp(targetScale, 0.01, 8.0);
             PinImage.Width = _bitmap.PixelWidth * _scale;
             PinImage.Height = _bitmap.PixelHeight * _scale;
             ShowZoomBadge((int)Math.Round(_scale * 100));
@@ -515,6 +528,13 @@ public partial class PinWindow : Window
         ZoomBadge.Visibility = Visibility.Visible;
         _zoomBadgeTimer.Stop();
         _zoomBadgeTimer.Start();
+    }
+
+    private void ShowCopyBadge()
+    {
+        CopyBadge.Visibility = Visibility.Visible;
+        _copyBadgeTimer.Stop();
+        _copyBadgeTimer.Start();
     }
 
     private void OnMouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -588,6 +608,57 @@ public partial class PinWindow : Window
             else if (e.Key == Key.Y && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
             {
                 OnAnnotationActionTriggered("Redo");
+                e.Handled = true;
+                return;
+            }
+        }
+
+        if (e.Key == Key.C && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        {
+            if (!(IsAnnotationEditing && _selectedAnnotationElement is TextBox tb && !tb.IsReadOnly))
+            {
+                if (!IsColorPicking)
+                {
+                    try
+                    {
+                        Clipboard.SetImage(CompositedBitmap());
+                        ShowCopyBadge();
+                    }
+                    catch (ExternalException)
+                    {
+                        SystemSounds.Beep.Play();
+                    }
+                    e.Handled = true;
+                    return;
+                }
+            }
+        }
+
+        if (!_isLocked && !(IsAnnotationEditing && _selectedAnnotationElement is TextBox tbMove && !tbMove.IsReadOnly))
+        {
+            double step = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 10.0 : 1.0;
+            bool moved = false;
+            switch (e.Key)
+            {
+                case Key.Left:
+                    Left -= step;
+                    moved = true;
+                    break;
+                case Key.Right:
+                    Left += step;
+                    moved = true;
+                    break;
+                case Key.Up:
+                    Top -= step;
+                    moved = true;
+                    break;
+                case Key.Down:
+                    Top += step;
+                    moved = true;
+                    break;
+            }
+            if (moved)
+            {
                 e.Handled = true;
                 return;
             }
@@ -705,7 +776,15 @@ public partial class PinWindow : Window
 
     private void OnCopyClick(object sender, RoutedEventArgs e)
     {
-        Clipboard.SetImage(CompositedBitmap());
+        try
+        {
+            Clipboard.SetImage(CompositedBitmap());
+            ShowCopyBadge();
+        }
+        catch (ExternalException)
+        {
+            SystemSounds.Beep.Play();
+        }
     }
 
     private void OnSaveClick(object sender, RoutedEventArgs e)

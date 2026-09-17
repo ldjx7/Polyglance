@@ -44,6 +44,21 @@
                                FontWeight="SemiBold"
                                HorizontalAlignment="Center"/>
                 </Border>
+                <Border x:Name="CopyBadge"
+                        Background="#BF000000"
+                        CornerRadius="4"
+                        Padding="8,4"
+                        Margin="0,8,8,0"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
+                        IsHitTestVisible="False"
+                        Visibility="Collapsed">
+                    <TextBlock Text="已复制"
+                               Foreground="#FFFFFF"
+                               FontSize="12"
+                               FontWeight="Normal"
+                               HorizontalAlignment="Center"/>
+                </Border>
                 <!-- Text Selection Capsule Menu (PixPin Style) -->
                 <Border x:Name="TextCapsuleBar"
                         HorizontalAlignment="Left"

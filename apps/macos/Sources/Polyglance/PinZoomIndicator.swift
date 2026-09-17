@@ -52,3 +52,57 @@ final class PinZoomIndicatorView: NSView {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: workItem)
     }
 }
+
+@MainActor
+final class PinToastIndicatorView: NSView {
+    private let label = NSTextField(labelWithString: "")
+    private var hideWorkItem: DispatchWorkItem?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.75).cgColor
+        layer?.cornerRadius = 6
+        layer?.masksToBounds = true
+        isHidden = true
+
+        label.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        label.textColor = .white
+        label.alignment = .center
+        label.lineBreakMode = .byClipping
+        addSubview(label)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        label.frame = bounds
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func show(text: String, in parentBounds: CGRect, duration: TimeInterval = 1.0) {
+        hideWorkItem?.cancel()
+        label.stringValue = text
+
+        let padding: CGFloat = 8
+        let size = CGSize(width: 60, height: 26)
+        frame = CGRect(
+            x: max(0, parentBounds.maxX - size.width - padding),
+            y: max(0, parentBounds.maxY - size.height - padding),
+            width: size.width,
+            height: size.height
+        )
+        isHidden = false
+
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.isHidden = true
+        }
+        hideWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: workItem)
+    }
+}

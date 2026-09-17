@@ -4,7 +4,7 @@ use crate::rect::{Point, Rect, Size};
 
 const MINIMUM_WIDTH: f64 = 96.0;
 const MINIMUM_HEIGHT: f64 = 64.0;
-const MINIMUM_SCALE: f64 = 0.1;
+const MINIMUM_SCALE: f64 = 0.01;
 const MAXIMUM_SCALE: f64 = 8.0;
 const MAXIMUM_DIMENSION: f64 = 8_192.0;
 
@@ -19,14 +19,10 @@ pub struct SizeLimits {
 pub fn operable_initial_size(image_size: Size, maximum_size: Size) -> Size {
     if !image_size.width.is_finite()
         || !image_size.height.is_finite()
-        || !maximum_size.width.is_finite()
-        || !maximum_size.height.is_finite()
         || image_size.width <= 0.0
         || image_size.height <= 0.0
-        || maximum_size.width <= 0.0
-        || maximum_size.height <= 0.0
     {
-        return Size::ZERO;
+        return Size::new(0.0, 0.0);
     }
     let scale_needed_for_minimum_size = 1.0_f64
         .max(MINIMUM_WIDTH / image_size.width)
@@ -53,7 +49,6 @@ pub fn size_limits(initial_size: Size) -> SizeLimits {
 
     let scale_needed_for_minimum_size =
         (MINIMUM_WIDTH / initial_size.width).max(MINIMUM_HEIGHT / initial_size.height);
-    let lower_scale = 1.0_f64.min(MINIMUM_SCALE.max(scale_needed_for_minimum_size));
     let scale_allowed_by_dimension_limit =
         (MAXIMUM_DIMENSION / initial_size.width).min(MAXIMUM_DIMENSION / initial_size.height);
     let upper_scale = 1.0_f64.max(
@@ -61,6 +56,7 @@ pub fn size_limits(initial_size: Size) -> SizeLimits {
             .max(scale_needed_for_minimum_size)
             .min(scale_allowed_by_dimension_limit),
     );
+    let lower_scale = 1.0_f64.min(MINIMUM_SCALE);
     SizeLimits {
         minimum: scaled(initial_size, lower_scale),
         maximum: scaled(initial_size, upper_scale),
@@ -190,7 +186,7 @@ mod tests {
     fn limits_never_shrink_below_the_operable_minimum() {
         let limits = size_limits(Size::new(200.0, 100.0));
 
-        assert_eq!(limits.minimum, Size::new(128.0, 64.0));
+        assert_eq!(limits.minimum, Size::new(2.0, 1.0));
         assert_eq!(limits.maximum, Size::new(1600.0, 800.0));
     }
 
