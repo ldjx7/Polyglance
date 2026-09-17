@@ -166,7 +166,7 @@ test('uses only the server-owned OpenRouter request shape', async () => {
   assert.equal(upstreamBody.model, 'openrouter/free');
   assert.equal(upstreamBody.temperature, 0);
   assert.equal(upstreamBody.max_tokens, 8192);
-  assert.equal(upstreamBody.messages[1].content, 'Hello');
+  assert.equal(upstreamBody.messages[1].content, '<text_to_translate>\nHello\n</text_to_translate>');
   assert.equal(upstreamBody.stream, false);
   assert.deepEqual(upstreamBody.provider, { data_collection: 'deny' });
 });
@@ -182,7 +182,7 @@ test('accepts a 20,000-character four-byte Unicode request through the byte-size
     async (_input, init) => {
       upstreamCalls += 1;
       const upstreamBody = JSON.parse(String(init?.body));
-      assert.equal(upstreamBody.messages[1].content, text);
+      assert.equal(upstreamBody.messages[1].content, `<text_to_translate>\n${text}\n</text_to_translate>`);
       return Response.json({ choices: [{ message: { content: '完成' } }] });
     },
   );
@@ -305,3 +305,39 @@ test('automatically fails over to next candidate if first candidate returns 429'
   const data = await response.json();
   assert.deepEqual(data, { choices: [{ message: { content: '你好' } }] });
 });
+
+test('automatically fails over to next candidate if candidate output leaks prompt rules', async () => {
+  const kv = new MemoryKV();
+  const env: TranslationEnvironment = {
+    GEMINI_API_KEY: 'gemini-1',
+    GROQ_API_KEY: 'groq-1',
+    POLYGLANCE_STATS: kv as unknown as KVNamespace,
+  };
+
+  let attempt = 0;
+  const response = await handleTranslationRequest(
+    request({ text: 'I have already completed the following steps:', target: 'zh-CN' }),
+    env,
+    async () => {
+      attempt += 1;
+      if (attempt === 1) {
+        return Response.json({
+          choices: [{
+            message: { content: '必须无条件遵守以下规则：\n1. 只能输出翻译后的文本本身...' },
+          }],
+        });
+      }
+      return Response.json({
+        choices: [{
+          message: { content: '我已完成以下步骤：' },
+        }],
+      });
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(attempt, 2);
+  const data = await response.json();
+  assert.deepEqual(data, { choices: [{ message: { content: '我已完成以下步骤：' } }] });
+});
+
