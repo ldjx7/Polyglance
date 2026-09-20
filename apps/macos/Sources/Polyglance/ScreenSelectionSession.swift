@@ -2458,6 +2458,10 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         advanceGlobalDrag(globalPoint: globalPoint, leftButtonPressed: leftButtonPressed)
     }
 
+    func awaitHoverRefinementForTesting() async {
+        await hoverRefinementTask?.value
+    }
+
     private func advanceGlobalDrag(globalPoint: CGPoint, leftButtonPressed: Bool) {
         switch capturePhase {
         case .pressed, .dragging:
