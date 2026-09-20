@@ -1067,6 +1067,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     var onAction: ((ScreenshotSelectionAction) -> Void)?
     var onCancel: (() -> Void)?
     fileprivate var onMirrorStateChange: ((ScreenSelectionMirrorState) -> Void)?
+    var onElementRefinedForTesting: (() -> Void)?
     fileprivate var onMagnifierStateChange: ((ScreenSelectionMagnifierState?) -> Void)?
     fileprivate var onMagnifierCopyConfirmation: ((String) -> Void)?
     private var lastMagnifierPoint: CGPoint?
@@ -2458,10 +2459,6 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         advanceGlobalDrag(globalPoint: globalPoint, leftButtonPressed: leftButtonPressed)
     }
 
-    func awaitHoverRefinementForTesting() async {
-        await hoverRefinementTask?.value
-    }
-
     private func advanceGlobalDrag(globalPoint: CGPoint, leftButtonPressed: Bool) {
         switch capturePhase {
         case .pressed, .dragging:
@@ -3368,6 +3365,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         hoveredCandidate = candidate
         needsDisplay = true
         publishMirrorState()
+        onElementRefinedForTesting?()
     }
 
     private func cancelHoverRefinement() {
