@@ -287,3 +287,22 @@ unsafe fn stitcher_get_dimensions(
 
     POLYGLANCE_OK
 }
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn polyglance_stitcher_set_crop_insets(
+    stitcher: *mut StitcherHandle,
+    top: u32,
+    bottom: u32,
+    left: u32,
+    right: u32,
+) -> i32 {
+    ffi_status(|| {
+        if stitcher.is_null() {
+            return POLYGLANCE_ERR_NULL_PTR;
+        }
+        let stitcher_ref = unsafe { &*stitcher };
+        let mut guard = stitcher_ref.inner.lock().unwrap_or_else(|e| e.into_inner());
+        guard.set_crop_insets(top as usize, bottom as usize, left as usize, right as usize);
+        POLYGLANCE_OK
+    })
+}

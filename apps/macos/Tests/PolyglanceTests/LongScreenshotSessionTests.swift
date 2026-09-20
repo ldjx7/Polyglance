@@ -180,13 +180,15 @@ final class LongScreenshotSessionTests: XCTestCase {
         XCTAssertEqual(capturer.capturedRegions.count, 1)
     }
 
-    func testUnreliableOverlapIsRecoverableUntilTheFrameLimitCompletesTheSession() async {
+    func testUnreliableOverlapNeverEndsTheSessionOnItsOwn() async throws {
         var configuration = makeSessionConfiguration()
         configuration.maximumFrameCount = 3
         let capturer = QueueLongScreenshotCapturer(images: [
             makeSessionRowImage([10, 20, 30, 40]),
             makeSessionRowImage([201, 3, 177, 9]),
             makeSessionRowImage([199, 1, 173, 7]),
+            makeSessionRowImage([205, 7, 181, 13]),
+            makeSessionRowImage([30, 40, 50, 60]),
         ])
         let scheduler = ManualLongScreenshotScheduler()
         let session = LongScreenshotSession(
@@ -205,10 +207,15 @@ final class LongScreenshotSessionTests: XCTestCase {
         await session.start()
         await scheduler.fire()
         await scheduler.fire()
+        await scheduler.fire()
 
-        XCTAssertEqual(recoverableErrors, [.noReliableVerticalOverlap, .noReliableVerticalOverlap])
-        XCTAssertEqual(session.state, .finished)
-        XCTAssertTrue(scheduler.isInvalidated)
+        XCTAssertEqual(recoverableErrors.count, 3)
+        XCTAssertEqual(session.state, .capturing)
+        XCTAssertFalse(scheduler.isInvalidated)
+
+        await scheduler.fire()
+        let image = try session.finish()
+        XCTAssertEqual(image.representations.first?.pixelsHigh, 6)
     }
 
     func testFrameDimensionChangeFailsTheSession() async {

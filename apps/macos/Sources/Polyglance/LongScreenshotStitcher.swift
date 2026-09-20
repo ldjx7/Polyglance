@@ -98,6 +98,16 @@ struct LongScreenshotStitcher {
         stitcher.setDirection(direction: direction.captureValue)
     }
 
+    @discardableResult
+    func setCropInsets(top: Int, bottom: Int, left: Int = 0, right: Int = 0) -> Bool {
+        stitcher.setCropInsets(
+            top: UInt32(max(0, top)),
+            bottom: UInt32(max(0, bottom)),
+            left: UInt32(max(0, left)),
+            right: UInt32(max(0, right))
+        )
+    }
+
     func append(_ image: CGImage) throws -> LongScreenshotAppendResult {
         let bytes = try Self.normalizedBytes(from: image)
         do {

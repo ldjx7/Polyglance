@@ -537,16 +537,30 @@ public struct StitchConfiguration
 
     public static StitchConfiguration Default => new()
     {
-        CaptureInterval = 0.05,
-        MaximumFrameCount = 60,
-        MaximumOutputWidth = 4000,
-        MaximumOutputHeight = 15000,
-        MaximumPixelCount = 50_000_000,
-        MaximumWorkingBytes = 250_000_000,
-        MinimumOverlapRows = 12,
-        MaximumScrollFraction = 0.85,
+        CaptureInterval = 0.033,
+        MaximumFrameCount = 10_000,
+        MaximumOutputWidth = 32_768,
+        MaximumOutputHeight = 32_768,
+        MaximumPixelCount = DefaultWorkingBytes / 4,
+        MaximumWorkingBytes = DefaultWorkingBytes,
+        MinimumOverlapRows = 32,
+        MaximumScrollFraction = 0.8,
         MatchThreshold = 0.035
     };
+
+    /// <summary>
+    /// An eighth of physical memory, kept between 384 MB and 1.5 GB: enough
+    /// for a wide capture many screens tall without starving the rest of the
+    /// system. The pixel budget is what fits in it at four bytes a pixel.
+    /// </summary>
+    public static ulong DefaultWorkingBytes { get; } = ComputeDefaultWorkingBytes();
+
+    private static ulong ComputeDefaultWorkingBytes()
+    {
+        const long megabyte = 1024L * 1024;
+        long physical = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
+        return (ulong)Math.Clamp(physical / 8, 384 * megabyte, 1536 * megabyte);
+    }
 }
 
 public struct StitchAppendResult

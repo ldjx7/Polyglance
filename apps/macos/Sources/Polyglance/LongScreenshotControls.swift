@@ -8,20 +8,36 @@ enum LongScreenshotControlAction: Equatable {
 
 @MainActor
 final class LongScreenshotControlView: NSView {
+    private(set) var hintLabel: NSTextField!
+    private(set) var separator: NSBox!
     private(set) var pinButton: NSButton!
     private(set) var copyButton: NSButton!
     private(set) var closeButton: NSButton!
     private(set) var actionStack: NSStackView!
+    private(set) var containerStack: NSStackView!
 
     var onAction: ((LongScreenshotControlAction) -> Void)?
     private var state: LongScreenshotSessionState = .ready
     private var hasCapturedFrame = false
 
     init() {
-        super.init(frame: CGRect(x: 0, y: 0, width: 142, height: 50))
+        super.init(frame: CGRect(x: 0, y: 0, width: 310, height: 44))
         wantsLayer = true
         layer?.cornerRadius = 10
         layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor
+
+        hintLabel = NSTextField(labelWithString: "请慢速平稳滚动页面")
+        hintLabel.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        hintLabel.textColor = .secondaryLabelColor
+        hintLabel.alignment = .left
+
+        separator = NSBox()
+        separator.boxType = .separator
+        separator.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            separator.widthAnchor.constraint(equalToConstant: 1),
+            separator.heightAnchor.constraint(equalToConstant: 18),
+        ])
 
         pinButton = makeIconButton(symbol: "pin", title: "贴图", action: #selector(pinOutput))
         copyButton = makeIconButton(symbol: "doc.on.doc", title: "复制", action: #selector(copyOutput))
@@ -36,13 +52,23 @@ final class LongScreenshotControlView: NSView {
         actionStack.alignment = .centerY
         actionStack.distribution = .fillProportionally
         actionStack.spacing = 6
-        actionStack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(actionStack)
+
+        containerStack = NSStackView(views: [
+            hintLabel,
+            separator,
+            actionStack,
+        ])
+        containerStack.orientation = .horizontal
+        containerStack.alignment = .centerY
+        containerStack.spacing = 10
+        containerStack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(containerStack)
+
         NSLayoutConstraint.activate([
-            actionStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
-            actionStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-            actionStack.topAnchor.constraint(equalTo: topAnchor, constant: 7),
-            actionStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -7),
+            containerStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            containerStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            containerStack.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            containerStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
             pinButton.widthAnchor.constraint(equalToConstant: 32),
             copyButton.widthAnchor.constraint(equalToConstant: 32),
             closeButton.widthAnchor.constraint(equalToConstant: 32),
@@ -57,6 +83,19 @@ final class LongScreenshotControlView: NSView {
 
     func update(for state: LongScreenshotSessionState) {
         self.state = state
+        switch state {
+        case .ready, .capturing:
+            hintLabel.stringValue = "请慢速平稳滚动页面"
+            hintLabel.textColor = .secondaryLabelColor
+        case .paused:
+            hintLabel.stringValue = "已暂停"
+            hintLabel.textColor = .secondaryLabelColor
+        case .finished:
+            hintLabel.stringValue = "已达到最大长度，请贴图或复制"
+            hintLabel.textColor = .secondaryLabelColor
+        case .cancelled, .failed:
+            break
+        }
         let canUseOutput = hasCapturedFrame && (state == .capturing || state == .paused || state == .finished)
         pinButton.isEnabled = canUseOutput
         copyButton.isEnabled = canUseOutput
@@ -64,6 +103,17 @@ final class LongScreenshotControlView: NSView {
             || state == .capturing
             || state == .paused
             || state == .finished
+    }
+
+    func showSkippedFrameWarning() {
+        hintLabel.stringValue = "滚动过快，请放慢速度"
+        hintLabel.textColor = .systemOrange
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            guard let self, self.state == .capturing || self.state == .ready else { return }
+            self.hintLabel.stringValue = "请慢速平稳滚动页面"
+            self.hintLabel.textColor = .secondaryLabelColor
+        }
     }
 
     private func makeIconButton(symbol symbolName: String, title: String, action: Selector) -> NSButton {
@@ -206,12 +256,12 @@ final class LongScreenshotPreviewPanel: NSPanel {
             backing: .buffered,
             defer: false
         )
+        isFloatingPanel = true
         level = .screenSaver
         // Belt and braces with the capturer's application exclusion: these panels
         // sit directly over the captured region, so they must never be part of
         // a screen capture.
         sharingType = .none
-        isFloatingPanel = true
         hidesOnDeactivate = false
         isOpaque = false
         backgroundColor = .clear
@@ -309,12 +359,12 @@ final class LongScreenshotControlPanel: NSPanel {
             backing: .buffered,
             defer: false
         )
+        isFloatingPanel = true
         level = .screenSaver
         // Belt and braces with the capturer's application exclusion: these panels
         // sit directly over the captured region, so they must never be part of
         // a screen capture.
         sharingType = .none
-        isFloatingPanel = true
         hidesOnDeactivate = false
         isOpaque = false
         backgroundColor = .clear
@@ -589,12 +639,12 @@ final class LongScreenshotRegionOverlayPanel: NSPanel {
             backing: .buffered,
             defer: false
         )
+        isFloatingPanel = true
         level = .screenSaver
         // Belt and braces with the capturer's application exclusion: these panels
         // sit directly over the captured region, so they must never be part of
         // a screen capture.
         sharingType = .none
-        isFloatingPanel = true
         hidesOnDeactivate = false
         isOpaque = false
         backgroundColor = .clear

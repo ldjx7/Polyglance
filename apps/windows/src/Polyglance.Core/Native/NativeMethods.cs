@@ -42,6 +42,14 @@ public static partial class NativeMethods
     public static unsafe partial void polyglance_stitcher_free(IntPtr stitcher);
 
     [LibraryImport(DllName)]
+    public static unsafe partial int polyglance_stitcher_set_crop_insets(
+        IntPtr stitcher,
+        uint top,
+        uint bottom,
+        uint left,
+        uint right);
+
+    [LibraryImport(DllName)]
     public static unsafe partial int polyglance_stitcher_append(
         IntPtr stitcher,
         byte* bytes,

@@ -13,11 +13,17 @@ final class LongScreenshotCaptureRegionTests: XCTestCase {
 
         XCTAssertEqual(region.displayID, 42)
         XCTAssertEqual(region.globalRect, CGRect(x: 100, y: 250, width: 350, height: 200))
-        // The captured rectangle sits one chrome guard inside the selection so
-        // the overlay's border and handles cannot be part of a frame.
-        XCTAssertEqual(region.sourceRect, CGRect(x: 4, y: 554, width: 342, height: 192))
+        // The captured rectangle expands vertically for motion tracking while
+        // recording the insets needed to crop down to the exact user selection.
+        XCTAssertEqual(region.sourceRect, CGRect(x: 4, y: 154, width: 342, height: 646))
         XCTAssertEqual(region.pixelWidth, 684)
-        XCTAssertEqual(region.pixelHeight, 384)
+        XCTAssertEqual(region.pixelHeight, 1292)
+        XCTAssertEqual(region.cropTop, 800)
+        XCTAssertEqual(region.cropBottom, 108)
+        XCTAssertEqual(region.cropLeft, 0)
+        XCTAssertEqual(region.cropRight, 0)
+        XCTAssertEqual(region.selectionPixelWidth, 684)
+        XCTAssertEqual(region.selectionPixelHeight, 384)
     }
 
     func testTheChromeGuardNeverInvertsASmallSelection() throws {
@@ -29,9 +35,9 @@ final class LongScreenshotCaptureRegionTests: XCTestCase {
         ))
 
         XCTAssertEqual(region.sourceRect.width, 4)
-        XCTAssertEqual(region.sourceRect.height, 4)
+        XCTAssertEqual(region.selectionPixelWidth, 8)
+        XCTAssertEqual(region.selectionPixelHeight, 8)
         XCTAssertEqual(region.pixelWidth, 8)
-        XCTAssertEqual(region.pixelHeight, 8)
     }
 
     func testEmptyOrInvalidSelectionsAreRejected() {
@@ -62,7 +68,7 @@ final class LongScreenshotCaptureRegionTests: XCTestCase {
 
         XCTAssertGreaterThan(configuration.captureInterval, 0)
         XCTAssertGreaterThan(configuration.maximumFrameCount, 1)
-        XCTAssertLessThanOrEqual(configuration.maximumFrameCount, 240)
+        XCTAssertLessThanOrEqual(configuration.maximumFrameCount, 100_000)
         XCTAssertGreaterThan(configuration.maximumOutputHeight, 1_000)
         XCTAssertLessThanOrEqual(configuration.maximumOutputHeight, 65_535)
         XCTAssertGreaterThan(configuration.maximumPixelCount, 0)

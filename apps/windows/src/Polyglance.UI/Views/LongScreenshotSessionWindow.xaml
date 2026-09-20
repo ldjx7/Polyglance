@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         WindowStyle="None"
         AllowsTransparency="True"
-        Background="Transparent"
+        Background="#01000000"
         Topmost="True"
         ShowInTaskbar="False"
         WindowState="Normal"
@@ -14,8 +14,8 @@
         MouseWheel="OnMouseWheel">
     <Window.Resources>
         <Style x:Key="LongCaptureToolbarButtonStyle" TargetType="Button">
-            <Setter Property="Width" Value="34"/>
-            <Setter Property="Height" Value="32"/>
+            <Setter Property="Width" Value="36"/>
+            <Setter Property="Height" Value="34"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
@@ -25,12 +25,22 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <ContentPresenter HorizontalAlignment="Center"
-                                          VerticalAlignment="Center"
-                                          SnapsToDevicePixels="True"/>
+                        <Border x:Name="ButtonBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                CornerRadius="17">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              SnapsToDevicePixels="True"/>
+                        </Border>
                         <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#15000000"/>
+                            </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter Property="Opacity" Value="0.55"/>
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#25000000"/>
+                                <Setter Property="Opacity" Value="0.65"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Opacity" Value="0.3"/>
@@ -41,12 +51,12 @@
             </Setter>
         </Style>
     </Window.Resources>
-    <Grid x:Name="RootGrid">
+    <Grid x:Name="RootGrid" Background="#01000000">
         <!-- Only used while the user chooses a region. It is removed before
              capturing so the underlying document remains live and visible. -->
         <Image x:Name="BackgroundImage" Stretch="Fill"/>
 
-        <Canvas x:Name="MaskCanvas" IsHitTestVisible="False">
+        <Canvas x:Name="MaskCanvas">
             <Rectangle x:Name="MaskTop" Fill="#77000000"/>
             <Rectangle x:Name="MaskBottom" Fill="#77000000"/>
             <Rectangle x:Name="MaskLeft" Fill="#77000000"/>
@@ -71,7 +81,7 @@
                     Padding="10,4"
                     Visibility="Collapsed">
                 <TextBlock x:Name="TxtStatus"
-                           Text="滚动页面以继续捕获"
+                           Text="请慢速平稳滚动页面"
                            Foreground="#FFFFFF"
                            FontSize="12"
                            FontWeight="SemiBold"/>
@@ -91,9 +101,19 @@
                 <Border.Effect>
                     <DropShadowEffect BlurRadius="12" Direction="270" ShadowDepth="3" Opacity="0.16"/>
                 </Border.Effect>
-                <Image x:Name="PreviewImage"
-                       Stretch="Uniform"
-                       RenderOptions.BitmapScalingMode="HighQuality"/>
+                <Grid x:Name="PreviewContainer">
+                    <Image x:Name="PreviewImage"
+                           Stretch="Uniform"
+                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <Canvas x:Name="ViewportCanvas" IsHitTestVisible="False">
+                        <Border x:Name="ViewportIndicator"
+                                BorderBrush="#34C759"
+                                BorderThickness="2"
+                                Background="#1434C759"
+                                CornerRadius="2"
+                                Visibility="Collapsed"/>
+                    </Canvas>
+                </Grid>
             </Border>
 
             <Border x:Name="ControlToolbar"

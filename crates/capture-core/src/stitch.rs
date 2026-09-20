@@ -60,8 +60,8 @@ pub struct Configuration {
 impl Default for Configuration {
     fn default() -> Self {
         Self {
-            capture_interval: 0.18,
-            maximum_frame_count: 240,
+            capture_interval: 0.033,
+            maximum_frame_count: 10_000,
             maximum_output_width: 32_768,
             maximum_output_height: 32_768,
             maximum_pixel_count: 80_000_000,
@@ -85,6 +85,41 @@ impl PixelFrame {
     }
 }
 
+/// Chrome at the edges of every frame whose pixels stay put while the page
+/// moves. `leading` and `trailing` count lines across the scroll axis (rows
+/// when scrolling vertically): a sticky header, a fixed footer, a toolbar.
+/// They are left out of overlap scoring and never spliced into the output as
+/// if they were page content. `cross_leading` and `cross_trailing` count lines
+/// along the scroll axis (columns when scrolling vertically): a sidebar or a
+/// scrollbar track. Those only distort scoring, so they are skipped there but
+/// stay part of the picture.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct StaticBands {
+    leading: usize,
+    trailing: usize,
+    cross_leading: usize,
+    cross_trailing: usize,
+}
+
+impl StaticBands {
+    fn merged(self, other: Self) -> Self {
+        Self {
+            leading: self.leading.max(other.leading),
+            trailing: self.trailing.max(other.trailing),
+            cross_leading: self.cross_leading.max(other.cross_leading),
+            cross_trailing: self.cross_trailing.max(other.cross_trailing),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CropInsets {
+    pub top: usize,
+    pub bottom: usize,
+    pub left: usize,
+    pub right: usize,
+}
+
 pub struct Stitcher {
     configuration: Configuration,
     direction: Direction,
@@ -99,6 +134,8 @@ pub struct Stitcher {
     output_height: usize,
     current_frame_offset: i64,
     predicted_offset: i64,
+    static_bands: StaticBands,
+    crop_insets: CropInsets,
 }
 
 impl Stitcher {
@@ -117,6 +154,8 @@ impl Stitcher {
             output_height: 0,
             current_frame_offset: 0,
             predicted_offset: 0,
+            static_bands: StaticBands::default(),
+            crop_insets: CropInsets::default(),
         }
     }
 
@@ -151,10 +190,32 @@ impl Stitcher {
         } else {
             self.output_width as i64
         };
-        self.previous_frame_axis_origin = 0;
+        self.previous_frame_axis_origin = if direction == Direction::Vertical {
+            -(self.crop_insets.top as i64)
+        } else {
+            -(self.crop_insets.left as i64)
+        };
         self.current_frame_offset = 0;
         self.predicted_offset = 0;
+        self.static_bands = StaticBands::default();
         true
+    }
+
+    pub fn set_crop_insets(&mut self, top: usize, bottom: usize, left: usize, right: usize) -> bool {
+        if self.did_extend_output {
+            return false;
+        }
+        self.crop_insets = CropInsets { top, bottom, left, right };
+        self.previous_frame_axis_origin = if self.direction == Direction::Vertical {
+            -(top as i64)
+        } else {
+            -(left as i64)
+        };
+        true
+    }
+
+    pub fn crop_insets(&self) -> CropInsets {
+        self.crop_insets
     }
 
     pub fn append(
@@ -165,61 +226,115 @@ impl Stitcher {
     ) -> Result<AppendResult, StitchError> {
         self.validate_configuration()?;
         let frame = normalized_frame(bytes, width as usize, height as usize)?;
-        if let Some(previous) = &self.previous_frame {
-            if frame.width != previous.width || frame.height != previous.height {
-                return Err(StitchError::FrameDimensionsChanged);
-            }
-        }
-
-        self.validate_pixel_count(
-            self.output_width.max(frame.width),
-            self.output_height.max(frame.height),
-        )?;
-        self.validate_working_memory(
-            self.output_bytes.len().max(frame.byte_count()),
-            frame.byte_count(),
-        )?;
-
-        if self.previous_frame.is_none() {
+        let Some(previous) = self.previous_frame.as_ref() else {
             return self.accept_initial_frame(frame);
-        }
-
-        let previous = self.previous_frame.as_ref().expect("a previous frame");
-        let offset = match estimated_offset(
-            &self.configuration,
-            self.direction,
-            previous,
-            &frame,
-            self.predicted_offset,
-        ) {
-            Ok(offset) => offset,
-            Err(error) => {
-                // The rejected frame is dropped, so the next comparison spans a
-                // longer interval than this one did. Keeping the prediction
-                // would aim the search at a distance that is already stale and
-                // bias it towards a too-small match; decay it towards zero so
-                // the window is visited outward from a neutral guess instead.
-                self.predicted_offset /= 2;
-                return Err(error);
-            }
         };
-        self.previous_frame = Some(frame);
-        if offset == 0 {
+        if frame.width != previous.width || frame.height != previous.height {
+            return Err(StitchError::FrameDimensionsChanged);
+        }
+        if previous.bytes == frame.bytes {
+            self.previous_frame = Some(frame);
             return Ok(self.result(Disposition::Unchanged, false, false));
         }
+
+        let configuration = self.configuration;
+        let direction = self.direction;
+        let learned = self.static_bands;
+        let estimate = |bands: StaticBands| {
+            estimated_offset(
+                &configuration,
+                direction,
+                previous,
+                &frame,
+                self.predicted_offset,
+                bands,
+            )
+        };
+        let offset = match estimate(learned) {
+            Ok(offset) => offset,
+            Err(error) => {
+                // Chrome that never moves can outweigh the page inside the
+                // overlap score, so a failed match is retried with every line
+                // that stayed put left out. Without a known offset this can
+                // also catch content that merely repeats, which is harmless
+                // for scoring and is never remembered.
+                let widened =
+                    learned.merged(detect_static_bands(previous, &frame, direction, None));
+                let retry = if widened == learned {
+                    Err(error)
+                } else {
+                    estimate(widened)
+                };
+                match retry {
+                    Ok(offset) => offset,
+                    Err(error) => {
+                        // The rejected frame is dropped, so the next comparison
+                        // spans a longer interval than this one did. Keeping the
+                        // prediction would aim the search at a distance that is
+                        // already stale and bias it towards a too-small match;
+                        // decay it towards zero so the window is visited outward
+                        // from a neutral guess instead.
+                        self.predicted_offset /= 2;
+                        return Err(error);
+                    }
+                }
+            }
+        };
+        if offset == 0 {
+            // Lines that stayed identical between two stationary captures say
+            // nothing about chrome, so nothing is learned from this pair.
+            self.previous_frame = Some(frame);
+            return Ok(self.result(Disposition::Unchanged, false, false));
+        }
+        // The page moved, so whatever is still identical at the same position
+        // and did not travel with the page is fixed chrome: remember it for
+        // the frames that follow.
+        let bands = learned.merged(detect_static_bands(
+            previous,
+            &frame,
+            direction,
+            Some(offset),
+        ));
+        self.static_bands = bands;
         self.predicted_offset = offset;
-        let frame = self.previous_frame.take().expect("the frame just stored");
-        let outcome = self.extend_output(&frame, offset);
+        let outcome = self.extend_output(&frame, offset, bands);
         self.previous_frame = Some(frame);
         outcome
     }
 
+    fn effective_crop_insets(&self, frame: &PixelFrame) -> CropInsets {
+        if frame.width > self.crop_insets.left + self.crop_insets.right
+            && frame.height > self.crop_insets.top + self.crop_insets.bottom
+        {
+            self.crop_insets
+        } else {
+            CropInsets::default()
+        }
+    }
+
     fn accept_initial_frame(&mut self, frame: PixelFrame) -> Result<AppendResult, StitchError> {
-        self.frame_count = 1;
-        let accepted_width = frame.width.min(self.configuration.maximum_output_width);
-        let accepted_height = frame.height.min(self.configuration.maximum_output_height);
+        let insets = self.effective_crop_insets(&frame);
+        let crop_width = frame
+            .width
+            .saturating_sub(insets.left + insets.right);
+        let crop_height = frame
+            .height
+            .saturating_sub(insets.top + insets.bottom);
+        if crop_width == 0 || crop_height == 0 {
+            return Err(StitchError::InvalidFrame);
+        }
+        self.validate_working_memory(crop_width * crop_height * 4, frame.byte_count())?;
+        let accepted_width = crop_width.min(self.configuration.maximum_output_width);
+        let accepted_height = crop_height.min(self.configuration.maximum_output_height);
         self.validate_pixel_count(accepted_width, accepted_height)?;
-        self.output_bytes = cropped_bytes(&frame, accepted_width, accepted_height);
+        self.frame_count = 1;
+        self.output_bytes = cropped_subframe(
+            &frame,
+            insets.left,
+            insets.top,
+            accepted_width,
+            accepted_height,
+        );
         self.output_width = accepted_width;
         self.output_height = accepted_height;
         self.output_axis_origin = 0;
@@ -228,11 +343,15 @@ impl Stitcher {
         } else {
             accepted_width as i64
         };
-        self.previous_frame_axis_origin = 0;
+        self.previous_frame_axis_origin = if self.direction == Direction::Vertical {
+            -(insets.top as i64)
+        } else {
+            -(insets.left as i64)
+        };
         self.current_frame_offset = 0;
-        let width_limit_reached = accepted_width < frame.width
+        let width_limit_reached = accepted_width < crop_width
             || accepted_width == self.configuration.maximum_output_width;
-        let height_limit_reached = accepted_height < frame.height
+        let height_limit_reached = accepted_height < crop_height
             || accepted_height == self.configuration.maximum_output_height;
         self.previous_frame = Some(frame);
         Ok(self.result(
@@ -246,107 +365,199 @@ impl Stitcher {
         &mut self,
         frame: &PixelFrame,
         signed_offset: i64,
+        bands: StaticBands,
     ) -> Result<AppendResult, StitchError> {
-        let frame_length = if self.direction == Direction::Vertical {
-            frame.height as i64
+        let vertical = self.direction == Direction::Vertical;
+        let (frame_length, _cross_length) = if vertical {
+            (frame.height, frame.width)
         } else {
-            frame.width as i64
+            (frame.width, frame.height)
         };
+        let insets = self.effective_crop_insets(frame);
+        let (leading_crop, trailing_crop) = if vertical {
+            (insets.top, insets.bottom)
+        } else {
+            (insets.left, insets.right)
+        };
+        let effective_leading = leading_crop.max(bands.leading);
+        let effective_trailing = trailing_crop.max(bands.trailing);
+        let visible_length = frame_length.saturating_sub(effective_leading + effective_trailing);
         let current_origin = self.previous_frame_axis_origin + signed_offset;
-        let current_end = current_origin + frame_length;
-        let requested_before = (self.output_axis_origin - current_origin).max(0) as usize;
-        let requested_after = (current_end - self.output_axis_end).max(0) as usize;
+        let visible_start = current_origin + effective_leading as i64;
+        let visible_end = current_origin + (frame_length.saturating_sub(effective_trailing)) as i64;
+        let requested_before =
+            ((self.output_axis_origin - visible_start).max(0) as usize).min(visible_length);
+        let requested_after =
+            ((visible_end - self.output_axis_end).max(0) as usize).min(visible_length);
         self.previous_frame_axis_origin = current_origin;
 
         if requested_before == 0 && requested_after == 0 {
-            self.current_frame_offset = current_origin - self.output_axis_origin;
+            self.current_frame_offset = current_origin + leading_crop as i64 - self.output_axis_origin;
             return Ok(self.result(Disposition::Unchanged, false, false));
         }
         if self.frame_count >= self.configuration.maximum_frame_count {
             return Err(StitchError::FrameLimitExceeded);
         }
-        self.frame_count += 1;
 
-        match self.direction {
-            Direction::Vertical => {
-                let remaining = self
-                    .configuration
-                    .maximum_output_height
-                    .saturating_sub(self.output_height);
-                let rows_before = requested_before.min(remaining);
-                let rows_after = requested_after.min(remaining - rows_before);
-                let proposed_height = self.output_height + rows_before + rows_after;
-                self.validate_pixel_count(self.output_width, proposed_height)?;
-                self.validate_working_memory(
-                    proposed_height
-                        .checked_mul(self.output_width)
-                        .and_then(|value| value.checked_mul(4))
-                        .ok_or(StitchError::WorkingMemoryLimitExceeded)?,
-                    frame.byte_count(),
-                )?;
-                if rows_before > 0 {
-                    self.prepend_rows(frame, requested_before - rows_before, rows_before);
-                    self.output_axis_origin -= rows_before as i64;
-                }
-                if rows_after > 0 {
-                    self.append_rows(frame, frame.height - requested_after, rows_after);
-                    self.output_axis_end += rows_after as i64;
-                }
-                self.output_height = proposed_height;
-                self.did_extend_output =
-                    self.did_extend_output || rows_before > 0 || rows_after > 0;
-                self.current_frame_offset = current_origin - self.output_axis_origin;
-                let height_limit_reached = rows_before < requested_before
-                    || rows_after < requested_after
-                    || self.output_height == self.configuration.maximum_output_height;
-                Ok(self.result(
-                    Disposition::Appended {
-                        direction: Direction::Vertical,
-                        offset: signed_offset,
-                    },
-                    false,
-                    height_limit_reached,
-                ))
+        let current_length = if vertical {
+            self.output_height
+        } else {
+            self.output_width
+        };
+        let output_cross = if vertical {
+            self.output_width
+        } else {
+            self.output_height
+        };
+        let remaining =
+            self.remaining_axis_budget(output_cross, current_length, frame.byte_count());
+        let lines_before = requested_before.min(remaining);
+        let lines_after = requested_after.min(remaining - lines_before);
+        let limit_reached = lines_before < requested_before
+            || lines_after < requested_after
+            || remaining == lines_before + lines_after;
+        if lines_before + lines_after > 0 {
+            self.frame_count += 1;
+        }
+
+        if lines_before > 0 {
+            let first = effective_leading + requested_before - lines_before;
+            if vertical {
+                self.prepend_rows(frame, first, lines_before);
+            } else {
+                self.prepend_columns(frame, first, lines_before);
             }
-            Direction::Horizontal => {
-                let remaining = self
-                    .configuration
-                    .maximum_output_width
-                    .saturating_sub(self.output_width);
-                let columns_before = requested_before.min(remaining);
-                let columns_after = requested_after.min(remaining - columns_before);
-                let proposed_width = self.output_width + columns_before + columns_after;
-                self.validate_pixel_count(proposed_width, self.output_height)?;
-                self.validate_working_memory(
-                    proposed_width
-                        .checked_mul(self.output_height)
-                        .and_then(|value| value.checked_mul(4))
-                        .ok_or(StitchError::WorkingMemoryLimitExceeded)?,
-                    frame.byte_count(),
-                )?;
-                if columns_before > 0 {
-                    self.prepend_columns(frame, requested_before - columns_before, columns_before);
-                    self.output_axis_origin -= columns_before as i64;
-                }
-                if columns_after > 0 {
-                    self.append_columns(frame, frame.width - requested_after, columns_after);
-                    self.output_axis_end += columns_after as i64;
-                }
-                self.output_width = proposed_width;
-                self.did_extend_output =
-                    self.did_extend_output || columns_before > 0 || columns_after > 0;
-                self.current_frame_offset = current_origin - self.output_axis_origin;
-                let width_limit_reached = columns_before < requested_before
-                    || columns_after < requested_after
-                    || self.output_width == self.configuration.maximum_output_width;
-                Ok(self.result(
-                    Disposition::Appended {
-                        direction: Direction::Horizontal,
-                        offset: signed_offset,
-                    },
-                    width_limit_reached,
-                    false,
-                ))
+            self.output_axis_origin -= lines_before as i64;
+        }
+        if lines_after > 0 {
+            let first = frame_length - effective_trailing - requested_after;
+            if vertical {
+                self.append_rows(frame, first, lines_after);
+            } else {
+                self.append_columns(frame, first, lines_after);
+            }
+            self.output_axis_end += lines_after as i64;
+        }
+        if vertical {
+            self.output_height = current_length + lines_before + lines_after;
+        } else {
+            self.output_width = current_length + lines_before + lines_after;
+        }
+        // Refresh the overlap from this frame only when static chrome in the
+        // direction of scroll needs to be replaced by newly revealed content,
+        // so transient hover highlights on existing rows are never written
+        // over previously clean output rows.
+        let needs_overwrite = (signed_offset > 0 && bands.trailing > 0)
+            || (signed_offset < 0 && bands.leading > 0);
+        if needs_overwrite {
+            self.overwrite_overlap(frame, signed_offset, current_origin, bands);
+        }
+        self.did_extend_output = self.did_extend_output || lines_before > 0 || lines_after > 0;
+        self.current_frame_offset = current_origin + leading_crop as i64 - self.output_axis_origin;
+        Ok(self.result(
+            Disposition::Appended {
+                direction: self.direction,
+                offset: signed_offset,
+            },
+            !vertical && limit_reached,
+            vertical && limit_reached,
+        ))
+    }
+
+    /// How many more lines the output may grow along the scroll axis before
+    /// the size, pixel-count or working-memory budget is exhausted. Growth is
+    /// clamped to this rather than refused, so a long capture ends with the
+    /// content it has instead of an error.
+    fn remaining_axis_budget(
+        &self,
+        cross_length: usize,
+        current_length: usize,
+        frame_bytes: usize,
+    ) -> usize {
+        let configuration = &self.configuration;
+        let axis_cap = if self.direction == Direction::Vertical {
+            configuration.maximum_output_height
+        } else {
+            configuration.maximum_output_width
+        };
+        let cross_length = cross_length.max(1);
+        let by_axis = axis_cap.saturating_sub(current_length);
+        let by_pixels =
+            (configuration.maximum_pixel_count / cross_length).saturating_sub(current_length);
+        let by_memory = (configuration
+            .maximum_working_bytes
+            .saturating_sub(frame_bytes.saturating_mul(2))
+            / (cross_length * 4))
+            .saturating_sub(current_length);
+        by_axis.min(by_pixels).min(by_memory)
+    }
+
+    fn overwrite_overlap(
+        &mut self,
+        frame: &PixelFrame,
+        signed_offset: i64,
+        current_origin: i64,
+        bands: StaticBands,
+    ) {
+        let vertical = self.direction == Direction::Vertical;
+        let frame_length = if vertical { frame.height } else { frame.width };
+        let insets = self.effective_crop_insets(frame);
+        let (leading_crop, trailing_crop) = if vertical {
+            (insets.top, insets.bottom)
+        } else {
+            (insets.left, insets.right)
+        };
+        let effective_leading = leading_crop.max(bands.leading);
+        let effective_trailing = trailing_crop.max(bands.trailing);
+
+        // Only overwrite the band region that was masked by chrome in the previous frame
+        // and has now been revealed as real page content by scrolling.
+        // Never overwrite intermediate content rows, preserving them free of transient hover highlights.
+        let previous_origin = current_origin - signed_offset;
+        let (patch_start, patch_end) = if signed_offset > 0 {
+            if effective_trailing == 0 {
+                return;
+            }
+            (
+                previous_origin + (frame_length.saturating_sub(effective_trailing)) as i64,
+                previous_origin + frame_length as i64,
+            )
+        } else if signed_offset < 0 {
+            if effective_leading == 0 {
+                return;
+            }
+            (previous_origin, previous_origin + effective_leading as i64)
+        } else {
+            return;
+        };
+
+        let visible_start = current_origin + effective_leading as i64;
+        let visible_end = current_origin + (frame_length.saturating_sub(effective_trailing)) as i64;
+        let start = patch_start.max(self.output_axis_origin).max(visible_start);
+        let end = patch_end.min(self.output_axis_end).min(visible_end);
+        if start >= end {
+            return;
+        }
+
+        let count = (end - start) as usize;
+        let frame_first = (start - current_origin) as usize;
+        let output_first = (start - self.output_axis_origin) as usize;
+        if vertical {
+            let row_bytes = self.output_width * 4;
+            for line in 0..count {
+                let source = ((frame_first + line) * frame.width + insets.left) * 4;
+                let target = (output_first + line) * row_bytes;
+                self.output_bytes[target..target + row_bytes]
+                    .copy_from_slice(&frame.bytes[source..source + row_bytes]);
+            }
+        } else {
+            let span = count * 4;
+            for row in 0..self.output_height {
+                let frame_row = insets.top + row;
+                let source = (frame_row * frame.width + frame_first) * 4;
+                let target = (row * self.output_width + output_first) * 4;
+                self.output_bytes[target..target + span]
+                    .copy_from_slice(&frame.bytes[source..source + span]);
             }
         }
     }
@@ -458,42 +669,47 @@ impl Stitcher {
     }
 
     fn append_rows(&mut self, frame: &PixelFrame, first_row: usize, count: usize) {
+        let insets = self.effective_crop_insets(frame);
         for row in first_row..first_row + count {
-            let start = row * frame.width * 4;
+            let start = (row * frame.width + insets.left) * 4;
             self.output_bytes
                 .extend_from_slice(&frame.bytes[start..start + self.output_width * 4]);
         }
     }
 
     fn prepend_rows(&mut self, frame: &PixelFrame, first_row: usize, count: usize) {
+        let insets = self.effective_crop_insets(frame);
         let mut prefix = Vec::with_capacity(count * self.output_width * 4);
         for row in first_row..first_row + count {
-            let start = row * frame.width * 4;
+            let start = (row * frame.width + insets.left) * 4;
             prefix.extend_from_slice(&frame.bytes[start..start + self.output_width * 4]);
         }
-        prefix.extend_from_slice(&self.output_bytes);
-        self.output_bytes = prefix;
+        self.output_bytes.splice(0..0, prefix);
     }
 
     fn append_columns(&mut self, frame: &PixelFrame, first_column: usize, count: usize) {
+        let insets = self.effective_crop_insets(frame);
         let old_width = self.output_width;
         let mut combined = Vec::with_capacity((old_width + count) * self.output_height * 4);
         for row in 0..self.output_height {
+            let frame_row = insets.top + row;
             let existing_start = row * old_width * 4;
             combined.extend_from_slice(
                 &self.output_bytes[existing_start..existing_start + old_width * 4],
             );
-            let new_start = (row * frame.width + first_column) * 4;
+            let new_start = (frame_row * frame.width + first_column) * 4;
             combined.extend_from_slice(&frame.bytes[new_start..new_start + count * 4]);
         }
         self.output_bytes = combined;
     }
 
     fn prepend_columns(&mut self, frame: &PixelFrame, first_column: usize, count: usize) {
+        let insets = self.effective_crop_insets(frame);
         let old_width = self.output_width;
         let mut combined = Vec::with_capacity((old_width + count) * self.output_height * 4);
         for row in 0..self.output_height {
-            let new_start = (row * frame.width + first_column) * 4;
+            let frame_row = insets.top + row;
+            let new_start = (frame_row * frame.width + first_column) * 4;
             combined.extend_from_slice(&frame.bytes[new_start..new_start + count * 4]);
             let existing_start = row * old_width * 4;
             combined.extend_from_slice(
@@ -528,13 +744,20 @@ fn normalized_frame(
     })
 }
 
-fn cropped_bytes(frame: &PixelFrame, width: usize, height: usize) -> Vec<u8> {
-    if width == frame.width && height == frame.height {
+
+fn cropped_subframe(
+    frame: &PixelFrame,
+    left: usize,
+    top: usize,
+    width: usize,
+    height: usize,
+) -> Vec<u8> {
+    if left == 0 && top == 0 && width == frame.width && height == frame.height {
         return frame.bytes.clone();
     }
     let mut cropped = Vec::with_capacity(width * height * 4);
-    for row in 0..height {
-        let start = row * frame.width * 4;
+    for row in top..top + height {
+        let start = (row * frame.width + left) * 4;
         cropped.extend_from_slice(&frame.bytes[start..start + width * 4]);
     }
     cropped
@@ -556,22 +779,27 @@ fn estimated_offset(
     previous: &PixelFrame,
     current: &PixelFrame,
     predicted_offset: i64,
+    bands: StaticBands,
 ) -> Result<i64, StitchError> {
-    // A low whole-frame mismatch is not sufficient to mean "unchanged":
-    // document and terminal captures are mostly uniform background, so even a
-    // real scroll may alter less than the overlap threshold. Exact equality is
-    // both cheap and unambiguous; small animations in a stationary frame will
-    // simply fail overlap detection and be skipped by the platform session.
+    // Zero is an ordinary candidate: a blinking caret, a fading scrollbar or
+    // a hover effect leaves the page where it was, and that frame must be
+    // classified as unchanged rather than rejected or matched one pixel off.
+    // It competes on score like every other offset, so a sparse document that
+    // really scrolled still wins at its true distance, where it matches
+    // exactly, instead of being called unchanged merely because most of its
+    // background pixels are still white.
     if previous.bytes == current.bytes {
         return Ok(0);
     }
 
-    let length = if direction == Direction::Vertical {
+    let axis_length = if direction == Direction::Vertical {
         previous.height
     } else {
         previous.width
     };
-    let fraction_limit = (length as f64 * configuration.maximum_scroll_fraction).floor() as i64;
+    let length = axis_length.saturating_sub(bands.leading + bands.trailing);
+    let fraction_limit =
+        (length as f64 * configuration.maximum_scroll_fraction).floor() as i64;
     let overlap_limit = length as i64 - configuration.minimum_overlap_rows as i64;
     let maximum_offset = fraction_limit.min(overlap_limit);
     if maximum_offset < 1 {
@@ -589,7 +817,14 @@ fn estimated_offset(
         .map(|offset| {
             (
                 *offset,
-                mismatch_score(direction, previous, current, *offset, SCREENING_SAMPLES),
+                mismatch_score(
+                    direction,
+                    previous,
+                    current,
+                    *offset,
+                    SCREENING_SAMPLES,
+                    bands,
+                ),
             )
         })
         .collect();
@@ -602,6 +837,30 @@ fn estimated_offset(
         .take(SHORTLIST_LENGTH)
         .map(|(offset, _)| *offset)
         .collect();
+
+    // When actively scrolling in one direction (predicted_offset != 0), guarantee a minority
+    // of top candidates in the opposite direction so reversing scroll direction is immediately detected
+    if predicted_offset != 0 {
+        let reverse_positive = predicted_offset < 0;
+        let mut added = 0;
+        for (offset, _) in screened.iter().filter(|(o, _)| (*o > 0) == reverse_positive) {
+            if !shortlist.contains(offset) {
+                shortlist.push(*offset);
+                added += 1;
+                if added >= 8 {
+                    break;
+                }
+            }
+        }
+    }
+
+    // Always include zero so stationary frames are scored at full fidelity,
+    // placed at the front so equal scores naturally break ties in favor of stationary
+    if let Some(pos) = shortlist.iter().position(|&x| x == 0) {
+        shortlist.remove(pos);
+    }
+    shortlist.insert(0, 0);
+
     // The shortlist can be filled entirely by the winner's own basin, which
     // would leave the ambiguity check with nothing to compare against, so the
     // best alignment outside that basin is always scored too.
@@ -618,9 +877,17 @@ fn estimated_offset(
     let mut scores: Vec<(i64, f64)> = Vec::with_capacity(shortlist.len());
     let mut best: Option<(i64, f64)> = None;
     for offset in shortlist {
-        let score = mismatch_score(direction, previous, current, offset, FULL_SAMPLES);
+        let score = mismatch_score(direction, previous, current, offset, FULL_SAMPLES, bands);
         let is_better = match best {
-            Some((_, best_score)) => score < best_score - 0.000_001,
+            Some((best_off, best_score)) => {
+                if predicted_offset != 0 && offset == 0 && best_off != 0 && best_score <= configuration.match_threshold {
+                    score < 0.000_1
+                } else if predicted_offset != 0 && best_off == 0 && offset != 0 && score <= configuration.match_threshold {
+                    true
+                } else {
+                    score < best_score - 0.000_001
+                }
+            }
             None => true,
         };
         if is_better {
@@ -632,7 +899,8 @@ fn estimated_offset(
     let Some((best_offset, best_score)) = best else {
         return Err(StitchError::NoReliableVerticalOverlap);
     };
-    if best_score > configuration.match_threshold {
+    let threshold = configuration.match_threshold;
+    if best_score > threshold {
         return Err(StitchError::NoReliableVerticalOverlap);
     }
 
@@ -647,10 +915,19 @@ fn estimated_offset(
     // An exact match is exempt: rivals that also match exactly mean the content
     // truly repeats, so every candidate splices seamlessly and the one nearest
     // the prediction is as good as any.
-    if best_score > 0.0 {
+    //
+    // A stationary frame (best_offset == 0) is also exempt: the user did not
+    // scroll, and a hover effect, selection highlight, or blinking caret must
+    // remain classified as unchanged rather than rejected because neighboring
+    // rows look similar.
+    if best_score > 0.0 && best_offset != 0 {
         let rival = scores
             .iter()
-            .filter(|(offset, _)| (offset - best_offset).abs() > AMBIGUITY_GUARD)
+            .filter(|(offset, _)| {
+                *offset != 0
+                    && (*offset > 0) == (best_offset > 0)
+                    && (offset - best_offset).abs() > AMBIGUITY_GUARD
+            })
             .map(|(_, score)| *score)
             .fold(f64::INFINITY, f64::min);
         if rival.is_finite() && rival < best_score * AMBIGUITY_RATIO {
@@ -662,25 +939,23 @@ fn estimated_offset(
 
 /// Offsets this close to the winner belong to the same match, not to a rival
 /// alignment, so they never count as competition.
-const AMBIGUITY_GUARD: i64 = 8;
+const AMBIGUITY_GUARD: i64 = 6;
 /// How much worse the nearest rival alignment must be before the winner counts
 /// as unambiguous.
-const AMBIGUITY_RATIO: f64 = 1.8;
+const AMBIGUITY_RATIO: f64 = 1.6;
 /// Samples per axis when screening the whole search window.
 const SCREENING_SAMPLES: usize = 24;
 /// Samples per axis when scoring a shortlisted candidate.
 const FULL_SAMPLES: usize = 96;
 /// How many screened candidates are rescored at full density.
-const SHORTLIST_LENGTH: usize = 24;
+const SHORTLIST_LENGTH: usize = 32;
 
-/// Every non-zero offset within the window, nearest to the prediction first.
-/// Equal distances put the larger offset first so a zero prediction reproduces
-/// the original `[+d, -d]` visiting order.
+/// Every offset within the window, zero included, nearest to the prediction
+/// first. Equal distances put the larger offset first so a zero prediction
+/// reproduces the original `[+d, -d]` visiting order.
 fn candidate_offsets(maximum_offset: i64, predicted_offset: i64) -> Vec<i64> {
     let prediction = predicted_offset.clamp(-maximum_offset, maximum_offset);
-    let mut offsets: Vec<i64> = (-maximum_offset..=maximum_offset)
-        .filter(|offset| *offset != 0)
-        .collect();
+    let mut offsets: Vec<i64> = (-maximum_offset..=maximum_offset).collect();
     offsets.sort_by_key(|offset| ((offset - prediction).abs(), -*offset));
     offsets
 }
@@ -694,23 +969,31 @@ fn mismatch_score(
     current: &PixelFrame,
     offset: i64,
     samples_per_axis: usize,
+    bands: StaticBands,
 ) -> f64 {
     if direction == Direction::Vertical {
-        return global_mismatch_score(direction, previous, current, offset, samples_per_axis);
+        return global_mismatch_score(
+            direction,
+            previous,
+            current,
+            offset,
+            samples_per_axis,
+            bands,
+        );
     }
-    let Some(sampling) = Sampling::new(direction, previous, offset, samples_per_axis) else {
+    let Some(sampling) = Sampling::new(direction, previous, offset, samples_per_axis, bands) else {
         return 1.0;
     };
     let mut slice_scores = Vec::new();
-    let mut column = sampling.horizontal_inset;
-    let maximum_column = sampling.horizontal_inset + sampling.sampled_width;
+    let mut column = sampling.column_start;
+    let maximum_column = sampling.column_start + sampling.sampled_width;
     while column < maximum_column {
         let mut difference = 0u64;
         let mut channel_count = 0u64;
         let previous_column = column + offset.max(0) as usize;
         let current_column = column + (-offset).max(0) as usize;
-        let mut row = sampling.vertical_inset;
-        let maximum_row = sampling.vertical_inset + sampling.sampled_height;
+        let mut row = sampling.row_start;
+        let maximum_row = sampling.row_start + sampling.sampled_height;
         while row < maximum_row {
             let previous_index = (row * previous.width + previous_column) * 4;
             let current_index = (row * current.width + current_column) * 4;
@@ -735,14 +1018,15 @@ fn global_mismatch_score(
     current: &PixelFrame,
     offset: i64,
     samples_per_axis: usize,
+    bands: StaticBands,
 ) -> f64 {
-    let Some(sampling) = Sampling::new(direction, previous, offset, samples_per_axis) else {
+    let Some(sampling) = Sampling::new(direction, previous, offset, samples_per_axis, bands) else {
         return 1.0;
     };
     let mut difference = 0u64;
     let mut channel_count = 0u64;
-    let mut row = sampling.vertical_inset;
-    let maximum_row = sampling.vertical_inset + sampling.sampled_height;
+    let mut row = sampling.row_start;
+    let maximum_row = sampling.row_start + sampling.sampled_height;
     while row < maximum_row {
         let previous_row = row
             + if direction == Direction::Vertical {
@@ -756,8 +1040,8 @@ fn global_mismatch_score(
             } else {
                 0
             };
-        let mut column = sampling.horizontal_inset;
-        let maximum_column = sampling.horizontal_inset + sampling.sampled_width;
+        let mut column = sampling.column_start;
+        let maximum_column = sampling.column_start + sampling.sampled_width;
         while column < maximum_column {
             let previous_column = column
                 + if direction == Direction::Horizontal {
@@ -791,8 +1075,8 @@ fn global_mismatch_score(
 }
 
 struct Sampling {
-    horizontal_inset: usize,
-    vertical_inset: usize,
+    row_start: usize,
+    column_start: usize,
     sampled_width: usize,
     sampled_height: usize,
     column_stride: usize,
@@ -805,46 +1089,158 @@ impl Sampling {
         previous: &PixelFrame,
         offset: i64,
         samples_per_axis: usize,
+        bands: StaticBands,
     ) -> Option<Self> {
         let distance = offset.unsigned_abs() as usize;
-        let overlap_width = previous
-            .width
-            .checked_sub(if direction == Direction::Horizontal {
-                distance
-            } else {
-                0
-            })?;
-        let overlap_height = previous
-            .height
-            .checked_sub(if direction == Direction::Vertical {
-                distance
-            } else {
-                0
-            })?;
-        if overlap_width == 0 || overlap_height == 0 {
+        let vertical = direction == Direction::Vertical;
+        let (axis_length, cross_length) = if vertical {
+            (previous.height, previous.width)
+        } else {
+            (previous.width, previous.height)
+        };
+        let content_length = axis_length.checked_sub(bands.leading + bands.trailing)?;
+        let content_cross = cross_length.checked_sub(bands.cross_leading + bands.cross_trailing)?;
+        let overlap_length = content_length.checked_sub(distance)?;
+        if overlap_length == 0 || content_cross == 0 {
             return None;
         }
-        let horizontal_inset = if previous.width >= 20 {
-            previous.width / 20
+        let axis_inset = if content_length >= 20 {
+            content_length / 20
         } else {
             0
         };
-        let vertical_inset = if previous.height >= 20 {
-            previous.height / 20
+        let cross_inset = if content_cross >= 20 {
+            content_cross / 20
         } else {
             0
         };
-        let sampled_width = overlap_width.saturating_sub(horizontal_inset * 2).max(1);
-        let sampled_height = overlap_height.saturating_sub(vertical_inset * 2).max(1);
+        let sampled_axis = overlap_length.saturating_sub(axis_inset * 2).max(1);
+        let sampled_cross = content_cross.saturating_sub(cross_inset * 2).max(1);
+        let axis_start = bands.leading + axis_inset;
+        let cross_start = bands.cross_leading + cross_inset;
+        let (row_start, column_start, sampled_height, sampled_width) = if vertical {
+            (axis_start, cross_start, sampled_axis, sampled_cross)
+        } else {
+            (cross_start, axis_start, sampled_cross, sampled_axis)
+        };
         Some(Self {
-            horizontal_inset,
-            vertical_inset,
+            row_start,
+            column_start,
             sampled_width,
             sampled_height,
             column_stride: (sampled_width / samples_per_axis.max(1)).max(1),
             row_stride: (sampled_height / samples_per_axis.max(1)).max(1),
         })
     }
+}
+
+/// Lines at each edge of the frame whose pixels did not move between two
+/// captures. Only a band with some texture counts: a uniform margin matches
+/// itself at any scroll distance and says nothing about chrome. Given the
+/// scroll distance, a line that also matches the page shifted by that
+/// distance is repeating content rather than chrome and is left alone. Bands
+/// across the scroll axis are left out of the output, so they are capped at a
+/// quarter of the frame to bound what a coincidental match can cost; bands
+/// along it only narrow the scoring area and need no cap.
+fn detect_static_bands(
+    previous: &PixelFrame,
+    current: &PixelFrame,
+    direction: Direction,
+    shift: Option<i64>,
+) -> StaticBands {
+    let vertical = direction == Direction::Vertical;
+    let scan = |rows: bool, from_end: bool| {
+        let length = if rows {
+            previous.height
+        } else {
+            previous.width
+        };
+        let across_axis = rows == vertical;
+        let cap = if across_axis {
+            length / 4
+        } else {
+            length
+        };
+        let index_at = |count: usize| if from_end { length - 1 - count } else { count };
+        let is_static = |index: usize| {
+            line_pixels(previous, rows, index).eq(line_pixels(current, rows, index))
+                && shift.is_none_or(|shift| {
+                    !line_moved_with_page(previous, current, rows, across_axis, index, shift)
+                        .unwrap_or(true)
+                })
+        };
+        let mut count = 0;
+        while count < cap && is_static(index_at(count)) {
+            count += 1;
+        }
+        let textured = (0..count).any(|line| {
+            let mut pixels = line_pixels(current, rows, index_at(line));
+            let first = pixels.next().map(|pixel| &pixel[..3]);
+            pixels.any(|pixel| Some(&pixel[..3]) != first)
+        });
+        if textured { count } else { 0 }
+    };
+    StaticBands {
+        leading: scan(vertical, false),
+        trailing: scan(vertical, true),
+        cross_leading: scan(!vertical, false),
+        cross_trailing: scan(!vertical, true),
+    }
+}
+
+/// Whether the line at `index` reads as page content that travelled `shift`
+/// pixels along the scroll axis between the two frames. `None` when the
+/// shifted position falls outside both frames.
+fn line_moved_with_page(
+    previous: &PixelFrame,
+    current: &PixelFrame,
+    rows: bool,
+    across_axis: bool,
+    index: usize,
+    shift: i64,
+) -> Option<bool> {
+    if across_axis {
+        let length = if rows {
+            previous.height
+        } else {
+            previous.width
+        } as i64;
+        let forward = index as i64 + shift;
+        if (0..length).contains(&forward) {
+            return Some(line_pixels(current, rows, index).eq(line_pixels(
+                previous,
+                rows,
+                forward as usize,
+            )));
+        }
+        let backward = index as i64 - shift;
+        if (0..length).contains(&backward) {
+            return Some(line_pixels(previous, rows, index).eq(line_pixels(
+                current,
+                rows,
+                backward as usize,
+            )));
+        }
+        return None;
+    }
+    let distance = shift.unsigned_abs() as usize;
+    let current_line = line_pixels(current, rows, index);
+    let previous_line = line_pixels(previous, rows, index);
+    Some(if shift >= 0 {
+        current_line.eq(previous_line.skip(distance))
+    } else {
+        current_line.skip(distance).eq(previous_line)
+    })
+}
+
+/// The RGBA pixels of one row or one column.
+fn line_pixels(frame: &PixelFrame, rows: bool, index: usize) -> impl Iterator<Item = &[u8]> {
+    let (start, stride, count) = if rows {
+        (index * frame.width * 4, 4, frame.width)
+    } else {
+        (index * 4, frame.width * 4, frame.height)
+    };
+    (0..count).map(move |pixel| &frame.bytes[start + pixel * stride..start + pixel * stride + 4])
 }
 
 fn rgb_difference(
@@ -1400,6 +1796,23 @@ mod placement_tests {
     }
 
     #[test]
+    fn reversing_from_downward_scroll_to_upward_scroll_succeeds() {
+        let width = 4;
+        let height = 200;
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        stitcher
+            .append(periodic(width, height, 60), width as u32, height as u32)
+            .unwrap();
+        stitcher
+            .append(periodic(width, height, 90), width as u32, height as u32)
+            .unwrap();
+        // Now scroll up past the top of the session so it has to prepend rows
+        let result = stitcher
+            .append(periodic(width, height, 30), width as u32, height as u32);
+        assert!(result.is_ok(), "result was {result:?}");
+    }
+
+    #[test]
     fn a_continued_upward_scroll_keeps_its_direction() {
         let width = 4;
         let height = 200;
@@ -1473,7 +1886,7 @@ mod placement_tests {
     fn candidates_start_at_the_prediction_and_fan_outward() {
         assert_eq!(
             candidate_offsets(3, 0),
-            vec![1, -1, 2, -2, 3, -3],
+            vec![0, 1, -1, 2, -2, 3, -3],
             "no history must reproduce the original visiting order"
         );
         assert_eq!(candidate_offsets(3, 2)[0], 2);
@@ -1567,5 +1980,358 @@ mod placement_tests {
                 offset: -60
             }
         );
+    }
+}
+
+#[cfg(test)]
+mod resilience_tests {
+    use super::*;
+
+    const WIDTH: usize = 40;
+    const HEIGHT: usize = 200;
+
+    fn mix(mut x: u64) -> u64 {
+        x ^= x >> 33;
+        x = x.wrapping_mul(0xff51_afd7_ed55_8ccd);
+        x ^= x >> 33;
+        x = x.wrapping_mul(0xc4ce_b9fe_1a85_ec53);
+        x ^ (x >> 33)
+    }
+
+    /// Pseudo-random texture that varies along both axes.
+    fn page(first_row: usize) -> Vec<u8> {
+        let mut bytes = vec![255u8; WIDTH * HEIGHT * 4];
+        for row in 0..HEIGHT {
+            for column in 0..WIDTH {
+                let hashed = mix((((first_row + row) as u64) << 32) | column as u64);
+                let index = (row * WIDTH + column) * 4;
+                bytes[index] = hashed as u8;
+                bytes[index + 1] = (hashed >> 8) as u8;
+                bytes[index + 2] = (hashed >> 16) as u8;
+            }
+        }
+        bytes
+    }
+
+    fn page_row(first_row: usize) -> Vec<u8> {
+        page(first_row)[..WIDTH * 4].to_vec()
+    }
+
+    fn output_row(bytes: &[u8], row: usize) -> &[u8] {
+        &bytes[row * WIDTH * 4..(row + 1) * WIDTH * 4]
+    }
+
+    /// Chrome that stays put while the page scrolls: textured so it is not
+    /// mistaken for empty margin.
+    fn paint_static_band(bytes: &mut [u8], rows: std::ops::Range<usize>) {
+        for row in rows {
+            for column in 0..WIDTH {
+                let hashed = mix(0xabcd_0000 + ((row as u64) << 16) + column as u64);
+                let index = (row * WIDTH + column) * 4;
+                bytes[index] = hashed as u8;
+                bytes[index + 1] = (hashed >> 8) as u8;
+                bytes[index + 2] = (hashed >> 16) as u8;
+            }
+        }
+    }
+
+    fn with_header(first_row: usize) -> Vec<u8> {
+        let mut bytes = page(first_row);
+        paint_static_band(&mut bytes, 0..30);
+        bytes
+    }
+
+    fn with_footer(first_row: usize) -> Vec<u8> {
+        let mut bytes = page(first_row);
+        paint_static_band(&mut bytes, 170..200);
+        bytes
+    }
+
+    fn append(stitcher: &mut Stitcher, bytes: Vec<u8>) -> Result<AppendResult, StitchError> {
+        stitcher.append(bytes, WIDTH as u32, HEIGHT as u32)
+    }
+
+    fn appended(offset: i64) -> Disposition {
+        Disposition::Appended {
+            direction: Direction::Vertical,
+            offset,
+        }
+    }
+
+    #[test]
+    fn a_stationary_frame_with_a_small_change_is_unchanged() {
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        let mut with_caret = page(0);
+        for row in 100..124 {
+            for column in 13..15 {
+                let index = (row * WIDTH + column) * 4;
+                with_caret[index..index + 3].fill(0);
+            }
+        }
+        append(&mut stitcher, with_caret).unwrap();
+
+        let result = append(&mut stitcher, page(0)).unwrap();
+
+        assert_eq!(result.disposition, Disposition::Unchanged);
+        assert_eq!(result.total_height, HEIGHT as u32);
+    }
+
+    #[test]
+    fn a_change_inside_the_unsampled_margin_is_unchanged() {
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        append(&mut stitcher, page(0)).unwrap();
+        let mut scrollbar = page(0);
+        for row in 50..100 {
+            let index = (row * WIDTH + WIDTH - 1) * 4;
+            scrollbar[index..index + 3].fill(128);
+        }
+
+        let result = append(&mut stitcher, scrollbar).unwrap();
+
+        assert_eq!(result.disposition, Disposition::Unchanged);
+    }
+
+    #[test]
+    fn a_hover_highlight_in_a_repeating_list_is_classified_as_unchanged() {
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        let base = list_page(0);
+        append(&mut stitcher, base.clone()).unwrap();
+
+        // Simulate hovering a row in a list where rows repeat every 10px:
+        // row 10..18 gets a light blue background
+        let mut with_hover = base;
+        for row in 10..18 {
+            for column in 0..WIDTH {
+                let index = (row * WIDTH + column) * 4;
+                with_hover[index] = 204;
+                with_hover[index + 1] = 232;
+                with_hover[index + 2] = 255;
+            }
+        }
+
+        let result = append(&mut stitcher, with_hover).unwrap();
+        assert_eq!(result.disposition, Disposition::Unchanged);
+        assert_eq!(stitcher.output_height(), HEIGHT as u32);
+    }
+
+    #[test]
+    fn slow_upward_scroll_is_not_rejected_by_zero_offset_rival() {
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        append(&mut stitcher, page(100)).unwrap();
+        // First scroll down slightly
+        append(&mut stitcher, page(120)).unwrap();
+        // Now scroll up past the top (to 90) - offset from frame 1 (120) is -30, offset from frame 0 is -10
+        let result = append(&mut stitcher, page(90)).unwrap();
+        assert_eq!(result.disposition, appended(-30));
+    }
+
+    #[test]
+    fn hover_in_overlap_is_not_stamped_onto_existing_stitched_rows_when_scrolling_down() {
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        append(&mut stitcher, with_header(0)).unwrap();
+
+        // Frame 1 scrolls down by 30px, but row 60 in the current viewport gets a hover highlight
+        let mut frame1 = with_header(30);
+        for column in 0..WIDTH {
+            let index = (60 * WIDTH + column) * 4;
+            frame1[index] = 204;
+            frame1[index + 1] = 232;
+            frame1[index + 2] = 255;
+        }
+
+        let result = append(&mut stitcher, frame1).unwrap();
+        assert_eq!(result.disposition, appended(30));
+        let bytes = stitcher.render().unwrap();
+        // The existing canvas row 60 (which corresponds to page row 60) must remain clean
+        assert_eq!(output_row(&bytes, 60), page_row(60));
+    }
+
+    #[test]
+    fn the_pixel_limit_caps_the_output_instead_of_failing() {
+        let configuration = Configuration {
+            maximum_pixel_count: WIDTH * 210,
+            ..Configuration::default()
+        };
+        let mut stitcher = Stitcher::new(configuration, Direction::Vertical);
+        append(&mut stitcher, page(0)).unwrap();
+
+        let capped = append(&mut stitcher, page(30)).unwrap();
+        assert_eq!(capped.total_height, 210);
+        assert_eq!(capped.limit_reached, Some(Limit::OutputHeight));
+
+        let beyond = append(&mut stitcher, page(60)).unwrap();
+        assert_eq!(beyond.total_height, 210);
+        assert_eq!(beyond.limit_reached, Some(Limit::OutputHeight));
+    }
+
+    #[test]
+    fn the_working_memory_limit_caps_the_output_instead_of_failing() {
+        let frame_bytes = WIDTH * HEIGHT * 4;
+        let configuration = Configuration {
+            maximum_working_bytes: frame_bytes * 2 + WIDTH * 210 * 4,
+            ..Configuration::default()
+        };
+        let mut stitcher = Stitcher::new(configuration, Direction::Vertical);
+        append(&mut stitcher, page(0)).unwrap();
+
+        let capped = append(&mut stitcher, page(30)).unwrap();
+        assert_eq!(capped.total_height, 210);
+        assert_eq!(capped.limit_reached, Some(Limit::OutputHeight));
+
+        let beyond = append(&mut stitcher, page(60)).unwrap();
+        assert_eq!(beyond.total_height, 210);
+    }
+
+    #[test]
+    fn a_tall_sticky_header_no_longer_blocks_matching() {
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        append(&mut stitcher, with_header(0)).unwrap();
+
+        let result = append(&mut stitcher, with_header(50)).unwrap();
+        let bytes = stitcher.render().unwrap();
+
+        assert_eq!(result.disposition, appended(50));
+        assert_eq!(result.total_height, 250);
+        assert_eq!(output_row(&bytes, 0), output_row(&with_header(0), 0));
+        assert_eq!(output_row(&bytes, 35), page_row(35));
+        assert_eq!(output_row(&bytes, 210), page_row(210));
+    }
+
+    #[test]
+    fn a_sticky_footer_is_excluded_from_the_stitched_rows() {
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        append(&mut stitcher, with_footer(0)).unwrap();
+
+        let result = append(&mut stitcher, with_footer(50)).unwrap();
+        let bytes = stitcher.render().unwrap();
+
+        assert_eq!(result.disposition, appended(50));
+        assert_eq!(result.total_height, 220);
+        assert_eq!(output_row(&bytes, 0), page_row(0));
+        assert_eq!(output_row(&bytes, 185), page_row(185));
+        assert_eq!(output_row(&bytes, 219), page_row(219));
+    }
+
+    #[test]
+    fn a_sticky_header_is_replaced_by_content_when_scrolling_up() {
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        append(&mut stitcher, with_header(100)).unwrap();
+
+        let result = append(&mut stitcher, with_header(50)).unwrap();
+        let bytes = stitcher.render().unwrap();
+
+        assert_eq!(result.disposition, appended(-50));
+        assert_eq!(result.total_height, 220);
+        assert_eq!(output_row(&bytes, 0), page_row(80));
+        assert_eq!(output_row(&bytes, 20), page_row(100));
+        assert_eq!(output_row(&bytes, 219), page_row(299));
+    }
+
+    /// Chrome beside the page: a sidebar that stays put while the content
+    /// beside it scrolls.
+    fn with_sidebar(first_row: usize) -> Vec<u8> {
+        let mut bytes = page(first_row);
+        for row in 0..HEIGHT {
+            for column in 0..10 {
+                let hashed = mix(0x5ba7_0000 + ((row as u64) << 16) + column as u64);
+                let index = (row * WIDTH + column) * 4;
+                bytes[index] = hashed as u8;
+                bytes[index + 1] = (hashed >> 8) as u8;
+                bytes[index + 2] = (hashed >> 16) as u8;
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn a_static_sidebar_does_not_hide_a_scroll() {
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        append(&mut stitcher, with_sidebar(0)).unwrap();
+
+        let result = append(&mut stitcher, with_sidebar(50)).unwrap();
+
+        assert_eq!(result.disposition, appended(50));
+        assert_eq!(result.total_height, 250);
+    }
+
+    /// A list whose first 80 page rows repeat every 10 rows (each row textured
+    /// across its width) above unique content.
+    fn list_page(first_row: usize) -> Vec<u8> {
+        let mut bytes = vec![255u8; WIDTH * HEIGHT * 4];
+        for row in 0..HEIGHT {
+            let page_row = first_row + row;
+            let key = if page_row < 80 {
+                page_row % 10
+            } else {
+                page_row
+            };
+            for column in 0..WIDTH {
+                let hashed = mix(((key as u64) << 32) | column as u64);
+                let index = (row * WIDTH + column) * 4;
+                bytes[index] = hashed as u8;
+                bytes[index + 1] = (hashed >> 8) as u8;
+                bytes[index + 2] = (hashed >> 16) as u8;
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn rows_that_repeat_at_the_scroll_distance_are_not_mistaken_for_chrome() {
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        append(&mut stitcher, list_page(40)).unwrap();
+        // Scrolling by a multiple of the period leaves the repeating rows
+        // identical at the same index, which must not be read as a header.
+        append(&mut stitcher, list_page(60)).unwrap();
+
+        let result = append(&mut stitcher, list_page(0)).unwrap();
+        let bytes = stitcher.render().unwrap();
+
+        assert_eq!(result.disposition, appended(-60));
+        assert_eq!(result.total_height, 260);
+        assert_eq!(output_row(&bytes, 0), &list_page(0)[..WIDTH * 4]);
+        assert_eq!(output_row(&bytes, 100), &list_page(100)[..WIDTH * 4]);
+    }
+
+    #[test]
+    fn the_default_configuration_does_not_cap_a_session_by_frame_count() {
+        assert!(Configuration::default().maximum_frame_count >= 10_000);
+    }
+
+    #[test]
+    fn small_frames_can_scroll_large_fractions_of_their_height() {
+        let h = 80;
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        let frame0 = page(0)[..WIDTH * h * 4].to_vec();
+        stitcher.append(frame0, WIDTH as u32, h as u32).unwrap();
+        for i in 1..=4 {
+            let frame = page(i * 45)[..WIDTH * h * 4].to_vec();
+            let result = stitcher.append(frame, WIDTH as u32, h as u32).unwrap();
+            assert_eq!(result.disposition, appended(45));
+            assert_eq!(result.total_height, 80 + (i * 45) as u32);
+        }
+        assert_eq!(stitcher.output_height(), 80 + 4 * 45);
+    }
+
+    #[test]
+    fn tracking_with_crop_insets_splices_only_the_cropped_selection() {
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        stitcher.set_crop_insets(60, 60, 0, 0);
+
+        let initial = append(&mut stitcher, page(0)).unwrap();
+        assert_eq!(initial.total_height, 80);
+        assert_eq!(stitcher.output_height(), 80);
+
+        let second = append(&mut stitcher, page(70)).unwrap();
+        assert_eq!(second.disposition, appended(70));
+        assert_eq!(second.total_height, 150);
+        assert_eq!(stitcher.output_height(), 150);
+
+        let bytes = stitcher.render().unwrap();
+        assert_eq!(bytes.len(), WIDTH * 150 * 4);
+        assert_eq!(output_row(&bytes, 0), page_row(60));
+        assert_eq!(output_row(&bytes, 79), page_row(139));
+        assert_eq!(output_row(&bytes, 80), page_row(140));
+        assert_eq!(output_row(&bytes, 149), page_row(209));
     }
 }

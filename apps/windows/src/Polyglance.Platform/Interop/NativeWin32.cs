@@ -130,6 +130,14 @@ public static partial class NativeWin32
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
 
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool ClientToScreen(IntPtr hWnd, ref POINT lpPoint);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetClientRect(IntPtr hWnd, out RECT lpRect);
+
     [LibraryImport("user32.dll")]
     public static partial IntPtr ChildWindowFromPointEx(IntPtr hWndParent, POINT point, uint flags);
 

@@ -20,6 +20,7 @@ use polyglance_cabi::stitch::{
     CStitchAppendResult, CStitchConfiguration, polyglance_stitcher_append,
     polyglance_stitcher_free, polyglance_stitcher_get_dimensions, polyglance_stitcher_new,
     polyglance_stitcher_render, polyglance_stitcher_render_preview,
+    polyglance_stitcher_set_crop_insets,
 };
 use polyglance_cabi::{
     POLYGLANCE_ERR_INVALID_CONFIG, POLYGLANCE_ERR_INVALID_INPUT, POLYGLANCE_ERR_INVALID_RESPONSE,
@@ -368,6 +369,54 @@ fn test_stitcher_lifecycle_and_append() {
         assert_eq!(fc, 1);
         assert_eq!(w, 100);
         assert_eq!(h, 100);
+
+        polyglance_stitcher_free(stitcher);
+    }
+}
+
+#[test]
+fn test_stitcher_set_crop_insets() {
+    unsafe {
+        let config = CStitchConfiguration {
+            capture_interval: 0.10,
+            maximum_frame_count: 100,
+            maximum_output_width: 4000,
+            maximum_output_height: 10000,
+            maximum_pixel_count: 40_000_000,
+            maximum_working_bytes: 200_000_000,
+            minimum_overlap_rows: 10,
+            maximum_scroll_fraction: 0.8,
+            match_threshold: 0.9,
+        };
+
+        let mut stitcher = std::ptr::null_mut();
+        let ret = polyglance_stitcher_new(&config, 0, &mut stitcher);
+        assert_eq!(ret, POLYGLANCE_OK);
+
+        let insets_ret = polyglance_stitcher_set_crop_insets(stitcher, 20, 20, 0, 0);
+        assert_eq!(insets_ret, POLYGLANCE_OK);
+
+        let frame1 = vec![255u8; 100 * 100 * 4];
+        let mut result = CStitchAppendResult {
+            disposition: 0,
+            offset: 0,
+            frame_count: 0,
+            total_width: 0,
+            total_height: 0,
+            limit_reached: 0,
+        };
+
+        let append_ret = polyglance_stitcher_append(
+            stitcher,
+            frame1.as_ptr(),
+            frame1.len(),
+            100,
+            100,
+            &mut result,
+        );
+        assert_eq!(append_ret, POLYGLANCE_OK);
+        assert_eq!(result.total_width, 100);
+        assert_eq!(result.total_height, 60);
 
         polyglance_stitcher_free(stitcher);
     }

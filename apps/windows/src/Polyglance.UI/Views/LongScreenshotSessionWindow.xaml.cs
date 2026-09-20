@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -9,6 +10,7 @@ using System.Windows.Threading;
 using Polyglance.Core.Models;
 using Polyglance.Core.Services;
 using Polyglance.Platform.Capture;
+using Polyglance.Platform.Dpi;
 using Polyglance.Platform.Interop;
 using Polyglance.Platform.Pin;
 
@@ -19,7 +21,7 @@ public partial class LongScreenshotSessionWindow : Window
     // The transparent WPF overlay is still included by GDI BitBlt on some
     // Windows/RDP configurations. Capture just inside the selection chrome so
     // its blue border and shadow never become part of every stitched frame.
-    private const int CaptureOverlayGuardPixels = 6;
+    private const int CaptureOverlayGuardPixels = 4;
 
     private enum SessionPhase
     {
@@ -41,6 +43,8 @@ public partial class LongScreenshotSessionWindow : Window
     private uint _lastPreviewFrameCount;
     private int _captureGuardPixels = CaptureOverlayGuardPixels;
     private int _consecutiveSkippedFrames;
+    private bool _isCaptureExcluded;
+    private Int32Rect _activeCaptureRegion;
 
     public LongScreenshotSessionWindow(
         BitmapSource fullScreenBitmap,
@@ -53,19 +57,21 @@ public partial class LongScreenshotSessionWindow : Window
         _screenBounds = screenBounds;
         _translationService = translationService;
         _configuration = configuration;
-        _captureTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(110) };
+        _captureTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(33) };
         _captureTimer.Tick += (_, _) => CaptureAndAppendCurrentFrame();
         SourceInitialized += (_, _) =>
         {
+            CoverCapturedArea();
             IntPtr handle = new WindowInteropHelper(this).Handle;
-            bool excluded = NativeWin32.SetWindowDisplayAffinity(handle, NativeWin32.WDA_EXCLUDEFROMCAPTURE);
-            // Older builds and some remote sessions reject the affinity, which
-            // leaves the guard inset as the only thing keeping the selection
-            // chrome out of every frame. Widen it there rather than silently
-            // relying on an exclusion that was refused.
-            _captureGuardPixels = excluded
+            _isCaptureExcluded = NativeWin32.SetWindowDisplayAffinity(handle, NativeWin32.WDA_EXCLUDEFROMCAPTURE);
+            _captureGuardPixels = _isCaptureExcluded
                 ? CaptureOverlayGuardPixels
                 : CaptureOverlayGuardPixels * 2;
+            if (_cropRect.Width > 0 && _cropRect.Height > 0)
+            {
+                UpdateSelectionDisplay();
+                PositionControls();
+            }
         };
 
         Left = screenBounds.X;
@@ -92,6 +98,40 @@ public partial class LongScreenshotSessionWindow : Window
         }
     }
 
+    private void CoverCapturedArea()
+    {
+        IntPtr handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        bool placed = NativeWin32.SetWindowPos(
+            handle,
+            IntPtr.Zero,
+            (int)Math.Round(_screenBounds.X),
+            (int)Math.Round(_screenBounds.Y),
+            (int)Math.Round(_screenBounds.Width),
+            (int)Math.Round(_screenBounds.Height),
+            NativeWin32.SWP_NOZORDER | NativeWin32.SWP_NOACTIVATE);
+        if (!placed)
+        {
+            return;
+        }
+
+        Point origin = DpiHelper.TransformFromPixels(
+            this,
+            new Point(_screenBounds.X, _screenBounds.Y));
+        Point extent = DpiHelper.TransformFromPixels(
+            this,
+            new Point(_screenBounds.Width, _screenBounds.Height));
+
+        Left = origin.X;
+        Top = origin.Y;
+        Width = Math.Abs(extent.X);
+        Height = Math.Abs(extent.Y);
+    }
+
     private void OnMouseDown(object sender, MouseButtonEventArgs e)
     {
         Point point = e.GetPosition(this);
@@ -110,6 +150,7 @@ public partial class LongScreenshotSessionWindow : Window
         {
             _dragStart = point;
             _cropRect = new Rect(point, new Size(0, 0));
+            CaptureMouse();
         }
     }
 
@@ -129,6 +170,11 @@ public partial class LongScreenshotSessionWindow : Window
 
     private void OnMouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (IsMouseCaptured)
+        {
+            ReleaseMouseCapture();
+        }
+
         if (e.ChangedButton == MouseButton.Right)
         {
             e.Handled = true;
@@ -152,18 +198,29 @@ public partial class LongScreenshotSessionWindow : Window
         _phase = SessionPhase.Capturing;
         _stitcher = new LongScreenshotService();
         BackgroundImage.Visibility = Visibility.Collapsed;
+        MaskCanvas.Visibility = Visibility.Visible;
+        SelectionBorder.Visibility = Visibility.Visible;
         ControlToolbar.Visibility = Visibility.Visible;
-        TxtStatus.Text = "滚动页面以继续捕获";
+        TxtStatus.Text = "请慢速平稳滚动页面";
         PositionControls();
 
         var (centreX, centreY) = CaptureCentreScreenPoint();
         _scrollTarget = UnderlyingWindowScroller.FindTarget(centreX, centreY);
+
+        Int32Rect selectionRegion = SelectionPhysicalRegion();
+        ConfigureCaptureRegion(selectionRegion);
 
         Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, () =>
         {
             CaptureAndAppendCurrentFrame();
             _captureTimer.Start();
         });
+    }
+
+    private void ConfigureCaptureRegion(Int32Rect selectionRegion)
+    {
+        _activeCaptureRegion = ScreenCapture.InsetOverlayBorder(selectionRegion, _captureGuardPixels);
+        _stitcher?.SetCropInsets(0, 0, 0, 0);
     }
 
     private void OnMouseWheel(object sender, MouseWheelEventArgs e)
@@ -215,7 +272,20 @@ public partial class LongScreenshotSessionWindow : Window
 
     private void CaptureAndAppendCurrentFrame()
     {
-        if (_isCapturingFrame || _stitcher == null || _cropRect.Width <= 0 || _cropRect.Height <= 0)
+        if (_activeCaptureRegion.Width <= 0 || _activeCaptureRegion.Height <= 0)
+        {
+            _activeCaptureRegion = ScreenCapture.InsetOverlayBorder(SelectionPhysicalRegion(), _captureGuardPixels);
+        }
+        if (_activeCaptureRegion.Width <= 0 || _activeCaptureRegion.Height <= 0)
+        {
+            int left = (int)Math.Round(Left + _cropRect.X);
+            int top = (int)Math.Round(Top + _cropRect.Y);
+            int width = (int)Math.Round(_cropRect.Width);
+            int height = (int)Math.Round(_cropRect.Height);
+            _activeCaptureRegion = ScreenCapture.InsetOverlayBorder(new Int32Rect(left, top, width, height), _captureGuardPixels);
+        }
+
+        if (_isCapturingFrame || _stitcher == null || _activeCaptureRegion.Width <= 0 || _activeCaptureRegion.Height <= 0)
         {
             return;
         }
@@ -223,20 +293,33 @@ public partial class LongScreenshotSessionWindow : Window
         _isCapturingFrame = true;
         try
         {
-            Int32Rect selectionRegion = SelectionPhysicalRegion();
-            Int32Rect region = ScreenCapture.InsetOverlayBorder(
-                selectionRegion,
-                _captureGuardPixels);
+            var stitcher = _stitcher;
+            if (stitcher == null)
+            {
+                return;
+            }
+
+            var region = _activeCaptureRegion;
             var frame = ScreenCapture.CaptureRegion(region, showCursor: false);
             byte[] rgba = ScreenCapture.GetRgbaBytes(frame);
-            var result = _stitcher.AppendFrame(rgba, (uint)frame.PixelWidth, (uint)frame.PixelHeight);
+            var result = stitcher.AppendFrame(rgba, (uint)frame.PixelWidth, (uint)frame.PixelHeight);
+
             _consecutiveSkippedFrames = 0;
             if (result.FrameCount != _lastPreviewFrameCount)
             {
                 _lastPreviewFrameCount = result.FrameCount;
-                TxtStatus.Text = "滚动页面以继续捕获";
+                TxtStatus.Text = "请慢速平稳滚动页面";
                 UpdatePreview();
             }
+            else
+            {
+                if (TxtStatus.Text.StartsWith("滚动过快"))
+                {
+                    TxtStatus.Text = "请慢速平稳滚动页面";
+                }
+                UpdateViewportIndicator();
+            }
+
             if (result.LimitReached != 0)
             {
                 _captureTimer.Stop();
@@ -245,15 +328,10 @@ public partial class LongScreenshotSessionWindow : Window
         }
         catch (Exception error)
         {
-            // A frame without reliable overlap is recoverable while the user is
-            // stationary or an animation is running. Keep the session alive,
-            // but say so once it starts happening repeatedly: that means the
-            // page is moving further per frame than the stitcher can match, and
-            // only the user can slow it down.
             _consecutiveSkippedFrames++;
-            if (_consecutiveSkippedFrames >= 3)
+            if (_consecutiveSkippedFrames >= 20)
             {
-                TxtStatus.Text = "滚动过快，部分画面已跳过，请放慢";
+                TxtStatus.Text = "滚动过快，请放慢速度";
             }
             System.Diagnostics.Debug.WriteLine($"Long screenshot frame skipped: {error.Message}");
         }
@@ -275,9 +353,17 @@ public partial class LongScreenshotSessionWindow : Window
             BitmapSource preview = CreateBitmapSource(_stitcher.RenderPreview());
             PreviewImage.Source = preview;
             double scale = Math.Min(1, Math.Min(180d / preview.PixelWidth, 300d / preview.PixelHeight));
-            PreviewImage.Width = Math.Max(1, preview.PixelWidth * scale);
-            PreviewImage.Height = Math.Max(1, preview.PixelHeight * scale);
+            double previewWidth = Math.Max(1, preview.PixelWidth * scale);
+            double previewHeight = Math.Max(1, preview.PixelHeight * scale);
+            PreviewImage.Width = previewWidth;
+            PreviewImage.Height = previewHeight;
+            PreviewContainer.Width = previewWidth;
+            PreviewContainer.Height = previewHeight;
+            ViewportCanvas.Width = previewWidth;
+            ViewportCanvas.Height = previewHeight;
+
             PreviewBorder.Visibility = Visibility.Visible;
+            UpdateViewportIndicator();
             PositionControls();
         }
         catch (Exception error)
@@ -286,13 +372,58 @@ public partial class LongScreenshotSessionWindow : Window
         }
     }
 
+    private void UpdateViewportIndicator()
+    {
+        if (_stitcher == null || PreviewBorder.Visibility != Visibility.Visible || PreviewImage.Height <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var dims = _stitcher.GetDimensions();
+            if (dims.Height > 0)
+            {
+                double previewWidth = PreviewImage.Width;
+                double previewHeight = PreviewImage.Height;
+                double viewportHeight = _activeCaptureRegion.Height > 0
+                    ? _activeCaptureRegion.Height
+                    : _cropRect.Height;
+                double viewportFraction = Math.Min(1.0, viewportHeight / dims.Height);
+                double offsetFraction = Math.Clamp((double)dims.Offset / dims.Height, 0.0, 1.0);
+
+                double indicatorHeight = Math.Max(8, Math.Min(previewHeight, previewHeight * viewportFraction));
+                double indicatorTop = Math.Clamp(previewHeight * offsetFraction, 0, Math.Max(0, previewHeight - indicatorHeight));
+
+                Canvas.SetLeft(ViewportIndicator, 0);
+                Canvas.SetTop(ViewportIndicator, indicatorTop);
+                ViewportIndicator.Width = previewWidth;
+                ViewportIndicator.Height = indicatorHeight;
+                ViewportIndicator.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                ViewportIndicator.Visibility = Visibility.Collapsed;
+            }
+        }
+        catch (Exception error)
+        {
+            System.Diagnostics.Debug.WriteLine($"Viewport indicator update skipped: {error.Message}");
+        }
+    }
+
     private void OnPinClick(object sender, RoutedEventArgs e) => CompleteCapture(pin: true);
 
     private void OnCopyClick(object sender, RoutedEventArgs e) => CompleteCapture(pin: false);
 
-    private void CompleteCapture(bool pin)
+    private async void CompleteCapture(bool pin)
     {
         _captureTimer.Stop();
+        while (_isCapturingFrame)
+        {
+            await Task.Delay(20);
+        }
+
         if (_stitcher == null)
         {
             CloseSession();
@@ -301,7 +432,8 @@ public partial class LongScreenshotSessionWindow : Window
 
         try
         {
-            BitmapSource finalBitmap = CreateBitmapSource(_stitcher.Render());
+            var stitcher = _stitcher;
+            BitmapSource finalBitmap = await Task.Run(() => CreateBitmapSource(stitcher.Render()));
             if (pin)
             {
                 var pinWindow = new PinWindow(
@@ -309,11 +441,36 @@ public partial class LongScreenshotSessionWindow : Window
                     _translationService,
                     _configuration,
                     source: PinArchiveSource.LongScreenshot,
-                    saveToHistory: true)
+                    saveToHistory: true);
+
+                Rect workArea = SystemParameters.WorkArea;
+                double targetWidth = pinWindow.PinImage.Width;
+                double targetHeight = pinWindow.PinImage.Height;
+
+                double targetX = Left + _cropRect.X;
+                if (targetX + targetWidth > workArea.Right - 10)
                 {
-                    Left = Left + _cropRect.X,
-                    Top = Top + _cropRect.Y
-                };
+                    targetX = workArea.Right - 10 - targetWidth;
+                }
+                if (targetX < workArea.Left + 10)
+                {
+                    targetX = workArea.Left + 10;
+                }
+
+                double targetY = Top + _cropRect.Y;
+                if (targetY + targetHeight > workArea.Bottom - 10)
+                {
+                    targetY = workArea.Bottom - 10 - targetHeight;
+                }
+                if (targetY < workArea.Top + 10)
+                {
+                    targetY = workArea.Top + 10;
+                }
+
+                Point pinOrigin = PinWindow.WindowOriginForContentFrame(
+                    new Rect(targetX, targetY, targetWidth, targetHeight));
+                pinWindow.Left = pinOrigin.X;
+                pinWindow.Top = pinOrigin.Y;
                 pinWindow.Show();
             }
             else
@@ -363,9 +520,17 @@ public partial class LongScreenshotSessionWindow : Window
         }
     }
 
-    private void CloseSession()
+    private async void CloseSession()
     {
+        if (IsMouseCaptured)
+        {
+            ReleaseMouseCapture();
+        }
         _captureTimer.Stop();
+        while (_isCapturingFrame)
+        {
+            await Task.Delay(20);
+        }
         _stitcher?.Dispose();
         _stitcher = null;
         Close();

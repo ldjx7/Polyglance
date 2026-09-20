@@ -230,6 +230,15 @@ impl LongScreenshotStitcher {
     pub fn current_frame_offset(&self) -> i64 {
         self.locked().current_frame_offset()
     }
+
+    pub fn set_crop_insets(&self, top: u32, bottom: u32, left: u32, right: u32) -> bool {
+        self.locked().set_crop_insets(
+            top as usize,
+            bottom as usize,
+            left as usize,
+            right as usize,
+        )
+    }
 }
 
 impl LongScreenshotStitcher {

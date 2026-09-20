@@ -16,7 +16,7 @@
     Name="LDJX.Polyglance"
     ProcessorArchitecture="x64"
     Publisher="CN=0CA53EC8-ABFE-4253-8161-E7FC2449C171"
-    Version="0.0.9.0" />
+    Version="0.1.0.0" />
 
   <Properties>
     <DisplayName>Polyglance</DisplayName>

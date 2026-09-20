@@ -189,7 +189,7 @@ final class LongScreenshotStitcherTests: XCTestCase {
         }
     }
 
-    func testPixelAndWorkingMemoryLimitsAreCheckedBeforeAllocatingOutput() {
+    func testAFrameThatCannotFitOnItsOwnIsRejected() {
         var pixelLimited = makeConfiguration()
         pixelLimited.maximumPixelCount = 30
         var pixelStitcher = LongScreenshotStitcher(configuration: pixelLimited)
@@ -205,6 +205,49 @@ final class LongScreenshotStitcherTests: XCTestCase {
         XCTAssertThrowsError(try memoryStitcher.append(makeRowImage([1, 2, 3, 4], width: 8))) {
             XCTAssertEqual($0 as? LongScreenshotStitchError, .workingMemoryLimitExceeded)
         }
+    }
+
+    func testPixelAndWorkingMemoryLimitsCapTheOutputInsteadOfFailing() throws {
+        var pixelLimited = makeConfiguration()
+        pixelLimited.maximumPixelCount = 8 * 7
+        var pixelStitcher = LongScreenshotStitcher(configuration: pixelLimited)
+        _ = try pixelStitcher.append(makeRowImage([10, 20, 30, 40, 50, 60]))
+        let pixelResult = try pixelStitcher.append(makeRowImage([40, 50, 60, 70, 80, 90]))
+
+        XCTAssertEqual(pixelResult.limitReached, .outputHeight)
+        XCTAssertEqual(pixelResult.totalHeight, 7)
+        XCTAssertEqual(try redRows(in: pixelStitcher.render()), [10, 20, 30, 40, 50, 60, 70])
+
+        var memoryLimited = makeConfiguration()
+        memoryLimited.maximumWorkingBytes = 8 * 6 * 4 * 2 + 8 * 7 * 4
+        var memoryStitcher = LongScreenshotStitcher(configuration: memoryLimited)
+        _ = try memoryStitcher.append(makeRowImage([10, 20, 30, 40, 50, 60]))
+        let memoryResult = try memoryStitcher.append(makeRowImage([40, 50, 60, 70, 80, 90]))
+
+        XCTAssertEqual(memoryResult.limitReached, .outputHeight)
+        XCTAssertEqual(memoryResult.totalHeight, 7)
+    }
+
+    func testAStationaryFrameWithASmallChangeIsUnchanged() throws {
+        var stitcher = LongScreenshotStitcher(configuration: makeConfiguration())
+        _ = try stitcher.append(makeRowImage([10, 20, 30, 40, 50, 60]))
+
+        let result = try stitcher.append(makeRowImage([10, 20, 30, 41, 50, 60]))
+
+        XCTAssertEqual(result.disposition, .unchanged)
+        XCTAssertEqual(result.totalHeight, 6)
+    }
+
+    func testDefaultConfigurationDoesNotCapASessionByFrameCount() {
+        XCTAssertGreaterThanOrEqual(LongScreenshotConfiguration.default.maximumFrameCount, 10_000)
+    }
+
+    func testDefaultWorkingMemoryScalesWithPhysicalMemory() {
+        let physical = ProcessInfo.processInfo.physicalMemory
+        let expected = Int(min(1_536 * 1_048_576, max(384 * 1_048_576, physical / 8)))
+
+        XCTAssertEqual(LongScreenshotConfiguration.default.maximumWorkingBytes, expected)
+        XCTAssertEqual(LongScreenshotConfiguration.default.maximumPixelCount, expected / 4)
     }
 
     func testInitialFrameIsTruncatedAtTheConfiguredMaximumHeight() throws {

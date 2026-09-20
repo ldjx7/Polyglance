@@ -194,6 +194,7 @@ final class LongScreenshotCoordinator {
         }
         session.onRecoverableFrameError = { [weak self] _ in
             self?.regionOverlayPanel?.overlayView.flagSkippedFrame()
+            self?.controlView?.showSkippedFrameWarning()
         }
         session.onFinished = { [weak self, weak controls] image in
             self?.outputImage = image

@@ -76,7 +76,6 @@ final class LongScreenshotSession {
     private var isCaptureInFlight = false
     private var completedImage: NSImage?
     private var didNotifyCancellation = false
-    private var recoverableFrameErrorCount = 0
 
     private(set) var state: LongScreenshotSessionState = .ready {
         didSet {
@@ -109,6 +108,12 @@ final class LongScreenshotSession {
         self.configuration = configuration
         self.direction = direction
         stitcher = LongScreenshotStitcher(configuration: configuration, direction: direction)
+        stitcher.setCropInsets(
+            top: region.cropTop,
+            bottom: region.cropBottom,
+            left: region.cropLeft,
+            right: region.cropRight
+        )
     }
 
     func start() async {
@@ -129,6 +134,12 @@ final class LongScreenshotSession {
     func updateRegion(_ region: LongScreenshotCaptureRegion) -> Bool {
         guard state == .ready else { return false }
         self.region = region
+        stitcher.setCropInsets(
+            top: region.cropTop,
+            bottom: region.cropBottom,
+            left: region.cropLeft,
+            right: region.cropRight
+        )
         return true
     }
 
@@ -196,22 +207,17 @@ final class LongScreenshotSession {
                 return
             }
             let result = try stitcher.append(frame)
-            publishPreview(viewportPixelHeight: frame.height)
+            publishPreview()
             if result.limitReached != nil {
                 _ = try complete()
             }
         } catch let error as LongScreenshotStitchError
             where error == .noReliableVerticalOverlap {
-            recoverableFrameErrorCount += 1
+            // The page moved further than one frame can be matched across, or
+            // something animated while it stood still. Either way the frame is
+            // dropped and the next one gets another chance; only the user
+            // decides when the capture is over.
             onRecoverableFrameError?(error)
-            if stitcher.frameCount + recoverableFrameErrorCount
-                >= configuration.maximumFrameCount {
-                do {
-                    _ = try complete()
-                } catch {
-                    fail(error)
-                }
-            }
         } catch {
             guard state != .cancelled else {
                 return
@@ -220,7 +226,7 @@ final class LongScreenshotSession {
         }
     }
 
-    private func publishPreview(viewportPixelHeight: Int) {
+    private func publishPreview() {
         guard let previewImage = try? stitcher.renderPreview() else { return }
         let representation = NSBitmapImageRep(cgImage: previewImage)
         let image = NSImage(size: CGSize(width: previewImage.width, height: previewImage.height))
@@ -231,8 +237,8 @@ final class LongScreenshotSession {
             frameCount: stitcher.frameCount,
             totalPixelWidth: stitcher.outputWidth,
             totalPixelHeight: stitcher.outputHeight,
-            viewportPixelWidth: region.pixelWidth,
-            viewportPixelHeight: viewportPixelHeight,
+            viewportPixelWidth: region.selectionPixelWidth,
+            viewportPixelHeight: region.selectionPixelHeight,
             viewportPixelOffset: stitcher.currentFrameOffset
         ))
     }

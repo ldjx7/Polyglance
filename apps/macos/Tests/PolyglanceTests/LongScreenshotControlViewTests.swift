@@ -28,6 +28,21 @@ final class LongScreenshotControlViewTests: XCTestCase {
         panel.orderOut(nil)
     }
 
+    func testLongScreenshotPanelsStayAboveEveryOtherWindowLikeTheSelectionOverlay() {
+        _ = NSApplication.shared
+        let regionPanel = LongScreenshotRegionOverlayPanel(
+            region: CGRect(x: 100, y: 120, width: 480, height: 320)
+        )
+        let controlPanel = LongScreenshotControlPanel()
+        let previewPanel = LongScreenshotPreviewPanel()
+
+        for panel in [regionPanel, controlPanel, previewPanel] {
+            XCTAssertEqual(panel.level, .screenSaver, "\(type(of: panel)) must sit at the capture overlay level")
+            XCTAssertFalse(panel.hidesOnDeactivate)
+            XCTAssertTrue(panel.styleMask.contains(.nonactivatingPanel))
+        }
+    }
+
     func testReadyRegionOverlayCanResizeAndMoveBeforeCapture() {
         _ = NSApplication.shared
         let panel = LongScreenshotRegionOverlayPanel(

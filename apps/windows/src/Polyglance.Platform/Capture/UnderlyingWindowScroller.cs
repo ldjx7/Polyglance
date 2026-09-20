@@ -46,6 +46,42 @@ public static class UnderlyingWindowScroller
         return target;
     }
 
+    public static IntPtr FindDeepestChild(IntPtr target, int screenX, int screenY)
+    {
+        if (target == IntPtr.Zero)
+        {
+            return IntPtr.Zero;
+        }
+
+        return WalkToDeepestChild(
+            target,
+            parent => ChildAtScreenPoint(parent, screenX, screenY));
+    }
+
+    public static bool TryGetTargetClientRect(IntPtr target, out NativeWin32.RECT rect)
+    {
+        rect = default;
+        if (target == IntPtr.Zero || !NativeWin32.GetClientRect(target, out var client))
+        {
+            return false;
+        }
+
+        var pt = new NativeWin32.POINT { X = 0, Y = 0 };
+        if (!NativeWin32.ClientToScreen(target, ref pt))
+        {
+            return false;
+        }
+
+        rect = new NativeWin32.RECT
+        {
+            Left = pt.X,
+            Top = pt.Y,
+            Right = pt.X + client.Right,
+            Bottom = pt.Y + client.Bottom
+        };
+        return rect.Right > rect.Left && rect.Bottom > rect.Top;
+    }
+
     public static bool ForwardWheel(IntPtr target, int delta, int screenX, int screenY)
     {
         if (target == IntPtr.Zero || delta == 0)
@@ -56,8 +92,10 @@ public static class UnderlyingWindowScroller
         IntPtr recipient = WalkToDeepestChild(
             target,
             parent => ChildAtScreenPoint(parent, screenX, screenY));
+        IntPtr hwnd = recipient != IntPtr.Zero ? recipient : target;
+
         return NativeWin32.PostMessage(
-            recipient,
+            hwnd,
             NativeWin32.WM_MOUSEWHEEL,
             EncodeWheelWParam(delta),
             EncodePointLParam(screenX, screenY));

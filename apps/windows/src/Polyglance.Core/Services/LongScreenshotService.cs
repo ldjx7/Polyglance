@@ -20,6 +20,16 @@ public sealed class LongScreenshotService : IDisposable
         }
     }
 
+    public void SetCropInsets(uint top, uint bottom, uint left, uint right)
+    {
+        if (_disposed || _stitcher == IntPtr.Zero)
+            throw new ObjectDisposedException(nameof(LongScreenshotService));
+
+        int ret = NativeMethods.polyglance_stitcher_set_crop_insets(_stitcher, top, bottom, left, right);
+        if (ret != 0)
+            throw new InvalidOperationException($"Failed to set crop insets (code: {ret})");
+    }
+
     public unsafe StitchAppendResult AppendFrame(ReadOnlySpan<byte> rgbaBytes, uint width, uint height)
     {
         if (_disposed || _stitcher == IntPtr.Zero)
