@@ -1067,7 +1067,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
     var onAction: ((ScreenshotSelectionAction) -> Void)?
     var onCancel: (() -> Void)?
     fileprivate var onMirrorStateChange: ((ScreenSelectionMirrorState) -> Void)?
-    var onElementRefinedForTesting: (() -> Void)?
+    var hoverRefinementTaskForTesting: Task<Void, Never>? { hoverRefinementTask }
     fileprivate var onMagnifierStateChange: ((ScreenSelectionMagnifierState?) -> Void)?
     fileprivate var onMagnifierCopyConfirmation: ((String) -> Void)?
     private var lastMagnifierPoint: CGPoint?
@@ -3339,7 +3339,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         }
 
         let requestID = hoverRequestID
-        hoverRefinementTask = Task.detached(priority: .userInitiated) { [weak self] in
+        hoverRefinementTask = Task { [weak self] in
             do {
                 try await Task.sleep(for: .milliseconds(15))
             } catch {
@@ -3352,7 +3352,7 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
             guard !Task.isCancelled, let self else {
                 return
             }
-            await self.applyRefinedCandidate(refinedCandidate, requestID: requestID)
+            self.applyRefinedCandidate(refinedCandidate, requestID: requestID)
         }
     }
 
@@ -3365,7 +3365,6 @@ final class ScreenSelectionView: NSView, NSTextFieldDelegate {
         hoveredCandidate = candidate
         needsDisplay = true
         publishMirrorState()
-        onElementRefinedForTesting?()
     }
 
     private func cancelHoverRefinement() {
