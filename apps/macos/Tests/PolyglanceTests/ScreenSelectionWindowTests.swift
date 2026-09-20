@@ -787,7 +787,12 @@ final class ScreenSelectionWindowTests: XCTestCase {
         )
 
         XCTAssertEqual(window.selectionView.hoveredCandidate, windowCandidate)
-        try await Task.sleep(for: .milliseconds(150))
+        for _ in 0..<50 {
+            if window.selectionView.hoveredCandidate == elementCandidate {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
         XCTAssertEqual(window.selectionView.hoveredCandidate, elementCandidate)
     }
 

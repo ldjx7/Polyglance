@@ -201,11 +201,22 @@ impl Stitcher {
         true
     }
 
-    pub fn set_crop_insets(&mut self, top: usize, bottom: usize, left: usize, right: usize) -> bool {
+    pub fn set_crop_insets(
+        &mut self,
+        top: usize,
+        bottom: usize,
+        left: usize,
+        right: usize,
+    ) -> bool {
         if self.did_extend_output {
             return false;
         }
-        self.crop_insets = CropInsets { top, bottom, left, right };
+        self.crop_insets = CropInsets {
+            top,
+            bottom,
+            left,
+            right,
+        };
         self.previous_frame_axis_origin = if self.direction == Direction::Vertical {
             -(top as i64)
         } else {
@@ -314,12 +325,8 @@ impl Stitcher {
 
     fn accept_initial_frame(&mut self, frame: PixelFrame) -> Result<AppendResult, StitchError> {
         let insets = self.effective_crop_insets(&frame);
-        let crop_width = frame
-            .width
-            .saturating_sub(insets.left + insets.right);
-        let crop_height = frame
-            .height
-            .saturating_sub(insets.top + insets.bottom);
+        let crop_width = frame.width.saturating_sub(insets.left + insets.right);
+        let crop_height = frame.height.saturating_sub(insets.top + insets.bottom);
         if crop_width == 0 || crop_height == 0 {
             return Err(StitchError::InvalidFrame);
         }
@@ -392,7 +399,8 @@ impl Stitcher {
         self.previous_frame_axis_origin = current_origin;
 
         if requested_before == 0 && requested_after == 0 {
-            self.current_frame_offset = current_origin + leading_crop as i64 - self.output_axis_origin;
+            self.current_frame_offset =
+                current_origin + leading_crop as i64 - self.output_axis_origin;
             return Ok(self.result(Disposition::Unchanged, false, false));
         }
         if self.frame_count >= self.configuration.maximum_frame_count {
@@ -447,8 +455,8 @@ impl Stitcher {
         // direction of scroll needs to be replaced by newly revealed content,
         // so transient hover highlights on existing rows are never written
         // over previously clean output rows.
-        let needs_overwrite = (signed_offset > 0 && bands.trailing > 0)
-            || (signed_offset < 0 && bands.leading > 0);
+        let needs_overwrite =
+            (signed_offset > 0 && bands.trailing > 0) || (signed_offset < 0 && bands.leading > 0);
         if needs_overwrite {
             self.overwrite_overlap(frame, signed_offset, current_origin, bands);
         }
@@ -744,7 +752,6 @@ fn normalized_frame(
     })
 }
 
-
 fn cropped_subframe(
     frame: &PixelFrame,
     left: usize,
@@ -798,8 +805,7 @@ fn estimated_offset(
         previous.width
     };
     let length = axis_length.saturating_sub(bands.leading + bands.trailing);
-    let fraction_limit =
-        (length as f64 * configuration.maximum_scroll_fraction).floor() as i64;
+    let fraction_limit = (length as f64 * configuration.maximum_scroll_fraction).floor() as i64;
     let overlap_limit = length as i64 - configuration.minimum_overlap_rows as i64;
     let maximum_offset = fraction_limit.min(overlap_limit);
     if maximum_offset < 1 {
@@ -843,7 +849,10 @@ fn estimated_offset(
     if predicted_offset != 0 {
         let reverse_positive = predicted_offset < 0;
         let mut added = 0;
-        for (offset, _) in screened.iter().filter(|(o, _)| (*o > 0) == reverse_positive) {
+        for (offset, _) in screened
+            .iter()
+            .filter(|(o, _)| (*o > 0) == reverse_positive)
+        {
             if !shortlist.contains(offset) {
                 shortlist.push(*offset);
                 added += 1;
@@ -880,9 +889,17 @@ fn estimated_offset(
         let score = mismatch_score(direction, previous, current, offset, FULL_SAMPLES, bands);
         let is_better = match best {
             Some((best_off, best_score)) => {
-                if predicted_offset != 0 && offset == 0 && best_off != 0 && best_score <= configuration.match_threshold {
+                if predicted_offset != 0
+                    && offset == 0
+                    && best_off != 0
+                    && best_score <= configuration.match_threshold
+                {
                     score < 0.000_1
-                } else if predicted_offset != 0 && best_off == 0 && offset != 0 && score <= configuration.match_threshold {
+                } else if predicted_offset != 0
+                    && best_off == 0
+                    && offset != 0
+                    && score <= configuration.match_threshold
+                {
                     true
                 } else {
                     score < best_score - 0.000_001
@@ -1156,11 +1173,7 @@ fn detect_static_bands(
             previous.width
         };
         let across_axis = rows == vertical;
-        let cap = if across_axis {
-            length / 4
-        } else {
-            length
-        };
+        let cap = if across_axis { length / 4 } else { length };
         let index_at = |count: usize| if from_end { length - 1 - count } else { count };
         let is_static = |index: usize| {
             line_pixels(previous, rows, index).eq(line_pixels(current, rows, index))
@@ -1807,8 +1820,7 @@ mod placement_tests {
             .append(periodic(width, height, 90), width as u32, height as u32)
             .unwrap();
         // Now scroll up past the top of the session so it has to prepend rows
-        let result = stitcher
-            .append(periodic(width, height, 30), width as u32, height as u32);
+        let result = stitcher.append(periodic(width, height, 30), width as u32, height as u32);
         assert!(result.is_ok(), "result was {result:?}");
     }
 
