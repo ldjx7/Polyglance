@@ -770,28 +770,30 @@ final class ScreenSelectionWindowTests: XCTestCase {
         XCTAssertFalse(try toolbar(in: window).isHidden)
     }
 
-    func testElementRefinementUpdatesHoverCandidateAsynchronously() async throws {
+    func testElementRefinementUpdatesHoverCandidateAsynchronously() throws {
         _ = NSApplication.shared
         let screen = try XCTUnwrap(NSScreen.main)
-        let windowCandidate = CGRect(x: 0, y: 0, width: 500, height: 400)
+        let frame = CGRect(x: 0, y: 0, width: 500, height: 400)
+        let windowCandidate = frame
         let elementCandidate = CGRect(x: 40, y: 50, width: 120, height: 60)
         let window = ScreenSelectionWindow(
             image: try makeImage(width: 500, height: 400),
             screen: screen,
+            captureFrame: frame,
             regionProvider: { _ in windowCandidate },
             regionRefiner: { _ in elementCandidate }
         )
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
 
         window.selectionView.mouseMoved(
             with: mouseEvent(.mouseMoved, at: CGPoint(x: 80, y: 80), window: window)
         )
 
         XCTAssertEqual(window.selectionView.hoveredCandidate, windowCandidate)
-        for _ in 0..<50 {
-            if window.selectionView.hoveredCandidate == elementCandidate {
-                break
-            }
-            try await Task.sleep(for: .milliseconds(50))
+        let deadline = Date().addingTimeInterval(5.0)
+        while window.selectionView.hoveredCandidate != elementCandidate && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
         XCTAssertEqual(window.selectionView.hoveredCandidate, elementCandidate)
     }
