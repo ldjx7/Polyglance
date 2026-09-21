@@ -232,4 +232,43 @@ final class PinSessionWindowTests: XCTestCase {
         let indicator = try XCTUnwrap(view.subviews.compactMap { $0 as? PinZoomIndicatorView }.first)
         XCTAssertFalse(indicator.isHidden)
     }
+
+    func testImagePinRestoresScaledGeometryAndMaintainsBaseScale() async throws {
+        _ = NSApplication.shared
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = PinArchiveStore(directoryURL: dir)
+        let manager = PinWindowManager(historyStore: PinHistoryStore(), archiveStore: store)
+
+        let image = NSImage(size: NSSize(width: 500, height: 300))
+        image.lockFocus()
+        NSColor.red.drawSwatch(in: NSRect(x: 0, y: 0, width: 500, height: 300))
+        image.unlockFocus()
+
+        manager.pin(image, sourceFrame: CGRect(x: 100, y: 100, width: 500, height: 300), preferredDisplaySize: CGSize(width: 500, height: 300))
+        let panel = try XCTUnwrap(manager.activePanels.first)
+        let contentView = try XCTUnwrap(panel.contentView as? PinContentView)
+        XCTAssertEqual(contentView.initialSize.width, 500)
+        XCTAssertEqual(panel.frame.width, 500)
+
+        panel.setFrame(CGRect(x: 100, y: 100, width: 400, height: 240), display: false)
+        await manager.waitForPendingOperations()
+        manager.saveActiveSessions()
+
+        panel.close()
+        await manager.waitForPendingOperations()
+
+        let restored = try XCTUnwrap(manager.restoreMostRecentPin())
+        let restoredContentView = try XCTUnwrap(restored.contentView as? PinContentView)
+        XCTAssertEqual(restored.frame.width, 400)
+        XCTAssertEqual(restoredContentView.initialSize.width, 500)
+
+        restoredContentView.applyScroll(deltaY: 1, modifiers: [], anchorInWindow: CGPoint(x: 200, y: 120))
+        XCTAssertEqual(restoredContentView.initialSize.width, 500)
+        let scale = restored.frame.width / restoredContentView.initialSize.width
+        XCTAssertEqual(round(scale * 100), 88)
+
+        manager.closeAllPins()
+        await manager.prepareForTermination()
+    }
 }

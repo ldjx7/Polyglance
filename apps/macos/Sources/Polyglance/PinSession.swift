@@ -12,11 +12,13 @@ struct PinSessionRecord: Codable, Equatable, Sendable {
     var isLocked = false
     var isAlwaysOnTop = true
     var status: PinSessionStatus = .active
+    var initialSize: CGSize? = nil
 
     var isValid: Bool {
         frame.origin.x.isFinite && frame.origin.y.isFinite && frame.width.isFinite && frame.height.isFinite
             && frame.width > 0 && frame.height > 0 && frame.width <= 32_768 && frame.height <= 32_768
             && opacity.isFinite && opacity >= 0.1 && opacity <= 1
             && (text?.utf8.count ?? 0) <= 1_048_576
+            && (initialSize == nil || (initialSize!.width.isFinite && initialSize!.height.isFinite && initialSize!.width > 0 && initialSize!.height > 0))
     }
 }

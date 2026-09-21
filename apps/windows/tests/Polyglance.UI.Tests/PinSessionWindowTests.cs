@@ -145,4 +145,33 @@ public sealed class PinSessionWindowTests
             finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
         });
     }
+
+    [Fact]
+    public void StartupRestore_WithNoActivePinsOrStaleEntries_DoesNotThrow()
+    {
+        Sta(() =>
+        {
+            string directory = Path.Combine(Path.GetTempPath(), "PinEmptyRestoreUI-" + Guid.NewGuid());
+            try
+            {
+                var store = new PinArchiveStore(directory);
+                var controller = PinSessionController.For(store);
+                Wait(controller.Restore(true, null, null));
+
+                var fakeActive = new PinSessionRecord
+                {
+                    ArchiveId = Guid.NewGuid().ToString("N"),
+                    Status = PinSessionStatus.Active
+                };
+                File.WriteAllText(Path.Combine(directory, "sessions.json"),
+                    System.Text.Json.JsonSerializer.Serialize(new[] { fakeActive }));
+
+                var reloadedStore = new PinArchiveStore(directory);
+                var reloadedController = PinSessionController.For(reloadedStore);
+                Wait(reloadedController.Restore(true, null, null));
+                Wait(reloadedStore.DrainAsync());
+            }
+            finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+        });
+    }
 }

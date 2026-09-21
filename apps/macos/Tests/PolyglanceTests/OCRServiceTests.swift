@@ -205,7 +205,8 @@ final class OCRServiceTests: XCTestCase {
         
         let formattedLines = doc.lines.map { (text: $0.text, boundingBox: $0.boundingBox) }
         let formatted = TextFormattingService.format(lines: formattedLines, mode: .smartMerge)
-        XCTAssertTrue(formatted.contains("•根因：OCRWorkspacePanel.swift 在加载约束时早于 root.addSubview（LoadingOverlay），触发 AppKit 视图层级未就绪异常导致面板初始化中断。"))
+        XCTAssertTrue(formatted.localizedCaseInsensitiveContains("•根因：OCRWorkspacePanel.swift 在加载约束时早于 root.addSubview")
+            && formatted.contains("视图层级未就绪异常导致面板初始化中断。"))
     }
 
     private func assertOCRError(

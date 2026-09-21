@@ -200,7 +200,7 @@ public partial class App : Application
         var versionItem = new ToolStripMenuItem(versionStr) { Enabled = false };
         contextMenu.Items.Add(versionItem);
 
-        contextMenu.Items.Add("退出 Polyglance", null, (s, e) => ShutdownApp());
+        contextMenu.Items.Add("退出 Polyglance", null, async (s, e) => await ShutdownAppAsync());
 
         _notifyIcon.ContextMenuStrip = contextMenu;
         _notifyIcon.DoubleClick += (s, e) => ShowMainWindow();
@@ -683,12 +683,16 @@ public partial class App : Application
 
     private bool _shuttingDown;
 
-    private async void ShutdownApp()
+    private async Task ShutdownAppAsync()
     {
         if (_shuttingDown) return;
         _shuttingDown = true;
         _hotKeyManager?.Dispose();
-        await PinSessionController.For().PrepareForTermination();
+        try
+        {
+            await PinSessionController.For().PrepareForTermination();
+        }
+        catch { }
         _updateCts?.Cancel();
         _updateCts?.Dispose();
         _updateCts = null;
@@ -707,7 +711,29 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
-        ShutdownApp();
+        if (!_shuttingDown)
+        {
+            _shuttingDown = true;
+            _hotKeyManager?.Dispose();
+            try
+            {
+                Task.Run(() => PinSessionController.For().PrepareForTermination()).Wait(TimeSpan.FromSeconds(2));
+            }
+            catch { }
+            _updateCts?.Cancel();
+            _updateCts?.Dispose();
+            _updateCts = null;
+            _notifyIcon?.Dispose();
+            if (TranslationService.OfflineHandler is IDisposable offlineDisposable)
+            {
+                offlineDisposable.Dispose();
+                TranslationService.OfflineHandler = null;
+            }
+            _translationService?.Dispose();
+            _hiddenHwndSource?.Dispose();
+            _mutex?.Dispose();
+            _pinHistoryWindow?.ExplicitClose();
+        }
         base.OnExit(e);
     }
 }

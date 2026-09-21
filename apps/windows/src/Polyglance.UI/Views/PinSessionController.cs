@@ -304,25 +304,55 @@ internal sealed class PinSessionController
             var saved = await _store.Schedule(s => { _ = s.List(); return s.LoadSessions(); });
             var candidates = startup ? saved.Where(s => s.Status == PinSessionStatus.Active).ToArray()
                 : saved.Where(s => s.Status == PinSessionStatus.Closed).TakeLast(1).ToArray();
+            if (candidates.Length == 0) return;
+
             long remainingBytes = 512L * 1024 * 1024;
-            var items = await _store.Schedule(s => s.List().ToDictionary(i => i.Id));
+            var items = await _store.Schedule(s => s.List()
+                .DistinctBy(i => i.Id, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(i => i.Id, StringComparer.OrdinalIgnoreCase));
             bool skipped = false;
             foreach (var state in candidates)
             {
                 if (_terminating || _destroying.Contains(state.ArchiveId)
                     || _windows.Values.Any(w => w.State.Id == state.Id)) continue;
-                if (!items.TryGetValue(state.ArchiveId, out var item)) continue;
-                long bytes = (long)item.PixelWidth * item.PixelHeight * 4;
-                if (bytes > remainingBytes) { skipped = true; continue; }
-                var image = await _store.Schedule(s => s.LoadImage(state.ArchiveId));
-                if (image == null || _terminating || _destroying.Contains(state.ArchiveId)) continue;
-                remainingBytes -= bytes;
-                Open(image, state.ArchiveId, service, configuration, state);
+
+                try
+                {
+                    if (state.Text != null)
+                    {
+                        Open(null, state.ArchiveId, service, configuration, state, state.Text);
+                        continue;
+                    }
+
+                    if (!items.TryGetValue(state.ArchiveId, out var item))
+                    {
+                        if (startup) _ = _store.Schedule(s => s.SaveSession(state with { Status = PinSessionStatus.Closed }));
+                        continue;
+                    }
+
+                    long bytes = (long)item.PixelWidth * item.PixelHeight * 4;
+                    if (bytes > remainingBytes) { skipped = true; continue; }
+                    var image = await _store.Schedule(s => s.LoadImage(state.ArchiveId));
+                    if (image == null || _terminating || _destroying.Contains(state.ArchiveId))
+                    {
+                        if (startup && image == null) _ = _store.Schedule(s => s.SaveSession(state with { Status = PinSessionStatus.Closed }));
+                        continue;
+                    }
+                    remainingBytes -= bytes;
+                    Open(image, state.ArchiveId, service, configuration, state);
+                }
+                catch
+                {
+                    if (startup) _ = _store.Schedule(s => s.SaveSession(state with { Status = PinSessionStatus.Closed }));
+                }
             }
             await _store.DrainAsync();
-            if (skipped) Report("部分贴图未自动恢复：自动恢复的图片内存预算为 512 MiB，其余记录仍可从贴图历史手动贴出。");
+            if (skipped && !startup) Report("部分贴图未自动恢复：自动恢复的图片内存预算为 512 MiB，其余记录仍可从贴图历史手动贴出。");
         }
-        catch { Report("未能恢复贴图。已有历史文件未被清空。"); }
+        catch
+        {
+            if (!startup) Report("未能恢复贴图。已有历史文件未被清空。");
+        }
         finally { _restoring = false; }
     }
 
@@ -332,7 +362,7 @@ internal sealed class PinSessionController
         Open(image, id, service, configuration, null, previous?.Text);
     }
 
-    private void Open(BitmapSource image, string id, TranslationService? service, AppConfiguration? configuration,
+    private void Open(BitmapSource? image, string id, TranslationService? service, AppConfiguration? configuration,
         PinSessionRecord? state, string? text = null)
     {
         text ??= state?.Text;
@@ -341,6 +371,7 @@ internal sealed class PinSessionController
             window = new TextPinWindow(text, _store, id, state);
         else
         {
+            if (image == null) return;
             var placement = PinPositioning.CalculatePlacementForCursor(image.PixelWidth, image.PixelHeight);
             window = new PinWindow(image, service, configuration, Clipboard.SetText,
                 capturedDisplaySize: state == null ? new Size(placement.ImageWidthDips, placement.ImageHeightDips) : new Size(state.Width, state.Height),

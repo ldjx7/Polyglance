@@ -63,6 +63,7 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
     }
 
     var canRestoreMostRecentPin: Bool { historyStore.canRestore }
+    var activePanels: [NSPanel] { orderedPanels }
 
     func pinClipboardImage() throws {
         if let image = ImagePasteboard.read() {
@@ -213,9 +214,9 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
             isAlwaysOnTop: true
         )
         if recordInArchive, image.cgImage(forProposedRect: nil, context: nil, hints: nil) != nil {
-            attach(panel, archiveID: archiveStore.record(image: image, source: source))
+            attach(panel, archiveID: archiveStore.record(image: image, source: source), initialSize: size)
         } else if let archiveID {
-            attach(panel, archiveID: archiveID)
+            attach(panel, archiveID: archiveID, initialSize: size)
         }
     }
 
@@ -248,13 +249,22 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
         panel.orderFrontRegardless()
         panel.makeKey()
         let id = session?.archiveID ?? archiveID ?? archiveStore.record(image: TextPinContentView.preview(text), source: .clipboard)
-        attach(panel, archiveID: id, text: text, existing: session)
+        attach(panel, archiveID: id, text: text, existing: session, initialSize: size)
         return panel
     }
 
-    private func attach(_ panel: NSPanel, archiveID: String, text: String? = nil, existing: PinSessionRecord? = nil) {
-        var record = existing ?? PinSessionRecord(archiveID: archiveID, text: text, frame: panel.frame)
+    private func attach(_ panel: NSPanel, archiveID: String, text: String? = nil, existing: PinSessionRecord? = nil, initialSize: CGSize? = nil) {
+        var record = existing ?? PinSessionRecord(archiveID: archiveID, text: text, frame: panel.frame, initialSize: initialSize)
         record.status = .active
+        if let initialSize {
+            record.initialSize = initialSize
+        } else if record.initialSize == nil {
+            if let pin = panel.contentView as? PinContentView {
+                record.initialSize = pin.initialSize
+            } else if let textPin = panel.contentView as? TextPinContentView {
+                record.initialSize = textPin.initialSize
+            }
+        }
         sessions[ObjectIdentifier(panel)] = record
         archivedPanelIDs[ObjectIdentifier(panel)] = archiveID
         archiveStore.enqueueSession(record)
@@ -275,6 +285,13 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
             record.isAlwaysOnTop = panel.level == .floating
             record.isLocked = (panel.contentView as? PinContentView)?.isLocked
                 ?? (panel.contentView as? TextPinContentView)?.isLocked ?? false
+            if record.initialSize == nil {
+                if let pin = panel.contentView as? PinContentView {
+                    record.initialSize = pin.initialSize
+                } else if let textPin = panel.contentView as? TextPinContentView {
+                    record.initialSize = textPin.initialSize
+                }
+            }
             if record != sessions[key] {
                 sessions[key] = record
                 archiveStore.enqueueSession(record)
@@ -295,42 +312,60 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
         guard !hasRestoredSession else { return }
         hasRestoredSession = true
         let saved = await archiveStore.perform { store in
-            let items = Dictionary(uniqueKeysWithValues: store.list().map { ($0.id, $0) })
+            let items = Dictionary(store.list().map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             return store.loadSessions().filter { $0.status != .archived }.compactMap { record -> (PinSessionRecord, Int64)? in
                 guard let item = items[record.archiveID] else { return nil }
                 return (record, Int64(item.pixelWidth) * Int64(item.pixelHeight) * 4)
             }
         }
         var remainingBytes: Int64 = 512 * 1_024 * 1_024
-        var skipped = false
-        for (record, bytes) in saved {
+        let prioritized = saved.sorted { ($0.0.status == .active ? 0 : 1) < ($1.0.status == .active ? 0 : 1) }
+        for (record, bytes) in prioritized {
             guard !isTerminating else { return }
-            guard bytes <= remainingBytes else { skipped = true; continue }
+            guard bytes <= remainingBytes else { continue }
             guard let image = await archiveStore.perform({ $0.loadImage(id: record.archiveID) }),
                   !archiveStore.wasDeleted(record.archiveID), !isTerminating else { continue }
             remainingBytes -= bytes
             if record.status == .active {
-                _ = restoreSession(record, image: image)
+                _ = restoreSession(record, image: image, initialSize: record.initialSize)
             } else {
-                var snapshot = PinWindowSnapshot(image: image, frame: record.frame, initialSize: record.frame.size,
+                let resolvedInitialSize = record.initialSize ?? image.size
+                var snapshot = PinWindowSnapshot(image: image, frame: record.frame, initialSize: resolvedInitialSize,
                     opacity: record.opacity, isLocked: record.isLocked, isAlwaysOnTop: record.isAlwaysOnTop)
                 snapshot.session = record
                 historyStore.append(snapshot)
             }
         }
-        if skipped {
-            let alert = NSAlert(); alert.messageText = "部分贴图未自动恢复"
-            alert.informativeText = "自动恢复的图片内存预算为 512 MiB。其余记录仍在贴图历史中，可以手动贴出。"
-            alert.runModal()
-        }
     }
 
-    private func restoreSession(_ record: PinSessionRecord, image: NSImage) -> NSPanel? {
+    private func restoreSession(_ record: PinSessionRecord, image: NSImage, initialSize: CGSize? = nil) -> NSPanel? {
         if let text = record.text { return pinText(text, session: record) }
         let frame = frameForRestoration(record.frame)
-        let panel = createPinWindow(image: image, initialSize: frame.size, frame: frame, opacity: record.opacity,
+        let resolvedInitialSize: CGSize = {
+            if let initialSize, initialSize.width > 0, initialSize.height > 0 {
+                return initialSize
+            }
+            if let recordSize = record.initialSize, recordSize.width > 0, recordSize.height > 0 {
+                return recordSize
+            }
+            if let screen = targetScreen(for: frame) {
+                let fitted = Self.initialPinSize(
+                    imageSize: image.size,
+                    preferredDisplaySize: nil,
+                    maximumSize: screen.frame.size
+                )
+                if fitted.width > 0, fitted.height > 0 {
+                    return fitted
+                }
+            }
+            if image.size.width > 0, image.size.height > 0 {
+                return image.size
+            }
+            return frame.size
+        }()
+        let panel = createPinWindow(image: image, initialSize: resolvedInitialSize, frame: frame, opacity: record.opacity,
             isLocked: record.isLocked, isAlwaysOnTop: record.isAlwaysOnTop)
-        attach(panel, archiveID: record.archiveID, existing: record)
+        attach(panel, archiveID: record.archiveID, existing: record, initialSize: resolvedInitialSize)
         return panel
     }
 
@@ -762,7 +797,7 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
         if let id = snapshot.archiveID, archiveStore.wasDeleted(id) { return restoreMostRecentPin() }
         if let record = snapshot.session {
             guard !archiveStore.wasDeleted(record.archiveID) else { return restoreMostRecentPin() }
-            return restoreSession(record, image: snapshot.image)
+            return restoreSession(record, image: snapshot.image, initialSize: snapshot.initialSize)
         }
         let frame = frameForRestoration(snapshot.frame)
         let restored: NSPanel
@@ -830,6 +865,9 @@ final class PinWindowManager: NSObject, NSWindowDelegate {
             }
             if var record = sessions[identifier] {
                 record.status = .closed
+                if record.initialSize == nil, let snapshot {
+                    record.initialSize = snapshot.initialSize
+                }
                 snapshot?.session = record
                 archiveStore.enqueueSession(record)
             }
@@ -1162,7 +1200,7 @@ final class PinContentView: NSView {
 
     private let image: NSImage
     var sourceImage: NSImage { image }
-    private let initialSize: CGSize
+    let initialSize: CGSize
     private let copyImage: CopyImage
     private let saveImage: SaveImage
     private let presentError: PresentError
@@ -1599,6 +1637,9 @@ final class PinContentView: NSView {
         window.contentAspectRatio = initialSize
         window.contentMinSize = sizeLimits.minimum
         window.contentMaxSize = sizeLimits.maximum
+        if initialSize.width > 0, window.frame.width > 0 {
+            currentScale = window.frame.width / initialSize.width
+        }
         applyAlwaysOnTopState()
         applyLockState()
         if isColorPicking {
@@ -2244,7 +2285,7 @@ final class PinContentView: NSView {
             return
         }
         let currentWindowScale = window.frame.width / initialSize.width
-        if abs(currentWindowScale - currentScale) > 0.05 {
+        if abs(currentWindowScale - currentScale) > 0.001 {
             currentScale = currentWindowScale
         }
         let oldScale = currentScale
