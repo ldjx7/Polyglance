@@ -13,7 +13,7 @@
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-000000?style=flat&logo=apple&logoColor=white">
   <img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat&logo=windows&logoColor=white">
   <a href="LICENSE">
-    <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-3DA639?style=flat"></a>
+    <img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache_2.0-3DA639?style=flat"></a>
   <a href="https://github.com/ldjx7/Polyglance/releases">
     <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/ldjx7/Polyglance/total?style=flat&label=Downloads&color=10B981"></a>
   <a href="https://linux.do">
@@ -142,4 +142,4 @@ dotnet test apps\windows\Polyglance.sln --configuration Release
 
 ## 开源协议
 
-本项目采用 [MIT 许可证](LICENSE) 开源发布。
+本项目采用 [Apache License 2.0](LICENSE) 开源发布。

@@ -165,11 +165,23 @@ struct OCRService: Sendable {
         }
 
         var proposedRect = CGRect(origin: .zero, size: image.size)
-        guard let cgImage = image.cgImage(
-            forProposedRect: &proposedRect,
-            context: nil,
-            hints: nil
-        ), cgImage.width > 0, cgImage.height > 0 else {
+        let resolvedCGImage: CGImage? = {
+            if let direct = image.cgImage(forProposedRect: &proposedRect, context: nil, hints: nil),
+               direct.width > 0, direct.height > 0 {
+                return direct
+            }
+            if let rep = image.representations.compactMap({ $0 as? NSBitmapImageRep }).first,
+               let repCG = rep.cgImage, repCG.width > 0, repCG.height > 0 {
+                return repCG
+            }
+            if let tiff = image.tiffRepresentation,
+               let rep = NSBitmapImageRep(data: tiff),
+               let repCG = rep.cgImage, repCG.width > 0, repCG.height > 0 {
+                return repCG
+            }
+            return nil
+        }()
+        guard let cgImage = resolvedCGImage else {
             throw OCRError.invalidImage
         }
         return try await recognizeDocument(in: cgImage)

@@ -520,4 +520,10 @@ public partial class ScreenRecordingWindow : Window
         }
         Close();
     }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        base.OnClosed(e);
+        App.CurrentApp?.CheckOneShotExit();
+    }
 }

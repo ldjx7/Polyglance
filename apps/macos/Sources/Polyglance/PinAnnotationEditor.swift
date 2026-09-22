@@ -52,14 +52,17 @@ final class PinAnnotationOverlayView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     override func resetCursorRects() {
-        addCursorRect(bounds, cursor: isEditing ? .crosshair : .arrow)
+        guard isEditing else { return }
+        addCursorRect(bounds, cursor: .crosshair)
     }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let trackingArea {
             removeTrackingArea(trackingArea)
+            self.trackingArea = nil
         }
+        guard isEditing else { return }
         let area = NSTrackingArea(
             rect: bounds,
             options: [.mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
@@ -162,6 +165,7 @@ final class PinAnnotationOverlayView: NSView {
     func beginEditing() {
         guard !isEditing else { return }
         isEditing = true
+        updateTrackingAreas()
         window?.invalidateCursorRects(for: self)
         toolbar.isHidden = false
         NSApp.activate(ignoringOtherApps: true)
@@ -181,6 +185,7 @@ final class PinAnnotationOverlayView: NSView {
         activeElement = nil
         history.select(at: nil)
         isEditing = false
+        updateTrackingAreas()
         window?.invalidateCursorRects(for: self)
         toolbar.isHidden = true
         toolbarPanel?.orderOut(nil)

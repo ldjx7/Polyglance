@@ -1331,6 +1331,12 @@ final class PinContentView: NSView {
         ocrDocument = document
         ocrSelectionModel = OCRSelectionModel(document: document)
         window?.invalidateCursorRects(for: self)
+        if let window, bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)) {
+            let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+            if textItem(at: point) != nil {
+                NSCursor.iBeam.set()
+            }
+        }
         needsDisplay = true
     }
 

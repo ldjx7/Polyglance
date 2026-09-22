@@ -155,7 +155,7 @@ dependencies = [
 
 [[package]]
 name = "capture-core"
-version = "0.1.1"
+version = "0.1.2"
 
 [[package]]
 name = "cargo-platform"
@@ -934,7 +934,7 @@ checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
 name = "polyglance-cabi"
-version = "0.0.3"
+version = "0.1.2"
 dependencies = [
  "capture-core",
  "serde",
@@ -1704,7 +1704,7 @@ dependencies = [
 
 [[package]]
 name = "translator-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde",
  "thiserror",
@@ -1712,7 +1712,7 @@ dependencies = [
 
 [[package]]
 name = "translator-providers"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "hex",
  "hmac",
@@ -1729,7 +1729,7 @@ dependencies = [
 
 [[package]]
 name = "translator-uniffi"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "capture-core",
  "thiserror",
@@ -1775,7 +1775,7 @@ dependencies = [
 
 [[package]]
 name = "uniffi-bindgen"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "uniffi",
 ]

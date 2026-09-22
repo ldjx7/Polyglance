@@ -1,7 +1,11 @@
 # Build Polyglance Windows Application (.NET 9 WPF + Rust Core)
 param(
     [string]$Version = "0.0.0",
-    [string]$BuildNumber = "0"
+    [string]$BuildNumber = "0",
+    [bool]$SelfContained = $true,
+    [string]$OutDirectory = "",
+    [bool]$SingleFile = (-not $SelfContained),
+    [bool]$ExcludeOcrModels = (-not $SelfContained)
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,7 +15,14 @@ $rootDir = Split-Path -Parent $scriptDir
 
 Set-Location $rootDir
 
-$outDir = "dist/windows"
+$outDir = if (-not [string]::IsNullOrWhiteSpace($OutDirectory)) {
+    $OutDirectory
+} elseif ($SelfContained) {
+    "dist/windows"
+} else {
+    "dist/windows-cli"
+}
+
 $installerOutDir = "dist/installer"
 
 function Remove-BuildOutputDirectory([string]$path) {
@@ -44,7 +55,9 @@ foreach ($processName in @("Polyglance.UI", "Polyglance")) {
 
 # Keep only artifacts created by this build invocation.
 Remove-BuildOutputDirectory $outDir
-Remove-BuildOutputDirectory $installerOutDir
+if ($SelfContained -and [string]::IsNullOrWhiteSpace($OutDirectory)) {
+    Remove-BuildOutputDirectory $installerOutDir
+}
 New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 
 Write-Host "========================================" -ForegroundColor Cyan
@@ -58,16 +71,49 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "`n==> Publishing WPF application (.NET 9)..." -ForegroundColor Cyan
 $numericVersion = ($Version -split '[-+]')[0]
 $assemblyVersion = "$numericVersion.$BuildNumber"
-dotnet publish apps/windows/src/Polyglance.UI/Polyglance.UI.csproj `
-    -c Release `
-    -r win-x64 `
-    --self-contained true `
-    -p:Version=$assemblyVersion `
-    -p:InformationalVersion=$Version `
-    -p:IncludeSourceRevisionInInformationalVersion=false `
-    -o $outDir
+$selfContainedArg = if ($SelfContained) { "true" } else { "false" }
+
+$extraPublishArgs = @()
+if ($SingleFile) {
+    $extraPublishArgs += "-p:PublishSingleFile=true"
+    $extraPublishArgs += "-p:IncludeNativeLibrariesForSelfExtract=true"
+    if ($SelfContained) {
+        $extraPublishArgs += "-p:EnableCompressionInSingleFile=true"
+    } else {
+        $extraPublishArgs += "-p:DebugType=none"
+        $extraPublishArgs += "-p:DebugSymbols=false"
+    }
+} else {
+    $extraPublishArgs += "-p:PublishSingleFile=false"
+}
+
+if ($ExcludeOcrModels) {
+    $extraPublishArgs += "-p:ExcludeOcrModels=true"
+}
+
+$publishCommand = @(
+    "apps/windows/src/Polyglance.UI/Polyglance.UI.csproj",
+    "-c", "Release",
+    "-r", "win-x64",
+    "--self-contained", $selfContainedArg,
+    "-p:Version=$assemblyVersion",
+    "-p:InformationalVersion=$Version",
+    "-p:IncludeSourceRevisionInInformationalVersion=false",
+    "-o", $outDir
+) + $extraPublishArgs
+
+dotnet publish @publishCommand
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$outDir/Polyglance.exe" -PathType Leaf)) {
     throw "Windows application publish did not create $outDir/Polyglance.exe."
+}
+
+if ($ExcludeOcrModels) {
+    Remove-Item "$outDir/onnxruntime*.dll", "$outDir/onnxruntime*.lib", "$outDir/Microsoft.ML.OnnxRuntime.dll" -Force -ErrorAction SilentlyContinue
+    Remove-Item "$outDir/models" -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+if ($SingleFile) {
+    Remove-Item "$outDir/*.pdb" -Force -ErrorAction SilentlyContinue
 }
 
 # 3. Copy Rust DLL to output directory

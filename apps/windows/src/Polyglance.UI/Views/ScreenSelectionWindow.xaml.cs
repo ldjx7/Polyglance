@@ -47,6 +47,9 @@ public partial class ScreenSelectionWindow : Window
     private readonly ScreenshotCaptureIntent _captureIntent;
     private readonly Action<string> _colorClipboardWriter;
 
+    public string? AutoSavePath { get; set; }
+    public bool HideTranslation { get; set; }
+
     private SelectionPhase _phase = SelectionPhase.Ready;
     private NativeSelectionEditTarget _currentEditTarget = NativeSelectionEditTarget.None;
     private Point _dragStart;
@@ -115,6 +118,10 @@ public partial class ScreenSelectionWindow : Window
         {
             CoverCapturedArea();
             InitializeInitialCandidate();
+            if (HideTranslation)
+            {
+                Toolbar.SetTranslateButtonVisible(false);
+            }
         };
 
         BackgroundImage.Source = fullScreenBitmap;
@@ -1559,6 +1566,10 @@ public partial class ScreenSelectionWindow : Window
 
             case "Copy":
                 Clipboard.SetImage(cropped);
+                if (!string.IsNullOrWhiteSpace(AutoSavePath))
+                {
+                    SaveBitmapToFile(cropped, AutoSavePath);
+                }
                 if (_config?.SaveCompletedScreenshotsToHistory == true)
                 {
                     PinArchiveRecording.Record(cropped, PinArchiveSource.Screenshot);
@@ -1585,6 +1596,16 @@ public partial class ScreenSelectionWindow : Window
                 break;
 
             case "Save":
+                if (!string.IsNullOrWhiteSpace(AutoSavePath))
+                {
+                    SaveBitmapToFile(cropped, AutoSavePath);
+                    if (_config?.SaveCompletedScreenshotsToHistory == true)
+                    {
+                        PinArchiveRecording.Record(cropped, PinArchiveSource.Screenshot);
+                    }
+                    Close();
+                    break;
+                }
                 var dlg = new SaveFileDialog
                 {
                     Filter = "PNG Image (*.png)|*.png|JPEG Image (*.jpg)|*.jpg",
@@ -1818,6 +1839,29 @@ public partial class ScreenSelectionWindow : Window
         _barcodeRecognitionCancellation?.Dispose();
         _barcodeRecognitionCancellation = null;
         base.OnClosed(e);
+        App.CurrentApp?.CheckOneShotExit();
+    }
+
+    private static void SaveBitmapToFile(BitmapSource bitmap, string path)
+    {
+        try
+        {
+            string? dir = System.IO.Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir) && !System.IO.Directory.Exists(dir))
+            {
+                System.IO.Directory.CreateDirectory(dir);
+            }
+            BitmapEncoder encoder = path.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase)
+                ? new JpegBitmapEncoder()
+                : new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using var stream = System.IO.File.Create(path);
+            encoder.Save(stream);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to auto-save screenshot to {path}: {ex.Message}");
+        }
     }
 
     private BitmapSource? GetRenderedCroppedBitmap()

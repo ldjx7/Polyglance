@@ -1895,5 +1895,6 @@ public partial class PinWindow : Window
         if (_colorMagnifierWindow.IsVisible)
             _colorMagnifierWindow.Close();
         base.OnClosed(e);
+        App.CurrentApp?.CheckOneShotExit();
     }
 }

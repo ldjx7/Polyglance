@@ -68,6 +68,11 @@ public partial class ScreenshotToolbar : UserControl
         BtnTranslate.Cursor = isBusy ? Cursors.Wait : null;
     }
 
+    public void SetTranslateButtonVisible(bool visible)
+    {
+        BtnTranslate.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private DateTime _popupStrokeClosedTime = DateTime.MinValue;
 
     public ScreenshotToolbar()

@@ -33,10 +33,17 @@
     <ProjectReference Include="..\Polyglance.Platform\Polyglance.Platform.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(ExcludeOcrModels)' != 'true'">
     <Content Include="models\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
   </ItemGroup>
+
+  <Target Name="PruneSingleFileBundle" BeforeTargets="GenerateSingleFileBundle" Condition="'$(ExcludeOcrModels)' == 'true'">
+    <ItemGroup>
+      <FilesToBundle Remove="@(FilesToBundle)" Condition="$([System.String]::Copy('%(RelativePath)').StartsWith('onnxruntime'))" />
+      <FilesToBundle Remove="@(FilesToBundle)" Condition="'%(RelativePath)' == 'Microsoft.ML.OnnxRuntime.dll'" />
+    </ItemGroup>
+  </Target>
 </Project>

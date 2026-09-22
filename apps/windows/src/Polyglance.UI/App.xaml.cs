@@ -2,7 +2,10 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.IO.Pipes;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -43,18 +46,42 @@ public partial class App : Application
     private PinHistoryWindow? _pinHistoryWindow;
     private SettingsWindow? _settingsWindow;
     private IntPtr _lastActiveWindowBeforeTray = IntPtr.Zero;
+    private bool _isOneShotCliMode;
+    private CancellationTokenSource? _ipcServerCts;
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AttachConsole(int dwProcessId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool FreeConsole();
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        // Polyglance is a tray application. Floating screenshot/result windows
-        // are disposable UI and closing the final one must never stop the app.
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+        var cliOpts = CommandLineOptions.Parse(e.Args);
+
+        if (cliOpts.ShowHelp)
+        {
+            ShowCliHelp();
+            Shutdown(0);
+            return;
+        }
 
         const string appName = "Polyglance_SingleInstance_Mutex";
         _mutex = new Mutex(true, appName, out bool createdNew);
 
         if (!createdNew)
         {
+            if (cliOpts.IsCliMode)
+            {
+                if (TrySendIpcCommand(cliOpts.SerializeToIpcCommand()))
+                {
+                    Shutdown(0);
+                    return;
+                }
+            }
+
             System.Windows.MessageBox.Show("Polyglance 已经在运行中。", "Polyglance", MessageBoxButton.OK, MessageBoxImage.Information);
             Shutdown();
             return;
@@ -69,7 +96,10 @@ public partial class App : Application
             DataDirectoryManager.ApplyRootDirectory(startupConfig.DataStorageDirectory);
             _translationService = new TranslationService();
             TranslationService.OfflineHandler = new OfflineTranslationEngine();
-            RefreshStartupRegistration();
+            if (!cliOpts.IsCliMode)
+            {
+                RefreshStartupRegistration();
+            }
         }
         catch (Exception ex)
         {
@@ -78,11 +108,19 @@ public partial class App : Application
             return;
         }
 
+        if (cliOpts.IsCliMode)
+        {
+            _isOneShotCliMode = true;
+            ExecuteCliCommand(cliOpts);
+            return;
+        }
+
         _mainWindow = new MainWindow(_translationService, _configStore);
 
         CreateHiddenMessageWindow();
         InitializeNotifyIcon();
         RegisterDynamicHotKeys();
+        StartIpcServer();
 
         var config = LoadConfigurationOrDefault();
         _ = PinSessionController.For().Restore(true, _translationService, config);
@@ -91,6 +129,130 @@ public partial class App : Application
             _updateCts = new CancellationTokenSource();
             _ = StartBackgroundUpdateLoopAsync(_updateCts.Token);
         }
+    }
+
+    private static void ShowCliHelp()
+    {
+        const int ATTACH_PARENT_PROCESS = -1;
+        bool attached = AttachConsole(ATTACH_PARENT_PROCESS);
+        try
+        {
+            using var stream = Console.OpenStandardOutput();
+            using var writer = new StreamWriter(stream, Encoding.UTF8) { AutoFlush = true };
+            writer.WriteLine();
+            writer.WriteLine("Polyglance 屏幕工具命令行模式");
+            writer.WriteLine("用法: Polyglance.exe [选项]");
+            writer.WriteLine();
+            writer.WriteLine("选项:");
+            writer.WriteLine("  --capture, -c               启动全屏截图选区");
+            writer.WriteLine("  --record, -r                启动区域录屏选区");
+            writer.WriteLine("  --ocr, -o                   启动离线 OCR 文字识别");
+            writer.WriteLine("  --output <path>, -out <path> 截图完成后自动保存到指定路径");
+            writer.WriteLine("  --no-translate              隐藏工具栏中的翻译按钮（纯净白标模式）");
+            writer.WriteLine("  --help, -h                  显示帮助说明");
+            writer.WriteLine();
+        }
+        catch { }
+        finally
+        {
+            if (attached)
+            {
+                FreeConsole();
+            }
+        }
+    }
+
+    private void ExecuteCliCommand(CommandLineOptions opts)
+    {
+        if (opts.Record)
+        {
+            BeginScreenshotSelection(ScreenshotCaptureIntent.ScreenRecording, opts.OutputPath, opts.HideTranslation);
+        }
+        else if (opts.Ocr)
+        {
+            BeginScreenshotSelection(ScreenshotCaptureIntent.OcrWorkspace, opts.OutputPath, opts.HideTranslation);
+        }
+        else
+        {
+            BeginScreenshotSelection(ScreenshotCaptureIntent.Standard, opts.OutputPath, opts.HideTranslation);
+        }
+    }
+
+    public void CheckOneShotExit()
+    {
+        if (!_isOneShotCliMode) return;
+
+        Dispatcher.InvokeAsync(() =>
+        {
+            bool hasActiveUserWindows = false;
+            foreach (Window win in Windows)
+            {
+                if (win.IsVisible && win is not Polyglance.UI.Views.MainWindow)
+                {
+                    hasActiveUserWindows = true;
+                    break;
+                }
+            }
+
+            if (!hasActiveUserWindows)
+            {
+                Shutdown(0);
+            }
+        });
+    }
+
+    private static bool TrySendIpcCommand(string command)
+    {
+        try
+        {
+            using var client = new NamedPipeClientStream(".", "Polyglance_Ipc_Pipe", PipeDirection.Out);
+            client.Connect(600);
+            using var writer = new StreamWriter(client, Encoding.UTF8) { AutoFlush = true };
+            writer.WriteLine(command);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void StartIpcServer()
+    {
+        _ipcServerCts = new CancellationTokenSource();
+        var token = _ipcServerCts.Token;
+        Task.Run(async () =>
+        {
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    using var server = new NamedPipeServerStream(
+                        "Polyglance_Ipc_Pipe",
+                        PipeDirection.In,
+                        NamedPipeServerStream.MaxAllowedServerInstances,
+                        PipeTransmissionMode.Byte,
+                        PipeOptions.Asynchronous);
+
+                    await server.WaitForConnectionAsync(token);
+                    using var reader = new StreamReader(server, Encoding.UTF8);
+                    string? line = await reader.ReadLineAsync(token);
+                    if (!string.IsNullOrWhiteSpace(line))
+                    {
+                        var opts = CommandLineOptions.DeserializeFromIpcCommand(line);
+                        Dispatcher.Invoke(() => ExecuteCliCommand(opts));
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch
+                {
+                    try { await Task.Delay(200, token); } catch { break; }
+                }
+            }
+        }, token);
     }
 
     private static void RefreshStartupRegistration()
@@ -284,7 +446,10 @@ public partial class App : Application
         BeginScreenshotSelection(ScreenshotCaptureIntent.ScreenshotAndCopy);
     }
 
-    private void BeginScreenshotSelection(ScreenshotCaptureIntent intent)
+    private void BeginScreenshotSelection(
+        ScreenshotCaptureIntent intent,
+        string? autoSavePath = null,
+        bool hideTranslation = false)
     {
         Dispatcher.Invoke(() =>
         {
@@ -293,7 +458,11 @@ public partial class App : Application
             var (bitmap, bounds) = ScreenCapture.CaptureVirtualScreen();
             var config = LoadConfigurationOrDefault();
 
-            var win = new ScreenSelectionWindow(bitmap, bounds, _translationService, config, intent);
+            var win = new ScreenSelectionWindow(bitmap, bounds, _translationService, config, intent)
+            {
+                AutoSavePath = autoSavePath,
+                HideTranslation = hideTranslation
+            };
             win.Show();
             win.Activate();
         });
@@ -696,6 +865,9 @@ public partial class App : Application
         _updateCts?.Cancel();
         _updateCts?.Dispose();
         _updateCts = null;
+        _ipcServerCts?.Cancel();
+        _ipcServerCts?.Dispose();
+        _ipcServerCts = null;
         _notifyIcon?.Dispose();
         if (TranslationService.OfflineHandler is IDisposable offlineDisposable)
         {
@@ -723,6 +895,9 @@ public partial class App : Application
             _updateCts?.Cancel();
             _updateCts?.Dispose();
             _updateCts = null;
+            _ipcServerCts?.Cancel();
+            _ipcServerCts?.Dispose();
+            _ipcServerCts = null;
             _notifyIcon?.Dispose();
             if (TranslationService.OfflineHandler is IDisposable offlineDisposable)
             {

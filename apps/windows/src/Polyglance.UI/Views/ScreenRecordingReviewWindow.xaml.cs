@@ -162,4 +162,10 @@ public partial class ScreenRecordingReviewWindow : Window
         _playbackTimer.Stop();
         Close();
     }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        base.OnClosed(e);
+        App.CurrentApp?.CheckOneShotExit();
+    }
 }
