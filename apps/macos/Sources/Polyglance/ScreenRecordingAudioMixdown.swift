@@ -133,16 +133,7 @@ enum ScreenRecordingAudioMixdown {
         as fileType: AVFileType
     ) async throws {
         try Task.checkCancellation()
-        nonisolated(unsafe) let session = exporter
-        try await withTaskCancellationHandler {
-            if #available(macOS 15, *) {
-                try await session.export(to: destinationURL, as: fileType)
-            } else {
-                try await exportUsingLegacySession(session, to: destinationURL, as: fileType)
-            }
-        } onCancel: {
-            session.cancelExport()
-        }
+        try await exportUsingLegacySession(exporter, to: destinationURL, as: fileType)
         try Task.checkCancellation()
     }
 

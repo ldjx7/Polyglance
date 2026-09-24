@@ -91,15 +91,17 @@ final class ScreenRecordingPassthroughTests: XCTestCase {
         let writer = try AVAssetWriter(outputURL: videoURL, fileType: .mp4)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: 160, AVVideoHeightKey: 90,
+            AVVideoWidthKey: 160, AVVideoHeightKey: 96,
         ])
+        input.expectsMediaDataInRealTime = false
         input.transform = CGAffineTransform(rotationAngle: .pi / 2)
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferWidthKey as String: 160, kCVPixelBufferHeightKey as String: 90,
+            kCVPixelBufferWidthKey as String: 160, kCVPixelBufferHeightKey as String: 96,
         ])
+        guard writer.canAdd(input) else { throw FixtureError.writeFailed }
         writer.add(input)
-        XCTAssertTrue(writer.startWriting())
+        guard writer.startWriting() else { throw writer.error ?? FixtureError.writeFailed }
         writer.startSession(atSourceTime: .zero)
         let deadline = Date().addingTimeInterval(15)
         for frame in 0..<30 {
@@ -109,20 +111,24 @@ final class ScreenRecordingPassthroughTests: XCTestCase {
             }
             var optionalBuffer: CVPixelBuffer?
             let pool = try XCTUnwrap(adaptor.pixelBufferPool)
-            XCTAssertEqual(CVPixelBufferPoolCreatePixelBuffer(nil, pool, &optionalBuffer), kCVReturnSuccess)
-            let buffer = try XCTUnwrap(optionalBuffer)
+            guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &optionalBuffer) == kCVReturnSuccess,
+                  let buffer = optionalBuffer else { throw FixtureError.writeFailed }
             CVPixelBufferLockBaseAddress(buffer, [])
-            let base = try XCTUnwrap(CVPixelBufferGetBaseAddress(buffer))
-            memset(base, Int32(frame * 7), CVPixelBufferGetBytesPerRow(buffer) * 90)
+            if let base = CVPixelBufferGetBaseAddress(buffer) {
+                memset(base, Int32(frame * 7), CVPixelBufferGetBytesPerRow(buffer) * 96)
+            }
             CVPixelBufferUnlockBaseAddress(buffer, [])
             // A real timestamp gap exercises variable frame timing preservation.
             let time = CMTime(value: Int64(frame * 2 + (frame >= 15 ? 1 : 0)), timescale: 30)
-            XCTAssertTrue(adaptor.append(buffer, withPresentationTime: time))
+            guard adaptor.append(buffer, withPresentationTime: time) else {
+                throw writer.error ?? FixtureError.writeFailed
+            }
         }
         writer.endSession(atSourceTime: CMTime(value: 62, timescale: 30))
         input.markAsFinished()
+        guard writer.status == .writing else { throw writer.error ?? FixtureError.writeFailed }
         await writer.finishWriting()
-        XCTAssertEqual(writer.status, .completed)
+        guard writer.status == .completed else { throw writer.error ?? FixtureError.writeFailed }
 
         let composition = AVMutableComposition()
         let videoAsset = AVURLAsset(url: videoURL)
@@ -143,19 +149,30 @@ final class ScreenRecordingPassthroughTests: XCTestCase {
         }
         let outputURL = directory.appendingPathComponent("recording.mp4")
         let exporter = try XCTUnwrap(AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough))
-        if #available(macOS 15, *) {
-            try await exporter.export(to: outputURL, as: .mp4)
-        } else {
-            exporter.outputURL = outputURL
-            exporter.outputFileType = .mp4
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                exporter.exportAsynchronously {
+        exporter.outputURL = outputURL
+        exporter.outputFileType = .mp4
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            var hasResumed = false
+            let lock = NSLock()
+            let resumeOnce = {
+                lock.lock()
+                defer { lock.unlock() }
+                if !hasResumed {
+                    hasResumed = true
                     continuation.resume()
                 }
             }
-            if let error = exporter.error { throw error }
-            XCTAssertEqual(exporter.status, .completed)
+            exporter.exportAsynchronously {
+                resumeOnce()
+            }
+            Task {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                exporter.cancelExport()
+                resumeOnce()
+            }
         }
+        if let error = exporter.error { throw error }
+        guard exporter.status == .completed else { throw FixtureError.writeFailed }
         let tracks = try await AVURLAsset(url: outputURL).loadTracks(withMediaType: .audio)
         XCTAssertEqual(tracks.count, audioTrackCount)
         return outputURL
