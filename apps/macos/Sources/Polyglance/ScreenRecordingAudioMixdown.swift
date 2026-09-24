@@ -73,7 +73,9 @@ enum ScreenRecordingAudioMixdown {
             try? fileManager.removeItem(at: mixedAudioURL)
             try? fileManager.removeItem(at: mixedURL)
         }
+        try Task.checkCancellation()
         try await export(audioExporter, to: mixedAudioURL, as: .m4a)
+        try Task.checkCancellation()
 
         // Passthrough preserves the captured H.264 samples and frame timing.
         // The audio is already mixed, so no audioMix is applied to this export.
@@ -131,10 +133,15 @@ enum ScreenRecordingAudioMixdown {
         as fileType: AVFileType
     ) async throws {
         try Task.checkCancellation()
-        if #available(macOS 15, *) {
-            try await exporter.export(to: destinationURL, as: fileType)
-        } else {
-            try await exportUsingLegacySession(exporter, to: destinationURL, as: fileType)
+        nonisolated(unsafe) let session = exporter
+        try await withTaskCancellationHandler {
+            if #available(macOS 15, *) {
+                try await session.export(to: destinationURL, as: fileType)
+            } else {
+                try await exportUsingLegacySession(session, to: destinationURL, as: fileType)
+            }
+        } onCancel: {
+            session.cancelExport()
         }
         try Task.checkCancellation()
     }

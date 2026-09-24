@@ -126,6 +126,7 @@ jobs:
         run: cargo test --workspace
 
       - name: Run Swift tests
+        timeout-minutes: 5
         run: NSUnbufferedIO=YES swift test --package-path apps/macos
 
       - name: Build the macOS application

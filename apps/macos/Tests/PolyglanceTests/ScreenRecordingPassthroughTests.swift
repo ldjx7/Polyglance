@@ -143,11 +143,19 @@ final class ScreenRecordingPassthroughTests: XCTestCase {
         }
         let outputURL = directory.appendingPathComponent("recording.mp4")
         let exporter = try XCTUnwrap(AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough))
-        exporter.outputURL = outputURL
-        exporter.outputFileType = .mp4
-        await exporter.export()
-        if let error = exporter.error { throw error }
-        XCTAssertEqual(exporter.status, .completed)
+        if #available(macOS 15, *) {
+            try await exporter.export(to: outputURL, as: .mp4)
+        } else {
+            exporter.outputURL = outputURL
+            exporter.outputFileType = .mp4
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                exporter.exportAsynchronously {
+                    continuation.resume()
+                }
+            }
+            if let error = exporter.error { throw error }
+            XCTAssertEqual(exporter.status, .completed)
+        }
         let tracks = try await AVURLAsset(url: outputURL).loadTracks(withMediaType: .audio)
         XCTAssertEqual(tracks.count, audioTrackCount)
         return outputURL
