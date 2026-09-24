@@ -238,9 +238,9 @@ final class ScreenRecordingCoordinator: NSObject {
         Task { @MainActor [weak self] in
             guard let self else { return }
             if settings.capturesMicrophone {
-                let status = AVCaptureDevice.authorizationStatus(for: .audio)
+                let status = MicrophonePermission.authorizationStatus
                 if status == .notDetermined {
-                    let granted = await self.requestMicrophonePermission()
+                    let granted = await MicrophonePermission.requestAccess()
                     if !granted {
                         self.currentSettings?.capturesMicrophone = false
                         self.overlaySession?.update(settings: self.currentSettings ?? settings)
@@ -535,7 +535,7 @@ final class ScreenRecordingCoordinator: NSObject {
             }
             try copyRecording(from: source, to: destination)
             reviewArtifactState.markPersisted()
-            if quick {
+            if quick && !MicrophonePermission.isRunningTests {
                 let alert = NSAlert()
                 alert.alertStyle = .informational
                 alert.messageText = "录屏已快速保存"
@@ -737,16 +737,7 @@ final class ScreenRecordingCoordinator: NSObject {
     }
 
     private func requestMicrophonePermission() async -> Bool {
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .authorized:
-            return true
-        case .notDetermined:
-            return await AVCaptureDevice.requestAccess(for: .audio)
-        case .denied, .restricted:
-            return false
-        @unknown default:
-            return false
-        }
+        await MicrophonePermission.requestAccess()
     }
 
     private func screen(containing region: CGRect) -> NSScreen? {

@@ -325,7 +325,7 @@ final class ScreenRecordingEngine: NSObject, @unchecked Sendable {
     }
 
     private func configureMicrophoneCapture() throws {
-        guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
+        guard MicrophonePermission.authorizationStatus == .authorized else {
             throw ScreenRecordingEngineError.microphonePermissionRequired
         }
         guard let device = AVCaptureDevice.default(for: .audio) else {

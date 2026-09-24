@@ -2,7 +2,7 @@ import AVFoundation
 import XCTest
 @testable import Polyglance
 
-final class ScreenRecordingAudioMixdownTests: XCTestCase {
+final class ScreenRecordingPassthroughTests: XCTestCase {
     func testMixPreservesCompressedVideoTimingAndDelayedMicrophone() async throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

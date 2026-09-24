@@ -41,7 +41,7 @@ final class PermissionRequestCoordinator {
                  let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
                  _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
              case .microphone:
-                 AVCaptureDevice.requestAccess(for: .audio) { _ in }
+                 MicrophonePermission.requestAccess { _ in }
              }
          }) {
         self.defaults = defaults

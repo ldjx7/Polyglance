@@ -126,7 +126,7 @@ jobs:
         run: cargo test --workspace
 
       - name: Run Swift tests
-        run: swift test --package-path apps/macos
+        run: NSUnbufferedIO=YES swift test --package-path apps/macos
 
       - name: Build the macOS application
         shell: bash

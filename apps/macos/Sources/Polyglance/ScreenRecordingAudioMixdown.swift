@@ -17,6 +17,7 @@ enum ScreenRecordingAudioMixdown {
         options: ScreenRecordingOptions,
         fileManager: FileManager = .default
     ) async throws -> URL {
+        try Task.checkCancellation()
         guard ScreenRecordingAudioMixdownPolicy.shouldMix(
             format: options.format,
             capturesSystemAudio: options.capturesSystemAudio,
@@ -138,6 +139,35 @@ enum ScreenRecordingAudioMixdown {
         try Task.checkCancellation()
     }
 
+    private final class ExportContinuationState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var hasResumed = false
+        private var savedContinuation: CheckedContinuation<Void, Never>?
+
+        func setContinuation(_ continuation: CheckedContinuation<Void, Never>) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            if hasResumed {
+                return false
+            }
+            savedContinuation = continuation
+            return true
+        }
+
+        func resume() {
+            lock.lock()
+            guard !hasResumed else {
+                lock.unlock()
+                return
+            }
+            hasResumed = true
+            let continuation = savedContinuation
+            savedContinuation = nil
+            lock.unlock()
+            continuation?.resume()
+        }
+    }
+
     /// macOS 14 has no throwing `export(to:as:)`, so the deprecated
     /// completion-handler export is bridged by hand. The session is a
     /// non-Sendable class used from exactly one task, which the compiler cannot
@@ -151,15 +181,25 @@ enum ScreenRecordingAudioMixdown {
         exporter.outputFileType = fileType
 
         nonisolated(unsafe) let session = exporter
+        let state = ExportContinuationState()
+
         await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                session.exportAsynchronously {
+                if !state.setContinuation(continuation) {
                     continuation.resume()
+                    return
                 }
-                if Task.isCancelled { session.cancelExport() }
+                session.exportAsynchronously {
+                    state.resume()
+                }
+                if Task.isCancelled {
+                    session.cancelExport()
+                    state.resume()
+                }
             }
         } onCancel: {
             session.cancelExport()
+            state.resume()
         }
 
         switch session.status {

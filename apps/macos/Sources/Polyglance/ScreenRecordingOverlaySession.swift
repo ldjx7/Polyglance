@@ -194,7 +194,7 @@ final class ScreenRecordingToolbarView: NSView {
         qualityPopUp.isEnabled = isReady
         frameRatePopUp.isEnabled = isReady
         delayPopUp.isEnabled = isReady
-        let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        let micStatus = MicrophonePermission.authorizationStatus
         let isMicDenied = micStatus == .denied || micStatus == .restricted
         systemAudioButton.isEnabled = isReady && settings.format.supportsAudio
         microphoneButton.isEnabled = isReady && settings.format.supportsAudio && !isMicDenied
@@ -359,7 +359,7 @@ final class ScreenRecordingToolbarView: NSView {
     private func updateTogglePresentation() {
         let activeColor = NSColor.systemBlue
         let inactiveColor = NSColor.secondaryLabelColor
-        let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        let micStatus = MicrophonePermission.authorizationStatus
         let isMicDenied = micStatus == .denied || micStatus == .restricted
 
         systemAudioButton.state = settings.capturesSystemAudio ? .on : .off
@@ -463,9 +463,11 @@ final class ScreenRecordingToolbarView: NSView {
     }
 
     @objc private func toggleMicrophone() {
-        let authStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        let authStatus = MicrophonePermission.authorizationStatus
         if authStatus == .denied || authStatus == .restricted {
-            PermissionRequestCoordinator.shared.openFromSettings(.microphone)
+            if !MicrophonePermission.isRunningTests {
+                PermissionRequestCoordinator.shared.openFromSettings(.microphone)
+            }
             settings.capturesMicrophone = false
             updateTogglePresentation()
             onSettingsChanged?(settings)
@@ -474,7 +476,7 @@ final class ScreenRecordingToolbarView: NSView {
 
         settings.capturesMicrophone.toggle()
         if settings.capturesMicrophone && authStatus == .notDetermined {
-            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+            MicrophonePermission.requestAccess { [weak self] granted in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     if !granted {

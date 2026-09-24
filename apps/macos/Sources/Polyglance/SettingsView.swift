@@ -1412,16 +1412,18 @@ struct SettingsView: View {
                     get: { recordingSettings.capturesMicrophone },
                     set: { newValue in
                         if newValue {
-                            let status = AVCaptureDevice.authorizationStatus(for: .audio)
+                            let status = MicrophonePermission.authorizationStatus
                             if status == .notDetermined {
-                                AVCaptureDevice.requestAccess(for: .audio) { granted in
+                                MicrophonePermission.requestAccess { granted in
                                     Task { @MainActor in
                                         recordingSettings.capturesMicrophone = granted
                                     }
                                 }
                                 return
                             } else if status == .denied || status == .restricted {
-                                PermissionRequestCoordinator.shared.openFromSettings(.microphone)
+                                if !MicrophonePermission.isRunningTests {
+                                    PermissionRequestCoordinator.shared.openFromSettings(.microphone)
+                                }
                                 recordingSettings.capturesMicrophone = false
                                 return
                             }
@@ -2002,7 +2004,7 @@ struct SettingsView: View {
 
     private var isMicrophoneGranted: Bool {
         _ = permissionsRefreshTrigger
-        return AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        return MicrophonePermission.authorizationStatus == .authorized
     }
 
     private var isMicrophoneRequested: Bool {
