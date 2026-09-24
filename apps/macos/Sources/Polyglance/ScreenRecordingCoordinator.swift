@@ -235,19 +235,35 @@ final class ScreenRecordingCoordinator: NSObject {
 
     private func beginRecording() {
         guard let settings = currentSettings else { return }
-        do {
-            try sessionState.beginRecording(after: settings.countdownDelay)
-        } catch {
-            return
-        }
-        overlaySession?.update(state: sessionState.state)
-        if sessionState.state == .starting {
-            Task { @MainActor [weak self] in
-                await self?.startEngine()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if settings.capturesMicrophone {
+                let status = AVCaptureDevice.authorizationStatus(for: .audio)
+                if status == .notDetermined {
+                    let granted = await self.requestMicrophonePermission()
+                    if !granted {
+                        self.currentSettings?.capturesMicrophone = false
+                        self.overlaySession?.update(settings: self.currentSettings ?? settings)
+                    }
+                } else if status == .denied || status == .restricted {
+                    self.currentSettings?.capturesMicrophone = false
+                    self.overlaySession?.update(settings: self.currentSettings ?? settings)
+                }
             }
-            return
+            guard self.sessionState.state == .ready else { return }
+            let delay = self.currentSettings?.countdownDelay ?? settings.countdownDelay
+            do {
+                try self.sessionState.beginRecording(after: delay)
+            } catch {
+                return
+            }
+            self.overlaySession?.update(state: self.sessionState.state)
+            if self.sessionState.state == .starting {
+                await self.startEngine()
+                return
+            }
+            self.startCountdown()
         }
-        startCountdown()
     }
 
     private func startCountdown() {
@@ -461,11 +477,22 @@ final class ScreenRecordingCoordinator: NSObject {
             case .playPause:
                 break
             case .save:
-                _ = saveFromReview(quick: false)
+                if saveFromReview(quick: false) {
+                    Task { @MainActor [weak self] in
+                        await self?.exitReview(to: .close)
+                    }
+                }
             case .quickSave:
-                _ = saveFromReview(quick: true)
+                if saveFromReview(quick: true) {
+                    Task { @MainActor [weak self] in
+                        await self?.exitReview(to: .close)
+                    }
+                }
             case .copy:
                 copyReviewFile()
+                Task { @MainActor [weak self] in
+                    await self?.exitReview(to: .close)
+                }
             case .restart:
                 Task { @MainActor [weak self] in
                     await self?.exitReview(to: .restart)
@@ -508,6 +535,17 @@ final class ScreenRecordingCoordinator: NSObject {
             }
             try copyRecording(from: source, to: destination)
             reviewArtifactState.markPersisted()
+            if quick {
+                let alert = NSAlert()
+                alert.alertStyle = .informational
+                alert.messageText = "录屏已快速保存"
+                alert.informativeText = "保存路径：\n\(destination.path)"
+                alert.addButton(withTitle: "确定")
+                alert.addButton(withTitle: "打开目录")
+                if alert.runModal() == .alertSecondButtonReturn {
+                    NSWorkspace.shared.activateFileViewerSelecting([destination])
+                }
+            }
             if RecordingReviewDestinationPolicy.revealsInFinder(after: action) {
                 NSWorkspace.shared.activateFileViewerSelecting([destination])
             }

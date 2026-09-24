@@ -12,9 +12,12 @@ public static class OcrService
     private static bool s_ppOcrChecked;
     private static readonly object s_lock = new();
 
+    public static string DefaultPreferredEngineId { get; set; } = "ppocr";
+
     public static IOcrEngine GetEngine(string? preferredEngineId = null)
     {
-        if (preferredEngineId == "system")
+        var preferred = preferredEngineId ?? DefaultPreferredEngineId;
+        if (preferred == "system")
         {
             return s_systemEngine;
         }

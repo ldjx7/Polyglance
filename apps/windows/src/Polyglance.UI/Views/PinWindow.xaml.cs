@@ -858,7 +858,7 @@ public partial class PinWindow : Window
         var dlg = new SaveFileDialog
         {
             Filter = "PNG Image (*.png)|*.png|JPEG Image (*.jpg)|*.jpg",
-            FileName = $"Pin_{DateTime.Now:yyyyMMdd_HHmmss}.png"
+            FileName = $"Polyglance_Pin_{DateTime.Now:yyyyMMdd_HHmmss}.png"
         };
         if (dlg.ShowDialog() == true)
         {

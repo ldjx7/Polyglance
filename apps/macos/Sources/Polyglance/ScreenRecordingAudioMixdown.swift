@@ -32,28 +32,20 @@ enum ScreenRecordingAudioMixdown {
         }
         let duration = try await sourceAsset.load(.duration)
         let timeRange = CMTimeRange(start: .zero, duration: duration)
-        let composition = AVMutableComposition()
-
-        for sourceVideoTrack in try await sourceAsset.loadTracks(withMediaType: .video) {
-            guard let destinationTrack = composition.addMutableTrack(
-                withMediaType: .video,
-                preferredTrackID: kCMPersistentTrackID_Invalid
-            ) else {
-                throw ScreenRecordingAudioMixdownError.trackCreationFailed("视频")
-            }
-            try destinationTrack.insertTimeRange(timeRange, of: sourceVideoTrack, at: .zero)
-            destinationTrack.preferredTransform = try await sourceVideoTrack.load(.preferredTransform)
-        }
+        // Mix only the audio. Exporting the whole recording with HighestQuality
+        // can encode the video a second time after capture has already finished.
+        let audioComposition = AVMutableComposition()
+        audioComposition.insertEmptyTimeRange(timeRange)
 
         var inputParameters: [AVMutableAudioMixInputParameters] = []
         for sourceAudioTrack in audioTracks {
-            guard let destinationTrack = composition.addMutableTrack(
+            guard let destinationTrack = audioComposition.addMutableTrack(
                 withMediaType: .audio,
                 preferredTrackID: kCMPersistentTrackID_Invalid
             ) else {
                 throw ScreenRecordingAudioMixdownError.trackCreationFailed("音频")
             }
-            try destinationTrack.insertTimeRange(timeRange, of: sourceAudioTrack, at: .zero)
+            try await insertTrack(sourceAudioTrack, into: destinationTrack, within: timeRange)
             let parameters = AVMutableAudioMixInputParameters(track: destinationTrack)
             parameters.setVolume(1, at: .zero)
             inputParameters.append(parameters)
@@ -61,24 +53,56 @@ enum ScreenRecordingAudioMixdown {
 
         let audioMix = AVMutableAudioMix()
         audioMix.inputParameters = inputParameters
-        guard let exporter = AVAssetExportSession(
-            asset: composition,
-            presetName: AVAssetExportPresetHighestQuality
+        guard let audioExporter = AVAssetExportSession(
+            asset: audioComposition,
+            presetName: AVAssetExportPresetAppleM4A
         ) else {
             throw ScreenRecordingAudioMixdownError.exporterUnavailable
         }
-        exporter.audioMix = audioMix
-        exporter.shouldOptimizeForNetworkUse = true
+        audioExporter.audioMix = audioMix
+        audioExporter.timeRange = timeRange
 
+        let mixedAudioURL = sourceURL.deletingLastPathComponent().appendingPathComponent(
+            ".\(sourceURL.deletingPathExtension().lastPathComponent)-audio-\(UUID().uuidString).m4a"
+        )
         let mixedURL = sourceURL.deletingLastPathComponent().appendingPathComponent(
             ".\(sourceURL.deletingPathExtension().lastPathComponent)-mixed-\(UUID().uuidString).mp4"
         )
-        defer { try? fileManager.removeItem(at: mixedURL) }
-        if #available(macOS 15, *) {
-            try await exporter.export(to: mixedURL, as: .mp4)
-        } else {
-            try await exportUsingLegacySession(exporter, to: mixedURL)
+        defer {
+            try? fileManager.removeItem(at: mixedAudioURL)
+            try? fileManager.removeItem(at: mixedURL)
         }
+        try await export(audioExporter, to: mixedAudioURL, as: .m4a)
+
+        // Passthrough preserves the captured H.264 samples and frame timing.
+        // The audio is already mixed, so no audioMix is applied to this export.
+        let composition = AVMutableComposition()
+        for sourceVideoTrack in try await sourceAsset.loadTracks(withMediaType: .video) {
+            guard let destinationTrack = composition.addMutableTrack(
+                withMediaType: .video,
+                preferredTrackID: kCMPersistentTrackID_Invalid
+            ) else {
+                throw ScreenRecordingAudioMixdownError.trackCreationFailed("视频")
+            }
+            try await insertTrack(sourceVideoTrack, into: destinationTrack, within: timeRange)
+            destinationTrack.preferredTransform = try await sourceVideoTrack.load(.preferredTransform)
+        }
+        let mixedAudioAsset = AVURLAsset(url: mixedAudioURL)
+        guard let mixedAudioTrack = try await mixedAudioAsset.loadTracks(withMediaType: .audio).first,
+              let destinationAudioTrack = composition.addMutableTrack(
+                withMediaType: .audio,
+                preferredTrackID: kCMPersistentTrackID_Invalid
+              ) else {
+            throw ScreenRecordingAudioMixdownError.trackCreationFailed("音频")
+        }
+        try await insertTrack(mixedAudioTrack, into: destinationAudioTrack, within: timeRange)
+        guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough) else {
+            throw ScreenRecordingAudioMixdownError.exporterUnavailable
+        }
+        exporter.timeRange = timeRange
+        exporter.shouldOptimizeForNetworkUse = true
+        try await export(exporter, to: mixedURL, as: .mp4)
+        try Task.checkCancellation()
         _ = try fileManager.replaceItemAt(
             sourceURL,
             withItemAt: mixedURL,
@@ -88,22 +112,54 @@ enum ScreenRecordingAudioMixdown {
         return sourceURL
     }
 
+    private static func insertTrack(
+        _ source: AVAssetTrack,
+        into destination: AVMutableCompositionTrack,
+        within recordingRange: CMTimeRange
+    ) async throws {
+        let range = CMTimeRangeGetIntersection(try await source.load(.timeRange), otherRange: recordingRange)
+        guard range.isValid, !range.isEmpty else { return }
+        // A microphone can start after the first video frame or stop early.
+        // Preserve its offset rather than moving the first sound to time zero.
+        try destination.insertTimeRange(range, of: source, at: range.start)
+    }
+
+    private static func export(
+        _ exporter: AVAssetExportSession,
+        to destinationURL: URL,
+        as fileType: AVFileType
+    ) async throws {
+        try Task.checkCancellation()
+        if #available(macOS 15, *) {
+            try await exporter.export(to: destinationURL, as: fileType)
+        } else {
+            try await exportUsingLegacySession(exporter, to: destinationURL, as: fileType)
+        }
+        try Task.checkCancellation()
+    }
+
     /// macOS 14 has no throwing `export(to:as:)`, so the deprecated
     /// completion-handler export is bridged by hand. The session is a
     /// non-Sendable class used from exactly one task, which the compiler cannot
     /// prove across the escaping handler.
     private static func exportUsingLegacySession(
         _ exporter: AVAssetExportSession,
-        to destinationURL: URL
+        to destinationURL: URL,
+        as fileType: AVFileType
     ) async throws {
         exporter.outputURL = destinationURL
-        exporter.outputFileType = .mp4
+        exporter.outputFileType = fileType
 
         nonisolated(unsafe) let session = exporter
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            session.exportAsynchronously {
-                continuation.resume()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                session.exportAsynchronously {
+                    continuation.resume()
+                }
+                if Task.isCancelled { session.cancelExport() }
             }
+        } onCancel: {
+            session.cancelExport()
         }
 
         switch session.status {

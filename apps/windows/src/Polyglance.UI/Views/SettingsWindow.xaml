@@ -1066,6 +1066,23 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                        <TextBlock Text="首选 OCR 引擎" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock Text="选择离线文字识别默认调用的底层引擎" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="CmbOcrEngine" Grid.Column="1" Width="220" Height="32" VerticalContentAlignment="Center" Padding="10,0,24,0" FontSize="12.5" SelectedIndex="0">
+                                        <ComboBoxItem Content="PP-OCRv4 离线模型 (ONNX)" Tag="ppocr"/>
+                                        <ComboBoxItem Content="Windows 系统原生 OCR" Tag="system"/>
+                                    </ComboBox>
+                                </Grid>
+                            </ui:Card>
+
+                            <ui:Card Margin="0,0,0,10" Padding="16,14">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
                                         <TextBlock Text="默认文字排版" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
                                         <TextBlock Text="选择 OCR 提取多行文本时的换行合并偏好" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,3,0,0"/>
                                     </StackPanel>

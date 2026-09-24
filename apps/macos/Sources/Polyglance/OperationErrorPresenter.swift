@@ -1,9 +1,11 @@
 import AppKit
 import ApplicationServices
+import AVFoundation
 
 enum SystemSettingsDestination: Equatable {
     case screenRecording
     case accessibility
+    case microphone
 
     var url: URL {
         switch self {
@@ -14,6 +16,10 @@ enum SystemSettingsDestination: Equatable {
         case .accessibility:
             URL(
                 string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+            )!
+        case .microphone:
+            URL(
+                string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
             )!
         }
     }
@@ -34,6 +40,8 @@ final class PermissionRequestCoordinator {
              case .accessibility:
                  let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
                  _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
+             case .microphone:
+                 AVCaptureDevice.requestAccess(for: .audio) { _ in }
              }
          }) {
         self.defaults = defaults
@@ -41,16 +49,30 @@ final class PermissionRequestCoordinator {
     }
 
     func hasRequested(_ destination: SystemSettingsDestination) -> Bool {
-        let key = destination == .screenRecording
-            ? "permissionRequest.screenRecording" : "permissionRequest.accessibility"
+        let key: String
+        switch destination {
+        case .screenRecording:
+            key = "permissionRequest.screenRecording"
+        case .accessibility:
+            key = "permissionRequest.accessibility"
+        case .microphone:
+            key = "permissionRequest.microphone"
+        }
         return defaults.bool(forKey: key)
     }
 
     // Record before requesting: the system may show its prompt asynchronously.
     func requestIfNeeded(_ destination: SystemSettingsDestination) -> Bool {
         guard !isRequesting else { return true }
-        let key = destination == .screenRecording
-            ? "permissionRequest.screenRecording" : "permissionRequest.accessibility"
+        let key: String
+        switch destination {
+        case .screenRecording:
+            key = "permissionRequest.screenRecording"
+        case .accessibility:
+            key = "permissionRequest.accessibility"
+        case .microphone:
+            key = "permissionRequest.microphone"
+        }
         guard !defaults.bool(forKey: key) else { return false }
         defaults.set(true, forKey: key)
         isRequesting = true
@@ -103,6 +125,12 @@ struct OperationErrorPresentation: Equatable {
         return false
     }
 
+    private static func isMicrophonePermissionError(_ error: Error) -> Bool {
+        if case .microphonePermissionRequired = error as? ScreenRecordingCoordinatorError { return true }
+        if case .microphonePermissionRequired = error as? ScreenRecordingEngineError { return true }
+        return false
+    }
+
     static func clipboardPin(_ error: Error) -> Self {
         Self(
             title: "无法贴出剪贴板图片",
@@ -119,10 +147,18 @@ struct OperationErrorPresentation: Equatable {
     }
 
     static func screenRecording(_ error: Error) -> Self {
-        Self(
+        let action: OperationErrorAction?
+        if isScreenPermissionError(error) {
+            action = .openSystemSettings(.screenRecording)
+        } else if isMicrophonePermissionError(error) {
+            action = .openSystemSettings(.microphone)
+        } else {
+            action = nil
+        }
+        return Self(
             title: "无法完成区域录屏",
             message: error.localizedDescription,
-            action: isScreenPermissionError(error) ? .openSystemSettings(.screenRecording) : nil
+            action: action
         )
     }
 

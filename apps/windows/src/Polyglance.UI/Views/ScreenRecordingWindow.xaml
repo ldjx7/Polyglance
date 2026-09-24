@@ -31,12 +31,10 @@
             <Border x:Name="RecordingBorder"
                     BorderBrush="#EF4444"
                     BorderThickness="2"
-                    CornerRadius="4"
-                    IsHitTestVisible="False">
-                <Border.Effect>
-                    <DropShadowEffect BlurRadius="6" ShadowDepth="1" Opacity="0.35" Color="#EF4444"/>
-                </Border.Effect>
-            </Border>
+                    CornerRadius="0"
+                    SnapsToDevicePixels="True"
+                    UseLayoutRounding="True"
+                    IsHitTestVisible="False"/>
 
             <!-- 浮动在选区下方的录屏控制工具栏 (与 macOS 100% 对齐) -->
             <Border x:Name="ControlToolbar"

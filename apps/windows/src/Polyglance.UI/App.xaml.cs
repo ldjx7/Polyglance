@@ -6,6 +6,7 @@ using System.IO.Pipes;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -55,15 +56,81 @@ public partial class App : Application
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool FreeConsole();
 
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool WriteConsoleW(
+        IntPtr hConsoleOutput,
+        string lpBuffer,
+        int nNumberOfCharsToWrite,
+        out int lpNumberOfCharsWritten,
+        IntPtr lpReserved);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GetStdHandle(int nStdHandle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool WriteConsoleInputW(
+        IntPtr hConsoleInput,
+        [In] INPUT_RECORD[] lpBuffer,
+        int nLength,
+        out int lpNumberOfEventsWritten);
+
+    private const int STD_INPUT_HANDLE = -10;
+    private const int STD_OUTPUT_HANDLE = -11;
+    private const int STD_ERROR_HANDLE = -12;
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct INPUT_RECORD
+    {
+        [FieldOffset(0)]
+        public ushort EventType;
+        [FieldOffset(4)]
+        public KEY_EVENT_RECORD KeyEvent;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KEY_EVENT_RECORD
+    {
+        [MarshalAs(UnmanagedType.Bool)]
+        public bool bKeyDown;
+        public ushort wRepeatCount;
+        public ushort wVirtualKeyCode;
+        public ushort wVirtualScanCode;
+        public char UnicodeChar;
+        public uint dwControlKeyState;
+    }
+
     protected override void OnStartup(StartupEventArgs e)
     {
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
         var cliOpts = CommandLineOptions.Parse(e.Args);
 
+#if POLYGLANCE_CLI
+        // 仅在 CLI 独立单文件版本中生效：双击或无参数运行默认直接唤起截图选区
+        if (!cliOpts.IsCliMode)
+        {
+            cliOpts.IsCliMode = true;
+            cliOpts.Capture = true;
+        }
+#endif
+
         if (cliOpts.ShowHelp)
         {
             ShowCliHelp();
+            Shutdown(0);
+            return;
+        }
+
+        if (cliOpts.DumpConfig)
+        {
+            DumpDefaultConfigToConsole();
+            Shutdown(0);
+            return;
+        }
+
+        if (cliOpts.GenerateConfig || cliOpts.InitConfig)
+        {
+            GenerateDefaultConfigInCurrentDirectory(cliOpts.ConfigPath);
             Shutdown(0);
             return;
         }
@@ -94,8 +161,11 @@ public partial class App : Application
             _configStore = new ConfigurationStore();
             var startupConfig = LoadConfigurationOrDefault();
             DataDirectoryManager.ApplyRootDirectory(startupConfig.DataStorageDirectory);
+            Polyglance.Platform.Ocr.OcrService.DefaultPreferredEngineId = startupConfig.OcrPreferredEngine;
+#if !EXCLUDE_TRANSLATION
             _translationService = new TranslationService();
             TranslationService.OfflineHandler = new OfflineTranslationEngine();
+#endif
             if (!cliOpts.IsCliMode)
             {
                 RefreshStartupRegistration();
@@ -131,50 +201,126 @@ public partial class App : Application
         }
     }
 
-    private static void ShowCliHelp()
+    private static void WriteToConsole(string text, bool isError = false)
     {
         const int ATTACH_PARENT_PROCESS = -1;
         bool attached = AttachConsole(ATTACH_PARENT_PROCESS);
         try
         {
-            using var stream = Console.OpenStandardOutput();
-            using var writer = new StreamWriter(stream, Encoding.UTF8) { AutoFlush = true };
-            writer.WriteLine();
-            writer.WriteLine("Polyglance 屏幕工具命令行模式");
-            writer.WriteLine("用法: Polyglance.exe [选项]");
-            writer.WriteLine();
-            writer.WriteLine("选项:");
-            writer.WriteLine("  --capture, -c               启动全屏截图选区");
-            writer.WriteLine("  --record, -r                启动区域录屏选区");
-            writer.WriteLine("  --ocr, -o                   启动离线 OCR 文字识别");
-            writer.WriteLine("  --output <path>, -out <path> 截图完成后自动保存到指定路径");
-            writer.WriteLine("  --no-translate              隐藏工具栏中的翻译按钮（纯净白标模式）");
-            writer.WriteLine("  --help, -h                  显示帮助说明");
-            writer.WriteLine();
+            IntPtr stdHandle = GetStdHandle(isError ? STD_ERROR_HANDLE : STD_OUTPUT_HANDLE);
+            if (stdHandle != IntPtr.Zero && WriteConsoleW(stdHandle, text, text.Length, out _, IntPtr.Zero))
+            {
+                return;
+            }
+
+            using var stream = isError ? Console.OpenStandardError() : Console.OpenStandardOutput();
+            using var writer = new StreamWriter(stream, new UTF8Encoding(false)) { AutoFlush = true };
+            writer.Write(text);
         }
         catch { }
         finally
         {
             if (attached)
             {
+                SendReturnToConsole();
                 FreeConsole();
             }
         }
     }
 
+    private static void SendReturnToConsole()
+    {
+        try
+        {
+            IntPtr hInput = GetStdHandle(STD_INPUT_HANDLE);
+            if (hInput == IntPtr.Zero || hInput == new IntPtr(-1)) return;
+
+            var records = new INPUT_RECORD[2];
+            records[0].EventType = 1; // KEY_EVENT
+            records[0].KeyEvent.bKeyDown = true;
+            records[0].KeyEvent.wRepeatCount = 1;
+            records[0].KeyEvent.wVirtualKeyCode = 0x0D; // VK_RETURN
+            records[0].KeyEvent.UnicodeChar = '\r';
+
+            records[1].EventType = 1; // KEY_EVENT
+            records[1].KeyEvent.bKeyDown = false;
+            records[1].KeyEvent.wRepeatCount = 1;
+            records[1].KeyEvent.wVirtualKeyCode = 0x0D;
+            records[1].KeyEvent.UnicodeChar = '\r';
+
+            WriteConsoleInputW(hInput, records, records.Length, out _);
+        }
+        catch { }
+    }
+
+    private static void ShowCliHelp()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine();
+        sb.AppendLine("Polyglance 屏幕工具命令行模式");
+        sb.AppendLine("用法: polyglance.exe [选项]");
+        sb.AppendLine();
+        sb.AppendLine("选项:");
+        sb.AppendLine("  --capture, -c               启动全屏截图选区");
+        sb.AppendLine("  --record, -r                启动区域录屏选区");
+        sb.AppendLine("  --ocr, -o                   启动离线 OCR 文字识别");
+        sb.AppendLine("  --output <path>, -out <path> 截图完成后自动保存到指定路径");
+        sb.AppendLine("  --no-translate              隐藏工具栏中的翻译按钮（纯净白标模式）");
+        sb.AppendLine("  --config <path>, -cfg <path> 指定自定义配置文件路径（第三方程序集成隔离）");
+        sb.AppendLine("  --toolbar <items>, --tools <items> 自定义截图工具栏顺序与显隐（逗号分隔，如 rect,arrow,text,pin,save,copy）");
+        sb.AppendLine("  --generate-config, -g       在终端当前工作目录下直接生成默认 config.json 并退出");
+        sb.AppendLine("  --init-config               在当前工作目录下生成默认配置文件并退出");
+        sb.AppendLine("  --dump-config               在控制台直接输出默认配置 JSON 内容并退出");
+        sb.AppendLine("  --help, -h                  显示帮助说明");
+        sb.AppendLine();
+        WriteToConsole(sb.ToString());
+    }
+
+    private static void DumpDefaultConfigToConsole()
+    {
+        var config = new AppConfiguration();
+        string json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
+        WriteToConsole(json + Environment.NewLine);
+    }
+
+    private static void GenerateDefaultConfigInCurrentDirectory(string? customPath = null)
+    {
+        string targetPath = !string.IsNullOrWhiteSpace(customPath)
+            ? Path.GetFullPath(customPath)
+            : Path.Combine(Environment.CurrentDirectory, "config.json");
+
+        try
+        {
+            string dir = Path.GetDirectoryName(targetPath) ?? Environment.CurrentDirectory;
+            Directory.CreateDirectory(dir);
+            var store = new ConfigurationStore(targetPath, new DpapiCredentialStore(Path.Combine(dir, "credentials.dat")));
+            store.Save(new AppConfiguration());
+
+            WriteToConsole($"已在当前目录下生成默认配置文件: {targetPath}{Environment.NewLine}");
+        }
+        catch (Exception ex)
+        {
+            WriteToConsole($"生成配置文件失败: {ex.Message}{Environment.NewLine}", isError: true);
+        }
+    }
+
     private void ExecuteCliCommand(CommandLineOptions opts)
     {
+        bool hideTrans = opts.HideTranslation;
+#if EXCLUDE_TRANSLATION
+        hideTrans = true;
+#endif
         if (opts.Record)
         {
-            BeginScreenshotSelection(ScreenshotCaptureIntent.ScreenRecording, opts.OutputPath, opts.HideTranslation);
+            BeginScreenshotSelection(ScreenshotCaptureIntent.ScreenRecording, opts.OutputPath, hideTrans, opts.ConfigPath, opts.ToolbarItems);
         }
         else if (opts.Ocr)
         {
-            BeginScreenshotSelection(ScreenshotCaptureIntent.OcrWorkspace, opts.OutputPath, opts.HideTranslation);
+            BeginScreenshotSelection(ScreenshotCaptureIntent.OcrWorkspace, opts.OutputPath, hideTrans, opts.ConfigPath, opts.ToolbarItems);
         }
         else
         {
-            BeginScreenshotSelection(ScreenshotCaptureIntent.Standard, opts.OutputPath, opts.HideTranslation);
+            BeginScreenshotSelection(ScreenshotCaptureIntent.Standard, opts.OutputPath, hideTrans, opts.ConfigPath, opts.ToolbarItems);
         }
     }
 
@@ -449,14 +595,27 @@ public partial class App : Application
     private void BeginScreenshotSelection(
         ScreenshotCaptureIntent intent,
         string? autoSavePath = null,
-        bool hideTranslation = false)
+        bool hideTranslation = false,
+        string? customConfigPath = null,
+        string? customToolbarItems = null)
     {
         Dispatcher.Invoke(() =>
         {
-            if (_translationService == null || _configStore == null) return;
+#if !EXCLUDE_TRANSLATION
+            if (_configStore == null && string.IsNullOrWhiteSpace(customConfigPath)) return;
+#endif
 
             var (bitmap, bounds) = ScreenCapture.CaptureVirtualScreen();
-            var config = LoadConfigurationOrDefault();
+            var config = LoadConfigurationOrDefault(customConfigPath);
+
+            if (!string.IsNullOrWhiteSpace(customToolbarItems))
+            {
+                var customList = ParseCustomToolbarItems(customToolbarItems);
+                if (customList.Count > 0)
+                {
+                    config.ScreenshotToolbarItems = customList;
+                }
+            }
 
             var win = new ScreenSelectionWindow(bitmap, bounds, _translationService, config, intent)
             {
@@ -466,6 +625,17 @@ public partial class App : Application
             win.Show();
             win.Activate();
         });
+    }
+
+    private static List<ScreenshotToolbarItemConfig> ParseCustomToolbarItems(string itemsCsv)
+    {
+        var tokens = itemsCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var list = new List<ScreenshotToolbarItemConfig>();
+        foreach (var token in tokens)
+        {
+            list.Add(new ScreenshotToolbarItemConfig(token, true));
+        }
+        return ScreenshotToolbarItemConfig.Normalize(list);
     }
 
     public void TriggerScreenTranslate()
@@ -496,8 +666,50 @@ public partial class App : Application
         BeginScreenshotSelection(ScreenshotCaptureIntent.OcrTranslationCard);
     }
 
-    private AppConfiguration LoadConfigurationOrDefault()
+    private AppConfiguration LoadConfigurationOrDefault(string? customConfigPath = null)
     {
+        string? targetPath = customConfigPath;
+
+        if (string.IsNullOrWhiteSpace(targetPath))
+        {
+            string? envPath = Environment.GetEnvironmentVariable("POLYGLANCE_CONFIG");
+            if (!string.IsNullOrWhiteSpace(envPath) && File.Exists(envPath))
+            {
+                targetPath = envPath;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(targetPath))
+        {
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string portableConfig = Path.Combine(baseDir, "config.json");
+            string namedConfig = Path.Combine(baseDir, "polyglance.json");
+            if (File.Exists(portableConfig))
+            {
+                targetPath = portableConfig;
+            }
+            else if (File.Exists(namedConfig))
+            {
+                targetPath = namedConfig;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(targetPath))
+        {
+            try
+            {
+                string fullPath = Path.GetFullPath(targetPath);
+                string dir = Path.GetDirectoryName(fullPath) ?? AppDomain.CurrentDomain.BaseDirectory;
+                Directory.CreateDirectory(dir);
+                var customStore = new ConfigurationStore(fullPath, new DpapiCredentialStore(Path.Combine(dir, "credentials.dat")));
+                return customStore.Load();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Config] Failed to load custom config from {targetPath}: {ex.Message}");
+            }
+        }
+
         if (_configStore == null)
             return new AppConfiguration();
 

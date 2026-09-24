@@ -9,7 +9,9 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Polyglance.Core.Models;
 using Polyglance.Platform.Capture;
+using Polyglance.Platform.Interop;
 using Polyglance.Platform.Recording;
+using System.Windows.Interop;
 
 namespace Polyglance.UI.Views;
 
@@ -21,6 +23,12 @@ public partial class ScreenRecordingWindow : Window
     private readonly DispatcherTimer _frameTimer;
     private readonly List<BitmapSource> _capturedFrames = new();
     private readonly FloatingToolbarWindow _toolbarWindow;
+    private readonly System.Diagnostics.Stopwatch _recordingStopwatch = new();
+    private Task _pendingFrame = Task.CompletedTask;
+    private int _capturedFrameCount;
+    private ScreenRecordingCaptureLoop? _captureLoop;
+    private bool _isFinishing;
+    private bool _isCancelling;
 
     private int _elapsedSeconds = 0;
     private int _fps = 30;
@@ -59,11 +67,17 @@ public partial class ScreenRecordingWindow : Window
         Width = screenBounds.Width;
         Height = screenBounds.Height;
 
-        // 设置选区红框位置与大小
-        Canvas.SetLeft(RecordingBorder, recordingRect.X);
-        Canvas.SetTop(RecordingBorder, recordingRect.Y);
-        RecordingBorder.Width = Math.Max(10, recordingRect.Width);
-        RecordingBorder.Height = Math.Max(10, recordingRect.Height);
+        // 设置选区红框位置与大小（向外扩展 6px，彻底杜绝高 DPI 亚像素抗锯齿被 BitBlt 采入导致边缘泛红）
+        Canvas.SetLeft(RecordingBorder, recordingRect.X - 6);
+        Canvas.SetTop(RecordingBorder, recordingRect.Y - 6);
+        RecordingBorder.Width = Math.Max(10, recordingRect.Width + 12);
+        RecordingBorder.Height = Math.Max(10, recordingRect.Height + 12);
+
+        SourceInitialized += (_, _) =>
+        {
+            IntPtr handle = new WindowInteropHelper(this).Handle;
+            NativeWin32.SetWindowDisplayAffinity(handle, NativeWin32.WDA_EXCLUDEFROMCAPTURE);
+        };
 
         // 设置下方浮动工具栏位置
         Loaded += (_, _) =>
@@ -208,6 +222,7 @@ public partial class ScreenRecordingWindow : Window
             _elapsedSeconds = 0;
             _consecutiveCaptureFailures = 0;
             _capturedFrames.Clear();
+            _capturedFrameCount = 0;
 
             string fpsStr = ((ComboBoxItem)CmbFps.SelectedItem)?.Content?.ToString() ?? "30 FPS";
             if (fpsStr.StartsWith("60")) _fps = 60;
@@ -224,7 +239,6 @@ public partial class ScreenRecordingWindow : Window
             if (container == ScreenRecordingContainer.Mp4)
             {
                 var qualityIndex = Math.Max(0, CmbQuality.SelectedIndex);
-                var jpegQuality = qualityIndex switch { 0 => 76, 1 => 88, _ => 96 };
                 var bitsPerPixel = qualityIndex switch { 0 => 0.10, 1 => 0.16, _ => 0.24 };
                 var estimated = _physicalRecordingRegion.Width
                     * (double)_physicalRecordingRegion.Height
@@ -239,7 +253,6 @@ public partial class ScreenRecordingWindow : Window
                 {
                     _mp4Session = CreateMp4Session(
                         sessionDirectory,
-                        jpegQuality,
                         bitrate,
                         _mediaOptions);
                 }
@@ -262,7 +275,6 @@ public partial class ScreenRecordingWindow : Window
                     _mediaOptions = _mediaOptions.WithoutMicrophone();
                     _mp4Session = CreateMp4Session(
                         sessionDirectory,
-                        jpegQuality,
                         bitrate,
                         _mediaOptions);
                 }
@@ -306,13 +318,26 @@ public partial class ScreenRecordingWindow : Window
         BtnCursor.IsEnabled = false;
 
         _frameTimer.Interval = TimeSpan.FromMilliseconds(1000.0 / _fps);
-        _frameTimer.Start();
+        _pendingFrame = Task.CompletedTask;
+        _recordingStopwatch.Restart();
+        if (_mp4Session is not null)
+        {
+            _captureLoop = new ScreenRecordingCaptureLoop(
+                _physicalRecordingRegion, _fps, _mediaOptions?.ShowsCursor ?? _showCursor, _mp4Session);
+            _ = ObserveCaptureLoopAsync(_captureLoop);
+        }
+        else _frameTimer.Start();
         _clockTimer.Start();
+    }
+
+    private async Task ObserveCaptureLoopAsync(ScreenRecordingCaptureLoop loop)
+    {
+        try { await loop.Completion; }
+        catch (Exception error) { if (_isRecording) await FailRecordingAsync(error); }
     }
 
     private ScreenRecordingMp4Session CreateMp4Session(
         string sessionDirectory,
-        int jpegQuality,
         uint bitrate,
         ScreenRecordingMediaOptions options) =>
         new(
@@ -320,24 +345,19 @@ public partial class ScreenRecordingWindow : Window
             _physicalRecordingRegion.Width,
             _physicalRecordingRegion.Height,
             _fps,
-            jpegQuality,
             bitrate,
             options);
 
-    private void OnFrameTimerTick(object? sender, EventArgs e)
+    private async void OnFrameTimerTick(object? sender, EventArgs e)
     {
-        if (!_isRecording || _isPaused) return;
+        if (!_isRecording || _isPaused || _captureLoop is not null || !_pendingFrame.IsCompleted) return;
 
+        var region = _physicalRecordingRegion;
+        bool showsCursor = _mediaOptions?.ShowsCursor ?? _showCursor;
+        _pendingFrame = CaptureFrameAsync();
         try
         {
-            var frame = ScreenCapture.CaptureRegion(
-                _physicalRecordingRegion,
-                _mediaOptions?.ShowsCursor ?? _showCursor);
-            if (frame != null)
-            {
-                _capturedFrames.Add(frame);
-                _mp4Session?.AppendFrame(frame);
-            }
+            await _pendingFrame;
             _consecutiveCaptureFailures = 0;
         }
         catch (Exception error)
@@ -346,8 +366,18 @@ public partial class ScreenRecordingWindow : Window
             System.Diagnostics.Debug.WriteLine($"Screen recording frame failed: {error}");
             if (_consecutiveCaptureFailures >= 3)
             {
-                _ = FailRecordingAsync(error);
+                await FailRecordingAsync(error);
             }
+        }
+
+        async Task CaptureFrameAsync()
+        {
+            var frame = await Task.Run(() =>
+            {
+                return ScreenCapture.CaptureRegion(region, showsCursor);
+            });
+            _capturedFrameCount++;
+            _capturedFrames.Add(frame);
         }
     }
 
@@ -356,7 +386,8 @@ public partial class ScreenRecordingWindow : Window
         _isPaused = !_isPaused;
         if (_isPaused)
         {
-            _mp4Session?.SetPaused(true);
+            _recordingStopwatch.Stop();
+            _captureLoop?.SetPaused(true);
             TxtStatus.Text = "Ⅱ 暂停";
             TxtStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xF5, 0x9E, 0x0B));
             IconPause.Data = Geometry.Parse("M8,5.14 V19.14 L19,12.14 Z"); // 播放图标
@@ -364,7 +395,8 @@ public partial class ScreenRecordingWindow : Window
         }
         else
         {
-            _mp4Session?.SetPaused(false);
+            _recordingStopwatch.Start();
+            _captureLoop?.SetPaused(false);
             int mm = _elapsedSeconds / 60;
             int ss = _elapsedSeconds % 60;
             TxtStatus.Text = $"● {mm:D2}:{ss:D2}";
@@ -376,9 +408,12 @@ public partial class ScreenRecordingWindow : Window
 
     private async void OnStopClick(object sender, RoutedEventArgs e)
     {
+        _isFinishing = true;
         _clockTimer.Stop();
         _frameTimer.Stop();
+        _recordingStopwatch.Stop();
         _isRecording = false;
+        double actualDuration = Math.Max(0.5, _recordingStopwatch.Elapsed.TotalSeconds);
 
         // 即时交互反馈：切换为“生成中…”并旋转 ProgressRing
         TxtStatus.Text = "生成中…";
@@ -396,11 +431,20 @@ public partial class ScreenRecordingWindow : Window
 
         string tempDir = Path.Combine(Path.GetTempPath(), "Polyglance");
         Directory.CreateDirectory(tempDir);
-        string tempFile = Path.Combine(tempDir, $"ScreenRecord_{DateTime.Now:yyyyMMdd_HHmmss_fff}.{formatExt}");
+        string tempFile = Path.Combine(tempDir, $"Polyglance_Recording_{DateTime.Now:yyyyMMdd_HHmmss_fff}.{formatExt}");
 
         try
         {
-            if (_capturedFrames.Count == 0)
+            if (_captureLoop is not null)
+            {
+                await _captureLoop.StopAsync();
+                actualDuration = _captureLoop.Duration.TotalSeconds;
+                _capturedFrameCount = _mp4Session?.CapturedFrames ?? 0;
+                _capturedFrames.Clear();
+                if (_captureLoop.PosterFrame is { } poster) _capturedFrames.Add(poster);
+            }
+            await _pendingFrame;
+            if (_capturedFrameCount == 0)
             {
                 throw new InvalidOperationException("没有捕获到有效画面");
             }
@@ -408,7 +452,19 @@ public partial class ScreenRecordingWindow : Window
             {
                 var session = _mp4Session
                     ?? throw new InvalidOperationException("MP4 编码会话尚未启动");
-                await session.FinishAsync(tempFile);
+                var finishWatch = System.Diagnostics.Stopwatch.StartNew();
+                await session.FinishAsync(tempFile, TimeSpan.FromSeconds(actualDuration));
+                try
+                {
+                    File.WriteAllText(tempFile + ".diagnostics.json", System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        Capture = _captureLoop?.Statistics,
+                        FinalizeMilliseconds = finishWatch.Elapsed.TotalMilliseconds,
+                    }));
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+                _captureLoop?.Dispose();
+                _captureLoop = null;
                 _mp4Session = null;
             }
             else
@@ -428,6 +484,7 @@ public partial class ScreenRecordingWindow : Window
         }
         catch (Exception error)
         {
+            _isFinishing = false;
             RingSaving.Visibility = Visibility.Collapsed;
             BtnClose.IsEnabled = true;
             MessageBox.Show(
@@ -438,6 +495,7 @@ public partial class ScreenRecordingWindow : Window
             return;
         }
 
+        _isFinishing = false;
         Close();
 
         // 对齐 macOS: 打开 Review 预览窗口，支持播放、另存为、快速保存、复制文件、重新录制
@@ -445,6 +503,7 @@ public partial class ScreenRecordingWindow : Window
             tempFile,
             _capturedFrames,
             _fps,
+            actualDuration,
             _screenBounds,
             _recordingRect
         );
@@ -495,13 +554,20 @@ public partial class ScreenRecordingWindow : Window
         _isRecording = false;
         _clockTimer.Stop();
         _frameTimer.Stop();
+        if (_captureLoop is not null)
+        {
+            try { await _captureLoop.StopAsync(); } catch { }
+            try { _captureLoop.Dispose(); } catch { }
+            _captureLoop = null;
+        }
         if (_mp4Session is not null)
         {
-            await _mp4Session.DisposeAsync();
+            try { await _mp4Session.DisposeAsync(); }
+            catch (Exception cleanupError) { System.Diagnostics.Debug.WriteLine(cleanupError); }
             _mp4Session = null;
         }
         MessageBox.Show(
-            $"录屏捕获连续失败：{error.Message}",
+            $"录屏捕获失败：{error.Message}",
             "Polyglance",
             MessageBoxButton.OK,
             MessageBoxImage.Error);
@@ -510,15 +576,36 @@ public partial class ScreenRecordingWindow : Window
 
     private async void OnCancelClick(object sender, RoutedEventArgs e)
     {
+        if (_isCancelling) return;
+        _isCancelling = true;
         _clockTimer.Stop();
         _frameTimer.Stop();
         _isRecording = false;
+        try { await _pendingFrame; } catch { /* 捕获错误已由计时器处理。 */ }
+        if (_captureLoop is not null)
+        {
+            try { await _captureLoop.StopAsync(); } catch { }
+            try { _captureLoop.Dispose(); } catch { }
+            _captureLoop = null;
+        }
         if (_mp4Session is not null)
         {
-            await _mp4Session.DisposeAsync();
+            try { await _mp4Session.DisposeAsync(); }
+            catch (Exception cleanupError) { System.Diagnostics.Debug.WriteLine(cleanupError); }
             _mp4Session = null;
         }
         Close();
+    }
+
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        if (_isFinishing) e.Cancel = true;
+        else if (_isRecording || _captureLoop is not null || _mp4Session is not null)
+        {
+            e.Cancel = true;
+            Dispatcher.BeginInvoke(new Action(() => OnCancelClick(this, new RoutedEventArgs())));
+        }
+        base.OnClosing(e);
     }
 
     protected override void OnClosed(EventArgs e)

@@ -281,10 +281,25 @@ struct SettingsView: View {
                     }
                     .controlSize(.small)
                 }
+
+                HStack {
+                    Label("麦克风权限", systemImage: "mic.fill")
+                    Spacer()
+                    PermissionBadge(isGranted: isMicrophoneGranted)
+                    Button(isMicrophoneGranted ? "检查" : (isMicrophoneRequested ? "打开系统设置" : "请求授权")) {
+                        if isMicrophoneGranted {
+                            permissionsRefreshTrigger += 1
+                        } else {
+                            PermissionRequestCoordinator.shared.openFromSettings(.microphone)
+                            permissionsRefreshTrigger += 1
+                        }
+                    }
+                    .controlSize(.small)
+                }
             } header: {
                 Text("系统权限")
             } footer: {
-                Text("划词读取需要辅助功能权限；区域截图与录屏需要屏幕录制权限。")
+                Text("划词读取需要辅助功能权限；区域截图与录屏需要屏幕录制权限；录制麦克风需要麦克风权限。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1393,7 +1408,27 @@ struct SettingsView: View {
             Section {
                 Toggle("录制系统声音", isOn: $recordingSettings.capturesSystemAudio)
                     .disabled(!recordingSettings.format.supportsAudio)
-                Toggle("录制麦克风", isOn: $recordingSettings.capturesMicrophone)
+                Toggle("录制麦克风", isOn: Binding(
+                    get: { recordingSettings.capturesMicrophone },
+                    set: { newValue in
+                        if newValue {
+                            let status = AVCaptureDevice.authorizationStatus(for: .audio)
+                            if status == .notDetermined {
+                                AVCaptureDevice.requestAccess(for: .audio) { granted in
+                                    Task { @MainActor in
+                                        recordingSettings.capturesMicrophone = granted
+                                    }
+                                }
+                                return
+                            } else if status == .denied || status == .restricted {
+                                PermissionRequestCoordinator.shared.openFromSettings(.microphone)
+                                recordingSettings.capturesMicrophone = false
+                                return
+                            }
+                        }
+                        recordingSettings.capturesMicrophone = newValue
+                    }
+                ))
                     .disabled(!recordingSettings.format.supportsAudio)
                 Toggle("显示鼠标指针", isOn: $recordingSettings.showsCursor)
             } header: {
@@ -1963,6 +1998,16 @@ struct SettingsView: View {
     private var isScreenRecordingRequested: Bool {
         _ = permissionsRefreshTrigger
         return PermissionRequestCoordinator.shared.hasRequested(.screenRecording)
+    }
+
+    private var isMicrophoneGranted: Bool {
+        _ = permissionsRefreshTrigger
+        return AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+    }
+
+    private var isMicrophoneRequested: Bool {
+        _ = permissionsRefreshTrigger
+        return PermissionRequestCoordinator.shared.hasRequested(.microphone)
     }
 
     private func shortcutActionInfo(_ action: GlobalShortcutAction) -> (icon: String, color: Color) {

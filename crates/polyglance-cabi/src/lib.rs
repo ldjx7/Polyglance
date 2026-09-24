@@ -23,6 +23,11 @@ pub mod geometry;
 pub mod layout;
 pub mod recording;
 pub mod stitch;
+pub mod winrt_ocr;
+pub mod winrt_recording;
+mod windows_recording_encoder;
+pub mod winrt_capture;
+pub mod winrt_store;
 
 use std::ffi::{CString, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};

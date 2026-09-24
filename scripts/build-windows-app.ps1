@@ -2,11 +2,40 @@
 param(
     [string]$Version = "0.0.0",
     [string]$BuildNumber = "0",
-    [bool]$SelfContained = $true,
+    $SelfContained = $true,
     [string]$OutDirectory = "",
-    [bool]$SingleFile = (-not $SelfContained),
-    [bool]$ExcludeOcrModels = (-not $SelfContained)
+    $SingleFile = $null,
+    $ExcludeOcrModels = $null,
+    $ExcludeTranslation = $null
 )
+
+$isSelfContained = $true
+if ($PSBoundParameters.ContainsKey('SelfContained')) {
+    $val = "$($PSBoundParameters['SelfContained'])".ToLower().Trim()
+    if ($val -eq 'false' -or $val -eq '0') {
+        $isSelfContained = $false
+    }
+}
+$SelfContained = $isSelfContained
+
+$SingleFile = (-not $SelfContained)
+if ($PSBoundParameters.ContainsKey('SingleFile')) {
+    $val = "$($PSBoundParameters['SingleFile'])".ToLower().Trim()
+    $SingleFile = ($val -ne 'false' -and $val -ne '0')
+}
+
+$ExcludeOcrModels = (-not $SelfContained)
+if ($PSBoundParameters.ContainsKey('ExcludeOcrModels')) {
+    $val = "$($PSBoundParameters['ExcludeOcrModels'])".ToLower().Trim()
+    $ExcludeOcrModels = ($val -ne 'false' -and $val -ne '0')
+}
+
+if ($PSBoundParameters.ContainsKey('ExcludeTranslation')) {
+    $val = "$($PSBoundParameters['ExcludeTranslation'])".ToLower().Trim()
+    $ExcludeTranslation = ($val -ne 'false' -and $val -ne '0')
+} else {
+    $ExcludeTranslation = (-not $SelfContained)
+}
 
 $ErrorActionPreference = "Stop"
 
@@ -33,14 +62,15 @@ function Remove-BuildOutputDirectory([string]$path) {
     # Defender/Explorer can hold a just-created runtime DLL briefly even after
     # Polyglance itself has exited. Retrying keeps each local build clean without
     # falling back to stale files from a previous publish.
-    for ($attempt = 1; $attempt -le 20; $attempt++) {
+    for ($attempt = 1; $attempt -le 10; $attempt++) {
         try {
-            Remove-Item $path -Recurse -Force -ErrorAction Stop
+            Get-ChildItem -Path $path -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction Stop
             return
         }
         catch {
-            if ($attempt -eq 20) {
-                throw "Unable to clear previous build output '$path': $($_.Exception.Message)"
+            if ($attempt -eq 10) {
+                Write-Warning "Unable to fully clear previous build output '$path': $($_.Exception.Message)"
+                return
             }
             Start-Sleep -Milliseconds 500
         }
@@ -48,7 +78,7 @@ function Remove-BuildOutputDirectory([string]$path) {
 }
 
 # Local builds must not leave a running executable locking the publish output.
-foreach ($processName in @("Polyglance.UI", "Polyglance")) {
+foreach ($processName in @("Polyglance.UI", "Polyglance", "polyglance")) {
     Get-Process -Name $processName -ErrorAction SilentlyContinue |
         Stop-Process -Force -ErrorAction SilentlyContinue
 }
@@ -89,6 +119,11 @@ if ($SingleFile) {
 
 if ($ExcludeOcrModels) {
     $extraPublishArgs += "-p:ExcludeOcrModels=true"
+    $extraPublishArgs += "-p:PolyglanceCliBuild=true"
+}
+
+if ($ExcludeTranslation) {
+    $extraPublishArgs += "-p:ExcludeTranslation=true"
 }
 
 $publishCommand = @(
@@ -131,6 +166,14 @@ if (Test-Path $dllSource) {
 Copy-Item "LICENSE" -Destination "$outDir/LICENSE.txt" -Force
 Copy-Item "apps/windows/README-PORTABLE.txt" -Destination "$outDir/README-PORTABLE.txt" -Force
 
+$finalExeName = "Polyglance.exe"
+if (-not $SelfContained) {
+    if (Test-Path "$outDir/Polyglance.exe") {
+        Move-Item "$outDir/Polyglance.exe" "$outDir/polyglance.exe" -Force
+        $finalExeName = "polyglance.exe"
+    }
+}
+
 Write-Host "`n========================================" -ForegroundColor Green
-Write-Host " Build Complete: $outDir\Polyglance.exe " -ForegroundColor Green
+Write-Host " Build Complete: $outDir\$finalExeName " -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green

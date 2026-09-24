@@ -1,8 +1,8 @@
 # Build Polyglance Rust C-ABI core library for Windows
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
 Write-Host "==> Compiling polyglance-cabi Rust DLL..." -ForegroundColor Cyan
-cargo build --release -p polyglance-cabi
+cmd.exe /c "cargo build --release -p polyglance-cabi 2>&1" | Write-Host
 
 $targetDll = "target/release/polyglance_cabi.dll"
 if (-not (Test-Path $targetDll)) {

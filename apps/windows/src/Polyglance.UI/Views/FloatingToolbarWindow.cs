@@ -1,6 +1,9 @@
+using System;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Shell;
+using Polyglance.Platform.Interop;
 
 namespace Polyglance.UI.Views;
 
@@ -33,5 +36,11 @@ public sealed class FloatingToolbarWindow : Window
             ResizeBorderThickness = new Thickness(0),
             UseAeroCaptionButtons = false,
         });
+
+        SourceInitialized += (_, _) =>
+        {
+            IntPtr handle = new WindowInteropHelper(this).Handle;
+            NativeWin32.SetWindowDisplayAffinity(handle, NativeWin32.WDA_EXCLUDEFROMCAPTURE);
+        };
     }
 }

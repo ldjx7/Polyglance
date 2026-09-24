@@ -30,6 +30,8 @@ public static class DataDirectoryManager
 
     public static string PinHistoryDirectory => Path.Combine(EffectiveRootDirectory, "PinHistory");
 
+    public static string VideosDirectory => Path.Combine(EffectiveRootDirectory, "Videos");
+
     public static event Action? RootDirectoryChanged;
 
     public static void ApplyRootDirectory(string? customRoot)
@@ -84,6 +86,14 @@ public static class DataDirectoryManager
             if (Directory.Exists(sourceModelsDir))
             {
                 CopyDirectoryRecursive(sourceModelsDir, destModelsDir);
+            }
+
+            // 4. Videos
+            string sourceVideosDir = Path.Combine(sourceRoot, "Videos");
+            string destVideosDir = Path.Combine(destinationRoot, "Videos");
+            if (Directory.Exists(sourceVideosDir))
+            {
+                CopyDirectoryRecursive(sourceVideosDir, destVideosDir);
             }
         }
         catch

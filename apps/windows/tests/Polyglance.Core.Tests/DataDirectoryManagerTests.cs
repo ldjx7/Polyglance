@@ -33,6 +33,7 @@ public sealed class DataDirectoryManagerTests : IDisposable
         Assert.Equal(Path.Combine(expectedRoot, "history"), DataDirectoryManager.HistoryDirectory);
         Assert.Equal(Path.Combine(expectedRoot, "history", "translation_history.json"), DataDirectoryManager.TranslationHistoryFilePath);
         Assert.Equal(Path.Combine(expectedRoot, "PinHistory"), DataDirectoryManager.PinHistoryDirectory);
+        Assert.Equal(Path.Combine(expectedRoot, "Videos"), DataDirectoryManager.VideosDirectory);
     }
 
     [Fact]
@@ -50,6 +51,7 @@ public sealed class DataDirectoryManagerTests : IDisposable
         Assert.Equal(Path.Combine(_testRoot, "history"), DataDirectoryManager.HistoryDirectory);
         Assert.Equal(Path.Combine(_testRoot, "history", "translation_history.json"), DataDirectoryManager.TranslationHistoryFilePath);
         Assert.Equal(Path.Combine(_testRoot, "PinHistory"), DataDirectoryManager.PinHistoryDirectory);
+        Assert.Equal(Path.Combine(_testRoot, "Videos"), DataDirectoryManager.VideosDirectory);
     }
 
     [Fact]
@@ -67,6 +69,9 @@ public sealed class DataDirectoryManagerTests : IDisposable
         Directory.CreateDirectory(Path.Combine(sourceDir, "models", "translation", "enzh"));
         File.WriteAllText(Path.Combine(sourceDir, "models", "translation", "enzh", "model.onnx"), "onnx-data");
 
+        Directory.CreateDirectory(Path.Combine(sourceDir, "Videos"));
+        File.WriteAllText(Path.Combine(sourceDir, "Videos", "record_1.mp4"), "video-data");
+
         DataDirectoryManager.Migrate(sourceDir, destDir);
 
         Assert.True(File.Exists(Path.Combine(destDir, "history", "translation_history.json")));
@@ -77,5 +82,8 @@ public sealed class DataDirectoryManagerTests : IDisposable
 
         Assert.True(File.Exists(Path.Combine(destDir, "models", "translation", "enzh", "model.onnx")));
         Assert.Equal("onnx-data", File.ReadAllText(Path.Combine(destDir, "models", "translation", "enzh", "model.onnx")));
+
+        Assert.True(File.Exists(Path.Combine(destDir, "Videos", "record_1.mp4")));
+        Assert.Equal("video-data", File.ReadAllText(Path.Combine(destDir, "Videos", "record_1.mp4")));
     }
 }

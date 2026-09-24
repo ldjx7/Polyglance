@@ -42,7 +42,7 @@ public partial class ScreenSelectionWindow : Window
 
     private readonly BitmapSource _fullScreenBitmap;
     private readonly Rect _screenBounds;
-    private readonly TranslationService _translationService;
+    private readonly TranslationService? _translationService;
     private readonly AppConfiguration? _config;
     private readonly ScreenshotCaptureIntent _captureIntent;
     private readonly Action<string> _colorClipboardWriter;
@@ -80,7 +80,7 @@ public partial class ScreenSelectionWindow : Window
     public ScreenSelectionWindow(
         BitmapSource fullScreenBitmap,
         Rect screenBounds,
-        TranslationService translationService,
+        TranslationService? translationService,
         AppConfiguration config,
         ScreenshotCaptureIntent captureIntent = ScreenshotCaptureIntent.Standard)
         : this(
@@ -96,7 +96,7 @@ public partial class ScreenSelectionWindow : Window
     internal ScreenSelectionWindow(
         BitmapSource fullScreenBitmap,
         Rect screenBounds,
-        TranslationService translationService,
+        TranslationService? translationService,
         AppConfiguration config,
         ScreenshotCaptureIntent captureIntent,
         Action<string> colorClipboardWriter)
@@ -118,7 +118,7 @@ public partial class ScreenSelectionWindow : Window
         {
             CoverCapturedArea();
             InitializeInitialCandidate();
-            if (HideTranslation)
+            if (HideTranslation || _translationService == null)
             {
                 Toolbar.SetTranslateButtonVisible(false);
             }
@@ -1609,7 +1609,7 @@ public partial class ScreenSelectionWindow : Window
                 var dlg = new SaveFileDialog
                 {
                     Filter = "PNG Image (*.png)|*.png|JPEG Image (*.jpg)|*.jpg",
-                    FileName = $"Screenshot_{DateTime.Now:yyyyMMdd_HHmmss}.png"
+                    FileName = $"Polyglance_Screenshot_{DateTime.Now:yyyyMMdd_HHmmss}.png"
                 };
                 if (dlg.ShowDialog() == true)
                 {

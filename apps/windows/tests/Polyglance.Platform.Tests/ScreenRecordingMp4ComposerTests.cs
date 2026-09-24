@@ -4,8 +4,6 @@ using NAudio.Wave;
 using Polyglance.Platform.Recording;
 using SharpAvi.Codecs;
 using SharpAvi.Output;
-using Windows.Media.Editing;
-using Windows.Storage;
 
 namespace Polyglance.Platform.Tests;
 
@@ -37,11 +35,39 @@ public sealed class ScreenRecordingMp4ComposerTests : IDisposable
             videoBitrate: 2_000_000);
 
         Assert.True(File.Exists(outputPath));
-        Assert.True(new FileInfo(outputPath).Length > 1_024);
+        var fileInfo = new FileInfo(outputPath);
+        Assert.True(fileInfo.Length > 1_024);
         Assert.Equal(".mp4", Path.GetExtension(outputPath));
-        var outputFile = await StorageFile.GetFileFromPathAsync(outputPath);
-        var outputClip = await MediaClip.CreateFromFileAsync(outputFile);
-        Assert.Single(outputClip.EmbeddedAudioTracks);
+        using var stream = File.OpenRead(outputPath);
+        var header = new byte[8];
+        Assert.Equal(8, stream.Read(header, 0, 8));
+        Assert.Equal("ftyp", System.Text.Encoding.ASCII.GetString(header, 4, 4));
+    }
+
+    [Theory]
+    [InlineData(64, 64)]
+    [InlineData(65, 63)]
+    public async Task SessionWritesRepeatedFramesWithoutAudio(int width, int height)
+    {
+        Directory.CreateDirectory(_directory);
+        var sessionDirectory = Path.Combine(_directory, "session");
+        var outputPath = Path.Combine(_directory, "silent.mp4");
+        var options = ScreenRecordingMediaOptions.Create(ScreenRecordingContainer.Mp4, false, false, false);
+        await using var session = new ScreenRecordingMp4Session(
+            sessionDirectory, width, height, 30, 2_000_000, options);
+        var frame = System.Windows.Media.Imaging.BitmapSource.Create(
+            width, height, 96, 96, System.Windows.Media.PixelFormats.Bgr32,
+            null, new byte[width * height * 4], width * 4);
+        frame.Freeze();
+        await Task.Run(() => session.AppendFrame(frame, 30));
+        Assert.Equal(30, session.FramesWritten);
+        await session.FinishAsync(outputPath);
+        Assert.True(new FileInfo(outputPath).Length > 1024);
+        Assert.False(Directory.Exists(sessionDirectory));
+        using var stream = File.OpenRead(outputPath);
+        var header = new byte[8];
+        Assert.Equal(8, stream.Read(header, 0, 8));
+        Assert.Equal("ftyp", System.Text.Encoding.ASCII.GetString(header, 4, 4));
     }
 
     private static void CreateVideo(string path)

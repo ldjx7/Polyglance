@@ -368,6 +368,14 @@ public partial class SettingsWindow : FluentWindow
             _config.DefaultRecordingDelaySeconds.ToString(),
             "0");
         ToggleSaveCompletedScreenshotsToHistory.IsChecked = _config.SaveCompletedScreenshotsToHistory;
+        foreach (ComboBoxItem item in CmbOcrEngine.Items)
+        {
+            if (string.Equals(item.Tag?.ToString(), _config.OcrPreferredEngine, StringComparison.OrdinalIgnoreCase))
+            {
+                CmbOcrEngine.SelectedItem = item;
+                break;
+            }
+        }
 
         foreach (ComboBoxItem item in CmbOcrFormatting.Items)
         {
@@ -1129,6 +1137,12 @@ public partial class SettingsWindow : FluentWindow
             ? recordingDelay
             : 0;
         _config.SaveCompletedScreenshotsToHistory = ToggleSaveCompletedScreenshotsToHistory.IsChecked == true;
+
+        if (CmbOcrEngine.SelectedItem is ComboBoxItem ocrEngineItem)
+        {
+            _config.OcrPreferredEngine = ocrEngineItem.Tag?.ToString() ?? "ppocr";
+            Polyglance.Platform.Ocr.OcrService.DefaultPreferredEngineId = _config.OcrPreferredEngine;
+        }
 
         if (CmbOcrFormatting.SelectedItem is ComboBoxItem ocrItem && int.TryParse(ocrItem.Tag?.ToString(), out int ocrFormat))
         {

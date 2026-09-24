@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+<PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net9.0-windows</TargetFramework><UseWPF>true</UseWPF><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><AllowUnsafeBlocks>true</AllowUnsafeBlocks></PropertyGroup>
+<ItemGroup><ProjectReference Include="..\..\..\apps\windows\src\Polyglance.Platform\Polyglance.Platform.csproj" /></ItemGroup>
+<ItemGroup><None Include="..\..\..\target\release\polyglance_cabi.dll" Link="polyglance_cabi.dll" CopyToOutputDirectory="Always" /></ItemGroup>
+</Project>

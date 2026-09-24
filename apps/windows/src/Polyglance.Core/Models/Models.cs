@@ -249,6 +249,9 @@ public sealed class AppConfiguration
     [JsonPropertyName("screenshot_toolbar_items")]
     public List<ScreenshotToolbarItemConfig> ScreenshotToolbarItems { get; set; } = ScreenshotToolbarItemConfig.DefaultItems();
 
+    [JsonPropertyName("ocr_preferred_engine")]
+    public string OcrPreferredEngine { get; set; } = "ppocr";
+
     [JsonPropertyName("ocr_auto_copy_next_time")]
     public bool OcrAutoCopyNextTime { get; set; }
 

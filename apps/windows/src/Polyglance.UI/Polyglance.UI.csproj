@@ -6,8 +6,7 @@
     <AssemblyTitle>Polyglance</AssemblyTitle>
     <Description>Polyglance - 原生跨平台翻译与截图工具</Description>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
-    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <TargetFramework>net9.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
@@ -15,6 +14,15 @@
     <ApplicationIcon>Resources\Polyglance.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(PolyglanceCliBuild)' == 'true'">
+    <OutputType>Exe</OutputType>
+    <DefineConstants>$(DefineConstants);POLYGLANCE_CLI</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(ExcludeTranslation)' == 'true'">
+    <DefineConstants>$(DefineConstants);EXCLUDE_TRANSLATION</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

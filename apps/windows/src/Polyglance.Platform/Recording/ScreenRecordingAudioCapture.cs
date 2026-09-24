@@ -154,13 +154,11 @@ internal sealed class ScreenRecordingAudioCapture : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_started)
+        try { if (_started) await StopAsync(); }
+        finally
         {
-            await StopAsync();
-        }
-        foreach (var sink in _sinks)
-        {
-            sink.Dispose();
+            _started = false;
+            foreach (var sink in _sinks) sink.Dispose();
         }
     }
 
@@ -175,7 +173,8 @@ internal sealed class ScreenRecordingAudioCapture : IAsyncDisposable
         private bool _disposed;
 
         public string OutputPath { get; }
-        public bool IsPaused { get; set; }
+        private volatile bool _isPaused;
+        public bool IsPaused { get => _isPaused; set => _isPaused = value; }
 
         public WaveCaptureSink(
             ScreenRecordingAudioDeviceKind deviceKind,

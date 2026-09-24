@@ -6,6 +6,34 @@ namespace Polyglance.Core.Native;
 
 public static partial class NativeMethods
 {
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int polyglance_windows_recording_encoder_new(
+        string path, uint width, uint height, uint fps, uint bitrate, out IntPtr handle);
+
+    [LibraryImport(DllName)]
+    public static partial int polyglance_windows_recording_encoder_write(
+        IntPtr handle, IntPtr pixels, nuint length, long timestamp);
+
+    [LibraryImport(DllName)]
+    public static partial int polyglance_windows_recording_encoder_finish(IntPtr handle, long endTime);
+
+    [LibraryImport(DllName)]
+    public static partial void polyglance_windows_recording_encoder_free(IntPtr handle);
+
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int polyglance_windows_recording_remux(string video, string audio, string output);
+
+    [LibraryImport(DllName)]
+    public static partial int polyglance_windows_capture_new(
+        int x, int y, int width, int height, [MarshalAs(UnmanagedType.Bool)] bool cursor, out IntPtr handle);
+
+    [LibraryImport(DllName)]
+    public static partial int polyglance_windows_capture_frame(
+        IntPtr handle, IntPtr buffer, nuint bufferLen, [MarshalAs(UnmanagedType.Bool)] bool cursor, [MarshalAs(UnmanagedType.Bool)] out bool captured);
+
+    [LibraryImport(DllName)]
+    public static partial void polyglance_windows_capture_free(IntPtr handle);
+
     private const string DllName = "polyglance_cabi";
 
     [LibraryImport(DllName)]
@@ -154,4 +182,30 @@ public static partial class NativeMethods
         NativeRect bounds,
         double minimumSide,
         out NativeRect outRect);
+
+    [LibraryImport(DllName)]
+    public static unsafe partial int polyglance_windows_ocr_recognize(
+        byte* pngBytes,
+        nuint pngLen,
+        out IntPtr outLinesJson);
+
+    [LibraryImport(DllName, StringMarshalling = StringMarshalling.Utf8)]
+    public static partial int polyglance_windows_recording_compose(
+        string videoPath,
+        string audioPathsJson,
+        string outputPath,
+        int width,
+        int height,
+        int frameRate,
+        uint videoBitrate);
+
+    [LibraryImport(DllName)]
+    public static partial int polyglance_windows_store_check_updates(
+        IntPtr ownerHwnd,
+        out IntPtr outUpdateJson);
+
+    [LibraryImport(DllName)]
+    public static partial int polyglance_windows_store_install_updates(
+        IntPtr ownerHwnd,
+        out IntPtr outResultJson);
 }

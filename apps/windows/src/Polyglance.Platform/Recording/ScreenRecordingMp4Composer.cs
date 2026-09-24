@@ -1,8 +1,9 @@
-using Windows.Media.Editing;
-using Windows.Media.MediaProperties;
-using Windows.Media.Transcoding;
-using Windows.Storage;
+using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Polyglance.Core.Native;
 
 namespace Polyglance.Platform.Recording;
 
@@ -17,46 +18,25 @@ public static class ScreenRecordingMp4Composer
         int frameRate,
         uint videoBitrate)
     {
-        var videoFile = await StorageFile.GetFileFromPathAsync(videoPath);
-        var composition = new MediaComposition();
-        composition.Clips.Add(await MediaClip.CreateFromFileAsync(videoFile));
+        ArgumentException.ThrowIfNullOrWhiteSpace(videoPath);
+        ArgumentNullException.ThrowIfNull(audioPaths);
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
 
-        foreach (var audioPath in audioPaths)
-        {
-            var audioFile = await StorageFile.GetFileFromPathAsync(audioPath);
-            composition.BackgroundAudioTracks.Add(await BackgroundAudioTrack.CreateFromFileAsync(audioFile));
-        }
+        string audioJson = JsonSerializer.Serialize(audioPaths);
 
-        var outputDirectory = Path.GetDirectoryName(outputPath)
-            ?? throw new InvalidOperationException("录屏输出目录无效");
-        Directory.CreateDirectory(outputDirectory);
-        var folder = await StorageFolder.GetFolderFromPathAsync(outputDirectory);
-        var outputFile = await folder.CreateFileAsync(
-            Path.GetFileName(outputPath),
-            CreationCollisionOption.ReplaceExisting);
+        // 重度视频压制合成移入后台线程执行，彻底根治 UI 主线程被阻塞数秒导致的窗口黑屏卡死假死
+        int status = await Task.Run(() => NativeMethods.polyglance_windows_recording_compose(
+            videoPath,
+            audioJson,
+            outputPath,
+            width,
+            height,
+            frameRate,
+            videoBitrate));
 
-        var profile = MediaEncodingProfile.CreateMp4(VideoEncodingQuality.Auto);
-        profile.Video.Width = (uint)Math.Max(2, width - width % 2);
-        profile.Video.Height = (uint)Math.Max(2, height - height % 2);
-        profile.Video.FrameRate.Numerator = (uint)Math.Max(1, frameRate);
-        profile.Video.FrameRate.Denominator = 1;
-        profile.Video.Bitrate = videoBitrate;
-        if (audioPaths.Count == 0)
+        if (status != 0)
         {
-            profile.Audio = null;
-        }
-        else
-        {
-            profile.Audio = AudioEncodingProperties.CreateAac(48_000, 2, 192_000);
-        }
-
-        var result = await composition.RenderToFileAsync(
-            outputFile,
-            MediaTrimmingPreference.Precise,
-            profile);
-        if (result != TranscodeFailureReason.None)
-        {
-            throw new InvalidOperationException($"MP4 编码失败：{result}");
+            throw new InvalidOperationException($"MP4 编码失败 (错误码 {status})。");
         }
     }
 }

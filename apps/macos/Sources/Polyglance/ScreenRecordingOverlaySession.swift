@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 
 enum ScreenRecordingOverlayAction: Equatable {
     case start
@@ -108,17 +109,20 @@ final class ScreenRecordingToolbarView: NSView {
         cursorButton.setButtonType(.toggle)
         startButton = makeIconButton(
             title: "开始录制",
-            symbol: "record.circle",
+            symbol: "record.circle.fill",
+            color: .systemRed,
             action: #selector(startRecording)
         )
         pauseResumeButton = makeIconButton(
             title: "暂停录制",
             symbol: "pause.fill",
+            color: .secondaryLabelColor,
             action: #selector(pauseOrResume)
         )
         stopButton = makeIconButton(
             title: "停止并预览",
             symbol: "stop.fill",
+            color: .secondaryLabelColor,
             action: #selector(stopRecording)
         )
         closeButton = makeIconButton(
@@ -190,13 +194,19 @@ final class ScreenRecordingToolbarView: NSView {
         qualityPopUp.isEnabled = isReady
         frameRatePopUp.isEnabled = isReady
         delayPopUp.isEnabled = isReady
+        let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        let isMicDenied = micStatus == .denied || micStatus == .restricted
         systemAudioButton.isEnabled = isReady && settings.format.supportsAudio
-        microphoneButton.isEnabled = isReady && settings.format.supportsAudio
+        microphoneButton.isEnabled = isReady && settings.format.supportsAudio && !isMicDenied
         cursorButton.isEnabled = isReady
         startButton.isEnabled = isReady
-        pauseResumeButton.isEnabled = state == .recording || state == .paused
-        stopButton.isEnabled = state == .recording || state == .paused
+        startButton.image = symbol(isReady ? "record.circle.fill" : "record.circle", color: isReady ? .systemRed : .secondaryLabelColor)
+        startButton.contentTintColor = isReady ? .systemRed : .secondaryLabelColor
+        let isActive = state == .recording || state == .paused
+        pauseResumeButton.isEnabled = isActive
+        stopButton.isEnabled = isActive
         closeButton.isEnabled = state != .finalizing && state != .starting
+        let actionColor: NSColor = isActive ? .black : .secondaryLabelColor
         switch state {
         case .idle:
             stopTimer()
@@ -229,7 +239,10 @@ final class ScreenRecordingToolbarView: NSView {
         let isPaused = state == .paused
         pauseResumeButton.toolTip = isPaused ? "继续录制" : "暂停录制"
         pauseResumeButton.setAccessibilityLabel(isPaused ? "继续录制" : "暂停录制")
-        pauseResumeButton.image = symbol(isPaused ? "play.fill" : "pause.fill")
+        pauseResumeButton.image = symbol(isPaused ? "play.fill" : "pause.fill", color: actionColor)
+        pauseResumeButton.contentTintColor = actionColor
+        stopButton.image = symbol("stop.fill", color: actionColor)
+        stopButton.contentTintColor = actionColor
     }
 
     private func startTimerIfNeeded() {
@@ -346,25 +359,37 @@ final class ScreenRecordingToolbarView: NSView {
     private func updateTogglePresentation() {
         let activeColor = NSColor.systemBlue
         let inactiveColor = NSColor.secondaryLabelColor
+        let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        let isMicDenied = micStatus == .denied || micStatus == .restricted
 
         systemAudioButton.state = settings.capturesSystemAudio ? .on : .off
-        microphoneButton.state = settings.capturesMicrophone ? .on : .off
+        microphoneButton.state = (settings.capturesMicrophone && !isMicDenied) ? .on : .off
         cursorButton.state = settings.showsCursor ? .on : .off
         systemAudioButton.contentTintColor = settings.capturesSystemAudio ? activeColor : inactiveColor
-        microphoneButton.contentTintColor = settings.capturesMicrophone ? activeColor : inactiveColor
+        microphoneButton.contentTintColor = (settings.capturesMicrophone && !isMicDenied) ? activeColor : inactiveColor
         cursorButton.contentTintColor = settings.showsCursor ? activeColor : inactiveColor
 
         systemAudioButton.image = symbol(
             settings.capturesSystemAudio ? "speaker.wave.2.fill" : "speaker.slash.fill",
             color: settings.capturesSystemAudio ? activeColor : inactiveColor
         )
-        systemAudioButton.toolTip = "录制系统声音"
+        systemAudioButton.toolTip = settings.format.supportsAudio ? "录制系统声音" : "当前格式不支持录制音频"
+        systemAudioButton.isEnabled = settings.format.supportsAudio
 
         microphoneButton.image = symbol(
-            settings.capturesMicrophone ? "mic.fill" : "mic.slash.fill",
-            color: settings.capturesMicrophone ? activeColor : inactiveColor
+            (settings.capturesMicrophone && !isMicDenied) ? "mic.fill" : "mic.slash.fill",
+            color: (settings.capturesMicrophone && !isMicDenied) ? activeColor : inactiveColor
         )
-        microphoneButton.toolTip = "录制麦克风"
+        if !settings.format.supportsAudio {
+            microphoneButton.toolTip = "当前格式不支持录制音频"
+            microphoneButton.isEnabled = false
+        } else if isMicDenied {
+            microphoneButton.toolTip = "麦克风权限未开启，请在系统设置中允许"
+            microphoneButton.isEnabled = false
+        } else {
+            microphoneButton.toolTip = "录制麦克风"
+            microphoneButton.isEnabled = true
+        }
 
         cursorButton.image = symbol(
             "cursorarrow",
@@ -373,12 +398,15 @@ final class ScreenRecordingToolbarView: NSView {
         cursorButton.toolTip = "显示鼠标指针"
     }
 
-    private func makeIconButton(title: String, symbol symbolName: String, action: Selector) -> NSButton {
+    private func makeIconButton(title: String, symbol symbolName: String, color: NSColor? = nil, action: Selector) -> NSButton {
         let button = ScreenRecordingToolbarButton(title: "", target: self, action: action)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.isBordered = false
         button.bezelStyle = .texturedRounded
-        button.image = symbol(symbolName)
+        button.image = symbol(symbolName, color: color)
+        if let color {
+            button.contentTintColor = color
+        }
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleProportionallyDown
         button.refusesFirstResponder = true
@@ -401,7 +429,11 @@ final class ScreenRecordingToolbarView: NSView {
         if let color {
             config = config.applying(NSImage.SymbolConfiguration(hierarchicalColor: color))
         }
-        return base.withSymbolConfiguration(config)
+        guard let image = base.withSymbolConfiguration(config) else { return nil }
+        if color != nil {
+            image.isTemplate = false
+        }
+        return image
     }
 
     private func showHelp(for button: NSButton) {
@@ -431,7 +463,28 @@ final class ScreenRecordingToolbarView: NSView {
     }
 
     @objc private func toggleMicrophone() {
+        let authStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        if authStatus == .denied || authStatus == .restricted {
+            PermissionRequestCoordinator.shared.openFromSettings(.microphone)
+            settings.capturesMicrophone = false
+            updateTogglePresentation()
+            onSettingsChanged?(settings)
+            return
+        }
+
         settings.capturesMicrophone.toggle()
+        if settings.capturesMicrophone && authStatus == .notDetermined {
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if !granted {
+                        self.settings.capturesMicrophone = false
+                        self.updateTogglePresentation()
+                        self.onSettingsChanged?(self.settings)
+                    }
+                }
+            }
+        }
         updateTogglePresentation()
         onSettingsChanged?(settings)
     }
