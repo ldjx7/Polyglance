@@ -1,5 +1,5 @@
+use crate::{POLYGLANCE_ERR_NULL_PTR, ffi_status};
 use std::ffi::c_char;
-use crate::{ffi_status, POLYGLANCE_ERR_NULL_PTR};
 
 #[cfg(not(windows))]
 use crate::POLYGLANCE_ERR_INIT;
@@ -52,13 +52,13 @@ pub unsafe extern "C" fn polyglance_windows_store_install_updates(
 
 #[cfg(windows)]
 mod windows_impl {
-    use std::ffi::c_char;
+    use crate::{POLYGLANCE_ERR_INIT, POLYGLANCE_OK, string_to_c_char};
     use serde::Serialize;
-    use windows::core::Interface;
+    use std::ffi::c_char;
     use windows::Services::Store::StoreContext;
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::Shell::IInitializeWithWindow;
-    use crate::{string_to_c_char, POLYGLANCE_ERR_INIT, POLYGLANCE_OK};
+    use windows::core::Interface;
 
     #[derive(Serialize)]
     pub struct StoreUpdateCheckInfo {
@@ -74,13 +74,8 @@ mod windows_impl {
         pub message: String,
     }
 
-    pub unsafe fn check_updates(
-        owner_hwnd: isize,
-        out_update_json: *mut *mut c_char,
-    ) -> i32 {
-        let worker = std::thread::spawn(move || {
-            run_check_updates(owner_hwnd)
-        });
+    pub unsafe fn check_updates(owner_hwnd: isize, out_update_json: *mut *mut c_char) -> i32 {
+        let worker = std::thread::spawn(move || run_check_updates(owner_hwnd));
 
         match worker.join() {
             Ok(Ok(json)) => {
@@ -92,13 +87,14 @@ mod windows_impl {
     }
 
     fn run_check_updates(owner_hwnd: isize) -> Result<String, String> {
-        let context = get_context(owner_hwnd)
-            .map_err(|e| format!("get_context failed: {e}"))?;
+        let context = get_context(owner_hwnd).map_err(|e| format!("get_context failed: {e}"))?;
 
-        let updates_op = context.GetAppAndOptionalStorePackageUpdatesAsync()
+        let updates_op = context
+            .GetAppAndOptionalStorePackageUpdatesAsync()
             .map_err(|e| format!("GetAppAndOptionalStorePackageUpdatesAsync failed: {e}"))?;
 
-        let updates = updates_op.get()
+        let updates = updates_op
+            .get()
             .map_err(|e| format!("updates_op get failed: {e}"))?;
 
         let count = updates.Size().unwrap_or(0);
@@ -118,7 +114,8 @@ mod windows_impl {
             if let Ok(pkg) = update.Package() {
                 if let Ok(id) = pkg.Id() {
                     if let Ok(ver) = id.Version() {
-                        version = format!("{}.{}.{}.{}", ver.Major, ver.Minor, ver.Build, ver.Revision);
+                        version =
+                            format!("{}.{}.{}.{}", ver.Major, ver.Minor, ver.Build, ver.Revision);
                     }
                 }
                 if let Ok(name) = pkg.DisplayName() {
@@ -133,19 +130,18 @@ mod windows_impl {
 
         let info = StoreUpdateCheckInfo {
             has_update: true,
-            version: if version.is_empty() { "最新版".to_string() } else { version },
+            version: if version.is_empty() {
+                "最新版".to_string()
+            } else {
+                version
+            },
             title,
         };
         serde_json::to_string(&info).map_err(|e| e.to_string())
     }
 
-    pub unsafe fn install_updates(
-        owner_hwnd: isize,
-        out_result_json: *mut *mut c_char,
-    ) -> i32 {
-        let worker = std::thread::spawn(move || {
-            run_install_updates(owner_hwnd)
-        });
+    pub unsafe fn install_updates(owner_hwnd: isize, out_result_json: *mut *mut c_char) -> i32 {
+        let worker = std::thread::spawn(move || run_install_updates(owner_hwnd));
 
         match worker.join() {
             Ok(Ok(json)) => {
@@ -157,13 +153,14 @@ mod windows_impl {
     }
 
     fn run_install_updates(owner_hwnd: isize) -> Result<String, String> {
-        let context = get_context(owner_hwnd)
-            .map_err(|e| format!("get_context failed: {e}"))?;
+        let context = get_context(owner_hwnd).map_err(|e| format!("get_context failed: {e}"))?;
 
-        let updates_op = context.GetAppAndOptionalStorePackageUpdatesAsync()
+        let updates_op = context
+            .GetAppAndOptionalStorePackageUpdatesAsync()
             .map_err(|e| format!("GetAppAndOptionalStorePackageUpdatesAsync failed: {e}"))?;
 
-        let updates = updates_op.get()
+        let updates = updates_op
+            .get()
             .map_err(|e| format!("updates_op get failed: {e}"))?;
 
         if updates.Size().unwrap_or(0) == 0 {
@@ -175,14 +172,20 @@ mod windows_impl {
             return serde_json::to_string(&info).map_err(|e| e.to_string());
         }
 
-        let download_op = context.RequestDownloadAndInstallStorePackageUpdatesAsync(&updates)
-            .map_err(|e| format!("RequestDownloadAndInstallStorePackageUpdatesAsync failed: {e}"))?;
+        let download_op = context
+            .RequestDownloadAndInstallStorePackageUpdatesAsync(&updates)
+            .map_err(|e| {
+                format!("RequestDownloadAndInstallStorePackageUpdatesAsync failed: {e}")
+            })?;
 
-        let result = download_op.get()
+        let result = download_op
+            .get()
             .map_err(|e| format!("download_op get failed: {e}"))?;
 
         use windows::Services::Store::StorePackageUpdateState;
-        let state = result.OverallState().unwrap_or(StorePackageUpdateState::OtherError);
+        let state = result
+            .OverallState()
+            .unwrap_or(StorePackageUpdateState::OtherError);
         let info = match state {
             StorePackageUpdateState::Completed => StoreUpdateInstallInfo {
                 success: true,

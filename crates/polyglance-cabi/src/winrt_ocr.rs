@@ -1,5 +1,5 @@
+use crate::{POLYGLANCE_ERR_NULL_PTR, ffi_status};
 use std::ffi::c_char;
-use crate::{ffi_status, POLYGLANCE_ERR_NULL_PTR};
 
 #[cfg(not(windows))]
 use crate::POLYGLANCE_ERR_INIT;
@@ -30,14 +30,16 @@ pub unsafe extern "C" fn polyglance_windows_ocr_recognize(
 
 #[cfg(windows)]
 mod windows_impl {
+    use crate::{
+        POLYGLANCE_ERR_INIT, POLYGLANCE_ERR_INVALID_INPUT, POLYGLANCE_OK, string_to_c_char,
+    };
+    use serde::Serialize;
     use std::ffi::c_char;
-    use windows::core::HSTRING;
     use windows::Globalization::Language;
     use windows::Graphics::Imaging::BitmapDecoder;
     use windows::Media::Ocr::OcrEngine;
     use windows::Storage::Streams::{DataWriter, InMemoryRandomAccessStream};
-    use serde::Serialize;
-    use crate::{string_to_c_char, POLYGLANCE_ERR_INIT, POLYGLANCE_ERR_INVALID_INPUT, POLYGLANCE_OK};
+    use windows::core::HSTRING;
 
     #[derive(Serialize)]
     pub struct OcrWordResult {
@@ -64,9 +66,7 @@ mod windows_impl {
 
         // WinRT 异步操作在 STA（UI 线程）上同步 .get() 会因消息循环被阻塞而死锁。
         // 在独立的后台线程（MTA）中执行，彻底根除 UI 卡死。
-        let worker = std::thread::spawn(move || {
-            recognize_png_bytes(&bytes)
-        });
+        let worker = std::thread::spawn(move || recognize_png_bytes(&bytes));
 
         match worker.join() {
             Ok(Ok(lines)) => {
@@ -86,33 +86,37 @@ mod windows_impl {
             .map_err(|e| format!("Create InMemoryRandomAccessStream failed: {e}"))?;
         let writer = DataWriter::CreateDataWriter(&stream)
             .map_err(|e| format!("Create DataWriter failed: {e}"))?;
-        writer.WriteBytes(bytes)
+        writer
+            .WriteBytes(bytes)
             .map_err(|e| format!("WriteBytes failed: {e}"))?;
-        writer.StoreAsync()
+        writer
+            .StoreAsync()
             .map_err(|e| format!("StoreAsync failed: {e}"))?
             .get()
             .map_err(|e| format!("StoreAsync get failed: {e}"))?;
         let _ = writer.DetachStream();
-        stream.Seek(0)
-            .map_err(|e| format!("Seek failed: {e}"))?;
+        stream.Seek(0).map_err(|e| format!("Seek failed: {e}"))?;
 
         let decoder = BitmapDecoder::CreateAsync(&stream)
             .map_err(|e| format!("BitmapDecoder CreateAsync failed: {e}"))?
             .get()
             .map_err(|e| format!("Decoder get failed: {e}"))?;
-        let software_bitmap = decoder.GetSoftwareBitmapAsync()
+        let software_bitmap = decoder
+            .GetSoftwareBitmapAsync()
             .map_err(|e| format!("GetSoftwareBitmapAsync failed: {e}"))?
             .get()
             .map_err(|e| format!("SoftwareBitmap get failed: {e}"))?;
 
         let engine = create_engine()?;
-        let result = engine.RecognizeAsync(&software_bitmap)
+        let result = engine
+            .RecognizeAsync(&software_bitmap)
             .map_err(|e| format!("RecognizeAsync failed: {e}"))?
             .get()
             .map_err(|e| format!("Recognize get failed: {e}"))?;
 
         let mut lines = Vec::new();
-        let result_lines = result.Lines()
+        let result_lines = result
+            .Lines()
             .map_err(|e| format!("Get lines failed: {e}"))?;
         for line in result_lines {
             let text = line.Text().unwrap_or_default().to_string();
@@ -143,11 +147,19 @@ mod windows_impl {
         }
 
         let candidates = [
-            "zh-Hans", "zh-CN", "zh-Hans-CN",
-            "zh-Hant", "zh-TW", "zh-HK",
-            "en-US", "en-GB", "en",
-            "ja-JP", "ja",
-            "ko-KR", "ko",
+            "zh-Hans",
+            "zh-CN",
+            "zh-Hans-CN",
+            "zh-Hant",
+            "zh-TW",
+            "zh-HK",
+            "en-US",
+            "en-GB",
+            "en",
+            "ja-JP",
+            "ja",
+            "ko-KR",
+            "ko",
         ];
 
         for tag in candidates {

@@ -1,5 +1,5 @@
+use crate::{POLYGLANCE_ERR_NULL_PTR, ffi_status};
 use std::ffi::c_char;
-use crate::{ffi_status, POLYGLANCE_ERR_NULL_PTR};
 
 #[cfg(not(windows))]
 use crate::POLYGLANCE_ERR_INIT;
@@ -52,9 +52,12 @@ pub unsafe extern "C" fn polyglance_windows_recording_compose(
 
 #[cfg(windows)]
 mod windows_impl {
+    use crate::{
+        POLYGLANCE_ERR_INIT, POLYGLANCE_ERR_INVALID_INPUT, POLYGLANCE_ERR_NULL_PTR, POLYGLANCE_OK,
+        c_char_to_str,
+    };
     use std::ffi::c_char;
     use std::path::Path;
-    use windows::core::HSTRING;
     use windows::Media::Editing::{
         BackgroundAudioTrack, MediaClip, MediaComposition, MediaTrimmingPreference,
     };
@@ -63,10 +66,7 @@ mod windows_impl {
     };
     use windows::Media::Transcoding::{MediaTranscoder, TranscodeFailureReason};
     use windows::Storage::{CreationCollisionOption, FileAccessMode, StorageFile, StorageFolder};
-    use crate::{
-        c_char_to_str, POLYGLANCE_ERR_INIT, POLYGLANCE_ERR_INVALID_INPUT,
-        POLYGLANCE_ERR_NULL_PTR, POLYGLANCE_OK,
-    };
+    use windows::core::HSTRING;
 
     pub unsafe fn compose(
         video_path: *const c_char,
@@ -137,8 +137,8 @@ mod windows_impl {
             .get()
             .map_err(|e| format!("Get video file failed: {e}"))?;
 
-        let composition = MediaComposition::new()
-            .map_err(|e| format!("MediaComposition new failed: {e}"))?;
+        let composition =
+            MediaComposition::new().map_err(|e| format!("MediaComposition new failed: {e}"))?;
 
         let clip = MediaClip::CreateFromFileAsync(&video_file)
             .map_err(|e| format!("CreateFromFileAsync clip failed: {e}"))?
@@ -176,8 +176,7 @@ mod windows_impl {
 
         let out_p = Path::new(output_path);
         let parent = out_p.parent().ok_or("Invalid output path")?;
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Create dir failed: {e}"))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("Create dir failed: {e}"))?;
         let abs_parent = std::fs::canonicalize(parent)
             .map_err(|e| format!("Canonicalize parent failed: {e}"))?;
         let parent_clean = abs_parent
@@ -257,9 +256,9 @@ mod windows_impl {
                 .PrepareMediaStreamSourceTranscodeAsync(&source, &output, profile)?
                 .get()?;
             if !prepared.CanTranscode()? {
-                return Err(windows::core::Error::from_hresult(
-                    windows::core::HRESULT(0x80004005u32 as i32),
-                ));
+                return Err(windows::core::Error::from_hresult(windows::core::HRESULT(
+                    0x80004005u32 as i32,
+                )));
             }
             prepared.TranscodeAsync()?.get()
         })();
@@ -267,5 +266,4 @@ mod windows_impl {
         let closed = output.Close();
         result.and(closed)
     }
-
 }

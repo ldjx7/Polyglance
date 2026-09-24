@@ -9,6 +9,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Polyglance.Core.Models;
 using Polyglance.Platform.Capture;
+using Polyglance.Platform.Dpi;
 using Polyglance.Platform.Interop;
 using Polyglance.Platform.Recording;
 using System.Windows.Interop;
@@ -44,7 +45,11 @@ public partial class ScreenRecordingWindow : Window
 
     public ScreenRecordingWindow(Rect recordingRect, AppConfiguration? configuration = null)
         : this(
-            new Rect(0, 0, SystemParameters.PrimaryScreenWidth, SystemParameters.PrimaryScreenHeight),
+            new Rect(
+                NativeWin32.GetSystemMetrics(NativeWin32.SM_XVIRTUALSCREEN),
+                NativeWin32.GetSystemMetrics(NativeWin32.SM_YVIRTUALSCREEN),
+                NativeWin32.GetSystemMetrics(NativeWin32.SM_CXVIRTUALSCREEN),
+                NativeWin32.GetSystemMetrics(NativeWin32.SM_CYVIRTUALSCREEN)),
             recordingRect,
             configuration)
     {
@@ -75,6 +80,7 @@ public partial class ScreenRecordingWindow : Window
 
         SourceInitialized += (_, _) =>
         {
+            CoverCapturedArea();
             IntPtr handle = new WindowInteropHelper(this).Handle;
             NativeWin32.SetWindowDisplayAffinity(handle, NativeWin32.WDA_EXCLUDEFROMCAPTURE);
         };
@@ -182,8 +188,42 @@ public partial class ScreenRecordingWindow : Window
             }
         }
 
-        _toolbarWindow.Left = _screenBounds.X + left;
-        _toolbarWindow.Top = _screenBounds.Y + top;
+        _toolbarWindow.Left = Left + left;
+        _toolbarWindow.Top = Top + top;
+    }
+
+    private void CoverCapturedArea()
+    {
+        IntPtr handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        bool placed = NativeWin32.SetWindowPos(
+            handle,
+            IntPtr.Zero,
+            (int)Math.Round(_screenBounds.X),
+            (int)Math.Round(_screenBounds.Y),
+            (int)Math.Round(_screenBounds.Width),
+            (int)Math.Round(_screenBounds.Height),
+            NativeWin32.SWP_NOZORDER | NativeWin32.SWP_NOACTIVATE);
+        if (!placed)
+        {
+            return;
+        }
+
+        Point origin = DpiHelper.TransformFromPixels(
+            this,
+            new Point(_screenBounds.X, _screenBounds.Y));
+        Point extent = DpiHelper.TransformFromPixels(
+            this,
+            new Point(_screenBounds.Width, _screenBounds.Height));
+
+        Left = origin.X;
+        Top = origin.Y;
+        Width = Math.Abs(extent.X);
+        Height = Math.Abs(extent.Y);
     }
 
     private async void OnStartClick(object sender, RoutedEventArgs e)

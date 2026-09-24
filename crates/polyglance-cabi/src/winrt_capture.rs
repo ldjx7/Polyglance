@@ -1,10 +1,10 @@
-use std::ffi::c_void;
-use crate::{
-    ffi_status, ffi_void, POLYGLANCE_ERR_INIT, POLYGLANCE_ERR_INVALID_INPUT,
-    POLYGLANCE_ERR_NULL_PTR,
-};
 #[cfg(windows)]
 use crate::POLYGLANCE_OK;
+use crate::{
+    POLYGLANCE_ERR_INIT, POLYGLANCE_ERR_INVALID_INPUT, POLYGLANCE_ERR_NULL_PTR, ffi_status,
+    ffi_void,
+};
+use std::ffi::c_void;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn polyglance_windows_capture_new(
@@ -100,10 +100,9 @@ pub unsafe extern "C" fn polyglance_windows_capture_free(handle: *mut c_void) {
 
 #[cfg(windows)]
 mod windows_impl {
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Duration, Instant};
-    use windows::core::{Interface, Result};
     use windows::Foundation::TypedEventHandler;
     use windows::Graphics::Capture::{
         Direct3D11CaptureFramePool, GraphicsCaptureItem, GraphicsCaptureSession,
@@ -116,20 +115,21 @@ mod windows_impl {
         D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
     };
     use windows::Win32::Graphics::Direct3D11::{
-        D3D11_BOX, D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-        D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
-        D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
+        D3D11_BOX, D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_MAP_READ,
+        D3D11_MAPPED_SUBRESOURCE, D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING, D3D11CreateDevice,
+        ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
     };
     use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
     use windows::Win32::Graphics::Dxgi::IDXGIDevice;
     use windows::Win32::Graphics::Gdi::{
-        GetMonitorInfoW, MonitorFromRect, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromRect,
     };
     use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx, CoUninitialize};
     use windows::Win32::System::WinRT::Direct3D11::{
         CreateDirect3D11DeviceFromDXGIDevice, IDirect3DDxgiInterfaceAccess,
     };
     use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop;
+    use windows::core::{Interface, Result};
 
     pub struct CaptureSession {
         context: ID3D11DeviceContext,
