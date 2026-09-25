@@ -254,9 +254,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showSettings()
     }
 
+    var isSettingsWindowVisible: Bool {
+        settingsWindowCoordinator.window?.isVisible == true
+    }
+
     func checkForUpdates() {
         showSettings(tab: .about)
-        appUpdater.checkForUpdates()
+        DispatchQueue.main.async { [weak self] in
+            self?.appUpdater.checkForUpdates()
+        }
     }
 
     func captureScreenshotAndPin(triggerTime: CFAbsoluteTime? = nil) {

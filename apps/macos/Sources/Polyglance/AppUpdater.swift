@@ -85,6 +85,7 @@ final class InlineAppUpdateDriver: NSObject, SPUUserDriver {
 
     func showUpdateFound(with appcastItem: SUAppcastItem, state: SPUUserUpdateState, reply: @escaping (SPUUserUpdateChoice) -> Void) {
         self.updateFoundReply = reply
+        updater?.clearCheckTimeout()
         updater?.state = .updateAvailable(
             version: appcastItem.versionString,
             displayVersion: appcastItem.displayVersionString,
@@ -118,11 +119,13 @@ final class InlineAppUpdateDriver: NSObject, SPUUserDriver {
     func showUpdateReleaseNotesFailedToDownloadWithError(_ error: Error) {}
 
     func showUpdateNotFoundWithError(_ error: Error, acknowledgement: @escaping () -> Void) {
+        updater?.clearCheckTimeout()
         updater?.state = .upToDate(checkedAt: Date())
         acknowledgement()
     }
 
     func showUpdaterError(_ error: Error, acknowledgement: @escaping () -> Void) {
+        updater?.clearCheckTimeout()
         updater?.state = .failed(message: error.localizedDescription)
         acknowledgement()
     }
@@ -173,6 +176,7 @@ final class InlineAppUpdateDriver: NSObject, SPUUserDriver {
         downloadCancellation = nil
         updateFoundReply = nil
         readyToInstallReply = nil
+        updater?.clearCheckTimeout()
         switch updater?.state {
         case .upToDate, .failed:
             break
@@ -183,7 +187,11 @@ final class InlineAppUpdateDriver: NSObject, SPUUserDriver {
 
     func showUpdateInFocus() {
         SettingsNavigation.shared.selectedTab = .about
-        (AppDelegate.shared ?? (NSApp.delegate as? AppDelegate))?.showSettings(tab: .about)
+        guard let appDelegate = (AppDelegate.shared ?? (NSApp.delegate as? AppDelegate)) else { return }
+        if appDelegate.isSettingsWindowVisible {
+            return
+        }
+        appDelegate.showSettings(tab: .about)
     }
 }
 
@@ -197,6 +205,7 @@ final class AppUpdater: NSObject, ObservableObject {
     private let updaterDelegate: AppUpdaterDelegateHelper
     private var driver: InlineAppUpdateDriver?
     private var updater: SPUUpdater?
+    private var checkTimeoutTask: Task<Void, Never>?
 
     init(configuration: AppUpdateConfiguration = AppUpdateConfiguration()) {
         self.configuration = configuration
@@ -226,13 +235,51 @@ final class AppUpdater: NSObject, ObservableObject {
         }
     }
 
+    func clearCheckTimeout() {
+        checkTimeoutTask?.cancel()
+        checkTimeoutTask = nil
+    }
+
+    private func armCheckTimeout() {
+        clearCheckTimeout()
+        checkTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            guard !Task.isCancelled else { return }
+            if case .checking = self?.state {
+                self?.state = .failed(message: "检查更新超时，请稍后重试")
+            }
+        }
+    }
+
     func checkForUpdates() {
         guard configuration.isConfigured else {
             state = .failed(message: "当前构建未配置更新源（正式发布构建会通过 GitHub Release 自动配置安全更新）")
             return
         }
 
+        if let updater, !updater.canCheckForUpdates {
+            if case .checking = state { return }
+            state = .checking
+            armCheckTimeout()
+            Task {
+                for _ in 0..<15 {
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    guard !Task.isCancelled else { return }
+                    if self.updater?.canCheckForUpdates == true {
+                        break
+                    }
+                }
+                self.performCheck()
+            }
+            return
+        }
+
+        performCheck()
+    }
+
+    private func performCheck() {
         state = .checking
+        armCheckTimeout()
 
         let store = AppConfigurationStore()
         let includeBeta = (try? store.load())?.includeBetaUpdates ?? false
@@ -252,6 +299,7 @@ final class AppUpdater: NSObject, ObservableObject {
     }
 
     func cancelCheck() {
+        clearCheckTimeout()
         driver?.checkCancellation?()
         driver?.checkCancellation = nil
         state = .idle
@@ -316,6 +364,7 @@ final class AppUpdater: NSObject, ObservableObject {
         var request = URLRequest(url: apiUrl)
         request.setValue("Polyglance-Updater", forHTTPHeaderField: "User-Agent")
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        request.timeoutInterval = 8
 
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let httpResponse = response as? HTTPURLResponse,
