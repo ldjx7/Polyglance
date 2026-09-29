@@ -1,0 +1,1294 @@
+import { ScrollView, LineEdit, TextEdit, ComboBox } from "std-widgets.slint";
+
+export struct HistoryEntry {
+    id: string,
+    time: string,
+    provider: string,
+    source: string,
+    target: string,
+}
+
+export component AppTray inherits SystemTrayIcon {
+    icon: @image-url("../../../apps/windows/src/Polyglance.UI/Resources/Polyglance.png");
+    tooltip: "Polyglance";
+    in property <string> version-text: "v0.1.4 (1)";
+
+    callback show-translator();
+    callback show-settings();
+    callback check-updates();
+    callback screenshot();
+    callback long-capture();
+    callback recording();
+    callback ocr();
+    callback screen-translate();
+    callback selection-translate();
+    callback pin-clipboard();
+    callback restore-pin();
+    callback pin-history();
+    callback hide-all-pins();
+    callback show-all-pins();
+    callback close-all-pins();
+    callback destroy-all-pins();
+    callback quit();
+
+    Menu {
+        MenuItem { title: "截图"; activated => { root.screenshot(); } }
+        MenuItem { title: "长截图"; activated => { root.long-capture(); } }
+        MenuItem { title: "区域录屏"; activated => { root.recording(); } }
+        MenuItem { title: "文字识别"; activated => { root.ocr(); } }
+        MenuSeparator {}
+        MenuItem { title: "截图翻译"; activated => { root.screen-translate(); } }
+        MenuItem { title: "划词翻译"; activated => { root.selection-translate(); } }
+        MenuItem { title: "输入翻译"; activated => { root.show-translator(); } }
+        MenuSeparator {}
+        Menu {
+            title: "贴图管理";
+            MenuItem { title: "贴出剪贴板内容"; activated => { root.pin-clipboard(); } }
+            MenuItem { title: "恢复最近关闭的贴图"; activated => { root.restore-pin(); } }
+            MenuItem { title: "打开贴图历史目录…"; activated => { root.pin-history(); } }
+            MenuSeparator {}
+            MenuItem { title: "隐藏全部贴图"; activated => { root.hide-all-pins(); } }
+            MenuItem { title: "显示全部贴图"; activated => { root.show-all-pins(); } }
+            MenuSeparator {}
+            MenuItem { title: "关闭全部贴图"; activated => { root.close-all-pins(); } }
+            MenuItem { title: "彻底销毁全部贴图"; activated => { root.destroy-all-pins(); } }
+        }
+        MenuSeparator {}
+        MenuItem { title: "偏好设置…"; activated => { root.show-settings(); } }
+        MenuItem { title: "检查更新…"; activated => { root.check-updates(); } }
+        MenuSeparator {}
+        MenuItem { title: root.version-text; enabled: false; }
+        MenuItem { title: "退出 Polyglance"; activated => { root.quit(); } }
+    }
+}
+
+component IconButton inherits Rectangle {
+    in property <string> icon-path;
+    in property <bool> active: false;
+    in property <string> tooltip: "";
+    callback clicked();
+
+    width: 29px;
+    height: 29px;
+    border-radius: 15px;
+    background: root.active ? #1674d8 : (ta.has-hover ? #edf5ff : #ffffff);
+    border-width: 1px;
+    border-color: root.active ? #1674d8 : (ta.has-hover ? #aed1f7 : #e4e9ef);
+
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    Path {
+        commands: root.icon-path;
+        width: 17px;
+        height: 17px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        stroke-width: 1.8px;
+        stroke: root.active ? #ffffff : (ta.has-hover ? #1674d8 : #536375);
+        fill: transparent;
+    }
+
+    if ta.has-hover && root.tooltip != "": Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: parent.height + 6px;
+        z: 999;
+        background: #1f242c;
+        border-radius: 5px;
+        drop-shadow-blur: 8px;
+        drop-shadow-color: #00000040;
+        drop-shadow-offset-y: 2px;
+        border-width: 1px;
+        border-color: #384252;
+
+        HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 8px;
+            padding-top: 4px;
+            padding-bottom: 4px;
+            Text {
+                text: root.tooltip;
+                color: #ffffff;
+                font-size: 11px;
+                font-weight: 500;
+                vertical-alignment: center;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}
+
+component MiniButton inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+
+    height: 25px;
+    border-radius: 6px;
+    background: ta.has-hover ? #edf5ff : #ffffff;
+    border-width: 1px;
+    border-color: ta.has-hover ? #aad0f6 : #e0e6ed;
+
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        alignment: center;
+        Text {
+            text: root.text;
+            font-size: 11px;
+            color: ta.has-hover ? #1669c1 : #596779;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component AccentButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    height: 32px;
+    border-radius: 6px;
+    background: !root.enabled ? #e7ebf0 : (ta.has-hover ? #0d68c4 : #1674d8);
+    border-width: 1px;
+    border-color: !root.enabled ? #e1e6ec : #1674d8;
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        alignment: center;
+        Text {
+            text: root.text;
+            font-size: 13px;
+            font-weight: 600;
+            color: !root.enabled ? #8b96a3 : #ffffff;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component NormalButton inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+
+    height: 32px;
+    border-radius: 6px;
+    background: ta.has-hover ? #f1f6fc : #ffffff;
+    border-width: 1px;
+    border-color: ta.has-hover ? #b9d4f2 : #e0e6ed;
+
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        alignment: center;
+        Text {
+            text: root.text;
+            font-size: 13px;
+            color: ta.has-hover ? #1769c2 : #526174;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component ResultCard inherits Rectangle {
+    in property <string> provider-name;
+    in property <image> provider-icon;
+    in property <string> result-text: "";
+    in property <bool> is-loading: false;
+    callback copy-clicked();
+
+    min-height: 112px;
+    border-radius: 12px;
+    background: #ffffff;
+    border-width: 1px;
+    border-color: #e4e9ef;
+
+    VerticalLayout {
+        padding: 13px;
+        spacing: 11px;
+        HorizontalLayout {
+            alignment: space-between;
+            HorizontalLayout {
+                spacing: 8px;
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    source: root.provider-icon;
+                    image-fit: contain;
+                }
+                Text {
+                    text: root.provider-name;
+                    font-size: 12.5px;
+                    font-weight: 600;
+                    color: #273240;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: root.is-loading ? "正在翻译…" : "";
+                font-size: 11px;
+                color: #1674d8;
+                vertical-alignment: center;
+            }
+        }
+        Text {
+            text: root.result-text != "" ? root.result-text : (root.is-loading ? "" : "等待翻译结果");
+            font-size: 14px;
+            color: root.result-text != "" ? #283342 : #9ba6b2;
+            wrap: word-wrap;
+            vertical-stretch: 1;
+        }
+        HorizontalLayout {
+            alignment: end;
+            MiniButton {
+                text: "复制译文";
+                clicked => { root.copy-clicked(); }
+            }
+        }
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "Polyglance";
+    icon: @image-url("../../../apps/windows/src/Polyglance.UI/Resources/Polyglance.png");
+    preferred-width: 460px;
+    preferred-height: 660px;
+    min-width: 380px;
+    min-height: 400px;
+    background: #f8f9fb;
+
+    in-out property <int> active-tab: 0; // 0 = 翻译, 1 = 历史, 2 = 设置
+    in-out property <string> source-text: "";
+    in-out property <string> status-text: "就绪";
+    in-out property <bool> is-translating: false;
+    in-out property <bool> is-pinned: false;
+    in-out property <bool> is-long-capturing: false;
+    in-out property <bool> is-recording: false;
+
+    in-out property <string> source-language: "自动检测";
+    in-out property <string> target-language: "中文 (简体)";
+
+    in-out property <string> free-ai-translation: "";
+    in-out property <bool> free-ai-loading: false;
+    in-out property <string> google-translation: "";
+    in-out property <bool> google-loading: false;
+    in-out property <string> ms-translation: "";
+    in-out property <bool> ms-loading: false;
+    in-out property <string> custom-translation: "";
+    in-out property <bool> custom-loading: false;
+
+    in-out property <string> openai-endpoint: "https://api.openai.com/v1";
+    in-out property <string> openai-key: "";
+    in-out property <string> deepl-key: "";
+    in-out property <bool> click-through-enabled: false;
+    in-out property <string> model-path: "";
+    in-out property <string> model-status: "未安装自选模型，Windows 系统 OCR 仍可使用";
+    in-out property <string> ocr-engine: "系统 OCR";
+
+    in-out property <[HistoryEntry]> history-list: [];
+
+    in-out property <bool> is-input-folded: false;
+    in-out property <bool> is-favorite: false;
+
+    callback translate-clicked();
+    callback clear-clicked();
+    callback swap-languages-clicked();
+    callback copy-text-clicked(string);
+    callback capture-requested(int);
+    callback long-capture-clicked();
+    callback recording-clicked();
+    callback pin-capture-clicked();
+    callback clipboard-translate-clicked();
+    callback toggle-pin-clicked();
+    callback toggle-favorite-clicked();
+    callback toggle-fold-input-clicked();
+    callback adjust-services-clicked();
+    callback open-settings-clicked();
+    callback apply-history-item(string);
+    callback delete-history-item(string);
+    callback clear-history-clicked();
+
+    VerticalLayout {
+        padding: 14px;
+        spacing: 11px;
+
+        HorizontalLayout {
+            height: 36px;
+            spacing: 5px;
+            alignment: start;
+            // 1. 钉住/取消钉住
+            IconButton {
+                icon-path: "M 8 3 L 16 3 L 15 9 L 18 13 L 18 15 L 6 15 L 6 13 L 9 9 Z M 12 15 L 12 21";
+                active: root.is-pinned;
+                tooltip: "置顶窗口";
+                clicked => { root.toggle-pin-clicked(); }
+            }
+            // 2. 收藏当前翻译 (Ctrl+S)
+            IconButton {
+                icon-path: "M 12 2 L 15.09 8.26 L 22 9.27 L 17 14.14 L 18.18 21.02 L 12 17.77 L 5.82 21.02 L 7 14.14 L 2 9.27 L 8.91 8.26 Z";
+                active: root.is-favorite;
+                tooltip: "收藏当前翻译 (Ctrl+S)";
+                clicked => { root.toggle-favorite-clicked(); }
+            }
+            // 3. 历史记录与收藏夹
+            IconButton {
+                icon-path: "M 12 3 A 9 9 0 1 1 11.99 3 M 12 7 L 12 12 L 16 14";
+                active: root.active-tab == 1;
+                tooltip: "历史记录与收藏夹";
+                clicked => { root.active-tab = root.active-tab == 1 ? 0 : 1; }
+            }
+            // 4. 截图/OCR划选翻译
+            IconButton {
+                icon-path: "M 6 2 L 6 18 L 22 18 M 2 6 L 18 6 L 18 22";
+                tooltip: "截图翻译";
+                clicked => { root.capture-requested(1); }
+            }
+            // 5. 剪贴板翻译
+            IconButton {
+                icon-path: "M 16 4 L 19 4 C 20.1 4 21 4.9 21 6 L 21 20 C 21 21.1 20.1 22 19 22 L 5 22 C 3.9 22 3 21.1 3 20 L 3 6 C 3 4.9 3.9 4 5 4 L 8 4 M 8 2 L 16 2 L 16 6 L 8 6 Z";
+                tooltip: "翻译剪贴板内容";
+                clicked => { root.clipboard-translate-clicked(); }
+            }
+            // 6. 隐藏/显示输入框
+            IconButton {
+                icon-path: "M 1 12 S 5 4 12 4 S 23 12 23 12 S 19 20 12 20 S 1 12 1 12 Z M 12 9 A 3 3 0 1 1 11.99 9";
+                active: root.is-input-folded;
+                tooltip: "隐藏/显示输入框";
+                clicked => { root.toggle-fold-input-clicked(); }
+            }
+            // 7. 调整服务
+            IconButton {
+                icon-path: "M 4 4 L 9 4 L 9 9 L 4 9 Z M 15 4 L 20 4 L 20 9 L 15 9 Z M 4 15 L 9 15 L 9 20 L 4 20 Z M 15 15 L 20 15 L 20 20 L 15 20 Z";
+                tooltip: "选择启用的翻译服务";
+                clicked => { root.adjust-services-clicked(); }
+            }
+            Rectangle { horizontal-stretch: 1; background: transparent; }
+            // 8. 偏好设置
+            IconButton {
+                icon-path: "M 12 3 L 13 5 L 16 6 L 18 5 L 20 7 L 19 9 L 20 12 L 22 13 L 21 16 L 19 16 L 17 19 L 17 21 L 14 22 L 13 20 L 10 20 L 8 22 L 5 21 L 5 18 L 3 16 L 1 16 L 1 13 L 3 12 L 4 9 L 3 7 L 5 5 L 7 6 L 10 5 Z M 12 9 A 3 3 0 1 1 11.99 9";
+                tooltip: "偏好设置";
+                clicked => { root.open-settings-clicked(); }
+            }
+        }
+
+        // 2. Tab 0: Translation View
+        if root.active-tab == 0: VerticalLayout {
+            spacing: 11px;
+
+            if !root.is-input-folded: Rectangle {
+                border-radius: 12px;
+                background: #ffffff;
+                border-width: 1px;
+                border-color: #e4e9ef;
+
+                VerticalLayout {
+                    padding: 13px;
+                    spacing: 7px;
+
+                    source-input := TextEdit {
+                        height: 112px;
+                        wrap: word-wrap;
+                        text <=> root.source-text;
+                        placeholder-text: "输入或粘贴要翻译的文字";
+                        font-size: 14px;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 6px;
+                        MiniButton {
+                            text: "复制原文";
+                            clicked => { root.copy-text-clicked(root.source-text); }
+                        }
+                        MiniButton {
+                            text: "清空";
+                            clicked => {
+                                root.source-text = "";
+                                root.free-ai-translation = "";
+                                root.google-translation = "";
+                                root.ms-translation = "";
+                                root.custom-translation = "";
+                                root.clear-clicked();
+                            }
+                        }
+                        Rectangle { horizontal-stretch: 1; background: transparent; }
+                        Text {
+                            text: root.source-text == "" ? "等待输入" : "原文";
+                            font-size: 11px;
+                            color: #94a0ad;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                height: 34px;
+                spacing: 6px;
+                ComboBox {
+                    width: 127px;
+                    model: ["自动检测", "英语", "中文", "日语", "韩语", "法语", "德语", "俄语"];
+                    current-value <=> root.source-language;
+                }
+                MiniButton {
+                    text: "⇄";
+                    clicked => { root.swap-languages-clicked(); }
+                }
+                ComboBox {
+                    width: 121px;
+                    model: ["中文 (简体)", "英语", "日语", "韩语", "法语", "德语", "俄语"];
+                    current-value <=> root.target-language;
+                }
+                Rectangle { horizontal-stretch: 1; background: transparent; }
+                AccentButton {
+                    text: root.is-translating ? "翻译中" : "翻译";
+                    enabled: !root.is-translating && root.source-text != "";
+                    clicked => { root.translate-clicked(); }
+                }
+            }
+
+            ScrollView {
+                VerticalLayout {
+                    spacing: 9px;
+
+                    ResultCard {
+                        provider-name: "官方 AI";
+                        provider-icon: @image-url("../../../apps/windows/src/Polyglance.UI/Resources/ProviderIcons/free-ai.png");
+                        result-text: root.free-ai-translation;
+                        is-loading: root.free-ai-loading;
+                        copy-clicked => { root.copy-text-clicked(root.free-ai-translation); }
+                    }
+                    ResultCard {
+                        provider-name: "Microsoft 翻译";
+                        provider-icon: @image-url("../../../apps/windows/src/Polyglance.UI/Resources/ProviderIcons/microsoft.png");
+                        result-text: root.ms-translation;
+                        is-loading: root.ms-loading;
+                        copy-clicked => { root.copy-text-clicked(root.ms-translation); }
+                    }
+                    ResultCard {
+                        provider-name: "Google 翻译";
+                        provider-icon: @image-url("../../../apps/windows/src/Polyglance.UI/Resources/ProviderIcons/google.png");
+                        result-text: root.google-translation;
+                        is-loading: root.google-loading;
+                        copy-clicked => { root.copy-text-clicked(root.google-translation); }
+                    }
+                    ResultCard {
+                        provider-name: "自定义 AI";
+                        provider-icon: @image-url("../../../apps/windows/src/Polyglance.UI/Resources/ProviderIcons/openai.png");
+                        result-text: root.custom-translation;
+                        is-loading: root.custom-loading;
+                        copy-clicked => { root.copy-text-clicked(root.custom-translation); }
+                    }
+                }
+            }
+        }
+
+        // 3. Tab 1: History View
+        if root.active-tab == 1: VerticalLayout {
+            spacing: 12px;
+
+            HorizontalLayout {
+                alignment: space-between;
+                Text {
+                    text: "历史记录";
+                    font-size: 15px;
+                    font-weight: 600;
+                    color: #273240;
+                }
+                NormalButton {
+                    text: "清空全部历史";
+                    clicked => { root.clear-history-clicked(); }
+                }
+            }
+
+            ScrollView {
+                VerticalLayout {
+                    spacing: 8px;
+                    if root.history-list.length == 0: Rectangle {
+                        height: 120px;
+                        border-radius: 8px;
+                        background: #ffffff;
+                        border-width: 1px;
+                        border-color: #e4e9ef;
+                        Text {
+                            text: "暂无翻译历史记录";
+                            font-size: 13px;
+                            color: #93a0ae;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                        }
+                    }
+
+                    for item in root.history-list: Rectangle {
+                        border-radius: 8px;
+                        background: #ffffff;
+                        border-width: 1px;
+                        border-color: #e4e9ef;
+
+                        VerticalLayout {
+                            padding: 10px;
+                            spacing: 6px;
+
+                            HorizontalLayout {
+                                alignment: space-between;
+                                Text {
+                                    text: item.time + " · " + item.provider;
+                                    font-size: 11px;
+                                    color: #8b98a7;
+                                }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    MiniButton {
+                                        text: "填入重翻";
+                                        clicked => { root.apply-history-item(item.source); }
+                                    }
+                                    MiniButton {
+                                        text: "复制译文";
+                                        clicked => { root.copy-text-clicked(item.target); }
+                                    }
+                                    MiniButton {
+                                        text: "删除";
+                                        clicked => { root.delete-history-item(item.id); }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: item.source;
+                                font-size: 12.5px;
+                                color: #647386;
+                            }
+
+                            Text {
+                                text: item.target;
+                                font-size: 13.5px;
+                                color: #273240;
+                                font-weight: 500;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+
+
+        // 5. Bottom Status Bar
+        Rectangle {
+            height: 24px;
+            border-radius: 4px;
+            background: #edf1f5;
+
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                alignment: space-between;
+
+                Text {
+                    text: root.status-text;
+                    font-size: 11.5px;
+                    color: #647386;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: "托盘常驻 · Esc 取消截图";
+                    font-size: 11px;
+                    color: #8b98a7;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}
+
+export component PinWindow inherits Window {
+    no-frame: true;
+    always-on-top: true;
+    background: transparent;
+    in property <image> pinned-image;
+    callback close-pin();
+    callback start-drag();
+
+    Rectangle {
+        border-width: 1px;
+        border-color: #20000000;
+        border-radius: 2px;
+        clip: true;
+        background: transparent;
+
+        Image {
+            width: parent.width;
+            height: parent.height;
+            source: root.pinned-image;
+            image-fit: fill;
+        }
+
+        TouchArea {
+            double-clicked => { root.close-pin(); }
+            moved => { root.start-drag(); }
+        }
+    }
+}
+
+component SettingsNavItem inherits Rectangle {
+    in property <string> text: "";
+    in property <string> icon-text: "";
+    in property <bool> is-active: false;
+    callback clicked();
+
+    height: 38px;
+    border-radius: 6px;
+    background: root.is-active ? #180a84ff : ta.has-hover ? #0d000000 : transparent;
+
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    if root.is-active: Rectangle {
+        x: 4px;
+        width: 3.5px;
+        height: 18px;
+        border-radius: 2px;
+        background: #0a84ff;
+        y: (parent.height - self.height) / 2;
+    }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 12px;
+        spacing: 10px;
+        alignment: start;
+
+        Text {
+            text: root.icon-text;
+            font-size: 14px;
+            color: root.is-active ? #0a84ff : #6b7280;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: root.text;
+            font-size: 12.5px;
+            font-weight: root.is-active ? 600 : 400;
+            color: root.is-active ? #0a84ff : #1f2937;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component SwitchToggle inherits Rectangle {
+    in-out property <bool> checked: false;
+    callback toggled();
+
+    width: 44px;
+    height: 24px;
+    border-radius: 12px;
+    background: root.checked ? #0a84ff : #d1d5db;
+    animate background { duration: 150ms; }
+
+    Rectangle {
+        x: root.checked ? parent.width - self.width - 2px : 2px;
+        y: 2px;
+        width: 20px;
+        height: 20px;
+        border-radius: 10px;
+        background: #ffffff;
+        animate x { duration: 150ms; }
+    }
+
+    TouchArea {
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled();
+        }
+    }
+}
+
+export component SettingsWindow inherits Window {
+    title: "偏好设置";
+    icon: @image-url("../../../apps/windows/src/Polyglance.UI/Resources/Polyglance.png");
+    preferred-width: 900px;
+    preferred-height: 600px;
+    min-width: 760px;
+    min-height: 500px;
+    background: #ffffff;
+
+    in-out property <int> active-nav: 4; // 4 = 通用设置 (Default, matching image)
+    in-out property <bool> autostart-enabled: false;
+    in-out property <bool> minimize-to-tray: true;
+    in-out property <string> data-directory: "C:\\Users\\user\\AppData\\Roaming\\Polyglance";
+    in-out property <string> openai-endpoint: "https://api.openai.com/v1";
+    in-out property <string> openai-key: "";
+    in-out property <string> deepl-key: "";
+    in-out property <bool> click-through-enabled: false;
+    in-out property <string> ocr-engine: "系统 OCR";
+    in-out property <string> model-path: "";
+    in-out property <string> model-status: "未安装自选模型，Windows 系统 OCR 仍可使用";
+    in-out property <string> status-text: "就绪";
+    in-out property <string> version-text: "v0.1.4";
+
+    callback save-settings-clicked();
+    callback install-model-clicked();
+    callback change-data-dir-clicked();
+    callback reset-data-dir-clicked();
+    callback open-data-dir-clicked();
+
+    HorizontalLayout {
+        // Left Navigation Sidebar
+        Rectangle {
+            width: 190px;
+            background: #f8fafc;
+
+            // Right border line
+            Rectangle {
+                x: parent.width - 1px;
+                width: 1px;
+                height: 100%;
+                background: #e2e8f0;
+            }
+
+            VerticalLayout {
+                padding: 12px;
+                spacing: 3px;
+
+                // Branding Header
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    padding-bottom: 8px;
+
+                    Image {
+                        source: @image-url("../../../apps/windows/src/Polyglance.UI/Resources/Polyglance.png");
+                        width: 36px;
+                        height: 36px;
+                        vertical-alignment: center;
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 2px;
+                        Text {
+                            text: "Polyglance";
+                            font-size: 13px;
+                            font-weight: 700;
+                            color: #1e293b;
+                        }
+                        Text {
+                            text: "原生多源翻译与屏幕工具";
+                            font-size: 9.5px;
+                            color: #94a3b8;
+                        }
+                    }
+                }
+
+                // Divider
+                Rectangle {
+                    height: 1px;
+                    background: #e2e8f0;
+                }
+
+                // Nav Items
+                // Section 1: 翻译
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-top: 4px;
+                    padding-bottom: 2px;
+                    Text {
+                        text: "翻译";
+                        font-size: 11px;
+                        font-weight: 600;
+                        color: #94a3b8;
+                    }
+                }
+                SettingsNavItem {
+                    text: "翻译设置";
+                    icon-text: "🌐";
+                    is-active: root.active-nav == 0;
+                    clicked => { root.active-nav = 0; }
+                }
+                SettingsNavItem {
+                    text: "收藏夹";
+                    icon-text: "⭐";
+                    is-active: root.active-nav == 1;
+                    clicked => { root.active-nav = 1; }
+                }
+                SettingsNavItem {
+                    text: "历史记录";
+                    icon-text: "🕒";
+                    is-active: root.active-nav == 2;
+                    clicked => { root.active-nav = 2; }
+                }
+
+                // Section 2: OCR
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-top: 6px;
+                    padding-bottom: 2px;
+                    Text {
+                        text: "OCR";
+                        font-size: 11px;
+                        font-weight: 600;
+                        color: #94a3b8;
+                    }
+                }
+                SettingsNavItem {
+                    text: "OCR 设置";
+                    icon-text: "📄";
+                    is-active: root.active-nav == 3;
+                    clicked => { root.active-nav = 3; }
+                }
+
+                // Section 3: 通用
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-top: 6px;
+                    padding-bottom: 2px;
+                    Text {
+                        text: "通用";
+                        font-size: 11px;
+                        font-weight: 600;
+                        color: #94a3b8;
+                    }
+                }
+                SettingsNavItem {
+                    text: "通用设置";
+                    icon-text: "⚙️";
+                    is-active: root.active-nav == 4;
+                    clicked => { root.active-nav = 4; }
+                }
+                SettingsNavItem {
+                    text: "快捷键";
+                    icon-text: "⌨️";
+                    is-active: root.active-nav == 5;
+                    clicked => { root.active-nav = 5; }
+                }
+                SettingsNavItem {
+                    text: "截图与录屏";
+                    icon-text: "🎬";
+                    is-active: root.active-nav == 6;
+                    clicked => { root.active-nav = 6; }
+                }
+                SettingsNavItem {
+                    text: "工具栏";
+                    icon-text: "🧰";
+                    is-active: root.active-nav == 7;
+                    clicked => { root.active-nav = 7; }
+                }
+                SettingsNavItem {
+                    text: "关于";
+                    icon-text: "ℹ️";
+                    is-active: root.active-nav == 8;
+                    clicked => { root.active-nav = 8; }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                // Footer version
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-bottom: 4px;
+                    Text {
+                        text: "版本 " + root.version-text;
+                        font-size: 10px;
+                        color: #94a3b8;
+                    }
+                }
+            }
+        }
+
+        // Right Content Panel
+        VerticalLayout {
+            padding: 20px;
+            spacing: 16px;
+
+            // Top Header Bar
+            HorizontalLayout {
+                alignment: space-between;
+
+                VerticalLayout {
+                    spacing: 3px;
+                    Text {
+                        text: root.active-nav == 4 ? "通用设置" :
+                              root.active-nav == 0 ? "翻译设置" :
+                              root.active-nav == 1 ? "收藏夹" :
+                              root.active-nav == 2 ? "历史记录" :
+                              root.active-nav == 3 ? "OCR 设置" :
+                              root.active-nav == 5 ? "快捷键" :
+                              root.active-nav == 6 ? "截图与录屏" :
+                              root.active-nav == 7 ? "工具栏" : "关于";
+                        font-size: 19px;
+                        font-weight: 700;
+                        color: #1e293b;
+                    }
+                    Text {
+                        text: root.active-nav == 4 ? "系统权限、启动项与基础偏好" :
+                              root.active-nav == 0 ? "服务商接口、密钥与翻译参数配置" :
+                              root.active-nav == 1 ? "查看与管理常用收藏词汇与语句" :
+                              root.active-nav == 2 ? "本地离线历史记录保存与管理" :
+                              root.active-nav == 3 ? "本地离线引擎与识别参数配置" :
+                              root.active-nav == 5 ? "全局热键与常用快捷操作绑定" :
+                              root.active-nav == 6 ? "屏幕截取行为、无感穿透与录屏参数" :
+                              root.active-nav == 7 ? "自定义顶部工具栏图标与快捷入口" : "版本信息与开发者说明";
+                        font-size: 12px;
+                        color: #64748b;
+                    }
+                }
+
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 12px;
+
+                    if root.status-text != "": Text {
+                        text: root.status-text;
+                        font-size: 12px;
+                        color: #0a84ff;
+                        vertical-alignment: center;
+                    }
+
+                    Rectangle {
+                        width: 96px;
+                        height: 34px;
+                        border-radius: 6px;
+                        background: #0a84ff;
+
+                        TouchArea {
+                            clicked => { root.save-settings-clicked(); }
+                        }
+
+                        Text {
+                            text: "保存设置";
+                            font-size: 13px;
+                            font-weight: 600;
+                            color: #ffffff;
+                            vertical-alignment: center;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+            }
+
+            // Tab Panels
+            // Tab 4: 通用设置 (Default, exactly matching Image 1)
+            if root.active-nav == 4: ScrollView {
+                VerticalLayout {
+                    spacing: 14px;
+
+                    // Card 1: 开机自动启动
+                    Rectangle {
+                        border-radius: 8px;
+                        background: #ffffff;
+                        border-width: 1px;
+                        border-color: #e2e8f0;
+
+                        HorizontalLayout {
+                            padding: 16px;
+                            alignment: space-between;
+
+                            HorizontalLayout {
+                                spacing: 14px;
+                                alignment: start;
+
+                                Rectangle {
+                                    width: 36px;
+                                    height: 36px;
+                                    border-radius: 18px;
+                                    background: #eff6ff;
+                                    Text {
+                                        text: "⏻";
+                                        font-size: 18px;
+                                        color: #0a84ff;
+                                        vertical-alignment: center;
+                                        horizontal-alignment: center;
+                                    }
+                                }
+
+                                VerticalLayout {
+                                    spacing: 3px;
+                                    alignment: center;
+                                    Text {
+                                        text: "开机时自动启动 Polyglance";
+                                        font-size: 13.5px;
+                                        font-weight: 600;
+                                        color: #1e293b;
+                                    }
+                                    Text {
+                                        text: "登录 Windows 后在后台静默启动，并驻留系统托盘";
+                                        font-size: 11.5px;
+                                        color: #64748b;
+                                    }
+                                }
+                            }
+
+                            SwitchToggle {
+                                checked <=> root.autostart-enabled;
+                            }
+                        }
+                    }
+
+                    // Card 2: 最小化到托盘
+                    Rectangle {
+                        border-radius: 8px;
+                        background: #ffffff;
+                        border-width: 1px;
+                        border-color: #e2e8f0;
+
+                        HorizontalLayout {
+                            padding: 16px;
+                            alignment: space-between;
+
+                            HorizontalLayout {
+                                spacing: 14px;
+                                alignment: start;
+
+                                Rectangle {
+                                    width: 36px;
+                                    height: 36px;
+                                    border-radius: 18px;
+                                    background: #eff6ff;
+                                    Text {
+                                        text: "🗔";
+                                        font-size: 16px;
+                                        color: #0a84ff;
+                                        vertical-alignment: center;
+                                        horizontal-alignment: center;
+                                    }
+                                }
+
+                                VerticalLayout {
+                                    spacing: 3px;
+                                    alignment: center;
+                                    Text {
+                                        text: "关闭主窗口时最小化到系统托盘";
+                                        font-size: 13.5px;
+                                        font-weight: 600;
+                                        color: #1e293b;
+                                    }
+                                    Text {
+                                        text: "点击主窗口关闭按钮时继续在后台保持运行";
+                                        font-size: 11.5px;
+                                        color: #64748b;
+                                    }
+                                }
+                            }
+
+                            SwitchToggle {
+                                checked <=> root.minimize-to-tray;
+                            }
+                        }
+                    }
+
+                    // Card 3: 数据存储目录
+                    Rectangle {
+                        border-radius: 8px;
+                        background: #ffffff;
+                        border-width: 1px;
+                        border-color: #e2e8f0;
+
+                        VerticalLayout {
+                            padding: 16px;
+                            spacing: 12px;
+
+                            HorizontalLayout {
+                                spacing: 14px;
+                                alignment: start;
+
+                                Rectangle {
+                                    width: 36px;
+                                    height: 36px;
+                                    border-radius: 18px;
+                                    background: #eff6ff;
+                                    Text {
+                                        text: "📁";
+                                        font-size: 16px;
+                                        color: #0a84ff;
+                                        vertical-alignment: center;
+                                        horizontal-alignment: center;
+                                    }
+                                }
+
+                                VerticalLayout {
+                                    spacing: 3px;
+                                    alignment: center;
+                                    Text {
+                                        text: "数据存储目录";
+                                        font-size: 13.5px;
+                                        font-weight: 600;
+                                        color: #1e293b;
+                                    }
+                                    Text {
+                                        text: "预览版暂时使用固定目录，目录迁移尚未开放";
+                                        font-size: 11.5px;
+                                        color: #64748b;
+                                    }
+                                }
+                            }
+
+                            HorizontalLayout {
+                                spacing: 8px;
+
+                                Text {
+                                    text: root.data-directory;
+                                    color: #475569;
+                                    font-size: 12px;
+                                    horizontal-stretch: 1;
+                                    vertical-alignment: center;
+                                }
+
+                                Rectangle {
+                                    width: 82px;
+                                    height: 32px;
+                                    border-radius: 6px;
+                                    border-width: 1px;
+                                    border-color: #cbd5e1;
+                                    background: #f8fafc;
+                                    TouchArea { clicked => { root.open-data-dir-clicked(); } }
+                                    Text {
+                                        text: "打开目录";
+                                        font-size: 12px;
+                                        color: #334155;
+                                        vertical-alignment: center;
+                                        horizontal-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Tab 0: 翻译设置
+            if root.active-nav == 0: ScrollView {
+                VerticalLayout {
+                    spacing: 14px;
+                    Rectangle {
+                        border-radius: 8px;
+                        background: #ffffff;
+                        border-width: 1px;
+                        border-color: #e2e8f0;
+                        VerticalLayout {
+                            padding: 16px;
+                            spacing: 10px;
+                            Text { text: "OpenAI 兼容服务商配置"; font-size: 13.5px; font-weight: 600; color: #0a84ff; }
+                            Text { text: "接口地址 (Endpoint URL):"; font-size: 12px; color: #64748b; }
+                            LineEdit { text <=> root.openai-endpoint; placeholder-text: "https://api.openai.com/v1"; }
+                            Text { text: "API 密钥 (API Key):"; font-size: 12px; color: #64748b; }
+                            LineEdit { text <=> root.openai-key; placeholder-text: "sk-xxxxxxxxxxxxxxxxxxxxxxxx"; }
+                            Text { text: "DeepL 认证密钥 (Auth Key):"; font-size: 12px; color: #64748b; }
+                            LineEdit { text <=> root.deepl-key; placeholder-text: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:fx"; }
+                        }
+                    }
+                }
+            }
+
+            // Tab 3: OCR 设置
+            if root.active-nav == 3: ScrollView {
+                VerticalLayout {
+                    spacing: 14px;
+                    Rectangle {
+                        border-radius: 8px;
+                        background: #ffffff;
+                        border-width: 1px;
+                        border-color: #e2e8f0;
+                        VerticalLayout {
+                            padding: 16px;
+                            spacing: 10px;
+                            Text { text: "OCR 识别引擎配置"; font-size: 13.5px; font-weight: 600; color: #0a84ff; }
+                            Text { text: root.model-status; font-size: 11.5px; color: #64748b; wrap: word-wrap; }
+                            ComboBox { model: ["系统 OCR", "ONNX OCR"]; current-value <=> root.ocr-engine; }
+                            Text { text: "本地 ONNX 模型文件路径:"; font-size: 12px; color: #64748b; }
+                            LineEdit { text <=> root.model-path; placeholder-text: "选择本地 .onnx 文件的完整路径"; }
+                            MiniButton { text: "验证并安装模型"; clicked => { root.install-model-clicked(); } }
+                        }
+                    }
+                }
+            }
+
+            // Tab 5: 快捷键
+            if root.active-nav == 5: ScrollView {
+                VerticalLayout {
+                    spacing: 14px;
+                    Rectangle {
+                        border-radius: 8px;
+                        background: #ffffff;
+                        border-width: 1px;
+                        border-color: #e2e8f0;
+                        VerticalLayout {
+                            padding: 16px;
+                            spacing: 12px;
+                            Text { text: "全局热键设置"; font-size: 13.5px; font-weight: 600; color: #0a84ff; }
+                            HorizontalLayout {
+                                alignment: space-between;
+                                Text { text: "截图翻译快捷键"; font-size: 13px; color: #1e293b; vertical-alignment: center; }
+                                Text { text: "F4"; font-size: 13px; font-weight: 600; color: #0a84ff; vertical-alignment: center; }
+                            }
+                            HorizontalLayout {
+                                alignment: space-between;
+                                Text { text: "剪贴板翻译快捷键"; font-size: 13px; color: #1e293b; vertical-alignment: center; }
+                                Text { text: "Alt + W"; font-size: 13px; font-weight: 600; color: #0a84ff; vertical-alignment: center; }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Tab 6: 截图与录屏
+            if root.active-nav == 6: ScrollView {
+                VerticalLayout {
+                    spacing: 14px;
+                    Rectangle {
+                        border-radius: 8px;
+                        background: #ffffff;
+                        border-width: 1px;
+                        border-color: #e2e8f0;
+                        VerticalLayout {
+                            padding: 16px;
+                            spacing: 12px;
+                            Text { text: "屏幕交互与穿透"; font-size: 13.5px; font-weight: 600; color: #0a84ff; }
+                            HorizontalLayout {
+                                alignment: space-between;
+                                Text { text: "鼠标穿透置顶 (WS_EX_TRANSPARENT)"; font-size: 13px; color: #1e293b; vertical-alignment: center; }
+                                SwitchToggle { checked <=> root.click-through-enabled; }
+                            }
+                            Text { text: "开启后翻译窗口置顶并忽略鼠标点击，方便边阅读边翻译。"; font-size: 11.5px; color: #64748b; }
+                        }
+                    }
+                }
+            }
+
+            // Tab 8: 关于
+            if root.active-nav == 8: ScrollView {
+                VerticalLayout {
+                    spacing: 14px;
+                    Rectangle {
+                        border-radius: 8px;
+                        background: #ffffff;
+                        border-width: 1px;
+                        border-color: #e2e8f0;
+                        VerticalLayout {
+                            padding: 16px;
+                            spacing: 10px;
+                            Text { text: "关于 Polyglance"; font-size: 14px; font-weight: 700; color: #1e293b; }
+                            Text { text: "Polyglance 原生多源翻译与屏幕工具 (Windows Rust Native)"; font-size: 12.5px; color: #64748b; }
+                            Text { text: "当前版本: " + root.version-text; font-size: 12px; color: #0a84ff; font-weight: 600; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -21,9 +21,12 @@ pub mod engine;
 pub mod formatting;
 pub mod geometry;
 pub mod layout;
+pub mod native_capture;
 pub mod recording;
 pub mod stitch;
 mod windows_recording_encoder;
+#[cfg(windows)]
+pub use windows_recording_encoder::RecordingEncoder;
 pub mod winrt_capture;
 pub mod winrt_ocr;
 pub mod winrt_recording;

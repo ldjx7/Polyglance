@@ -3,6 +3,9 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use thiserror::Error;
+pub mod history;
+
+pub use history::{TranslationHistory, TranslationRecord};
 
 pub const MAX_INPUT_CHARACTERS: usize = 20_000;
 

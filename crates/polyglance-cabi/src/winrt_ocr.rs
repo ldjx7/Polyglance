@@ -29,7 +29,7 @@ pub unsafe extern "C" fn polyglance_windows_ocr_recognize(
 }
 
 #[cfg(windows)]
-mod windows_impl {
+pub(crate) mod windows_impl {
     use crate::{
         POLYGLANCE_ERR_INIT, POLYGLANCE_ERR_INVALID_INPUT, POLYGLANCE_OK, string_to_c_char,
     };
@@ -81,7 +81,7 @@ mod windows_impl {
         }
     }
 
-    fn recognize_png_bytes(bytes: &[u8]) -> Result<Vec<OcrLineResult>, String> {
+    pub fn recognize_png_bytes(bytes: &[u8]) -> Result<Vec<OcrLineResult>, String> {
         let stream = InMemoryRandomAccessStream::new()
             .map_err(|e| format!("Create InMemoryRandomAccessStream failed: {e}"))?;
         let writer = DataWriter::CreateDataWriter(&stream)
@@ -182,4 +182,16 @@ mod windows_impl {
 
         Err("No available OCR languages found".to_string())
     }
+}
+
+#[cfg(windows)]
+pub use windows_impl::{OcrLineResult, OcrWordResult};
+
+/// Runs WinRT OCR away from a GUI thread so synchronous WinRT calls cannot block its event loop.
+#[cfg(windows)]
+pub fn recognize_png_bytes(bytes: &[u8]) -> Result<Vec<OcrLineResult>, String> {
+    let owned = bytes.to_vec();
+    std::thread::spawn(move || windows_impl::recognize_png_bytes(&owned))
+        .join()
+        .map_err(|_| "OCR worker panicked".to_string())?
 }

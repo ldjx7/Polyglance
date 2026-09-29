@@ -1,7 +1,10 @@
 [workspace]
 members = [
     "crates/capture-core",
+    "crates/model-core",
     "crates/polyglance-cabi",
+    "crates/polyglance-cli",
+    "crates/polyglance-desktop",
     "crates/translator-core",
     "crates/translator-providers",
     "crates/translator-uniffi",
@@ -33,5 +36,4 @@ lto = "fat"
 codegen-units = 1
 strip = true
 panic = "abort"
-
 

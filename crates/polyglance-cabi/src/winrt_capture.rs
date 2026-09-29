@@ -99,7 +99,7 @@ pub unsafe extern "C" fn polyglance_windows_capture_free(handle: *mut c_void) {
 }
 
 #[cfg(windows)]
-mod windows_impl {
+pub mod windows_impl {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Duration, Instant};

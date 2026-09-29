@@ -1,0 +1,24 @@
+[package]
+name = "polyglance-cli"
+version = "0.1.4"
+edition.workspace = true
+license.workspace = true
+rust-version = "1.88"
+
+[[bin]]
+name = "polyglance-cli"
+path = "src/main.rs"
+
+[dependencies]
+model-core = { path = "../model-core" }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+capture-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["full"] }
+translator-core.workspace = true
+translator-providers.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+polyglance-cabi = { path = "../polyglance-cabi" }

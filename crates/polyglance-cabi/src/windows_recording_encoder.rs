@@ -5,6 +5,105 @@ use crate::{
 };
 use std::ffi::{c_char, c_void};
 
+/// Safe Rust interface to the existing Media Foundation H.264 encoder.
+#[cfg(windows)]
+pub struct RecordingEncoder {
+    worker: implementation::Worker,
+    expected_bytes: usize,
+}
+
+#[cfg(windows)]
+impl RecordingEncoder {
+    pub fn new(
+        path: &std::path::Path,
+        width: u32,
+        height: u32,
+        fps: u32,
+        bitrate: u32,
+    ) -> Result<Self, String> {
+        if width < 2
+            || height < 2
+            || width % 2 != 0
+            || height % 2 != 0
+            || width > 16384
+            || height > 16384
+            || fps == 0
+            || fps > 240
+            || bitrate == 0
+        {
+            return Err("invalid recording dimensions or profile".into());
+        }
+        let expected_bytes = (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|pixels| pixels.checked_mul(4))
+            .ok_or("recording frame size overflow")?;
+        let worker = implementation::Worker::start(
+            path.to_string_lossy().into_owned(),
+            width,
+            height,
+            fps,
+            bitrate,
+        )
+        .map_err(|status| format!("Media Foundation encoder initialization failed: {status}"))?;
+        Ok(Self {
+            worker,
+            expected_bytes,
+        })
+    }
+
+    pub fn write_bgra_frame(&self, pixels: Vec<u8>, timestamp_100ns: i64) -> Result<(), String> {
+        if pixels.len() != self.expected_bytes || timestamp_100ns < 0 {
+            return Err("invalid recording frame buffer or timestamp".into());
+        }
+        let status = self.worker.write(pixels, timestamp_100ns);
+        if status == 0 {
+            Ok(())
+        } else {
+            Err(format!("Media Foundation frame write failed: {status}"))
+        }
+    }
+
+    pub fn finish(&self, end_time_100ns: i64) -> Result<(), String> {
+        let status = self.worker.finish(end_time_100ns);
+        if status == 0 {
+            Ok(())
+        } else {
+            Err(format!("Media Foundation finalization failed: {status}"))
+        }
+    }
+}
+
+#[cfg(all(test, windows))]
+mod recording_tests {
+    use super::RecordingEncoder;
+
+    #[test]
+    fn encodes_a_short_mp4_on_windows() {
+        let path = std::env::temp_dir().join(format!(
+            "polyglance-encoder-{}-{}.mp4",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let encoder = RecordingEncoder::new(&path, 64, 64, 5, 400_000).unwrap();
+        for index in 0..3 {
+            let mut frame = vec![0_u8; 64 * 64 * 4];
+            for pixel in frame.chunks_exact_mut(4) {
+                pixel[0] = (index * 40) as u8;
+                pixel[1] = 100;
+                pixel[2] = 180;
+                pixel[3] = 255;
+            }
+            encoder.write_bgra_frame(frame, index * 2_000_000).unwrap();
+        }
+        encoder.finish(6_000_000).unwrap();
+        assert!(std::fs::metadata(&path).unwrap().len() > 128);
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn polyglance_windows_recording_encoder_new(
     path: *const c_char,

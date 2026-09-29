@@ -111,18 +111,33 @@ session = winrm.Session(
 
 完成后确认：测试全部通过、`dist\installer` 只保留本次产物，并且没有遗留 Polyglance 进程。日常开发修改不要随意打 tag 或推送；但当用户要求构建具体版本（如构建 beta 版本或指定版本号）时，即代表需要同步更新发布说明文档、执行双端完整测试与构建、提交代码、创建对应版本 tag 并推送到远程仓库触发 Release。
 
-## 每次开发完成后的双端构建
+## Windows 重构期规范（Rust + Slint）
 
-每次完成代码修改后，都必须构建 macOS 与 Windows 两端的可交付产物，不能只运行单元测试或只构建当前主机对应的平台。
+当前处于 Windows 客户端由 C# / WPF 向 Rust + Slint 迁移阶段。在重构推进期间，必须严格遵守以下执行规则：
 
-### macOS 开发版本
+### 1. macOS 逻辑保护与构建
 
-macOS 必须构建开发版本：
+- 严禁修改 `apps/macos` 目录及其相关的任何 macOS 专属实现逻辑。
+- 每次完成代码修改后仍需运行 `./scripts/build-macos-app.sh`，验证 macOS 开发版及代码签名。不要传入 `--preserve-permissions`；该命令只生成独立的 `dist/Polyglance Dev.app`，不会覆盖正式版。
 
-`./scripts/build-macos-app.sh`
+### 2. C# 现有代码保留要求
 
-不要传入 `--preserve-permissions`。该命令生成独立的开发应用 `dist/Polyglance Dev.app`，Bundle Identifier 为 `io.polyglance.macos.dev`，不会覆盖正式版 `Polyglance.app`。构建脚本会按开发版本约定停止已有的 `Polyglance Dev` 进程并重置辅助功能、屏幕录制和麦克风权限；完成后应确认应用包存在且代码签名验证通过。
+- 完整保留 `apps/windows` 下的所有 C# 和 XAML 逻辑，禁止提前删除任何 C# 业务、视图或测试代码。
+- 只有在 Rust + Slint 版本完整实现所有既有功能，并通过全量功能、性能和稳定性验收之后，方可由用户确认清理废弃 C# 代码。
 
-### Windows 产物
+### 3. Windows 双轨道构建与 CLI 要求
 
-Windows 必须在上述真实 Windows 构建机上完成测试和构建，并严格遵守 Windows 验证和构建顺序。最终需要同时生成已发布应用、安装包和便携/更新 ZIP，并确认没有遗留 Polyglance 进程。
+在 Windows 构建机上，必须支持并分别构建两套独立的版本产物，各自包含图形界面应用与命令行版本（CLI）：
+
+1. **C# 轨道**：
+   - GUI 版本：现有 `Polyglance.UI`（`Polyglance.exe`）。
+   - CLI 版本：C# 命令行工具（`polyglance-csharp-cli.exe`，用于基准能力对比与独立运行）。
+2. **重构 Rust 轨道**：
+   - GUI 版本：Rust + Slint 新架构桌面应用（`polyglance-desktop.exe`）。
+   - CLI 版本：Rust 原生命令行工具（`polyglance-cli.exe`）。
+
+两套版本的构建脚本、构建产物与目录必须清晰分离，互不冲突，确保在重构各阶段均可独立验证与基准对比。
+
+## Windows 产物构建
+
+Windows 必须在上述真实 Windows 构建机上完成测试和构建，并严格遵守 Windows 验证和构建顺序。最终生成已发布应用、安装包和便携/更新 ZIP，并确认没有遗留 Polyglance 进程。
