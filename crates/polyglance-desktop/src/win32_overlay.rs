@@ -48,12 +48,14 @@ pub mod windows {
         BS_SOLID, BeginPaint, BitBlt, COLORONCOLOR, CombineRgn, CreateCompatibleBitmap,
         CreateCompatibleDC, CreateFontW, CreatePen, CreateRectRgn, CreateSolidBrush,
         DIB_RGB_COLORS, DeleteDC, DeleteObject, Ellipse, EndPaint, ExtCreatePen, FillRect,
-        GetDC, GetDIBits, GetPixel, GetStockObject, HBRUSH, HDC, HPEN, HRGN, HALFTONE, InvalidateRect, LineTo,
+        GetDC, GetDIBits, GetPixel, GetStockObject, HBRUSH, HDC, HFONT, HPEN, HRGN, HALFTONE, InvalidateRect, LineTo,
         LOGBRUSH, MoveToEx, NULL_BRUSH, PAINTSTRUCT, PEN_STYLE, PS_DASH, PS_DASHDOT, PS_DOT,
         PS_GEOMETRIC, PS_SOLID, Polygon, RGN_DIFF, Rectangle, ReleaseDC, RoundRect, SRCCOPY,
         ScreenToClient, SelectClipRgn, SelectObject, SetBkMode, SetDIBits, SetStretchBltMode,
         SetTextColor, SetWindowRgn, StretchBlt, TRANSPARENT, TextOutW, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET,
         DEFAULT_PITCH, DEFAULT_QUALITY, FF_DONTCARE, OUT_DEFAULT_PRECIS,
+        DrawTextW, DRAW_TEXT_FORMAT, DT_CENTER, DT_VCENTER, DT_SINGLELINE, DT_NOCLIP, SetBkColor,
+        WHITE_BRUSH,
     };
     use ::windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, ReleaseCapture, SetCapture, SetFocus};
     use ::windows::Win32::UI::WindowsAndMessaging::{
@@ -68,8 +70,22 @@ pub mod windows {
         WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
         WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_TIMER, WNDCLASSW,
         WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP, WS_VISIBLE,
+        CallWindowProcW, GetParent, GetPropW, GetWindowTextLengthW, GetWindowTextW,
+        PostMessageW, RemovePropW, SendMessageW, SetPropW, GWLP_WNDPROC, WM_NCDESTROY,
     };
     use ::windows::core::PCWSTR;
+
+    const ES_MULTILINE: u32 = 0x0004;
+    const ES_AUTOVSCROLL: u32 = 0x0040;
+    const ES_WANTRETURN: u32 = 0x1000;
+    const WS_BORDER: u32 = 0x0080_0000;
+    const WS_CHILD: u32 = 0x4000_0000;
+    const WM_SETFONT: u32 = 0x0030;
+    const EM_SETSEL: u32 = 0x00B1;
+    const WM_CTLCOLOREDIT: u32 = 0x0133;
+    const WM_CTLCOLORSTATIC: u32 = 0x0138;
+    const WM_APP_COMMIT_TEXT: u32 = 0x8000 + 101;
+    const DT_NOPREFIX: u32 = 0x0000_0800;
     use capture_core::geometry::expanded_selection_toward;
     use capture_core::rect::Point as CorePoint;
     use capture_core::stitch::{Configuration, Direction, Stitcher};
@@ -249,6 +265,12 @@ pub mod windows {
         current_drawing: Option<AnnotationShape>,
         is_annotating: bool,
         next_badge_number: u32,
+        selected_annotation: Option<usize>,
+        dragging_annotation_handle: Option<usize>,
+        moving_annotation: bool,
+        annotation_drag_start: Option<POINT>,
+        text_edit_hwnd: Option<isize>,
+        editing_text_idx: Option<usize>,
     }
 
     static OVERLAY_STATE: Mutex<Option<OverlayState>> = Mutex::new(None);
@@ -762,7 +784,28 @@ pub mod windows {
                                         } else if let Some(h) = hit_test_handles(pt, &sel) {
                                             cursor_type = cursor_for_handle(h);
                                         } else if pt.x >= sel.left && pt.x <= sel.right && pt.y >= sel.top && pt.y <= sel.bottom {
-                                            cursor_type = if s.active_tool.is_none() { IDC_SIZEALL } else { IDC_CROSS };
+                                            if let Some(idx) = s.selected_annotation {
+                                                if let Some(item) = s.annotations.get(idx) {
+                                                    if let Some(h) = hit_test_shape_handle(&item.shape, pt) {
+                                                        cursor_type = cursor_for_shape_handle(&item.shape, h);
+                                                    } else if hit_test_shape_body(&item.shape, pt, 6.0) {
+                                                        cursor_type = IDC_SIZEALL;
+                                                    } else if s.active_tool.is_none() {
+                                                        cursor_type = IDC_ARROW;
+                                                    } else {
+                                                        cursor_type = IDC_CROSS;
+                                                    }
+                                                } else if s.active_tool.is_none() {
+                                                    cursor_type = IDC_ARROW;
+                                                } else {
+                                                    cursor_type = IDC_CROSS;
+                                                }
+                                            } else if s.active_tool.is_none() {
+                                                let hovers_any = s.annotations.iter().any(|item| hit_test_shape_body(&item.shape, pt, 6.0));
+                                                cursor_type = if hovers_any { IDC_HAND } else { IDC_SIZEALL };
+                                            } else {
+                                                cursor_type = IDC_CROSS;
+                                            }
                                         } else {
                                             cursor_type = IDC_CROSS;
                                         }
@@ -891,14 +934,43 @@ pub mod windows {
                                             if item_idx >= 400 && item_idx <= 409 {
                                                 s.arrow_style = item_idx - 400;
                                                 s.is_arrow_popup_open = false;
+                                                if let Some(idx) = s.selected_annotation {
+                                                    if let Some(item) = s.annotations.get_mut(idx) {
+                                                        if let AnnotationShape::Arrow { arrow_style, .. } = &mut item.shape {
+                                                            *arrow_style = s.arrow_style;
+                                                        }
+                                                    }
+                                                }
                                                 should_redraw = true;
                                             } else if item_idx >= 500 && item_idx <= 503 {
                                                 s.line_dash_pattern = (item_idx - 500) as u32;
                                                 s.is_line_dash_popup_open = false;
+                                                if let Some(idx) = s.selected_annotation {
+                                                    if let Some(item) = s.annotations.get_mut(idx) {
+                                                        match &mut item.shape {
+                                                            AnnotationShape::Pen { dash, .. }
+                                                            | AnnotationShape::Line { dash, .. }
+                                                            | AnnotationShape::Arrow { dash, .. }
+                                                            | AnnotationShape::Rect { dash, .. }
+                                                            | AnnotationShape::Ellipse { dash, .. } => {
+                                                                *dash = s.line_dash_pattern;
+                                                            }
+                                                            _ => {}
+                                                        }
+                                                    }
+                                                }
                                                 should_redraw = true;
                                             } else if item_idx >= 510 && item_idx <= 513 {
                                                 s.mosaic_style = item_idx - 510;
                                                 s.is_mosaic_popup_open = false;
+                                                if let Some(idx) = s.selected_annotation {
+                                                    if let Some(item) = s.annotations.get_mut(idx) {
+                                                        if let AnnotationShape::Mosaic { shape_type, is_blur, .. } = &mut item.shape {
+                                                            *is_blur = (s.mosaic_style % 2) == 1;
+                                                            *shape_type = if s.mosaic_style >= 2 { 1 } else { 0 };
+                                                        }
+                                                    }
+                                                }
                                                 should_redraw = true;
                                             } else if item_idx == 300 {
                                                 s.is_arrow_popup_open = !s.is_arrow_popup_open;
@@ -912,9 +984,23 @@ pub mod windows {
                                                 should_redraw = true;
                                             } else if item_idx == 310 {
                                                 s.number_is_filled = true;
+                                                if let Some(idx) = s.selected_annotation {
+                                                    if let Some(item) = s.annotations.get_mut(idx) {
+                                                        if let AnnotationShape::Number { is_filled, .. } = &mut item.shape {
+                                                            *is_filled = true;
+                                                        }
+                                                    }
+                                                }
                                                 should_redraw = true;
                                             } else if item_idx == 311 {
                                                 s.number_is_filled = false;
+                                                if let Some(idx) = s.selected_annotation {
+                                                    if let Some(item) = s.annotations.get_mut(idx) {
+                                                        if let AnnotationShape::Number { is_filled, .. } = &mut item.shape {
+                                                            *is_filled = false;
+                                                        }
+                                                    }
+                                                }
                                                 should_redraw = true;
                                             } else if item_idx == 320 {
                                                 s.is_mosaic_popup_open = !s.is_mosaic_popup_open;
@@ -925,6 +1011,7 @@ pub mod windows {
                                                 s.is_arrow_popup_open = false;
                                                 s.is_line_dash_popup_open = false;
                                                 s.is_mosaic_popup_open = false;
+                                                commit_text_edit_state(hwnd, s);
                                                 if s.active_tool == Some(item_idx) {
                                                     s.active_tool = None;
                                                 } else {
@@ -935,6 +1022,7 @@ pub mod windows {
                                                 s.is_arrow_popup_open = false;
                                                 s.is_line_dash_popup_open = false;
                                                 s.is_mosaic_popup_open = false;
+                                                commit_text_edit_state(hwnd, s);
                                                 if let Some(item) = s.annotations.pop() {
                                                     if let AnnotationShape::Number { .. } = item.shape {
                                                         if s.next_badge_number > 1 {
@@ -942,17 +1030,22 @@ pub mod windows {
                                                         }
                                                     }
                                                     s.redo_stack.push(item);
+                                                    if s.selected_annotation >= Some(s.annotations.len()) {
+                                                        s.selected_annotation = None;
+                                                    }
                                                     should_redraw = true;
                                                 }
                                             } else if item_idx == 9 {
                                                 s.is_arrow_popup_open = false;
                                                 s.is_line_dash_popup_open = false;
                                                 s.is_mosaic_popup_open = false;
+                                                commit_text_edit_state(hwnd, s);
                                                 if let Some(item) = s.redo_stack.pop() {
                                                     if let AnnotationShape::Number { .. } = item.shape {
                                                         s.next_badge_number += 1;
                                                     }
                                                     s.annotations.push(item);
+                                                    s.selected_annotation = Some(s.annotations.len() - 1);
                                                     should_redraw = true;
                                                 }
                                             } else if item_idx == 100 {
@@ -965,14 +1058,55 @@ pub mod windows {
                                                     6 => 8,
                                                     _ => 2,
                                                 };
+                                                if let Some(idx) = s.selected_annotation {
+                                                    if let Some(item) = s.annotations.get_mut(idx) {
+                                                        match &mut item.shape {
+                                                            AnnotationShape::Pen { width, .. }
+                                                            | AnnotationShape::Line { width, .. }
+                                                            | AnnotationShape::Arrow { width, .. }
+                                                            | AnnotationShape::Rect { width, .. }
+                                                            | AnnotationShape::Ellipse { width, .. } => {
+                                                                *width = s.stroke_size as i32;
+                                                            }
+                                                            AnnotationShape::Text { font_size, .. } => {
+                                                                *font_size = (s.stroke_size as i32 * 3).clamp(12, 48);
+                                                            }
+                                                            AnnotationShape::Number { radius, .. } => {
+                                                                *radius = (18.0f64.max((s.stroke_size as f64) * 4.5) / 2.0).round() as i32;
+                                                            }
+                                                            AnnotationShape::Mosaic { block_size, .. } => {
+                                                                *block_size = (s.stroke_size as i32 * 2).max(4);
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                                 should_redraw = true;
                                             } else if item_idx >= 200 && item_idx <= 207 {
                                                 s.is_arrow_popup_open = false;
                                                 s.is_line_dash_popup_open = false;
                                                 s.is_mosaic_popup_open = false;
                                                 s.selected_color_idx = item_idx - 200;
+                                                let new_col = PALETTE[s.selected_color_idx];
+                                                if let Some(idx) = s.selected_annotation {
+                                                    if let Some(item) = s.annotations.get_mut(idx) {
+                                                        match &mut item.shape {
+                                                            AnnotationShape::Pen { color, .. }
+                                                            | AnnotationShape::Line { color, .. }
+                                                            | AnnotationShape::Arrow { color, .. }
+                                                            | AnnotationShape::Rect { color, .. }
+                                                            | AnnotationShape::Ellipse { color, .. }
+                                                            | AnnotationShape::Text { color, .. }
+                                                            | AnnotationShape::Number { color, .. } => {
+                                                                *color = new_col;
+                                                            }
+                                                            _ => {}
+                                                        }
+                                                    }
+                                                }
                                                 should_redraw = true;
                                             } else if item_idx == 10 {
+                                                commit_text_edit_state(hwnd, s);
+                                                s.selected_annotation = None;
                                                 s.is_arrow_popup_open = false;
                                                 s.is_line_dash_popup_open = false;
                                                 s.is_mosaic_popup_open = false;
@@ -994,6 +1128,7 @@ pub mod windows {
 
                                                 should_redraw = true;
                                             } else if item_idx < 1000 {
+                                                commit_text_edit_state(hwnd, s);
                                                 s.is_arrow_popup_open = false;
                                                 s.is_line_dash_popup_open = false;
                                                 s.is_mosaic_popup_open = false;
@@ -1004,13 +1139,83 @@ pub mod windows {
                                             s.is_line_dash_popup_open = false;
                                             s.is_mosaic_popup_open = false;
 
-                                            if let Some(h) = hit_test_handles(pt, &sel) {
+                                            if s.text_edit_hwnd.is_some() {
+                                                commit_text_edit_state(hwnd, s);
+                                                should_redraw = true;
+                                            }
+
+                                            let hit_ann_handle = s.selected_annotation.and_then(|idx| {
+                                                s.annotations.get(idx).and_then(|item| hit_test_shape_handle(&item.shape, pt))
+                                            });
+
+                                            if let Some(h) = hit_ann_handle {
+                                                s.dragging_annotation_handle = Some(h);
+                                                s.annotation_drag_start = Some(pt);
+                                                SetCapture(hwnd);
+                                            } else if let Some(h) = hit_test_handles(pt, &sel) {
+                                                s.selected_annotation = None;
                                                 s.phase = SelectionPhase::Resizing(h);
                                                 s.initial_sel = Some(sel);
                                                 s.drag_start = Some(pt);
                                                 SetCapture(hwnd);
                                             } else if pt.x >= sel.left && pt.x <= sel.right && pt.y >= sel.top && pt.y <= sel.bottom {
-                                                if let Some(tool) = s.active_tool {
+                                                let hit_body_idx = s.annotations.iter().enumerate().rev().find_map(|(idx, item)| {
+                                                    if hit_test_shape_body(&item.shape, pt, 6.0) {
+                                                        Some(idx)
+                                                    } else {
+                                                        None
+                                                    }
+                                                });
+
+                                                if let Some(idx) = hit_body_idx {
+                                                    if s.active_tool == Some(5) && matches!(s.annotations[idx].shape, AnnotationShape::Text { .. }) {
+                                                        spawn_text_edit(hwnd, s, idx);
+                                                    } else {
+                                                        s.selected_annotation = Some(idx);
+                                                        match &s.annotations[idx].shape {
+                                                            AnnotationShape::Pen { color, width, dash, .. } => {
+                                                                s.stroke_size = *width as u32;
+                                                                s.line_dash_pattern = *dash;
+                                                                if let Some(pos) = PALETTE.iter().position(|c| *c == *color) { s.selected_color_idx = pos; }
+                                                            }
+                                                            AnnotationShape::Line { color, width, dash, .. } => {
+                                                                s.stroke_size = *width as u32;
+                                                                s.line_dash_pattern = *dash;
+                                                                if let Some(pos) = PALETTE.iter().position(|c| *c == *color) { s.selected_color_idx = pos; }
+                                                            }
+                                                            AnnotationShape::Arrow { color, width, arrow_style, dash, .. } => {
+                                                                s.stroke_size = *width as u32;
+                                                                s.arrow_style = *arrow_style;
+                                                                s.line_dash_pattern = *dash;
+                                                                if let Some(pos) = PALETTE.iter().position(|c| *c == *color) { s.selected_color_idx = pos; }
+                                                            }
+                                                            AnnotationShape::Ellipse { color, width, dash, .. }
+                                                            | AnnotationShape::Rect { color, width, dash, .. } => {
+                                                                s.stroke_size = *width as u32;
+                                                                s.line_dash_pattern = *dash;
+                                                                if let Some(pos) = PALETTE.iter().position(|c| *c == *color) { s.selected_color_idx = pos; }
+                                                            }
+                                                            AnnotationShape::Text { color, font_size, .. } => {
+                                                                s.stroke_size = ((*font_size) / 3).max(1) as u32;
+                                                                if let Some(pos) = PALETTE.iter().position(|c| *c == *color) { s.selected_color_idx = pos; }
+                                                            }
+                                                            AnnotationShape::Number { color, radius, is_filled, .. } => {
+                                                                s.number_is_filled = *is_filled;
+                                                                s.stroke_size = ((*radius * 2) as f64 / 4.5).round().max(1.0) as u32;
+                                                                if let Some(pos) = PALETTE.iter().position(|c| *c == *color) { s.selected_color_idx = pos; }
+                                                            }
+                                                            AnnotationShape::Mosaic { shape_type, is_blur, block_size, .. } => {
+                                                                s.stroke_size = ((*block_size) / 2).max(1) as u32;
+                                                                s.mosaic_style = if *shape_type == 1 { if *is_blur { 3 } else { 2 } } else { if *is_blur { 1 } else { 0 } };
+                                                            }
+                                                        }
+                                                        s.moving_annotation = true;
+                                                        s.annotation_drag_start = Some(pt);
+                                                        SetCapture(hwnd);
+                                                    }
+                                                    should_redraw = true;
+                                                } else if let Some(tool) = s.active_tool {
+                                                    s.selected_annotation = None;
                                                     let col = PALETTE[s.selected_color_idx];
                                                     let stroke = s.stroke_size as i32;
                                                     let dash = s.line_dash_pattern;
@@ -1018,6 +1223,7 @@ pub mod windows {
 
                                                     if tool == 7 {
                                                         let radius = (18.0f64.max((s.stroke_size as f64) * 4.5) / 2.0).round() as i32;
+                                                        let new_idx = s.annotations.len();
                                                         s.annotations.push(AnnotationItem {
                                                             shape: AnnotationShape::Number {
                                                                 center: pt,
@@ -1028,18 +1234,22 @@ pub mod windows {
                                                             },
                                                         });
                                                         s.next_badge_number += 1;
+                                                        s.selected_annotation = Some(new_idx);
                                                         s.redo_stack.clear();
                                                         should_redraw = true;
                                                     } else if tool == 5 {
+                                                        let font_size = ((s.stroke_size as i32) * 3).clamp(14, 48);
+                                                        let new_idx = s.annotations.len();
                                                         s.annotations.push(AnnotationItem {
                                                             shape: AnnotationShape::Text {
                                                                 pos: pt,
-                                                                text: "标注文本".into(),
+                                                                text: String::new(),
                                                                 color: col,
-                                                                font_size: 16,
+                                                                font_size,
                                                             },
                                                         });
                                                         s.redo_stack.clear();
+                                                        spawn_text_edit(hwnd, s, new_idx);
                                                         should_redraw = true;
                                                     } else {
                                                         s.is_annotating = true;
@@ -1065,12 +1275,14 @@ pub mod windows {
                                                         should_redraw = true;
                                                     }
                                                 } else {
+                                                    s.selected_annotation = None;
                                                     s.phase = SelectionPhase::Moving;
                                                     s.initial_sel = Some(sel);
                                                     s.drag_start = Some(pt);
                                                     SetCapture(hwnd);
                                                 }
                                             } else {
+                                                s.selected_annotation = None;
                                                 s.phase = SelectionPhase::Expanding;
                                                 s.initial_sel = Some(sel);
                                                 s.drag_start = Some(pt);
@@ -1113,6 +1325,27 @@ pub mod windows {
                     let mut pt = POINT::default();
                     let _ = GetCursorPos(&mut pt);
                     let _ = ScreenToClient(hwnd, &mut pt);
+
+                    let mut dbl_click_text = None;
+                    if let Ok(mut state_lock) = OVERLAY_STATE.lock() {
+                        if let Some(s) = state_lock.as_mut() {
+                            for (idx, item) in s.annotations.iter().enumerate().rev() {
+                                if matches!(item.shape, AnnotationShape::Text { .. }) && hit_test_shape_body(&item.shape, pt, 8.0) {
+                                    dbl_click_text = Some(idx);
+                                    break;
+                                }
+                            }
+                            if let Some(idx) = dbl_click_text {
+                                spawn_text_edit(hwnd, s, idx);
+                            }
+                        }
+                    }
+
+                    if dbl_click_text.is_some() {
+                        let _ = InvalidateRect(hwnd, None, false);
+                        return LRESULT(0);
+                    }
+
                     let mut is_inside_sel = false;
                     if let Ok(state_lock) = OVERLAY_STATE.lock() {
                         if let Some(s) = state_lock.as_ref() {
@@ -1213,7 +1446,26 @@ pub mod windows {
                                         }
                                     }
                                     SelectionPhase::Selected => {
-                                        if let Some(sel) = current_selection(s) {
+                                        if let Some(handle) = s.dragging_annotation_handle {
+                                            if let Some(idx) = s.selected_annotation {
+                                                if idx < s.annotations.len() {
+                                                    resize_shape_by_handle(&mut s.annotations[idx].shape, handle, pt);
+                                                    should_redraw = true;
+                                                }
+                                            }
+                                        } else if s.moving_annotation {
+                                            if let Some(start) = s.annotation_drag_start {
+                                                let dx = pt.x - start.x;
+                                                let dy = pt.y - start.y;
+                                                if let Some(idx) = s.selected_annotation {
+                                                    if idx < s.annotations.len() {
+                                                        move_shape(&mut s.annotations[idx].shape, dx, dy);
+                                                        s.annotation_drag_start = Some(pt);
+                                                        should_redraw = true;
+                                                    }
+                                                }
+                                            }
+                                        } else if let Some(sel) = current_selection(s) {
                                             let new_hover = hit_test_toolbars(
                                                 pt,
                                                 &sel,
@@ -1258,9 +1510,15 @@ pub mod windows {
                                 s.is_annotating = false;
                                 if let Some(shape) = s.current_drawing.take() {
                                     s.annotations.push(AnnotationItem { shape });
+                                    s.selected_annotation = Some(s.annotations.len() - 1);
                                     s.redo_stack.clear();
                                     should_redraw = true;
                                 }
+                            } else if s.dragging_annotation_handle.is_some() || s.moving_annotation {
+                                s.dragging_annotation_handle = None;
+                                s.moving_annotation = false;
+                                s.annotation_drag_start = None;
+                                should_redraw = true;
                             } else {
                                 match s.phase {
                                     SelectionPhase::DraggingNew => {
@@ -1400,9 +1658,11 @@ pub mod windows {
                     LRESULT(0)
                 }
                 WM_KEYDOWN => {
+                    let is_ctrl = ((GetKeyState(0x11) as u16) & 0x8000) != 0;
                     let is_shift = ((GetKeyState(0x10) as u16) & 0x8000) != 0;
                     match wparam.0 {
                         0x1B => { // ESC
+                            commit_text_edit(hwnd);
                             let mut should_cancel = false;
                             let mut should_redraw = false;
                             if let Ok(mut state_lock) = OVERLAY_STATE.lock() {
@@ -1411,6 +1671,9 @@ pub mod windows {
                                         s.is_arrow_popup_open = false;
                                         s.is_line_dash_popup_open = false;
                                         s.is_mosaic_popup_open = false;
+                                        should_redraw = true;
+                                    } else if s.selected_annotation.is_some() {
+                                        s.selected_annotation = None;
                                         should_redraw = true;
                                     } else if s.phase == SelectionPhase::LongCapturing {
                                         let _ = KillTimer(hwnd, 2001);
@@ -1427,6 +1690,8 @@ pub mod windows {
                                         s.current_pt = None;
                                         s.initial_sel = None;
                                         s.annotations.clear();
+                                        s.redo_stack.clear();
+                                        s.next_badge_number = 1;
                                         let mut pt = POINT::default();
                                         let _ = GetCursorPos(&mut pt);
                                         let _ = ScreenToClient(hwnd, &mut pt);
@@ -1441,6 +1706,75 @@ pub mod windows {
                                 cancel_overlay(hwnd);
                             } else if should_redraw {
                                 let _ = InvalidateRect(hwnd, None, false);
+                            }
+                        }
+                        0x2E | 0x08 => { // Delete or Backspace
+                            let mut should_redraw = false;
+                            if let Ok(mut state_lock) = OVERLAY_STATE.lock() {
+                                if let Some(s) = state_lock.as_mut() {
+                                    if let Some(idx) = s.selected_annotation.take() {
+                                        if idx < s.annotations.len() {
+                                            let removed = s.annotations.remove(idx);
+                                            if let AnnotationShape::Number { .. } = removed.shape {
+                                                if s.next_badge_number > 1 {
+                                                    s.next_badge_number -= 1;
+                                                }
+                                            }
+                                            s.redo_stack.push(removed);
+                                            should_redraw = true;
+                                        }
+                                    }
+                                }
+                            }
+                            if should_redraw {
+                                let _ = InvalidateRect(hwnd, None, false);
+                                return LRESULT(0);
+                            }
+                        }
+                        0x5A => { // Z
+                            if is_ctrl {
+                                let mut should_redraw = false;
+                                if let Ok(mut state_lock) = OVERLAY_STATE.lock() {
+                                    if let Some(s) = state_lock.as_mut() {
+                                        if let Some(item) = s.annotations.pop() {
+                                            if let AnnotationShape::Number { .. } = item.shape {
+                                                if s.next_badge_number > 1 {
+                                                    s.next_badge_number -= 1;
+                                                }
+                                            }
+                                            s.redo_stack.push(item);
+                                            if s.selected_annotation >= Some(s.annotations.len()) {
+                                                s.selected_annotation = None;
+                                            }
+                                            should_redraw = true;
+                                        }
+                                    }
+                                }
+                                if should_redraw {
+                                    let _ = InvalidateRect(hwnd, None, false);
+                                    return LRESULT(0);
+                                }
+                            }
+                        }
+                        0x59 => { // Y
+                            if is_ctrl {
+                                let mut should_redraw = false;
+                                if let Ok(mut state_lock) = OVERLAY_STATE.lock() {
+                                    if let Some(s) = state_lock.as_mut() {
+                                        if let Some(item) = s.redo_stack.pop() {
+                                            if let AnnotationShape::Number { .. } = item.shape {
+                                                s.next_badge_number += 1;
+                                            }
+                                            s.annotations.push(item);
+                                            s.selected_annotation = Some(s.annotations.len() - 1);
+                                            should_redraw = true;
+                                        }
+                                    }
+                                }
+                                if should_redraw {
+                                    let _ = InvalidateRect(hwnd, None, false);
+                                    return LRESULT(0);
+                                }
                             }
                         }
                         0x43 => { // C
@@ -1498,14 +1832,66 @@ pub mod windows {
                     LRESULT(0)
                 }
 
+                WM_CTLCOLOREDIT | WM_CTLCOLORSTATIC => {
+                    let edit_hdc = HDC(wparam.0 as *mut std::ffi::c_void);
+                    let mut text_color = COLORREF(0x000000);
+                    if let Ok(state_lock) = OVERLAY_STATE.lock() {
+                        if let Some(s) = state_lock.as_ref() {
+                            if let Some(idx) = s.editing_text_idx {
+                                if let Some(item) = s.annotations.get(idx) {
+                                    if let AnnotationShape::Text { color, .. } = item.shape {
+                                        text_color = color;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    let display_color = if text_color == COLORREF(0xFFFFFF) {
+                        COLORREF(0x000000)
+                    } else {
+                        text_color
+                    };
+                    let _ = SetTextColor(edit_hdc, display_color);
+                    let _ = SetBkColor(edit_hdc, COLORREF(0xFFFFFF));
+                    return LRESULT(GetStockObject(WHITE_BRUSH).0 as isize);
+                }
+
+                WM_APP_COMMIT_TEXT => {
+                    commit_text_edit(hwnd);
+                    let _ = InvalidateRect(hwnd, None, false);
+                    return LRESULT(0);
+                }
+
                 WM_MOUSEWHEEL => {
                     let delta = ((wparam.0 >> 16) as i16) as i32;
                     let step = if delta > 0 { 1 } else { -1 };
                     let mut should_redraw = false;
                     if let Ok(mut state_lock) = OVERLAY_STATE.lock() {
                         if let Some(s) = state_lock.as_mut() {
-                            if s.active_tool.is_some() {
+                            if s.active_tool.is_some() || s.selected_annotation.is_some() {
                                 s.stroke_size = ((s.stroke_size as i32) + step).clamp(1, 50) as u32;
+                                if let Some(idx) = s.selected_annotation {
+                                    if let Some(item) = s.annotations.get_mut(idx) {
+                                        match &mut item.shape {
+                                            AnnotationShape::Pen { width, .. }
+                                            | AnnotationShape::Line { width, .. }
+                                            | AnnotationShape::Arrow { width, .. }
+                                            | AnnotationShape::Rect { width, .. }
+                                            | AnnotationShape::Ellipse { width, .. } => {
+                                                *width = s.stroke_size as i32;
+                                            }
+                                            AnnotationShape::Text { font_size, .. } => {
+                                                *font_size = ((s.stroke_size as i32) * 3).clamp(12, 72);
+                                            }
+                                            AnnotationShape::Number { radius, .. } => {
+                                                *radius = (18.0f64.max((s.stroke_size as f64) * 4.5) / 2.0).round() as i32;
+                                            }
+                                            AnnotationShape::Mosaic { block_size, .. } => {
+                                                *block_size = ((s.stroke_size as i32) * 2).max(4);
+                                            }
+                                        }
+                                    }
+                                }
                                 should_redraw = true;
                             }
                         }
@@ -1604,6 +1990,7 @@ pub mod windows {
     }
 
     unsafe fn handle_action(hwnd: HWND, action: ScreenshotAction) {
+        commit_text_edit(hwnd);
         if let Ok(mut state_lock) = OVERLAY_STATE.lock() {
             if let Some(s) = state_lock.as_mut() {
                 if let Some(sel) = current_selection(s) {
@@ -1633,6 +2020,7 @@ pub mod windows {
     }
 
     unsafe fn cancel_overlay(hwnd: HWND) {
+        commit_text_edit(hwnd);
         if let Ok(mut state_lock) = OVERLAY_STATE.lock() {
             if let Some(s) = state_lock.as_mut() {
                 s.selected_rect = None;
@@ -2809,6 +3197,513 @@ pub mod windows {
         let _ = DeleteObject(bg_brush);
     }
 
+    fn get_shape_bounds(shape: &AnnotationShape) -> RECT {
+        match shape {
+            AnnotationShape::Pen { points, .. } => {
+                if points.is_empty() { return RECT::default(); }
+                let mut l = points[0].x;
+                let mut r = points[0].x;
+                let mut t = points[0].y;
+                let mut b = points[0].y;
+                for p in points {
+                    if p.x < l { l = p.x; }
+                    if p.x > r { r = p.x; }
+                    if p.y < t { t = p.y; }
+                    if p.y > b { b = p.y; }
+                }
+                RECT { left: l, top: t, right: r, bottom: b }
+            }
+            AnnotationShape::Line { start, end, .. } | AnnotationShape::Arrow { start, end, .. } => {
+                RECT {
+                    left: start.x.min(end.x),
+                    top: start.y.min(end.y),
+                    right: start.x.max(end.x),
+                    bottom: start.y.max(end.y),
+                }
+            }
+            AnnotationShape::Rect { rect, .. } | AnnotationShape::Ellipse { rect, .. } => {
+                RECT {
+                    left: rect.left.min(rect.right),
+                    top: rect.top.min(rect.bottom),
+                    right: rect.left.max(rect.right),
+                    bottom: rect.top.max(rect.bottom),
+                }
+            }
+            AnnotationShape::Text { pos, text, font_size, .. } => {
+                let lines: Vec<&str> = text.lines().collect();
+                let line_count = lines.len().max(1) as i32;
+                let max_chars = lines.iter().map(|l| l.chars().count()).max().unwrap_or(1).max(1) as i32;
+                let w = (max_chars * font_size * 7 / 10).max(*font_size);
+                let h = line_count * (font_size * 13 / 10).max(*font_size);
+                RECT {
+                    left: pos.x,
+                    top: pos.y,
+                    right: pos.x + w,
+                    bottom: pos.y + h,
+                }
+            }
+            AnnotationShape::Number { center, radius, .. } => {
+                RECT {
+                    left: center.x - *radius,
+                    top: center.y - *radius,
+                    right: center.x + *radius,
+                    bottom: center.y + *radius,
+                }
+            }
+            AnnotationShape::Mosaic { shape_type, points, rect, .. } => {
+                if *shape_type == 1 {
+                    RECT {
+                        left: rect.left.min(rect.right),
+                        top: rect.top.min(rect.bottom),
+                        right: rect.left.max(rect.right),
+                        bottom: rect.top.max(rect.bottom),
+                    }
+                } else {
+                    if points.is_empty() { return RECT::default(); }
+                    let mut l = points[0].x;
+                    let mut r = points[0].x;
+                    let mut t = points[0].y;
+                    let mut b = points[0].y;
+                    for p in points {
+                        if p.x < l { l = p.x; }
+                        if p.x > r { r = p.x; }
+                        if p.y < t { t = p.y; }
+                        if p.y > b { b = p.y; }
+                    }
+                    RECT { left: l, top: t, right: r, bottom: b }
+                }
+            }
+        }
+    }
+
+    fn distance_to_segment(p: POINT, a: POINT, b: POINT) -> f64 {
+        let dx = (b.x - a.x) as f64;
+        let dy = (b.y - a.y) as f64;
+        let len_sq = dx * dx + dy * dy;
+        if len_sq < 1e-6 {
+            let px = (p.x - a.x) as f64;
+            let py = (p.y - a.y) as f64;
+            return (px * px + py * py).sqrt();
+        }
+        let t = (((p.x - a.x) as f64 * dx + (p.y - a.y) as f64 * dy) / len_sq).clamp(0.0, 1.0);
+        let proj_x = a.x as f64 + t * dx;
+        let proj_y = a.y as f64 + t * dy;
+        let rx = p.x as f64 - proj_x;
+        let ry = p.y as f64 - proj_y;
+        (rx * rx + ry * ry).sqrt()
+    }
+
+    fn hit_test_shape_body(shape: &AnnotationShape, pt: POINT, tolerance: f64) -> bool {
+        let b = get_shape_bounds(shape);
+        let tol = (tolerance as i32) + 6;
+        if pt.x < b.left - tol || pt.x > b.right + tol || pt.y < b.top - tol || pt.y > b.bottom + tol {
+            return false;
+        }
+        match shape {
+            AnnotationShape::Line { start, end, .. } | AnnotationShape::Arrow { start, end, .. } => {
+                distance_to_segment(pt, *start, *end) <= tolerance + 4.0
+            }
+            AnnotationShape::Pen { points, .. } => {
+                if points.len() < 2 {
+                    if let Some(first) = points.first() {
+                        let dx = (pt.x - first.x) as f64;
+                        let dy = (pt.y - first.y) as f64;
+                        return (dx * dx + dy * dy).sqrt() <= tolerance + 4.0;
+                    }
+                    return false;
+                }
+                for i in 0..points.len() - 1 {
+                    if distance_to_segment(pt, points[i], points[i + 1]) <= tolerance + 4.0 {
+                        return true;
+                    }
+                }
+                false
+            }
+            AnnotationShape::Rect { rect, width, .. } => {
+                let l = rect.left.min(rect.right);
+                let t = rect.top.min(rect.bottom);
+                let r = rect.left.max(rect.right);
+                let b = rect.top.max(rect.bottom);
+                let tol_border = (tolerance + *width as f64 / 2.0).max(6.0);
+                distance_to_segment(pt, POINT { x: l, y: t }, POINT { x: r, y: t }) <= tol_border
+                    || distance_to_segment(pt, POINT { x: r, y: t }, POINT { x: r, y: b }) <= tol_border
+                    || distance_to_segment(pt, POINT { x: r, y: b }, POINT { x: l, y: b }) <= tol_border
+                    || distance_to_segment(pt, POINT { x: l, y: b }, POINT { x: l, y: t }) <= tol_border
+            }
+            AnnotationShape::Ellipse { rect, .. } => {
+                let l = rect.left.min(rect.right);
+                let t = rect.top.min(rect.bottom);
+                let r = rect.left.max(rect.right);
+                let b = rect.top.max(rect.bottom);
+                let cx = (l + r) as f64 / 2.0;
+                let cy = (t + b) as f64 / 2.0;
+                let rx = ((r - l) as f64 / 2.0).max(1.0);
+                let ry = ((b - t) as f64 / 2.0).max(1.0);
+                let nx = (pt.x as f64 - cx) / rx;
+                let ny = (pt.y as f64 - cy) / ry;
+                let dist = (nx * nx + ny * ny).sqrt();
+                (dist - 1.0).abs() <= 0.3 || dist <= 1.0
+            }
+            AnnotationShape::Number { center, radius, .. } => {
+                let dx = (pt.x - center.x) as f64;
+                let dy = (pt.y - center.y) as f64;
+                (dx * dx + dy * dy).sqrt() <= (*radius as f64 + tolerance)
+            }
+            AnnotationShape::Text { .. } | AnnotationShape::Mosaic { .. } => {
+                pt.x >= b.left - tol && pt.x <= b.right + tol && pt.y >= b.top - tol && pt.y <= b.bottom + tol
+            }
+        }
+    }
+
+    fn get_shape_handles(shape: &AnnotationShape) -> Vec<(usize, POINT)> {
+        match shape {
+            AnnotationShape::Line { start, end, .. } | AnnotationShape::Arrow { start, end, .. } => {
+                vec![(0, *start), (1, *end)]
+            }
+            _ => {
+                let b = get_shape_bounds(shape);
+                let mid_x = (b.left + b.right) / 2;
+                let mid_y = (b.top + b.bottom) / 2;
+                vec![
+                    (0, POINT { x: b.left, y: b.top }),      // TopLeft
+                    (1, POINT { x: mid_x, y: b.top }),       // Top
+                    (2, POINT { x: b.right, y: b.top }),     // TopRight
+                    (3, POINT { x: b.right, y: mid_y }),     // Right
+                    (4, POINT { x: b.right, y: b.bottom }),  // BottomRight
+                    (5, POINT { x: mid_x, y: b.bottom }),    // Bottom
+                    (6, POINT { x: b.left, y: b.bottom }),   // BottomLeft
+                    (7, POINT { x: b.left, y: mid_y }),      // Left
+                ]
+            }
+        }
+    }
+
+    fn hit_test_shape_handle(shape: &AnnotationShape, pt: POINT) -> Option<usize> {
+        let handles = get_shape_handles(shape);
+        for (idx, h_pt) in handles {
+            let dx = (pt.x - h_pt.x).abs();
+            let dy = (pt.y - h_pt.y).abs();
+            if dx <= 6 && dy <= 6 {
+                return Some(idx);
+            }
+        }
+        None
+    }
+
+    fn cursor_for_shape_handle(shape: &AnnotationShape, handle_idx: usize) -> PCWSTR {
+        match shape {
+            AnnotationShape::Line { .. } | AnnotationShape::Arrow { .. } => IDC_CROSS,
+            _ => match handle_idx {
+                0 | 4 => IDC_SIZENWSE, // TopLeft, BottomRight
+                1 | 5 => IDC_SIZENS,   // Top, Bottom
+                2 | 6 => IDC_SIZENESW, // TopRight, BottomLeft
+                3 | 7 => IDC_SIZEWE,   // Right, Left
+                _ => IDC_ARROW,
+            },
+        }
+    }
+
+    fn move_shape(shape: &mut AnnotationShape, dx: i32, dy: i32) {
+        match shape {
+            AnnotationShape::Pen { points, .. } => {
+                for p in points {
+                    p.x += dx;
+                    p.y += dy;
+                }
+            }
+            AnnotationShape::Line { start, end, .. } | AnnotationShape::Arrow { start, end, .. } => {
+                start.x += dx;
+                start.y += dy;
+                end.x += dx;
+                end.y += dy;
+            }
+            AnnotationShape::Rect { rect, .. } | AnnotationShape::Ellipse { rect, .. } => {
+                rect.left += dx;
+                rect.right += dx;
+                rect.top += dy;
+                rect.bottom += dy;
+            }
+            AnnotationShape::Text { pos, .. } => {
+                pos.x += dx;
+                pos.y += dy;
+            }
+            AnnotationShape::Number { center, .. } => {
+                center.x += dx;
+                center.y += dy;
+            }
+            AnnotationShape::Mosaic { shape_type, points, rect, .. } => {
+                if *shape_type == 1 {
+                    rect.left += dx;
+                    rect.right += dx;
+                    rect.top += dy;
+                    rect.bottom += dy;
+                } else {
+                    for p in points {
+                        p.x += dx;
+                        p.y += dy;
+                    }
+                }
+            }
+        }
+    }
+
+    fn resize_shape_by_handle(shape: &mut AnnotationShape, handle: usize, pt: POINT) {
+        match shape {
+            AnnotationShape::Line { start, end, .. } | AnnotationShape::Arrow { start, end, .. } => {
+                if handle == 0 {
+                    *start = pt;
+                } else if handle == 1 {
+                    *end = pt;
+                }
+            }
+            AnnotationShape::Rect { rect, .. } | AnnotationShape::Ellipse { rect, .. } => {
+                match handle {
+                    0 => { rect.left = pt.x; rect.top = pt.y; }
+                    1 => { rect.top = pt.y; }
+                    2 => { rect.right = pt.x; rect.top = pt.y; }
+                    3 => { rect.right = pt.x; }
+                    4 => { rect.right = pt.x; rect.bottom = pt.y; }
+                    5 => { rect.bottom = pt.y; }
+                    6 => { rect.left = pt.x; rect.bottom = pt.y; }
+                    7 => { rect.left = pt.x; }
+                    _ => {}
+                }
+            }
+            AnnotationShape::Text { pos, font_size, .. } => {
+                let dx = pt.x - pos.x;
+                let dy = pt.y - pos.y;
+                if dx > 10 && dy > 10 {
+                    *font_size = (dy / 2).clamp(10, 72);
+                }
+            }
+            AnnotationShape::Number { center, radius, .. } => {
+                let d = ((pt.x - center.x).abs()).max((pt.y - center.y).abs());
+                *radius = d.clamp(8, 80);
+            }
+            AnnotationShape::Mosaic { shape_type, rect, .. } => {
+                if *shape_type == 1 {
+                    match handle {
+                        0 => { rect.left = pt.x; rect.top = pt.y; }
+                        1 => { rect.top = pt.y; }
+                        2 => { rect.right = pt.x; rect.top = pt.y; }
+                        3 => { rect.right = pt.x; }
+                        4 => { rect.right = pt.x; rect.bottom = pt.y; }
+                        5 => { rect.bottom = pt.y; }
+                        6 => { rect.left = pt.x; rect.bottom = pt.y; }
+                        7 => { rect.left = pt.x; }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    unsafe fn draw_selection_adorner(hdc: HDC, shape: &AnnotationShape) {
+        let blue = rgb(0x0A, 0x84, 0xFF);
+        let handles = get_shape_handles(shape);
+        if handles.is_empty() {
+            return;
+        }
+
+        match shape {
+            AnnotationShape::Line { start, end, .. } | AnnotationShape::Arrow { start, end, .. } => {
+                let pen = CreatePen(PS_DOT, 1, blue);
+                let old_pen = SelectObject(hdc, pen);
+                let _ = MoveToEx(hdc, start.x, start.y, None);
+                let _ = LineTo(hdc, end.x, end.y);
+                let _ = SelectObject(hdc, old_pen);
+                let _ = DeleteObject(pen);
+            }
+            _ => {
+                let b = get_shape_bounds(shape);
+                let pen = CreatePen(PS_DASH, 1, blue);
+                let old_pen = SelectObject(hdc, pen);
+                let old_brush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+                let _ = Rectangle(hdc, b.left - 3, b.top - 3, b.right + 3, b.bottom + 3);
+                let _ = SelectObject(hdc, old_brush);
+                let _ = SelectObject(hdc, old_pen);
+                let _ = DeleteObject(pen);
+            }
+        }
+
+        let white_brush = CreateSolidBrush(rgb(0xFF, 0xFF, 0xFF));
+        let border_pen = CreatePen(PS_SOLID, 1, blue);
+        let old_brush = SelectObject(hdc, white_brush);
+        let old_pen = SelectObject(hdc, border_pen);
+        for (_, h_pt) in handles {
+            let r = 4;
+            let _ = Ellipse(hdc, h_pt.x - r, h_pt.y - r, h_pt.x + r, h_pt.y + r);
+        }
+        let _ = SelectObject(hdc, old_pen);
+        let _ = SelectObject(hdc, old_brush);
+        let _ = DeleteObject(border_pen);
+        let _ = DeleteObject(white_brush);
+    }
+
+    unsafe extern "system" fn text_edit_subclass_proc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        let prop_name: Vec<u16> = "PolyglanceOldProc\0".encode_utf16().collect();
+        let old_proc_val = GetPropW(hwnd, PCWSTR(prop_name.as_ptr())).0 as usize;
+        let old_proc = if old_proc_val != 0 {
+            Some(std::mem::transmute::<usize, unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT>(old_proc_val))
+        } else {
+            None
+        };
+
+        if msg == WM_KEYDOWN {
+            let is_ctrl = (GetKeyState(0x11) as u16 & 0x8000) != 0;
+            let is_shift = (GetKeyState(0x10) as u16 & 0x8000) != 0;
+            if wparam.0 == 0x1B {
+                if let Ok(parent) = GetParent(hwnd) {
+                    let _ = PostMessageW(parent, WM_APP_COMMIT_TEXT, WPARAM(0), LPARAM(0));
+                }
+                return LRESULT(0);
+            } else if wparam.0 == 0x0D && (is_ctrl || !is_shift) {
+                if let Ok(parent) = GetParent(hwnd) {
+                    let _ = PostMessageW(parent, WM_APP_COMMIT_TEXT, WPARAM(0), LPARAM(0));
+                }
+                return LRESULT(0);
+            }
+        } else if msg == ::windows::Win32::UI::WindowsAndMessaging::WM_KILLFOCUS {
+            if let Ok(parent) = GetParent(hwnd) {
+                let _ = PostMessageW(parent, WM_APP_COMMIT_TEXT, WPARAM(0), LPARAM(0));
+            }
+        } else if msg == WM_NCDESTROY {
+            let font_prop_name: Vec<u16> = "PolyglanceFont\0".encode_utf16().collect();
+            if let Ok(font_handle) = RemovePropW(hwnd, PCWSTR(font_prop_name.as_ptr())) {
+                if font_handle.0 != std::ptr::null_mut() {
+                    let _ = DeleteObject(HFONT(font_handle.0));
+                }
+            }
+            let _ = RemovePropW(hwnd, PCWSTR(prop_name.as_ptr()));
+        }
+
+        if let Some(proc) = old_proc {
+            CallWindowProcW(Some(proc), hwnd, msg, wparam, lparam)
+        } else {
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
+    }
+
+    unsafe fn commit_text_edit_state(_hwnd: HWND, s: &mut OverlayState) {
+        if let (Some(edit_raw), Some(idx)) = (s.text_edit_hwnd.take(), s.editing_text_idx.take()) {
+            let edit_hwnd = HWND(edit_raw as *mut std::ffi::c_void);
+            let len = GetWindowTextLengthW(edit_hwnd);
+            let mut buf = vec![0u16; (len + 1) as usize];
+            let actual_len = GetWindowTextW(edit_hwnd, &mut buf);
+            let text = String::from_utf16_lossy(&buf[..actual_len as usize]).trim().to_string();
+
+            let _ = DestroyWindow(edit_hwnd);
+
+            if idx < s.annotations.len() {
+                if text.is_empty() {
+                    s.annotations.remove(idx);
+                    if s.selected_annotation == Some(idx) {
+                        s.selected_annotation = None;
+                    }
+                } else if let AnnotationShape::Text { text: t, .. } = &mut s.annotations[idx].shape {
+                    *t = text;
+                }
+            }
+        }
+    }
+
+    unsafe fn commit_text_edit(hwnd: HWND) {
+        if let Ok(mut state_lock) = OVERLAY_STATE.lock() {
+            if let Some(s) = state_lock.as_mut() {
+                commit_text_edit_state(hwnd, s);
+            }
+        }
+    }
+
+    unsafe fn spawn_text_edit(hwnd: HWND, s: &mut OverlayState, target_idx: usize) {
+        commit_text_edit_state(hwnd, s);
+        if target_idx >= s.annotations.len() {
+            return;
+        }
+        let (pos, text, _color, font_size) = match &s.annotations[target_idx].shape {
+            AnnotationShape::Text { pos, text, color, font_size } => (*pos, text.clone(), *color, *font_size),
+            _ => return,
+        };
+
+        let class_name: Vec<u16> = "EDIT\0".encode_utf16().collect();
+        let title: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+
+        let edit_w = (280).max(text.chars().count() as i32 * font_size + 40).min(s.screen_w - pos.x - 10);
+        let edit_h = (60).max(font_size * 2 + 20).min(s.screen_h - pos.y - 10);
+
+        let edit_hwnd = CreateWindowExW(
+            ::windows::Win32::UI::WindowsAndMessaging::WINDOW_EX_STYLE(0),
+            PCWSTR(class_name.as_ptr()),
+            PCWSTR(title.as_ptr()),
+            ::windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(
+                WS_CHILD | WS_VISIBLE.0 | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN,
+            ),
+            pos.x,
+            pos.y,
+            edit_w,
+            edit_h,
+            hwnd,
+            None,
+            None,
+            None,
+        );
+
+        if let Ok(edit_h) = edit_hwnd {
+            if edit_h.0 != std::ptr::null_mut() {
+                let font = CreateFontW(
+                    -font_size, 0, 0, 0, 700, 0, 0, 0,
+                    DEFAULT_CHARSET.0 as u32,
+                    OUT_DEFAULT_PRECIS.0 as u32,
+                    CLIP_DEFAULT_PRECIS.0 as u32,
+                    DEFAULT_QUALITY.0 as u32,
+                    (DEFAULT_PITCH.0 | FF_DONTCARE.0) as u32,
+                    PCWSTR("Microsoft YaHei\0".encode_utf16().collect::<Vec<_>>().as_ptr()),
+                );
+                let _ = SendMessageW(
+                    edit_h,
+                    WM_SETFONT,
+                    WPARAM(font.0 as usize),
+                    LPARAM(1),
+                );
+                let font_prop: Vec<u16> = "PolyglanceFont\0".encode_utf16().collect();
+                let _ = SetPropW(
+                    edit_h,
+                    PCWSTR(font_prop.as_ptr()),
+                    ::windows::Win32::Foundation::HANDLE(font.0 as _),
+                );
+                let _ = SendMessageW(
+                    edit_h,
+                    EM_SETSEL,
+                    WPARAM(0),
+                    LPARAM(-1),
+                );
+                let _ = SetFocus(edit_h);
+
+                let old_proc = SetWindowLongPtrW(
+                    edit_h,
+                    GWLP_WNDPROC,
+                    text_edit_subclass_proc as *const () as usize as isize,
+                );
+                let prop_name: Vec<u16> = "PolyglanceOldProc\0".encode_utf16().collect();
+                let _ = SetPropW(
+                    edit_h,
+                    PCWSTR(prop_name.as_ptr()),
+                    ::windows::Win32::Foundation::HANDLE(old_proc as _),
+                );
+
+                s.text_edit_hwnd = Some(edit_h.0 as isize);
+                s.editing_text_idx = Some(target_idx);
+                s.selected_annotation = Some(target_idx);
+            }
+        }
+    }
+
     unsafe fn draw_shape_offset(
         hdc: HDC,
         shape: &AnnotationShape,
@@ -2952,8 +3847,19 @@ pub mod windows {
                 let old_font = SelectObject(hdc, font);
                 let _ = SetBkMode(hdc, TRANSPARENT);
                 let _ = SetTextColor(hdc, *color);
-                let u16_text: Vec<u16> = text.encode_utf16().collect();
-                let _ = TextOutW(hdc, pos.x + off_x, pos.y + off_y, &u16_text);
+                let mut u16_text: Vec<u16> = text.encode_utf16().collect();
+                let mut rc = RECT {
+                    left: pos.x + off_x,
+                    top: pos.y + off_y,
+                    right: pos.x + off_x + 4000,
+                    bottom: pos.y + off_y + 4000,
+                };
+                let _ = DrawTextW(
+                    hdc,
+                    &mut u16_text,
+                    &mut rc,
+                    DRAW_TEXT_FORMAT(DT_NOCLIP.0 | DT_NOPREFIX),
+                );
                 let _ = SelectObject(hdc, old_font);
                 let _ = DeleteObject(font);
             }
@@ -2993,8 +3899,14 @@ pub mod windows {
                 }
 
                 let num_str = format!("{}", num);
-                let num_u16: Vec<u16> = num_str.encode_utf16().collect();
-                let font_h = ((r as f64) * 1.1).round() as i32;
+                let mut num_u16: Vec<u16> = num_str.encode_utf16().collect();
+                let font_h = if *num >= 100 {
+                    ((r as f64) * 0.75).round() as i32
+                } else if *num >= 10 {
+                    ((r as f64) * 0.95).round() as i32
+                } else {
+                    ((r as f64) * 1.15).round() as i32
+                };
                 let font = CreateFontW(
                     -font_h, 0, 0, 0, 700, 0, 0, 0,
                     DEFAULT_CHARSET.0 as u32,
@@ -3008,9 +3920,19 @@ pub mod windows {
                 let _ = SetBkMode(hdc, TRANSPARENT);
                 let text_color = if *is_filled { rgb(0xFF, 0xFF, 0xFF) } else { *color };
                 let _ = SetTextColor(hdc, text_color);
-                let tx = if *num < 10 { cx - font_h / 3 } else { cx - font_h / 2 };
-                let ty = cy - font_h / 2;
-                let _ = TextOutW(hdc, tx, ty, &num_u16);
+                let v_offset = ((r as f64) * 0.08).round().max(1.0) as i32;
+                let mut rc = RECT {
+                    left: cx - r,
+                    top: cy - r + v_offset,
+                    right: cx + r,
+                    bottom: cy + r + v_offset,
+                };
+                let _ = DrawTextW(
+                    hdc,
+                    &mut num_u16,
+                    &mut rc,
+                    DRAW_TEXT_FORMAT(DT_CENTER.0 | DT_VCENTER.0 | DT_SINGLELINE.0 | DT_NOCLIP.0),
+                );
                 let _ = SelectObject(hdc, old_font);
                 let _ = DeleteObject(font);
             }
@@ -3599,11 +4521,21 @@ pub mod windows {
                 if let Ok(dc_lock) = SCREENSHOT_DC.lock() {
                     if let Some(saved_dc_raw) = *dc_lock {
                         let saved_dc = HDC(saved_dc_raw as *mut std::ffi::c_void);
-                        for item in &state.annotations {
+                        for (idx, item) in state.annotations.iter().enumerate() {
+                            if state.editing_text_idx == Some(idx) {
+                                continue;
+                            }
                             draw_shape_offset(backbuffer_dc, &item.shape, 0, 0, Some(saved_dc));
                         }
                         if let Some(ref current_shape) = state.current_drawing {
                             draw_shape_offset(backbuffer_dc, current_shape, 0, 0, Some(saved_dc));
+                        }
+                        if let Some(idx) = state.selected_annotation {
+                            if state.editing_text_idx != Some(idx) {
+                                if let Some(item) = state.annotations.get(idx) {
+                                    draw_selection_adorner(backbuffer_dc, &item.shape);
+                                }
+                            }
                         }
                     }
                 }
@@ -3788,6 +4720,12 @@ pub mod windows {
                 current_drawing: None,
                 is_annotating: false,
                 next_badge_number: 1,
+                selected_annotation: None,
+                dragging_annotation_handle: None,
+                moving_annotation: false,
+                annotation_drag_start: None,
+                text_edit_hwnd: None,
+                editing_text_idx: None,
             });
 
             let hwnd = match CreateWindowExW(
