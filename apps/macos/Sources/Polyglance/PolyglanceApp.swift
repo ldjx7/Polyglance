@@ -53,6 +53,12 @@ struct PolyglanceApp: App {
 
             Divider()
 
+            Button {
+                appDelegate.showClipboardHistory()
+            } label: {
+                Label("剪贴板历史…", systemImage: "doc.on.clipboard")
+            }
+
             Menu {
                 Button {
                     appDelegate.pinClipboardImage()

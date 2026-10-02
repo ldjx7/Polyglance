@@ -82,6 +82,8 @@ struct SelectedTextReader {
             return nil
         }
 
+        ClipboardCaptureSuppression.begin()
+        defer { ClipboardCaptureSuppression.end() }
         let pasteboard = NSPasteboard.general
         let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
         pasteboard.clearContents()

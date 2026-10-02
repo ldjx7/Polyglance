@@ -1,0 +1,53 @@
+name: Clipboard History CI
+
+on:
+  push:
+    branches: [feat/clipboard-history]
+  pull_request:
+    paths:
+      - 'crates/clipboard-core/**'
+      - 'crates/translator-uniffi/**'
+      - 'apps/macos/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/clipboard-history-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clipboard-history-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test shared Rust logic
+        run: cargo test --workspace --locked
+      - name: Generate bindings and build the development application
+        run: ./scripts/build-macos-app.sh
+      - name: Test macOS application
+        run: swift test --package-path apps/macos --configuration release
+      - name: Verify development signature
+        run: codesign --verify --deep --strict 'dist/Polyglance Dev.app'
+      - name: Archive development application
+        run: ditto -c -k --keepParent 'dist/Polyglance Dev.app' dist/Polyglance-Clipboard-Dev.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Polyglance-Clipboard-macOS-Dev
+          path: dist/Polyglance-Clipboard-Dev.zip
+          retention-days: 7
+  core-windows:
+    # Windows UI is being replaced on refactor/windows-rust-track.
+    # Verify the new portable crate on Windows without modifying the legacy C# app.
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p clipboard-core --locked

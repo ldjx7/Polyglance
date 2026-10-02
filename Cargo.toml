@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/clipboard-core",
     "crates/capture-core",
     "crates/polyglance-cabi",
     "crates/translator-core",
@@ -15,6 +16,7 @@ license = "Apache-2.0"
 rust-version = "1.85"
 
 [workspace.dependencies]
+clipboard-core = { path = "crates/clipboard-core" }
 async-trait = "0.1"
 capture-core = { path = "crates/capture-core" }
 html-escape = "0.2"
@@ -33,5 +35,4 @@ lto = "fat"
 codegen-units = 1
 strip = true
 panic = "abort"
-
 

@@ -22,6 +22,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) lazy var viewModel = TranslatorViewModel(client: translationClient)
     private let selectedTextReader = SelectedTextReader()
     private let hotKeyManager = GlobalHotKeyManager()
+    private lazy var clipboardHistoryService = ClipboardHistoryService()
+    private var clipboardHistoryPanel: ClipboardHistoryPanel?
+    private var clipboardBarcodeWindow: BarcodeResultWindow?
     private let pinWindowManager = PinWindowManager()
     private let operationErrorPresenter = OperationErrorPresenter()
     private var appUpdater: AppUpdater { AppUpdater.shared }
@@ -126,6 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         },
         prepare: { [unowned self] in
             guard await screenRecordingCoordinator.prepareForApplicationTermination() else { return false }
+            await clipboardHistoryService.shutdown()
             await pinWindowManager.prepareForTermination()
             return true
         }
@@ -140,6 +144,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
         createTranslatorPanel()
+        clipboardHistoryService.onDismiss = { [weak self] in self?.clipboardHistoryPanel?.close() }
+        clipboardHistoryService.onPinImage = { [weak self] image in
+            self?.pinWindowManager.pin(image, sourceFrame: nil, source: .clipboard)
+        }
+        clipboardHistoryService.onTranslate = { [weak self] text in
+            self?.showTranslator(with: text, shouldTranslate: true, takeFocus: true)
+        }
+        clipboardHistoryService.onRecognizeText = { [weak self] text in
+            self?.showTranslator(with: text, shouldTranslate: false, takeFocus: true)
+        }
+        clipboardHistoryService.onRecognizeCodes = { [weak self] image in
+            self?.showClipboardBarcodes(image)
+        }
+        clipboardHistoryService.start()
+        hotKeyManager.onClipboardHistory = { [weak self] in self?.showClipboardHistory() }
         pinHistoryViewModel.onPinContent = { [weak self] image, id, text in
             self?.pinWindowManager.pinHistoryItem(image, id: id, text: text)
         }
@@ -364,6 +383,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func destroyAllPins() {
         pinWindowManager.destroyAllPins()
+    }
+
+    func showClipboardHistory() {
+        if clipboardHistoryPanel == nil {
+            let panel = ClipboardHistoryPanel(service: clipboardHistoryService)
+            panel.onDismissed = { [weak self] in self?.clipboardHistoryService.didDismiss() }
+            clipboardHistoryPanel = panel
+        }
+        if clipboardHistoryPanel?.isVisible == true {
+            clipboardHistoryPanel?.close()
+            return
+        }
+        clipboardHistoryService.preparePresentation()
+        clipboardHistoryPanel?.center()
+        clipboardHistoryPanel?.makeKeyAndOrderFront(nil)
+    }
+
+    private func showClipboardBarcodes(_ image: NSImage) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let observations = try await BarcodeService().recognizeBarcodes(in: image)
+                guard !observations.isEmpty, let screen = NSScreen.main else {
+                    clipboardHistoryService.errorMessage = "未识别到二维码或条码。"
+                    showClipboardHistory()
+                    return
+                }
+                let size = PinWindowManager.initialPinSize(imageSize: image.size, preferredDisplaySize: nil, maximumSize: screen.visibleFrame.size)
+                let frame = CGRect(origin: screen.visibleFrame.origin, size: size)
+                clipboardBarcodeWindow?.close()
+                let window = BarcodeResultWindow(observations: observations, image: image, screenFrame: frame)
+                window.onClosed = { [weak self] in self?.clipboardBarcodeWindow = nil }
+                clipboardBarcodeWindow = window
+                window.center()
+                window.makeKeyAndOrderFront(nil)
+            } catch {
+                clipboardHistoryService.errorMessage = "无法识别图片中的二维码。"
+                showClipboardHistory()
+            }
+        }
     }
 
     func showTranslator(

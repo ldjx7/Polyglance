@@ -49,9 +49,12 @@ public enum GlobalShortcutAction: String, Codable, CaseIterable, Sendable {
     case ocrTranslationCard
     case screenshotAndCopy
     case translateAndReplace
+    case clipboardHistory
 
     public var title: String {
         switch self {
+        case .clipboardHistory:
+            return "剪贴板历史"
         case .translateSelection:
             return "划词翻译"
         case .captureSelection:
@@ -99,6 +102,7 @@ public enum GlobalShortcutAction: String, Codable, CaseIterable, Sendable {
         case .ocrTranslationCard: return 12
         case .screenshotAndCopy: return 13
         case .translateAndReplace: return 14
+        case .clipboardHistory: return 15
         }
     }
 }
@@ -117,6 +121,7 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
     public var ocrTranslate: RecordedShortcut?
     public var ocrWorkspace: RecordedShortcut?
     public var ocrTranslationCard: RecordedShortcut?
+    public var clipboardHistory: RecordedShortcut?
     public var translateAndReplace: RecordedShortcut?
 
     public init(
@@ -133,7 +138,8 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
         openTranslator: RecordedShortcut? = nil,
         ocrTranslate: RecordedShortcut? = nil,
         ocrWorkspace: RecordedShortcut? = nil,
-        ocrTranslationCard: RecordedShortcut? = nil
+        ocrTranslationCard: RecordedShortcut? = nil,
+        clipboardHistory: RecordedShortcut? = nil
     ) {
         self.translateSelection = translateSelection
         self.captureSelection = captureSelection
@@ -149,6 +155,7 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
         self.ocrTranslate = ocrTranslate
         self.ocrWorkspace = ocrWorkspace
         self.ocrTranslationCard = ocrTranslationCard
+        self.clipboardHistory = clipboardHistory
     }
 
     public static let recommended = GlobalShortcutConfiguration(
@@ -235,6 +242,7 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
     public subscript(action: GlobalShortcutAction) -> RecordedShortcut? {
         get {
             switch action {
+            case .clipboardHistory: return clipboardHistory
             case .translateSelection: return translateSelection
             case .captureSelection: return captureSelection
             case .screenshotAndPin: return screenshotAndPin
@@ -253,6 +261,7 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
         }
         set {
             switch action {
+            case .clipboardHistory: clipboardHistory = newValue
             case .translateSelection: translateSelection = newValue
             case .captureSelection: captureSelection = newValue
             case .screenshotAndPin: screenshotAndPin = newValue
@@ -276,6 +285,7 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
+        case clipboardHistory
         case translateSelection
         case captureSelection
         case screenshotAndPin
@@ -294,6 +304,7 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        clipboardHistory = try container.decodeIfPresent(RecordedShortcut.self, forKey: .clipboardHistory)
         translateSelection = try container.decodeIfPresent(RecordedShortcut.self, forKey: .translateSelection)
         captureSelection = try container.decodeIfPresent(RecordedShortcut.self, forKey: .captureSelection)
         screenshotAndPin = try container.decodeIfPresent(RecordedShortcut.self, forKey: .screenshotAndPin)
@@ -319,6 +330,7 @@ public struct GlobalShortcutConfiguration: Codable, Equatable, Sendable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(clipboardHistory, forKey: .clipboardHistory)
         try container.encodeIfPresent(translateSelection, forKey: .translateSelection)
         try container.encodeIfPresent(captureSelection, forKey: .captureSelection)
         try container.encodeIfPresent(screenshotAndPin, forKey: .screenshotAndPin)
