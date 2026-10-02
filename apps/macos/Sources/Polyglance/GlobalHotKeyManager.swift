@@ -4,6 +4,7 @@ import PolyglanceKit
 
 @MainActor
 final class GlobalHotKeyManager {
+    var onClipboardHistory: (() -> Void)?
     var onTranslateSelection: (() -> Void)?
     var onCaptureSelection: ((CFAbsoluteTime) -> Void)?
     var onScreenshotAndPin: ((CFAbsoluteTime) -> Void)?
@@ -142,6 +143,8 @@ final class GlobalHotKeyManager {
             return
         }
         switch action {
+        case .clipboardHistory:
+            onClipboardHistory?()
         case .translateSelection:
             onTranslateSelection?()
         case .captureSelection:

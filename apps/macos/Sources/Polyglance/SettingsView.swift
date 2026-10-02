@@ -1187,6 +1187,7 @@ struct SettingsView: View {
     }
 
     private let visibleShortcutActions: [GlobalShortcutAction] = [
+        .clipboardHistory,
         .screenTranslation,
         .screenshotAndCopy,
         .screenshotAndPin,
@@ -2014,6 +2015,7 @@ struct SettingsView: View {
 
     private func shortcutActionInfo(_ action: GlobalShortcutAction) -> (icon: String, color: Color) {
         switch action {
+        case .clipboardHistory: return ("doc.on.clipboard", .green)
         case .translateSelection: return ("character.book.closed", .blue)
         case .translateAndReplace: return ("arrow.turn.down.left", .blue)
         case .captureSelection: return ("text.viewfinder", .teal)
