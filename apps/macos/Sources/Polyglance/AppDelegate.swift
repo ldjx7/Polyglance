@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let selectedTextReader = SelectedTextReader()
     private let hotKeyManager = GlobalHotKeyManager()
     private lazy var clipboardHistoryService = ClipboardHistoryService()
+    var clipboardHistoryController: ClipboardHistoryService { clipboardHistoryService }
     private var clipboardHistoryPanel: ClipboardHistoryPanel?
     private var clipboardBarcodeWindow: BarcodeResultWindow?
     private let pinWindowManager = PinWindowManager()
@@ -159,6 +160,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         clipboardHistoryService.start()
         hotKeyManager.onClipboardHistory = { [weak self] in self?.showClipboardHistory() }
+        hotKeyManager.onClipboardPasteNext = { [weak self] in
+            guard let self else { return }
+            Task { await self.clipboardHistoryService.pasteNextQueued() }
+        }
+        clipboardHistoryService.onQueueError = { [weak self] in
+            if self?.clipboardHistoryPanel?.isVisible != true { self?.showClipboardHistory() }
+        }
         pinHistoryViewModel.onPinContent = { [weak self] image, id, text in
             self?.pinWindowManager.pinHistoryItem(image, id: id, text: text)
         }

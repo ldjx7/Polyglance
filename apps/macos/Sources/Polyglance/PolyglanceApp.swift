@@ -58,6 +58,7 @@ struct PolyglanceApp: App {
             } label: {
                 Label("剪贴板历史…", systemImage: "doc.on.clipboard")
             }
+            ClipboardPasteQueueMenu(service: appDelegate.clipboardHistoryController)
 
             Menu {
                 Button {
@@ -144,5 +145,14 @@ struct PolyglanceApp: App {
                 .accessibilityLabel("Polyglance")
         }
 
+    }
+}
+
+@MainActor
+private struct ClipboardPasteQueueMenu: View {
+    @ObservedObject var service: ClipboardHistoryService
+    var body: some View {
+        Button("粘贴下一条历史（剩余 \(service.pasteQueueCount) 条）") { Task { await service.pasteNextQueued() } }.disabled(service.pasteQueueCount == 0)
+        if service.pasteQueueCount > 0 { Button("取消连续粘贴") { service.cancelPasteQueue() } }
     }
 }

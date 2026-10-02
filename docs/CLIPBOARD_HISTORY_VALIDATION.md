@@ -6,7 +6,7 @@
 
 Windows UI 按用户要求暂不实现，公共 Rust 模块在 Windows CI 中单独验证。
 
-## 本地验证
+## 第一版本地验证
 
 - `cargo test -p clipboard-core -p translator-uniffi`：通过。
 - `cargo test --workspace --locked`：218 项测试通过，0 失败，其中新增 clipboard-core 测试 9 项。
@@ -16,7 +16,7 @@ Windows UI 按用户要求暂不实现，公共 Rust 模块在 Windows CI 中单
 - 包含依赖的全量 Clippy 在已有 `capture-core` 上发现 3 条基线警告；未改动该模块，新增模块与 FFI 的检查均通过。
 - Swift 绑定已在 Linux 上从实际 UniFFI 库重新生成，用于核对接口和类型；正式 macOS 绑定在 macOS 构建脚本中生成，不手工修改生成物。
 
-## 原生 CI 验证
+## 第一版原生 CI 验证
 
 日期：2026-10-02。验证代码提交：`02e8d65fb82d7674ccddab3e3651134ed1d01697`。
 
@@ -32,8 +32,20 @@ Windows UI 按用户要求暂不实现，公共 Rust 模块在 Windows CI 中单
 
 全量 Release 测试首次运行时，已有 `ScreenRecordingAudioMixdownTests` 在读取音频样本前崩溃。测试输出对象不持有 `AVAssetReader`，优化后读取器可能在最后一次使用后提前释放。测试 fixture 增加 `withExtendedLifetime(readers)` 保持读取器直到采样结束，原有断言和录屏生产代码均未修改；最终全量测试通过。
 
+## 后续功能验证
+
+本轮新增文件引用与有序多项、类型/来源/标签筛选、名称和标签、后台本机 OCR 搜索索引、连续粘贴、SQLite 备份合并/替换和损坏库恢复。Windows UI 继续留给 `refactor/windows-rust-track`。
+
+- 公共核心扩展测试覆盖顺序和去重、组合筛选、元数据/OCR 缓存、v1 迁移、备份与损坏恢复、无效和超额收藏导入回滚、10000 条分页及容量边界。
+- Swift 增加旧设置兼容、纯文本多项合并、真实文件/多项重放、元数据/OCR 备份恢复、真实 Vision OCR 和图像像素预算测试。
+- 从实际 UniFFI 库重新生成 Swift 绑定，核对新增类型、方法和错误；生成物仍不提交。
+- 本地 Rust workspace：230 项测试通过，0 失败；其中 clipboard-core 原有 9 项、本轮扩展 12 项。扩展测试包含实际写入和分页 10000 条记录，整组约 9.3 秒，不将测试耗时当作 GUI 性能承诺。
+- `cargo fmt --all --check`、`git diff --check` 及 clipboard-core / translator-uniffi 定向 Clippy 均通过。
+- Linux Rust 1.99 在绑定生成依赖的默认并行代码生成中出现空目标文件归档错误；本地全量测试关闭调试信息，并仅将 `uniffi_bindgen` 的 codegen units 设为 1 后通过。此覆盖未写入仓库配置，原生 CI 仍用标准构建命令验证。
+- 原生 macOS 构建与 Swift 测试、Windows 核心测试结果在本轮 CI 完成后记录。
+
 ## 使用与真机验收
 
 从菜单栏打开剪贴板历史，点击齿轮开启保存；新安装默认关闭。呼出快捷键在原有快捷键设置中配置。自动粘贴需要辅助功能权限，普通复制不需要。
 
-尚需完成 `CLIPBOARD_HISTORY.md` 的实机验收，重点为中文输入、多显示器和全屏、跨应用粘贴及权限、大图片性能、敏感来源排除。当前 Linux 开发环境无法执行这些 GUI 操作。
+尚需完成 `CLIPBOARD_HISTORY.md` 的实机验收，重点为中文输入、多显示器和全屏、跨应用粘贴及权限、连续粘贴中止路径、Finder 多文件重放、大图片性能、敏感来源排除、OCR 后台索引开关、备份与损坏恢复。当前 Linux 开发环境无法执行这些 GUI 操作。
