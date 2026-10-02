@@ -92,6 +92,7 @@ Swift 侧：
 - `ClipboardCaptureSuppression` 为划词复制兜底提供嵌套暂停，在恢复后跳过当前变化序号。
 - 快捷键模型向后兼容增加 `clipboardHistory`，旧记录缺少字段时保持未分配，原有预设不增加新的快捷键占用。
 - `ClipboardHistoryPanel` 使用 AppKit 非激活浮动窗口承载 SwiftUI，搜索时可获得键盘焦点，退出保留原应用作为粘贴目标。
+- 窗口处理上下键和 Enter 前检查输入法组合状态，中文候选确认由输入法处理；复制和 OCR 操作阻止重复并发提交。
 - 自动粘贴检查辅助功能权限、恢复目标前台应用，等待后再次检查目标和写入时的剪贴板序号，避免把内容误贴进其他应用。
 - 退出前停止监听并等待 actor 中已接受的存储操作完成。
 
@@ -121,7 +122,7 @@ Swift 侧：
 ### 自动验证
 
 - Rust：持久化、Unicode 搜索、富文本原样往返、去重保留收藏、过滤前置、条数/字节限制、过期策略、收藏满额事务回滚、schema 保护、非法载荷和像素上限。
-- macOS：默认关闭、NSPasteboard 富文本桥接、文件及多项跳过、嵌套临时复制暂停、超限拒绝、通过生成绑定持久化、目录权限、窗口键盘焦点和关闭回调。
+- macOS：默认关闭、NSPasteboard 富文本桥接、TIFF 转 PNG 及 PNG 原样往返、文件及多项跳过、嵌套临时复制暂停、超限拒绝、通过生成绑定持久化、目录权限、窗口键盘焦点和关闭回调。
 - `Clipboard History CI`：在 macOS 15 跑 Rust workspace 测试、开发应用完整构建、Swift 测试、代码签名检查并上传开发应用 ZIP；Windows runner 只验证公共 crate。
 - macOS 本地命令：`./scripts/build-macos-app.sh`，随后 `swift test --package-path apps/macos --configuration release`，最后 `codesign --verify --deep --strict 'dist/Polyglance Dev.app'`。
 
