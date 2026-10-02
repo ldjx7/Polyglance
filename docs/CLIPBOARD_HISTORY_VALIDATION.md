@@ -42,7 +42,21 @@ Windows UI 按用户要求暂不实现，公共 Rust 模块在 Windows CI 中单
 - 本地 Rust workspace：230 项测试通过，0 失败；其中 clipboard-core 原有 9 项、本轮扩展 12 项。扩展测试包含实际写入和分页 10000 条记录，整组约 9.3 秒，不将测试耗时当作 GUI 性能承诺。
 - `cargo fmt --all --check`、`git diff --check` 及 clipboard-core / translator-uniffi 定向 Clippy 均通过。
 - Linux Rust 1.99 在绑定生成依赖的默认并行代码生成中出现空目标文件归档错误；本地全量测试关闭调试信息，并仅将 `uniffi_bindgen` 的 codegen units 设为 1 后通过。此覆盖未写入仓库配置，原生 CI 仍用标准构建命令验证。
-- 原生 macOS 构建与 Swift 测试、Windows 核心测试结果在本轮 CI 完成后记录。
+### 后续原生 CI 结果
+
+日期：2026-10-02 UTC（北京时间 2026-10-03）。最终代码提交：`64cff8d2d203ece9a1218cb400afb63141626a5c`。
+
+[最终 CI 结果](https://github.com/ldjx7/Polyglance/actions/runs/37060540877)：macOS 和 Windows 两个任务均成功。
+
+- macOS 15：标准 `cargo test --workspace --locked`，230 项 Rust 测试通过，无本地 codegen 覆盖。
+- Windows 2025：`cargo test -p clipboard-core --locked`，21 项测试通过。
+- `./scripts/build-macos-app.sh`：完整生成 Swift 绑定并构建开发应用，未使用 `--preserve-permissions`；采用 ad-hoc 开发签名。
+- macOS 剪贴板专项：13 项全部通过，无跳过；覆盖真实文件/多项 NSPasteboard、旧设置、生成绑定的元数据和备份恢复、Vision OCR 与图片预算。
+- Swift 全量 Release：578 项测试，3 项已有录屏 passthrough fixture 测试跳过，0 失败；剪贴板测试无跳过。
+- `codesign --verify --deep --strict 'dist/Polyglance Dev.app'`：通过。
+- [最终 macOS 开发包](https://github.com/ldjx7/Polyglance/actions/runs/37060540877/artifacts/11250996502)：`Polyglance-Clipboard-macOS-Dev`，约 7.5 MB，保留至 2026-10-09 UTC。
+
+复查修正包括：改写剪贴板前再次检查队列、前台应用和变化序号；取消旧操作不清空后来新建的队列；搜索筛选变化后不复制旧结果；敏感类型同时检查系统剪贴板与各项；手动 OCR 保存索引失败时仍展示识别结果。最终构建和测试覆盖该代码提交。
 
 ## 使用与真机验收
 
