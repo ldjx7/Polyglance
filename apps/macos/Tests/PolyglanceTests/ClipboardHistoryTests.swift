@@ -47,6 +47,28 @@ final class ClipboardHistoryTests: XCTestCase {
         XCTAssertNil(try ClipboardHistoryService.readRepresentations(from: board, maximumBytes: 1024))
     }
 
+    func testImageBridgeConvertsNativeTiffToPortablePNG() throws {
+        let context = try XCTUnwrap(CGContext(data: nil, width: 2, height: 2, bitsPerComponent: 8,
+                                            bytesPerRow: 8, space: CGColorSpaceCreateDeviceRGB(),
+                                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+        let image = try XCTUnwrap(context.makeImage())
+        let tiff = try XCTUnwrap(NSBitmapImageRep(cgImage: image).tiffRepresentation)
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let item = NSPasteboardItem()
+        item.setData(tiff, forType: .tiff)
+        board.writeObjects([item])
+        let representations = try XCTUnwrap(ClipboardHistoryService.readRepresentations(from: board, maximumBytes: 4096))
+        let png = try XCTUnwrap(representations.first { $0.format == "image/png" }?.bytes)
+        XCTAssertNotNil(NSImage(data: png))
+        board.clearContents()
+        board.setData(png, forType: .png)
+        let replayed = try XCTUnwrap(ClipboardHistoryService.readRepresentations(from: board, maximumBytes: 4096))
+        XCTAssertEqual(replayed.first { $0.format == "image/png" }?.bytes, png)
+    }
+
     func testTemporaryClipboardCopiesHaveNestedSuppression() {
         let generation = ClipboardCaptureSuppression.generation
         ClipboardCaptureSuppression.begin()

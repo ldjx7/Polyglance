@@ -3,6 +3,13 @@ name: Clipboard History CI
 on:
   push:
     branches: [feat/clipboard-history]
+    paths:
+      - 'apps/macos/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'scripts/build-macos-*.sh'
+      - '.github/workflows/clipboard-history-ci.yml'
   pull_request:
     paths:
       - 'crates/clipboard-core/**'
@@ -30,6 +37,8 @@ jobs:
       - name: Test shared Rust logic
         run: cargo test --workspace --locked
       - name: Generate bindings and build the development application
+        env:
+          CODESIGN_IDENTITY: '-'
         run: ./scripts/build-macos-app.sh
       - name: Test macOS application
         run: swift test --package-path apps/macos --configuration release
