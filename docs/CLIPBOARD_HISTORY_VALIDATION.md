@@ -13,10 +13,27 @@ Windows UI 按用户要求暂不实现，公共 Rust 模块在 Windows CI 中单
 - `cargo fmt --all --check`、`git diff --check`：通过。
 - `cargo clippy -p clipboard-core --all-targets --locked -- -D warnings`：通过。
 - `cargo clippy -p translator-uniffi --all-targets --no-deps --locked -- -D warnings`：通过。
-- 包含依赖的全量 Clippy 在已有 `capture-core` 上发现 3 条基线警告；未改动无关模块，新增模块与 FFI 的检查均通过。
+- 包含依赖的全量 Clippy 在已有 `capture-core` 上发现 3 条基线警告；未改动该模块，新增模块与 FFI 的检查均通过。
 - Swift 绑定已在 Linux 上从实际 UniFFI 库重新生成，用于核对接口和类型；正式 macOS 绑定在 macOS 构建脚本中生成，不手工修改生成物。
 
-## 待验证
+## 原生 CI 验证
 
-- macOS CI 的开发应用构建、Swift 测试及签名检查。
-- `CLIPBOARD_HISTORY.md` 中列出的真机交互、权限、资源占用和隐私验收。
+日期：2026-10-02。验证代码提交：`02e8d65fb82d7674ccddab3e3651134ed1d01697`。
+
+[完整 CI 结果](https://github.com/ldjx7/Polyglance/actions/runs/37019244535)：macOS 和 Windows 两个任务均成功。
+
+- macOS 15：`cargo test --workspace --locked`，218 项 Rust 测试通过。
+- Windows 2025：`cargo test -p clipboard-core --locked`，9 项测试通过。
+- `./scripts/build-macos-app.sh`：开发应用构建成功，未使用 `--preserve-permissions`。CI 显式使用 ad-hoc 开发签名，避免依赖开发者本机的证书。
+- macOS 新增剪贴板测试单独运行：8 项全部通过，包含真实 NSPasteboard 富文本、TIFF 转 PNG、PNG 往返和生成绑定的持久化验证。
+- `swift test --package-path apps/macos --configuration release --skip-build`：573 项测试，3 项跳过、0 失败。跳过项均为已有录屏 passthrough 测试，其视频样本在 runner 上生成失败；剪贴板测试无跳过。
+- `codesign --verify --deep --strict 'dist/Polyglance Dev.app'`：通过。
+- 开发应用 ZIP 已上传：[Polyglance-Clipboard-macOS-Dev](https://github.com/ldjx7/Polyglance/actions/runs/37019244535/artifacts/11232389964)，CI 保留至 2026-10-09。
+
+全量 Release 测试首次运行时，已有 `ScreenRecordingAudioMixdownTests` 在读取音频样本前崩溃。测试输出对象不持有 `AVAssetReader`，优化后读取器可能在最后一次使用后提前释放。测试 fixture 增加 `withExtendedLifetime(readers)` 保持读取器直到采样结束，原有断言和录屏生产代码均未修改；最终全量测试通过。
+
+## 使用与真机验收
+
+从菜单栏打开剪贴板历史，点击齿轮开启保存；新安装默认关闭。呼出快捷键在原有快捷键设置中配置。自动粘贴需要辅助功能权限，普通复制不需要。
+
+尚需完成 `CLIPBOARD_HISTORY.md` 的实机验收，重点为中文输入、多显示器和全屏、跨应用粘贴及权限、大图片性能、敏感来源排除。当前 Linux 开发环境无法执行这些 GUI 操作。
