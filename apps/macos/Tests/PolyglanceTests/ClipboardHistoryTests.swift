@@ -107,6 +107,7 @@ final class ClipboardHistoryTests: XCTestCase {
     }
 
     func testPanelSupportsKeyboardFocusAndDismissal() {
+        _ = NSApplication.shared
         let name = UUID().uuidString
         let defaults = UserDefaults(suiteName: name)!
         defer { defaults.removePersistentDomain(forName: name) }

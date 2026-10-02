@@ -60,6 +60,9 @@ final class AudioMixdownIntegrationTests: XCTestCase {
     private func makeTwoTrackMP4(audioURLs: [URL], outputURL: URL) async throws {
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
         var readers: [AVAssetReader] = []
+        // Track outputs do not retain their reader. Release optimization can
+        // otherwise destroy readers after startReading(), before samples are copied.
+        defer { withExtendedLifetime(readers) {} }
         var outputs: [AVAssetReaderTrackOutput] = []
         var inputs: [AVAssetWriterInput] = []
 

@@ -41,7 +41,9 @@ jobs:
           CODESIGN_IDENTITY: '-'
         run: ./scripts/build-macos-app.sh
       - name: Test macOS application
-        run: swift test --package-path apps/macos --configuration release
+        run: |
+          swift test --package-path apps/macos --configuration release --filter ClipboardHistoryTests
+          swift test --package-path apps/macos --configuration release --skip-build
       - name: Verify development signature
         run: codesign --verify --deep --strict 'dist/Polyglance Dev.app'
       - name: Archive development application
