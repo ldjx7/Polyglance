@@ -105,12 +105,16 @@ impl From<core::Input> for ClipboardInput {
 pub enum ClipboardKind {
     Text,
     Image,
+    File,
+    Multiple,
 }
 impl From<core::Kind> for ClipboardKind {
     fn from(v: core::Kind) -> Self {
         match v {
             core::Kind::Text => Self::Text,
             core::Kind::Image => Self::Image,
+            core::Kind::File => Self::File,
+            core::Kind::Multiple => Self::Multiple,
         }
     }
 }
@@ -119,6 +123,8 @@ impl From<ClipboardKind> for core::Kind {
         match v {
             ClipboardKind::Text => Self::Text,
             ClipboardKind::Image => Self::Image,
+            ClipboardKind::File => Self::File,
+            ClipboardKind::Multiple => Self::Multiple,
         }
     }
 }
@@ -131,6 +137,10 @@ pub struct ClipboardEntry {
     pub copied_at_ms: u64,
     pub pinned: bool,
     pub byte_count: u64,
+    pub title: String,
+    pub tags: Vec<String>,
+    pub item_count: u32,
+    pub ocr_indexed: bool,
 }
 impl From<core::Entry> for ClipboardEntry {
     fn from(v: core::Entry) -> Self {
@@ -142,6 +152,10 @@ impl From<core::Entry> for ClipboardEntry {
             copied_at_ms: v.copied_at_ms,
             pinned: v.pinned,
             byte_count: v.byte_count,
+            title: v.title,
+            tags: v.tags,
+            item_count: v.item_count,
+            ocr_indexed: v.ocr_indexed,
         }
     }
 }
@@ -155,6 +169,10 @@ impl From<ClipboardEntry> for core::Entry {
             copied_at_ms: v.copied_at_ms,
             pinned: v.pinned,
             byte_count: v.byte_count,
+            title: v.title,
+            tags: v.tags,
+            item_count: v.item_count,
+            ocr_indexed: v.ocr_indexed,
         }
     }
 }
@@ -193,6 +211,8 @@ pub enum ClipboardFailure {
     NotFound,
     #[error("storage failed")]
     Storage,
+    #[error("damaged database or backup")]
+    Corrupt,
 }
 impl From<core::Error> for ClipboardFailure {
     fn from(v: core::Error) -> Self {
@@ -202,7 +222,8 @@ impl From<core::Error> for ClipboardFailure {
             core::Error::TooLarge => Self::TooLarge,
             core::Error::Capacity => Self::Capacity,
             core::Error::NotFound => Self::NotFound,
-            core::Error::Storage(_) => Self::Storage,
+            core::Error::Storage(_) | core::Error::Io(_) => Self::Storage,
+            core::Error::Corrupt => Self::Corrupt,
         }
     }
 }
@@ -293,4 +314,251 @@ impl ClipboardHistory {
 #[uniffi::export]
 pub fn clipboard_image_dimensions_allowed(width: u64, height: u64) -> bool {
     core::image_dimensions_allowed(width, height)
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct ClipboardItem {
+    pub representations: Vec<ClipboardRepresentation>,
+}
+impl From<ClipboardItem> for core::ClipboardItem {
+    fn from(v: ClipboardItem) -> Self {
+        Self {
+            representations: v.representations.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+impl From<core::ClipboardItem> for ClipboardItem {
+    fn from(v: core::ClipboardItem) -> Self {
+        Self {
+            representations: v.representations.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct ClipboardBundleInput {
+    pub items: Vec<ClipboardItem>,
+    pub source_application: String,
+    pub observed_types: Vec<String>,
+    pub copied_at_ms: u64,
+}
+impl From<ClipboardBundleInput> for core::BundleInput {
+    fn from(v: ClipboardBundleInput) -> Self {
+        Self {
+            items: v.items.into_iter().map(Into::into).collect(),
+            source_application: v.source_application,
+            observed_types: v.observed_types,
+            copied_at_ms: v.copied_at_ms,
+        }
+    }
+}
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct ClipboardFilter {
+    pub query: String,
+    pub kind: Option<ClipboardKind>,
+    pub source: Option<String>,
+    pub tag: Option<String>,
+    pub pinned_only: bool,
+}
+impl From<ClipboardFilter> for core::Filter {
+    fn from(v: ClipboardFilter) -> Self {
+        Self {
+            query: v.query,
+            kind: v.kind.map(Into::into),
+            source: v.source,
+            tag: v.tag,
+            pinned_only: v.pinned_only,
+        }
+    }
+}
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct ClipboardAnnotation {
+    pub title: String,
+    pub tags: Vec<String>,
+    pub ocr_text: String,
+}
+impl From<core::Annotation> for ClipboardAnnotation {
+    fn from(v: core::Annotation) -> Self {
+        Self {
+            title: v.title,
+            tags: v.tags,
+            ocr_text: v.ocr_text,
+        }
+    }
+}
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct ClipboardClearPreview {
+    pub items: u32,
+    pub bytes: u64,
+    pub pinned_items: u32,
+}
+impl From<core::ClearPreview> for ClipboardClearPreview {
+    fn from(v: core::ClearPreview) -> Self {
+        Self {
+            items: v.items,
+            bytes: v.bytes,
+            pinned_items: v.pinned_items,
+        }
+    }
+}
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct ClipboardBackupInfo {
+    pub schema_version: u32,
+    pub items: u32,
+    pub bytes: u64,
+    pub pinned_items: u32,
+}
+impl From<core::BackupInfo> for ClipboardBackupInfo {
+    fn from(v: core::BackupInfo) -> Self {
+        Self {
+            schema_version: v.schema_version,
+            items: v.items,
+            bytes: v.bytes,
+            pinned_items: v.pinned_items,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum ClipboardRestoreMode {
+    Merge,
+    Replace,
+}
+impl From<ClipboardRestoreMode> for core::RestoreMode {
+    fn from(v: ClipboardRestoreMode) -> Self {
+        match v {
+            ClipboardRestoreMode::Merge => Self::Merge,
+            ClipboardRestoreMode::Replace => Self::Replace,
+        }
+    }
+}
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct ClipboardRestoreReport {
+    pub added: u32,
+    pub merged: u32,
+    pub evicted: u32,
+    pub items: u32,
+}
+impl From<core::RestoreReport> for ClipboardRestoreReport {
+    fn from(v: core::RestoreReport) -> Self {
+        Self {
+            added: v.added,
+            merged: v.merged,
+            evicted: v.evicted,
+            items: v.items,
+        }
+    }
+}
+#[uniffi::export]
+impl ClipboardHistory {
+    pub fn record_bundle(
+        &self,
+        input: ClipboardBundleInput,
+        policy: ClipboardPolicy,
+    ) -> Result<Option<u64>, ClipboardFailure> {
+        self.lock()?
+            .record_bundle(input.into(), &policy.into())
+            .map_err(Into::into)
+    }
+    pub fn bundle(&self, id: u64) -> Result<Vec<ClipboardItem>, ClipboardFailure> {
+        self.lock()?
+            .bundle(id)
+            .map(|v| v.into_iter().map(Into::into).collect())
+            .map_err(Into::into)
+    }
+    pub fn list_filtered(
+        &self,
+        filter: ClipboardFilter,
+        offset: u32,
+        limit: u32,
+        now_ms: u64,
+    ) -> Result<Vec<ClipboardEntry>, ClipboardFailure> {
+        self.lock()?
+            .list_filtered(&filter.into(), offset, limit, now_ms)
+            .map(|v| v.into_iter().map(Into::into).collect())
+            .map_err(Into::into)
+    }
+    pub fn annotation(&self, id: u64) -> Result<ClipboardAnnotation, ClipboardFailure> {
+        self.lock()?
+            .annotation(id)
+            .map(Into::into)
+            .map_err(Into::into)
+    }
+    pub fn set_annotation(
+        &self,
+        id: u64,
+        title: String,
+        tags: Vec<String>,
+        now_ms: u64,
+    ) -> Result<(), ClipboardFailure> {
+        self.lock()?
+            .set_annotation(id, &title, &tags, now_ms)
+            .map_err(Into::into)
+    }
+    pub fn pending_ocr(&self, limit: u32) -> Result<Vec<u64>, ClipboardFailure> {
+        self.lock()?.pending_ocr(limit).map_err(Into::into)
+    }
+    pub fn store_ocr(&self, id: u64, text: String, now_ms: u64) -> Result<(), ClipboardFailure> {
+        self.lock()?
+            .store_ocr(id, &text, now_ms)
+            .map_err(Into::into)
+    }
+    pub fn mark_ocr_failed(&self, id: u64) -> Result<(), ClipboardFailure> {
+        self.lock()?.mark_ocr_failed(id).map_err(Into::into)
+    }
+    pub fn retry_ocr(&self) -> Result<(), ClipboardFailure> {
+        self.lock()?.retry_ocr().map_err(Into::into)
+    }
+    pub fn sources(&self) -> Result<Vec<String>, ClipboardFailure> {
+        self.lock()?.sources().map_err(Into::into)
+    }
+    pub fn tags(&self) -> Result<Vec<String>, ClipboardFailure> {
+        self.lock()?.tags().map_err(Into::into)
+    }
+    pub fn clear_preview(
+        &self,
+        include_pinned: bool,
+    ) -> Result<ClipboardClearPreview, ClipboardFailure> {
+        self.lock()?
+            .clear_preview(include_pinned)
+            .map(Into::into)
+            .map_err(Into::into)
+    }
+    pub fn export_backup(&self, path: String) -> Result<ClipboardBackupInfo, ClipboardFailure> {
+        self.lock()?
+            .export_backup(path)
+            .map(Into::into)
+            .map_err(Into::into)
+    }
+    pub fn import_backup(
+        &self,
+        path: String,
+        mode: ClipboardRestoreMode,
+        now_ms: u64,
+    ) -> Result<ClipboardRestoreReport, ClipboardFailure> {
+        self.lock()?
+            .import_backup(path, mode.into(), now_ms)
+            .map(Into::into)
+            .map_err(Into::into)
+    }
+}
+#[uniffi::export]
+pub fn clipboard_inspect_backup(path: String) -> Result<ClipboardBackupInfo, ClipboardFailure> {
+    core::inspect_backup(path)
+        .map(Into::into)
+        .map_err(Into::into)
+}
+#[uniffi::export]
+pub fn clipboard_recover_database(
+    path: String,
+    backup: String,
+    limits: ClipboardLimits,
+    now_ms: u64,
+) -> Result<ClipboardRestoreReport, ClipboardFailure> {
+    core::recover_database(path, backup, limits.into(), now_ms)
+        .map(Into::into)
+        .map_err(Into::into)
+}
+
+#[uniffi::export]
+pub fn clipboard_plain_text(items: Vec<ClipboardItem>) -> Option<String> {
+    core::plain_text(&items.into_iter().map(Into::into).collect::<Vec<_>>())
 }
