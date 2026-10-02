@@ -5,7 +5,9 @@ import TranslatorCore
 @MainActor
 final class ClipboardHistoryPanel: NSPanel {
     var onDismissed: (() -> Void)?
+    private let service: ClipboardHistoryService
     init(service: ClipboardHistoryService) {
+        self.service = service
         super.init(contentRect: NSRect(x: 0, y: 0, width: 760, height: 530),
                    styleMask: [.titled, .closable, .resizable, .nonactivatingPanel],
                    backing: .buffered, defer: false)
@@ -19,6 +21,25 @@ final class ClipboardHistoryPanel: NSPanel {
     }
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+    override func sendEvent(_ event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let composing = (firstResponder as? NSTextView)?.hasMarkedText() ?? false
+        if event.type == .keyDown, attachedSheet == nil, !composing,
+           modifiers.intersection([.command, .control]).isEmpty {
+            if event.keyCode == 36 || event.keyCode == 76 {
+                Task {
+                    await service.copySelected(paste: modifiers.contains(.option),
+                                               plainTextOnly: modifiers.contains(.option) && modifiers.contains(.shift))
+                }
+                return
+            }
+            if modifiers.intersection([.option, .shift]).isEmpty {
+                if event.keyCode == 125 { service.moveSelection(1); return }
+                if event.keyCode == 126 { service.moveSelection(-1); return }
+            }
+        }
+        super.sendEvent(event)
+    }
     override func cancelOperation(_ sender: Any?) { close() }
     override func close() { super.close(); onDismissed?() }
 }
@@ -38,7 +59,6 @@ struct ClipboardHistoryView: View {
                 Image(systemName: "magnifyingglass")
                 TextField("搜索文字或来源应用", text: $service.query)
                     .textFieldStyle(.plain).focused($searchFocused)
-                    .onSubmit { Task { await service.copySelected() } }
                 Toggle("仅收藏", isOn: $service.pinnedOnly).toggleStyle(.checkbox)
                 Button { service.togglePause() } label: {
                     Image(systemName: service.paused ? "play.fill" : "pause.fill")

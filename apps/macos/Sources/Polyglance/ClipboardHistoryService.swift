@@ -7,11 +7,18 @@ import TranslatorCore
 /// Platform preferences only. Retention and capture decisions are enforced by Rust.
 struct ClipboardHistoryPreferences: Codable, Equatable {
     var enabled = false
-    var maximumItems: UInt32 = 500
-    var maximumMegabytes: UInt64 = 256
-    var retentionDays: UInt32 = 30
+    var maximumItems: UInt32
+    var maximumMegabytes: UInt64
+    var retentionDays: UInt32
     var ignoredApplications: [String] = []
     var ignoredTypes: [String] = []
+
+    init() {
+        let defaults = clipboardDefaultLimits()
+        maximumItems = defaults.maximumItems
+        maximumMegabytes = defaults.maximumBytes / (1024 * 1024)
+        retentionDays = defaults.retentionDays
+    }
 
     var limits: ClipboardLimits {
         let defaults = clipboardDefaultLimits()
@@ -106,6 +113,7 @@ final class ClipboardHistoryService: ObservableObject {
     private var lastChangeCount: Int
     private var suppressionGeneration = ClipboardCaptureSuppression.generation
     private var captureBusy = false
+    private var copyBusy = false
     private var monitoringGeneration: UInt64 = 0
     private var searchTask: Task<Void, Never>?
     private var reloadGeneration: UInt64 = 0
@@ -330,7 +338,9 @@ final class ClipboardHistoryService: ObservableObject {
         catch { present(error) }
     }
     func copySelected(paste: Bool = false, plainTextOnly: Bool = false) async {
-        guard let id = selectedID else { return }
+        guard !copyBusy, let id = selectedID else { return }
+        copyBusy = true
+        defer { copyBusy = false }
         let target = targetApplication
         if paste && !AXIsProcessTrusted() {
             errorMessage = "自动粘贴需要辅助功能权限。你也可以先复制，再自行粘贴。"
@@ -381,18 +391,16 @@ final class ClipboardHistoryService: ObservableObject {
     }
     @Published private(set) var recognizingText = false
     func recognizeTextSelected() async {
-        guard !recognizingText else { return }
-        await withSelectedImage { image in
-            Task {
-                self.recognizingText = true
-                defer { self.recognizingText = false }
-                do {
-                    let text = try await OCRService().recognizeText(in: image)
-                    self.onDismiss?()
-                    self.onRecognizeText?(text)
-                } catch { self.present(error) }
-            }
-        }
+        guard !recognizingText, let id = selectedID else { return }
+        recognizingText = true
+        defer { recognizingText = false }
+        do {
+            guard let data = try await worker.payload(id: id).first(where: { $0.format == "image/png" })?.bytes,
+                  let image = NSImage(data: data) else { return }
+            let text = try await OCRService().recognizeText(in: image)
+            onDismiss?()
+            onRecognizeText?(text)
+        } catch { present(error) }
     }
     func recognizeCodesSelected() async {
         await withSelectedImage { image in self.onDismiss?(); self.onRecognizeCodes?(image) }
