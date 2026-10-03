@@ -34,6 +34,7 @@ pub struct ClipboardPolicy {
     pub enabled: bool,
     pub ignored_applications: Vec<String>,
     pub ignored_types: Vec<String>,
+    pub ignored_patterns: Vec<String>,
 }
 impl From<ClipboardPolicy> for core::CapturePolicy {
     fn from(v: ClipboardPolicy) -> Self {
@@ -41,6 +42,7 @@ impl From<ClipboardPolicy> for core::CapturePolicy {
             enabled: v.enabled,
             ignored_applications: v.ignored_applications,
             ignored_types: v.ignored_types,
+            ignored_patterns: v.ignored_patterns,
         }
     }
 }
@@ -50,6 +52,7 @@ impl From<core::CapturePolicy> for ClipboardPolicy {
             enabled: v.enabled,
             ignored_applications: v.ignored_applications,
             ignored_types: v.ignored_types,
+            ignored_patterns: v.ignored_patterns,
         }
     }
 }
@@ -199,6 +202,12 @@ impl From<ClipboardStats> for core::Stats {
 }
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum ClipboardFailure {
+    #[error("invalid exclusion expression")]
+    InvalidPattern,
+    #[error("pinned shortcut is already assigned")]
+    ShortcutConflict,
+    #[error("edited content already exists")]
+    ContentConflict,
     #[error("invalid input")]
     InvalidInput,
     #[error("unsupported schema")]
@@ -217,6 +226,9 @@ pub enum ClipboardFailure {
 impl From<core::Error> for ClipboardFailure {
     fn from(v: core::Error) -> Self {
         match v {
+            core::Error::InvalidPattern => Self::InvalidPattern,
+            core::Error::ShortcutConflict => Self::ShortcutConflict,
+            core::Error::ContentConflict => Self::ContentConflict,
             core::Error::InvalidInput => Self::InvalidInput,
             core::Error::UnsupportedSchema => Self::UnsupportedSchema,
             core::Error::TooLarge => Self::TooLarge,
@@ -561,4 +573,31 @@ pub fn clipboard_recover_database(
 #[uniffi::export]
 pub fn clipboard_plain_text(items: Vec<ClipboardItem>) -> Option<String> {
     core::plain_text(&items.into_iter().map(Into::into).collect::<Vec<_>>())
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct ClipboardPinShortcut { pub entry_id: u64, pub key: String }
+
+#[uniffi::export]
+pub fn clipboard_validate_ignored_patterns(patterns: Vec<String>) -> Result<(), ClipboardFailure> {
+    core::validate_ignored_patterns(&patterns).map_err(Into::into)
+}
+
+#[uniffi::export]
+impl ClipboardHistory {
+    pub fn pin_shortcuts(&self) -> Result<Vec<ClipboardPinShortcut>, ClipboardFailure> {
+        self.lock()?.pin_shortcuts().map(|v|v.into_iter().map(|s|ClipboardPinShortcut {entry_id:s.entry_id,key:s.key}).collect()).map_err(Into::into)
+    }
+    pub fn set_pin_shortcut(&self, id:u64, key:String) -> Result<(),ClipboardFailure> {
+        self.lock()?.set_pin_shortcut(id,&key).map_err(Into::into)
+    }
+    pub fn edit_pinned_text(&self,id:u64,text:String,now_ms:u64) -> Result<(),ClipboardFailure> {
+        self.lock()?.edit_pinned_text(id,&text,now_ms).map_err(Into::into)
+    }
+    pub fn capture_token(&self,id:u64) -> Result<String,ClipboardFailure> {
+        self.lock()?.capture_token(id).map_err(Into::into)
+    }
+    pub fn delete_if_capture_matches(&self,id:u64,token:String) -> Result<bool,ClipboardFailure> {
+        self.lock()?.delete_if_capture_matches(id,&token).map_err(Into::into)
+    }
 }

@@ -12,6 +12,7 @@ struct ClipboardHistoryPreferences: Codable, Equatable {
     var retentionDays: UInt32
     var ignoredApplications: [String] = []
     var ignoredTypes: [String] = []
+    var ignoredPatterns: [String] = []
     var ocrSearchEnabled = false
 
     init() {
@@ -22,7 +23,7 @@ struct ClipboardHistoryPreferences: Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case enabled, maximumItems, maximumMegabytes, retentionDays, ignoredApplications, ignoredTypes, ocrSearchEnabled
+        case enabled, maximumItems, maximumMegabytes, retentionDays, ignoredApplications, ignoredTypes, ignoredPatterns, ocrSearchEnabled
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -33,6 +34,7 @@ struct ClipboardHistoryPreferences: Codable, Equatable {
         retentionDays = try values.decodeIfPresent(UInt32.self, forKey: .retentionDays) ?? retentionDays
         ignoredApplications = try values.decodeIfPresent([String].self, forKey: .ignoredApplications) ?? []
         ignoredTypes = try values.decodeIfPresent([String].self, forKey: .ignoredTypes) ?? []
+        ignoredPatterns = try values.decodeIfPresent([String].self, forKey: .ignoredPatterns) ?? []
         ocrSearchEnabled = try values.decodeIfPresent(Bool.self, forKey: .ocrSearchEnabled) ?? false
     }
 
@@ -45,7 +47,7 @@ struct ClipboardHistoryPreferences: Codable, Equatable {
     }
     func policy(paused: Bool) -> ClipboardPolicy {
         ClipboardPolicy(enabled: enabled && !paused,
-                        ignoredApplications: ignoredApplications, ignoredTypes: ignoredTypes)
+                        ignoredApplications: ignoredApplications, ignoredTypes: ignoredTypes, ignoredPatterns: ignoredPatterns)
     }
 }
 

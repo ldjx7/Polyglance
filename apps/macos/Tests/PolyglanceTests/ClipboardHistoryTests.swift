@@ -110,7 +110,7 @@ final class ClipboardHistoryTests: XCTestCase {
         try await worker.configure(clipboardDefaultLimits())
         let input = ClipboardInput(representations: [ClipboardRepresentation(format: "text/plain", bytes: Data("test".utf8))],
                                    sourceApplication: "test.app", observedTypes: [], copiedAtMs: ClipboardHistoryWorker.now)
-        let saved = try await worker.record(input, policy: ClipboardPolicy(enabled: true, ignoredApplications: [], ignoredTypes: []))
+        let saved = try await worker.record(input, policy: ClipboardPolicy(enabled: true, ignoredApplications: [], ignoredTypes: [], ignoredPatterns: []))
         let id = try XCTUnwrap(saved)
         let reopened = ClipboardHistoryWorker(directory: directory)
         let entries = try await reopened.list(query: "test", pinnedOnly: false, offset: 0)
@@ -162,7 +162,7 @@ final class ClipboardHistoryTests: XCTestCase {
         let worker = ClipboardHistoryWorker(directory: directory)
         try await worker.configure(clipboardDefaultLimits())
         let input = ClipboardBundleInput(items: [ClipboardItem(representations: [ClipboardRepresentation(format: "image/png", bytes: Data([137,80,78,71,13,10,26,10,1]))])], sourceApplication: "test.app", observedTypes: [], copiedAtMs: ClipboardHistoryWorker.now)
-        let saved = try await worker.recordBundle(input, policy: ClipboardPolicy(enabled: true, ignoredApplications: [], ignoredTypes: []))
+        let saved = try await worker.recordBundle(input, policy: ClipboardPolicy(enabled: true, ignoredApplications: [], ignoredTypes: [], ignoredPatterns: []))
         let id = try XCTUnwrap(saved)
         try await worker.setAnnotation(id: id, title: "截图", tags: ["项目"])
         try await worker.storeOCR(id: id, text: "OCR 内容")
