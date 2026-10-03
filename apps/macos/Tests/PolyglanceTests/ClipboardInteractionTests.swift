@@ -47,14 +47,17 @@ final class ClipboardInteractionTests: XCTestCase {
         XCTAssertTrue(ClipboardHistoryService.isEmpty(board))
         board.clearContents(); board.setString(" ", forType: .string)
         XCTAssertFalse(ClipboardHistoryService.isEmpty(board))
-        board.clearContents()
-        let cleared = NSPasteboardItem()
-        cleared.setString("", forType: .string)
-        cleared.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
-        board.writeObjects([cleared])
-        XCTAssertTrue(ClipboardHistoryService.isEmpty(board))
-        cleared.setData(Data([1]), forType: .png)
-        board.clearContents(); board.writeObjects([cleared])
+        for marker in ["org.nspasteboard.ConcealedType", "com.agilebits.onepassword", "net.antelle.keeweb"] {
+            board.clearContents()
+            let cleared = NSPasteboardItem()
+            cleared.setString("", forType: .string)
+            cleared.setString("", forType: NSPasteboard.PasteboardType(marker))
+            board.writeObjects([cleared])
+            XCTAssertTrue(ClipboardHistoryService.isEmpty(board), marker)
+        }
+        let image = NSPasteboardItem()
+        image.setString("", forType: .string); image.setData(Data([1]), forType: .png)
+        board.clearContents(); board.writeObjects([image])
         XCTAssertFalse(ClipboardHistoryService.isEmpty(board))
     }
     func testOldPreferencesKeepAutomaticPasteCycleAndNotificationsOff() throws {

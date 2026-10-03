@@ -50,14 +50,14 @@ jobs:
         env:
           CODESIGN_IDENTITY: '-'
         run: ./scripts/build-macos-app.sh
-      - name: Test macOS application
-        run: |
-          swift test --package-path apps/macos --configuration release --filter Clipboard
-          swift test --package-path apps/macos --configuration release --skip-build
       - name: Verify development signature
         run: codesign --verify --deep --strict 'dist/Polyglance Dev.app'
       - name: Verify Shortcuts action metadata
         run: python3 scripts/verify-clipboard-intents.py 'dist/Polyglance Dev.app/Contents/Resources/Metadata.appintents'
+      - name: Test macOS application
+        run: |
+          swift test --package-path apps/macos --configuration release --filter Clipboard
+          swift test --package-path apps/macos --configuration release --skip-build
       - name: Archive development application
         run: ditto -c -k --keepParent 'dist/Polyglance Dev.app' dist/Polyglance-Clipboard-Dev.zip
       - uses: actions/upload-artifact@v4
