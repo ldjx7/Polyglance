@@ -49,8 +49,9 @@ final class ClipboardRegressionTests: XCTestCase {
             var preferences = ClipboardHistoryPreferences(); preferences.enabled = true
             await service.savePreferences(preferences)
             _ = try await fixture.record("existing history")
-            fixture.board.setString("captured before clear", forType: .string)
-            try await self.eventually {
+            fixture.board.clearContents()
+            XCTAssertTrue(fixture.board.setString("captured before clear", forType: .string))
+            try await self.eventually("the external copy should reach normalization") {
                 service.poll()
                 return await processor.normalizationStarted
             }
@@ -59,7 +60,7 @@ final class ClipboardRegressionTests: XCTestCase {
                 else { await service.clear(includePinned: true) }
             }
             do {
-                try await self.eventually { service.dataBusy }
+                try await self.eventually("clear should wait for the suspended capture") { service.dataBusy }
                 let before = try await fixture.worker.stats()
                 XCTAssertEqual(before.items, 1, "Clear must wait for work already in progress.")
                 await processor.release()
@@ -74,7 +75,7 @@ final class ClipboardRegressionTests: XCTestCase {
             service.poll()
             XCTAssertEqual(fixture.board.string(forType: .string), "captured before clear")
             fixture.board.clearContents(); fixture.board.setString("copied after clear", forType: .string)
-            try await self.eventually {
+            try await self.eventually("monitoring should resume after clear") {
                 service.poll()
                 return try await fixture.worker.stats().items == 1
             }
@@ -160,12 +161,14 @@ final class ClipboardRegressionTests: XCTestCase {
         }
     }
 
-    private func eventually(_ predicate: () async throws -> Bool) async throws {
+    private func eventually(_ message: String = "The expected asynchronous state was not reached.",
+                            file: StaticString = #filePath, line: UInt = #line,
+                            _ predicate: () async throws -> Bool) async throws {
         for _ in 0..<300 {
             if try await predicate() { return }
             try await Task.sleep(for: .milliseconds(10))
         }
-        XCTFail("The expected asynchronous state was not reached.")
+        XCTFail(message, file: file, line: line)
         throw ClipboardRegressionError.timeout
     }
 
