@@ -1,11 +1,14 @@
 //! Portable clipboard history, metadata, search and retention. Native APIs stay in frontends.
 mod backup;
+mod editing;
+mod policy;
+pub use policy::{validate_ignored_patterns, validate_pin_shortcut};
 pub use backup::{BackupInfo, RestoreMode, RestoreReport, inspect_backup, recover_database};
 use rusqlite::{Connection, Transaction, params};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 const DAY_MS: u64 = 86_400_000;
 const MAX_OCR_BYTES: usize = 1_000_000;
 const MAX_BUNDLE_ITEMS: usize = 100;
@@ -24,12 +27,21 @@ const PRIVATE_TYPES: &[&str] = &[
     "com.agilebits.onepassword",
     "net.antelle.keeweb",
     "polyglance.clipboard.confidential",
+    "com.typeit4me.clipping",
+    "de.petermaurer.TransientPasteboardType",
+    "Pasteboard generator type",
 ];
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("invalid history configuration or content")]
     InvalidInput,
+    #[error("invalid clipboard exclusion expression")]
+    InvalidPattern,
+    #[error("pinned shortcut is already assigned")]
+    ShortcutConflict,
+    #[error("edited content already exists in history")]
+    ContentConflict,
     #[error("unsupported database schema")]
     UnsupportedSchema,
     #[error("clipboard content exceeds the per-item limit")]
@@ -82,6 +94,7 @@ pub struct CapturePolicy {
     pub enabled: bool,
     pub ignored_applications: Vec<String>,
     pub ignored_types: Vec<String>,
+    pub ignored_patterns: Vec<String>,
 }
 pub fn should_capture(policy: &CapturePolicy, source: &str, types: &[String]) -> bool {
     policy.enabled
@@ -191,6 +204,12 @@ pub struct ClearPreview {
     pub pinned_items: u32,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PinShortcut {
+    pub entry_id: u64,
+    pub key: String,
+}
+
 pub struct History {
     connection: Connection,
     limits: Limits,
@@ -255,7 +274,16 @@ impl History {
                 PRAGMA user_version=2;")?;
             tx.commit()?;
         }
-        validate_schema(&connection, 2)?;
+        if version < 3 {
+            validate_schema(&connection, 2)?;
+            let tx = connection.transaction()?;
+            tx.execute_batch("CREATE TABLE pin_shortcuts (
+                entry_id INTEGER PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
+                key TEXT NOT NULL UNIQUE
+            ); PRAGMA user_version=3;")?;
+            tx.commit()?;
+        }
+        validate_schema(&connection, 3)?;
         let mut result = Self {
             connection,
             limits,
@@ -288,6 +316,9 @@ impl History {
         let Some(prepared) = prepare(input, self.limits)? else {
             return Ok(None);
         };
+        if policy::excluded_text(&policy.ignored_patterns, &prepared.input.items)? {
+            return Ok(None);
+        }
         let tx = self.connection.transaction()?;
         let id = insert_prepared(&tx, &prepared)?;
         enforce_limits(&tx, self.limits, now, Some(id))?;
@@ -476,6 +507,9 @@ impl History {
             return Err(Error::NotFound);
         }
         enforce_limits(&tx, self.limits, now_ms, None)?;
+        if !pinned {
+            tx.execute("DELETE FROM pin_shortcuts WHERE entry_id=?1", [timestamp(id)?])?;
+        }
         tx.commit()?;
         self.reclaim_pages();
         Ok(())
@@ -880,6 +914,9 @@ fn validate_schema(connection: &Connection, version: i64) -> Result<(), Error> {
             "SELECT entry_id,item_index,format,data FROM representations LIMIT 0"
         })
         .map_err(|_| Error::Corrupt)?;
+    if version >= 3 {
+        connection.prepare("SELECT entry_id,key FROM pin_shortcuts LIMIT 0").map_err(|_| Error::Corrupt)?;
+    }
     Ok(())
 }
 pub fn image_dimensions_allowed(width: u64, height: u64) -> bool {

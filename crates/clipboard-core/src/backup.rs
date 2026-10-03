@@ -52,10 +52,19 @@ fn source(path: &Path) -> Result<(Connection, i64), Error> {
     if malformed > 0 {
         return Err(Error::Corrupt);
     }
-    if version == 2 {
+    if version >= 2 {
         let invalid:u32=connection.query_row("SELECT count(*) FROM entries WHERE length(CAST(title AS BLOB))>512 OR length(CAST(tags AS BLOB))>10000 OR length(CAST(ocr_text AS BLOB))>1000000 OR ocr_state NOT IN (0,1,2)",[],|r|r.get(0))?;
         if invalid > 0 {
             return Err(Error::Corrupt);
+        }
+    }
+    if version >= 3 {
+        let mut shortcuts = connection.prepare("SELECT s.key,e.pinned FROM pin_shortcuts s LEFT JOIN entries e ON e.id=s.entry_id")?;
+        let rows = shortcuts.query_map([], |r| Ok((r.get::<_,String>(0)?,r.get::<_,Option<bool>>(1)?)))?;
+        let mut seen = std::collections::HashSet::new();
+        for row in rows {
+            let (key,pinned)=row?;
+            if pinned!=Some(true) || key.is_empty() || validate_pin_shortcut(&key)?!=key || !seen.insert(key) { return Err(Error::Corrupt); }
         }
     }
     Ok((connection, version))
@@ -239,6 +248,13 @@ impl History {
                     timestamp(id)?
                 ],
             )?;
+            if version >= 3 && pinned {
+                let key: Option<String> = source.query_row("SELECT key FROM pin_shortcuts WHERE entry_id=?1",[timestamp(source_id)?],|r|r.get(0)).optional()?;
+                if let Some(key)=key {
+                    // Existing bindings win on merge; conflicting imported bindings remain unassigned.
+                    tx.execute("INSERT OR IGNORE INTO pin_shortcuts VALUES (?1,?2)",params![timestamp(id)?,key])?;
+                }
+            }
         }
         enforce_limits(&tx, self.limits, now_ms, None)?;
         let after = stats(&tx)?.items;
