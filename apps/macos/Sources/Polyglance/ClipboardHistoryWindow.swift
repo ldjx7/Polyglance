@@ -32,7 +32,7 @@ final class ClipboardHistoryPanel: NSPanel {
         if event.type == .flagsChanged, isCycling, !modifiers.isSuperset(of: cycleModifiers) {
             finishCycle(); super.sendEvent(event); return
         }
-        if event.type == .leftMouseDown { cancelCycle() }
+        if [.leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel].contains(event.type) { cancelCycle() }
         if event.type == .keyDown, isCycling, event.keyCode != cycleKeyCode { cancelCycle() }
         if event.type == .keyDown, attachedSheet == nil, !composing {
             if event.keyCode == 3, modifiers == .command { NotificationCenter.default.post(name: .clipboardFocusSearch, object: nil); return }
