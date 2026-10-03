@@ -69,6 +69,22 @@ Windows UI 按用户要求暂不实现，公共 Rust 模块在 Windows CI 中单
 - 构建脚本为 SwiftPM 生成编译器常量并在签名前提取 `Metadata.appintents`；CI 检查最终包中的八个动作，避免只验证 Swift 类型编译。
 - 本地 `zsh scripts/tests/build-macos-app.test.zsh` 与 `git diff --check` 通过。Linux 环境未运行 Swift 或 AppKit；原生构建和执行结果以本轮 CI 为准。
 
+### 本轮原生 CI 结果
+
+最终代码提交：`3804caf7805544b4038f55a67e025c18757a0aaf`。
+
+[最终 CI 结果](https://github.com/ldjx7/Polyglance/actions/runs/37102648010)：macOS 和 Windows 两个任务均成功。
+
+- macOS 15：`cargo test --workspace --locked`，238 项 Rust 测试通过，0 失败；`cargo fmt --all --check` 通过。
+- Windows 2025：`cargo test -p clipboard-core --locked`，29 项测试通过，0 失败。
+- `./scripts/build-macos-app.sh`：重新生成真实 UniFFI 绑定，完整构建独立开发应用，未使用 `--preserve-permissions`，采用 ad-hoc 开发签名。
+- `codesign --verify --deep --strict 'dist/Polyglance Dev.app'` 通过。最终应用包的 `Metadata.appintents` 校验确认八个剪贴板动作均存在。
+- `swift test --package-path apps/macos --configuration release --filter Clipboard`：26 项通过，0 失败、无跳过；其中 ClipboardHistoryTests 13 项、ClipboardInteractionTests 8 项，另外 5 项为已有剪贴板相关测试。
+- Swift 全量 Release：586 项测试，3 项既有 ScreenRecordingPassthroughTests 因 runner 视频样本生成失败而跳过，0 失败；新增剪贴板测试无跳过。
+- [macOS 开发包](https://github.com/ldjx7/Polyglance/actions/runs/37102648010/artifacts/11265909295)：`Polyglance-Clipboard-macOS-Dev`，约 7.7 MB，CI 保留至 2026-10-10 UTC。
+
+本轮修改没有包含 Windows C# 客户端；新平台接入仍使用文档中的 Rust + Slint 方案。以上代码、签名、真实剪贴板测试和动作元数据均经过 CI 验证；系统快捷指令中的实际发现、通知授权和跨应用交互仍按下面的真机清单验收。
+
 ## 使用与真机验收
 
 从菜单栏打开剪贴板历史，点击齿轮开启保存；新安装默认关闭。呼出快捷键在原有快捷键设置中配置。自动粘贴需要辅助功能权限，普通复制不需要。
