@@ -28,6 +28,15 @@ actor ClipboardHistoryWorker {
     }
     func record(_ input: ClipboardInput, policy: ClipboardPolicy) throws -> UInt64? { try engine().record(input: input, policy: policy) }
     func recordBundle(_ input: ClipboardBundleInput, policy: ClipboardPolicy) throws -> UInt64? { try engine().recordBundle(input: input, policy: policy) }
+    func recordCapturedBundle(_ input: ClipboardBundleInput, policy: ClipboardPolicy) throws -> ClipboardCapturedRecord? {
+        let engine = try engine()
+        guard let id = try engine.recordBundle(input: input, policy: policy) else { return nil }
+        return ClipboardCapturedRecord(id: id, token: try engine.captureToken(id: id))
+    }
+    func deleteCapture(_ record: ClipboardCapturedRecord) throws -> Bool { try engine().deleteIfCaptureMatches(id: record.id, token: record.token) }
+    func pinShortcuts() throws -> [ClipboardPinShortcut] { try engine().pinShortcuts() }
+    func setPinShortcut(id: UInt64, key: String) throws { try engine().setPinShortcut(id: id, key: key) }
+    func editPinnedText(id: UInt64, text: String) throws { try engine().editPinnedText(id: id, text: text, nowMs: Self.now) }
     func list(query: String, pinnedOnly: Bool, offset: UInt32) throws -> [ClipboardEntry] { try engine().list(query: query, pinnedOnly: pinnedOnly, offset: offset, limit: 100, nowMs: Self.now) }
     func list(filter: ClipboardFilter, offset: UInt32) throws -> [ClipboardEntry] { try engine().listFiltered(filter: filter, offset: offset, limit: 100, nowMs: Self.now) }
     func payload(id: UInt64) throws -> [ClipboardRepresentation] { try engine().payload(id: id) }
@@ -45,6 +54,7 @@ actor ClipboardHistoryWorker {
     func clear(includePinned: Bool) throws { try engine().clear(includePinned: includePinned) }
     func clearPreview(includePinned: Bool) throws -> ClipboardClearPreview { try engine().clearPreview(includePinned: includePinned) }
     func stats() throws -> ClipboardStats { try engine().stats() }
+    func entry(id: UInt64) throws -> ClipboardEntry? { try engine().entry(id: id, nowMs: Self.now) }
     func exportBackup(path: String) throws { _ = try engine().exportBackup(path: path) }
     func inspectBackup(path: String) throws -> ClipboardBackupInfo { try clipboardInspectBackup(path: path) }
     func importBackup(path: String, mode: ClipboardRestoreMode) throws -> ClipboardRestoreReport {
@@ -57,3 +67,4 @@ actor ClipboardHistoryWorker {
     }
     func flush() {}
 }
+struct ClipboardCapturedRecord: Sendable { let id: UInt64; let token: String }

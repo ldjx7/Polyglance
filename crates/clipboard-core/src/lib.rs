@@ -277,7 +277,9 @@ impl History {
         if version < 3 {
             validate_schema(&connection, 2)?;
             let tx = connection.transaction()?;
-            tx.execute_batch("CREATE TABLE pin_shortcuts (
+            tx.execute_batch("ALTER TABLE entries ADD COLUMN capture_nonce TEXT NOT NULL DEFAULT '';
+                UPDATE entries SET capture_nonce=lower(hex(randomblob(16)));
+                CREATE TABLE pin_shortcuts (
                 entry_id INTEGER PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
                 key TEXT NOT NULL UNIQUE
             ); PRAGMA user_version=3;")?;
@@ -370,28 +372,14 @@ impl History {
                 limit.min(100),
                 offset
             ],
-            |r| {
-                let n = r.get::<_, i64>(1)?;
-                let kind = Kind::from_number(n).map_err(|_| rusqlite::Error::InvalidQuery)?;
-                let tags: String = r.get(8)?;
-                let tags =
-                    serde_json::from_str(&tags).map_err(|_| rusqlite::Error::InvalidQuery)?;
-                Ok(Entry {
-                    id: r.get::<_, i64>(0)? as u64,
-                    kind,
-                    preview: r.get(2)?,
-                    source_application: r.get(3)?,
-                    copied_at_ms: r.get::<_, i64>(4)? as u64,
-                    pinned: r.get(5)?,
-                    byte_count: r.get::<_, i64>(6)? as u64,
-                    title: r.get(7)?,
-                    tags,
-                    item_count: r.get(9)?,
-                    ocr_indexed: r.get::<_, i64>(10)? == 1,
-                })
-            },
+            entry_from_row,
         )?;
         records.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+    pub fn entry(&mut self, id: u64, now_ms: u64) -> Result<Option<Entry>, Error> {
+        use rusqlite::OptionalExtension;
+        self.prune(now_ms)?;
+        self.connection.query_row("SELECT id,kind,preview,source,copied_at,pinned,byte_count,title,tags,item_count,ocr_state FROM entries WHERE id=?1",[timestamp(id)?],entry_from_row).optional().map_err(Into::into)
     }
     pub fn payload(&self, id: u64) -> Result<Vec<Representation>, Error> {
         let mut items = self.bundle(id)?;
@@ -704,10 +692,10 @@ fn prepare(input: BundleInput, limits: Limits) -> Result<Option<Prepared>, Error
     }))
 }
 fn insert_prepared(tx: &Transaction<'_>, p: &Prepared) -> Result<u64, Error> {
-    tx.execute("INSERT INTO entries (fingerprint,kind,preview,search_text,source,source_search,copied_at,byte_count,item_count)
-        VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(fingerprint) DO UPDATE SET
+    tx.execute("INSERT INTO entries (fingerprint,kind,preview,search_text,source,source_search,copied_at,byte_count,item_count,capture_nonce)
+        VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,lower(hex(randomblob(16)))) ON CONFLICT(fingerprint) DO UPDATE SET
         preview=excluded.preview,search_text=excluded.search_text,source=excluded.source,source_search=excluded.source_search,
-        copied_at=excluded.copied_at,byte_count=excluded.byte_count+length(CAST(title AS BLOB))+length(CAST(metadata_search AS BLOB))+
+        copied_at=excluded.copied_at,capture_nonce=excluded.capture_nonce,byte_count=excluded.byte_count+length(CAST(title AS BLOB))+length(CAST(metadata_search AS BLOB))+
             length(CAST(ocr_text AS BLOB))+length(CAST(ocr_search AS BLOB)),item_count=excluded.item_count",
         params![p.fingerprint,p.kind.number(),p.preview,p.search,p.input.source_application,p.input.source_application.to_lowercase(),timestamp(p.input.copied_at_ms)?,p.byte_count as i64,p.input.items.len() as i64])?;
     let id: i64 = tx.query_row(
@@ -915,6 +903,7 @@ fn validate_schema(connection: &Connection, version: i64) -> Result<(), Error> {
         })
         .map_err(|_| Error::Corrupt)?;
     if version >= 3 {
+        connection.prepare("SELECT capture_nonce FROM entries LIMIT 0").map_err(|_| Error::Corrupt)?;
         connection.prepare("SELECT entry_id,key FROM pin_shortcuts LIMIT 0").map_err(|_| Error::Corrupt)?;
     }
     Ok(())
@@ -943,4 +932,25 @@ pub fn plain_text(items: &[ClipboardItem]) -> Option<String> {
         })
         .collect::<Option<Vec<_>>>()
         .map(|parts| parts.join("\n"))
+}
+
+fn entry_from_row(r: &rusqlite::Row<'_>) -> Result<Entry, rusqlite::Error> {
+                let n = r.get::<_, i64>(1)?;
+                let kind = Kind::from_number(n).map_err(|_| rusqlite::Error::InvalidQuery)?;
+                let tags: String = r.get(8)?;
+                let tags =
+                    serde_json::from_str(&tags).map_err(|_| rusqlite::Error::InvalidQuery)?;
+                Ok(Entry {
+                    id: r.get::<_, i64>(0)? as u64,
+                    kind,
+                    preview: r.get(2)?,
+                    source_application: r.get(3)?,
+                    copied_at_ms: r.get::<_, i64>(4)? as u64,
+                    pinned: r.get(5)?,
+                    byte_count: r.get::<_, i64>(6)? as u64,
+                    title: r.get(7)?,
+                    tags,
+                    item_count: r.get(9)?,
+                    ocr_indexed: r.get::<_, i64>(10)? == 1,
+                })
 }
