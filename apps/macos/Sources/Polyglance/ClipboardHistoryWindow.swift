@@ -57,6 +57,8 @@ final class ClipboardHistoryPanel: NSPanel {
                 if !modifiers.contains(.option) {
                     if event.keyCode == 125 { service.moveSelection(1, extending: modifiers.contains(.shift)); return }
                     if event.keyCode == 126 { service.moveSelection(-1, extending: modifiers.contains(.shift)); return }
+                    if event.keyCode == 121 { service.moveSelection(10, extending: modifiers.contains(.shift)); return }
+                    if event.keyCode == 116 { service.moveSelection(-10, extending: modifiers.contains(.shift)); return }
                 }
             }
         }
@@ -326,10 +328,11 @@ private struct ClipboardPinShortcutView: View {
             Picker("快捷键", selection: $key) {
                 Text("未分配").tag("")
                 ForEach(Array("bdegijklrtuy").map(String.init), id: \.self) { key in
-                    Text("Command+\(key.uppercased())").tag(key)
+                    Text("Command+\(key.uppercased())\(service.conflictingPinKeys.contains(key) ? "（与全局快捷键冲突）" : "")").tag(key).disabled(service.conflictingPinKeys.contains(key))
                 }
             }
             Text("在历史窗口内生效。Option+对应字母直接粘贴，Option+Shift+对应字母粘贴纯文本。常见编辑快捷键已保留。 ").font(.callout).foregroundStyle(.secondary)
+            if service.conflictingPinKeys.contains(key) { Text("当前绑定与全局快捷键冲突，请换一个字母。 ").font(.caption).foregroundStyle(.red) }
             if let error = service.errorMessage { Text(error).font(.caption).foregroundStyle(.red) }
             HStack { Spacer(); Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("保存") { saving = true; Task { if await service.assignPinShortcut(id: entry.id, key: key) { dismiss() }; saving = false } }.disabled(saving).keyboardShortcut(.defaultAction)

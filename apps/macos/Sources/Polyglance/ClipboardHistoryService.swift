@@ -3,6 +3,7 @@ import Combine
 import ApplicationServices
 import ImageIO
 import TranslatorCore
+import PolyglanceKit
 
 /// Platform preferences only. Retention and capture decisions are enforced by Rust.
 struct ClipboardHistoryPreferences: Codable, Equatable {
@@ -90,6 +91,7 @@ final class ClipboardHistoryService: ObservableObject {
     @Published private(set) var ignoringNextCopy = false
     @Published var previewVisible = true
     @Published private(set) var pinShortcuts: [ClipboardPinShortcut] = []
+    @Published private(set) var conflictingPinKeys: Set<String> = []
     @Published private(set) var entries: [ClipboardEntry] = []
     @Published private(set) var selectedID: UInt64?
     @Published private(set) var selectedIDs: Set<UInt64> = []
@@ -194,6 +196,14 @@ final class ClipboardHistoryService: ObservableObject {
     func cancelIgnoreNextCopy() { captureLifecycle.cancelIgnore(); ignoringNextCopy = false }
     func sourceName(_ identifier: String) -> String { sourceCatalog.source(identifier).name }
     func sourceIcon(_ identifier: String) -> NSImage? { sourceCatalog.source(identifier).icon }
+    func updateShortcutConflicts(_ configuration: GlobalShortcutConfiguration) {
+        let letters: [UInt32: String] = [11:"b",2:"d",14:"e",5:"g",34:"i",38:"j",40:"k",37:"l",15:"r",17:"t",32:"u",16:"y"]
+        let variants: [ShortcutModifiers] = [.command, .option, [.option, .shift]]
+        conflictingPinKeys = Set(GlobalShortcutAction.allCases.compactMap { action in
+            guard let shortcut = configuration[action], variants.contains(shortcut.modifiers) else { return nil }
+            return letters[shortcut.keyCode]
+        })
+    }
     func savePreferences(_ proposed: ClipboardHistoryPreferences) async {
         guard proposed.maximumMegabytes > 0, proposed.maximumMegabytes <= 2048 else { errorMessage = "容量应为 1–2048 MB。"; return }
         do { try clipboardValidateIgnoredPatterns(patterns: proposed.ignoredPatterns) } catch { present(error); return }
@@ -397,6 +407,7 @@ final class ClipboardHistoryService: ObservableObject {
         do { try await worker.pin(id: entry.id, pinned: !entry.pinned); await reload() } catch { present(error) }
     }
     func assignPinShortcut(id: UInt64, key: String) async -> Bool {
+        guard !conflictingPinKeys.contains(key.lowercased()) else { errorMessage = "这个字母与现有全局快捷键冲突，请选择其他字母。"; return false }
         do { try await worker.setPinShortcut(id: id, key: key); await reload(); return true } catch { present(error); return false }
     }
     func editableText(id: UInt64) async -> String? {
@@ -410,8 +421,9 @@ final class ClipboardHistoryService: ObservableObject {
         do { try await worker.editPinnedText(id: id, text: text); cancelPasteQueue(); await reload(); select(id); return true } catch { present(error); return false }
     }
     func copyNumbered(_ number: Int, paste: Bool, plainTextOnly: Bool) async {
+        let filter = currentFilter
         await searchTask?.value
-        guard (1...9).contains(number), number <= entries.count else { return }
+        guard !Task.isCancelled, filter == currentFilter, (1...9).contains(number), number <= entries.count else { return }
         select(entries[number - 1].id)
         await copySelected(paste: paste, plainTextOnly: plainTextOnly)
     }

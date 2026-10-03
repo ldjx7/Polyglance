@@ -59,12 +59,22 @@ fn source(path: &Path) -> Result<(Connection, i64), Error> {
         }
     }
     if version >= 3 {
-        let mut shortcuts = connection.prepare("SELECT s.key,e.pinned FROM pin_shortcuts s LEFT JOIN entries e ON e.id=s.entry_id")?;
-        let rows = shortcuts.query_map([], |r| Ok((r.get::<_,String>(0)?,r.get::<_,Option<bool>>(1)?)))?;
+        let mut shortcuts = connection.prepare(
+            "SELECT s.key,e.pinned FROM pin_shortcuts s LEFT JOIN entries e ON e.id=s.entry_id",
+        )?;
+        let rows = shortcuts.query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, Option<bool>>(1)?))
+        })?;
         let mut seen = std::collections::HashSet::new();
         for row in rows {
-            let (key,pinned)=row?;
-            if pinned!=Some(true) || key.is_empty() || validate_pin_shortcut(&key)?!=key || !seen.insert(key) { return Err(Error::Corrupt); }
+            let (key, pinned) = row?;
+            if pinned != Some(true)
+                || key.is_empty()
+                || validate_pin_shortcut(&key)? != key
+                || !seen.insert(key)
+            {
+                return Err(Error::Corrupt);
+            }
         }
     }
     Ok((connection, version))
@@ -249,10 +259,19 @@ impl History {
                 ],
             )?;
             if version >= 3 && pinned {
-                let key: Option<String> = source.query_row("SELECT key FROM pin_shortcuts WHERE entry_id=?1",[timestamp(source_id)?],|r|r.get(0)).optional()?;
-                if let Some(key)=key {
+                let key: Option<String> = source
+                    .query_row(
+                        "SELECT key FROM pin_shortcuts WHERE entry_id=?1",
+                        [timestamp(source_id)?],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                if let Some(key) = key {
                     // Existing bindings win on merge; conflicting imported bindings remain unassigned.
-                    tx.execute("INSERT OR IGNORE INTO pin_shortcuts VALUES (?1,?2)",params![timestamp(id)?,key])?;
+                    tx.execute(
+                        "INSERT OR IGNORE INTO pin_shortcuts VALUES (?1,?2)",
+                        params![timestamp(id)?, key],
+                    )?;
                 }
             }
         }
