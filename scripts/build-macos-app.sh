@@ -163,7 +163,7 @@ if (( ${#constant_files} == 0 )); then
 fi
 print -l "${constant_files[@]}" > "$metadata_work_directory/constants"
 swift_compiler="$(xcrun --find swiftc)"
-toolchain_directory="${swift_compiler:h:h}"
+toolchain_directory="${swift_compiler:h:h:h}"
 xcode_build_version="$(xcodebuild -version | awk '/Build version/ {print $3}')"
 xcrun appintentsmetadataprocessor \
     --output "$app_bundle/Contents/Resources" \
