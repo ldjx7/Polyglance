@@ -576,7 +576,10 @@ pub fn clipboard_plain_text(items: Vec<ClipboardItem>) -> Option<String> {
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
-pub struct ClipboardPinShortcut { pub entry_id: u64, pub key: String }
+pub struct ClipboardPinShortcut {
+    pub entry_id: u64,
+    pub key: String,
+}
 
 #[uniffi::export]
 pub fn clipboard_validate_ignored_patterns(patterns: Vec<String>) -> Result<(), ClipboardFailure> {
@@ -586,21 +589,47 @@ pub fn clipboard_validate_ignored_patterns(patterns: Vec<String>) -> Result<(), 
 #[uniffi::export]
 impl ClipboardHistory {
     pub fn pin_shortcuts(&self) -> Result<Vec<ClipboardPinShortcut>, ClipboardFailure> {
-        self.lock()?.pin_shortcuts().map(|v|v.into_iter().map(|s|ClipboardPinShortcut {entry_id:s.entry_id,key:s.key}).collect()).map_err(Into::into)
+        self.lock()?
+            .pin_shortcuts()
+            .map(|v| {
+                v.into_iter()
+                    .map(|s| ClipboardPinShortcut {
+                        entry_id: s.entry_id,
+                        key: s.key,
+                    })
+                    .collect()
+            })
+            .map_err(Into::into)
     }
-    pub fn set_pin_shortcut(&self, id:u64, key:String) -> Result<(),ClipboardFailure> {
-        self.lock()?.set_pin_shortcut(id,&key).map_err(Into::into)
+    pub fn set_pin_shortcut(&self, id: u64, key: String) -> Result<(), ClipboardFailure> {
+        self.lock()?.set_pin_shortcut(id, &key).map_err(Into::into)
     }
-    pub fn edit_pinned_text(&self,id:u64,text:String,now_ms:u64) -> Result<(),ClipboardFailure> {
-        self.lock()?.edit_pinned_text(id,&text,now_ms).map_err(Into::into)
+    pub fn edit_pinned_text(
+        &self,
+        id: u64,
+        text: String,
+        now_ms: u64,
+    ) -> Result<(), ClipboardFailure> {
+        self.lock()?
+            .edit_pinned_text(id, &text, now_ms)
+            .map_err(Into::into)
     }
-    pub fn capture_token(&self,id:u64) -> Result<String,ClipboardFailure> {
+    pub fn capture_token(&self, id: u64) -> Result<String, ClipboardFailure> {
         self.lock()?.capture_token(id).map_err(Into::into)
     }
-    pub fn entry(&self,id:u64,now_ms:u64) -> Result<Option<ClipboardEntry>,ClipboardFailure> {
-        self.lock()?.entry(id,now_ms).map(|v|v.map(Into::into)).map_err(Into::into)
+    pub fn entry(&self, id: u64, now_ms: u64) -> Result<Option<ClipboardEntry>, ClipboardFailure> {
+        self.lock()?
+            .entry(id, now_ms)
+            .map(|v| v.map(Into::into))
+            .map_err(Into::into)
     }
-    pub fn delete_if_capture_matches(&self,id:u64,token:String) -> Result<bool,ClipboardFailure> {
-        self.lock()?.delete_if_capture_matches(id,&token).map_err(Into::into)
+    pub fn delete_if_capture_matches(
+        &self,
+        id: u64,
+        token: String,
+    ) -> Result<bool, ClipboardFailure> {
+        self.lock()?
+            .delete_if_capture_matches(id, &token)
+            .map_err(Into::into)
     }
 }

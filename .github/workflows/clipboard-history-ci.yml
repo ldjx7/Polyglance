@@ -44,15 +44,8 @@ jobs:
           cache-on-failure: true
       - name: Test shared Rust logic
         run: cargo test --workspace --locked
-      - name: Format changed Rust sources for review
-        run: |
-          rustfmt --edition 2024 crates/clipboard-core/src/lib.rs crates/clipboard-core/tests/maccy_parity.rs crates/translator-uniffi/src/clipboard.rs
-          git diff -- crates/clipboard-core crates/translator-uniffi/src/clipboard.rs > clipboard-format.patch
-      - uses: actions/upload-artifact@v4
-        with:
-          name: clipboard-rust-format
-          path: clipboard-format.patch
-          retention-days: 1
+      - name: Check Rust formatting
+        run: cargo fmt --all --check
       - name: Generate bindings and build the development application
         env:
           CODESIGN_IDENTITY: '-'

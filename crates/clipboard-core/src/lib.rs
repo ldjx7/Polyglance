@@ -2,8 +2,8 @@
 mod backup;
 mod editing;
 mod policy;
-pub use policy::{validate_ignored_patterns, validate_pin_shortcut};
 pub use backup::{BackupInfo, RestoreMode, RestoreReport, inspect_backup, recover_database};
+pub use policy::{validate_ignored_patterns, validate_pin_shortcut};
 use rusqlite::{Connection, Transaction, params};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -277,12 +277,14 @@ impl History {
         if version < 3 {
             validate_schema(&connection, 2)?;
             let tx = connection.transaction()?;
-            tx.execute_batch("ALTER TABLE entries ADD COLUMN capture_nonce TEXT NOT NULL DEFAULT '';
+            tx.execute_batch(
+                "ALTER TABLE entries ADD COLUMN capture_nonce TEXT NOT NULL DEFAULT '';
                 UPDATE entries SET capture_nonce=lower(hex(randomblob(16)));
                 CREATE TABLE pin_shortcuts (
                 entry_id INTEGER PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
                 key TEXT NOT NULL UNIQUE
-            ); PRAGMA user_version=3;")?;
+            ); PRAGMA user_version=3;",
+            )?;
             tx.commit()?;
         }
         validate_schema(&connection, 3)?;
@@ -496,7 +498,10 @@ impl History {
         }
         enforce_limits(&tx, self.limits, now_ms, None)?;
         if !pinned {
-            tx.execute("DELETE FROM pin_shortcuts WHERE entry_id=?1", [timestamp(id)?])?;
+            tx.execute(
+                "DELETE FROM pin_shortcuts WHERE entry_id=?1",
+                [timestamp(id)?],
+            )?;
         }
         tx.commit()?;
         self.reclaim_pages();
@@ -903,8 +908,12 @@ fn validate_schema(connection: &Connection, version: i64) -> Result<(), Error> {
         })
         .map_err(|_| Error::Corrupt)?;
     if version >= 3 {
-        connection.prepare("SELECT capture_nonce FROM entries LIMIT 0").map_err(|_| Error::Corrupt)?;
-        connection.prepare("SELECT entry_id,key FROM pin_shortcuts LIMIT 0").map_err(|_| Error::Corrupt)?;
+        connection
+            .prepare("SELECT capture_nonce FROM entries LIMIT 0")
+            .map_err(|_| Error::Corrupt)?;
+        connection
+            .prepare("SELECT entry_id,key FROM pin_shortcuts LIMIT 0")
+            .map_err(|_| Error::Corrupt)?;
     }
     Ok(())
 }
@@ -935,22 +944,21 @@ pub fn plain_text(items: &[ClipboardItem]) -> Option<String> {
 }
 
 fn entry_from_row(r: &rusqlite::Row<'_>) -> Result<Entry, rusqlite::Error> {
-                let n = r.get::<_, i64>(1)?;
-                let kind = Kind::from_number(n).map_err(|_| rusqlite::Error::InvalidQuery)?;
-                let tags: String = r.get(8)?;
-                let tags =
-                    serde_json::from_str(&tags).map_err(|_| rusqlite::Error::InvalidQuery)?;
-                Ok(Entry {
-                    id: r.get::<_, i64>(0)? as u64,
-                    kind,
-                    preview: r.get(2)?,
-                    source_application: r.get(3)?,
-                    copied_at_ms: r.get::<_, i64>(4)? as u64,
-                    pinned: r.get(5)?,
-                    byte_count: r.get::<_, i64>(6)? as u64,
-                    title: r.get(7)?,
-                    tags,
-                    item_count: r.get(9)?,
-                    ocr_indexed: r.get::<_, i64>(10)? == 1,
-                })
+    let n = r.get::<_, i64>(1)?;
+    let kind = Kind::from_number(n).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let tags: String = r.get(8)?;
+    let tags = serde_json::from_str(&tags).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    Ok(Entry {
+        id: r.get::<_, i64>(0)? as u64,
+        kind,
+        preview: r.get(2)?,
+        source_application: r.get(3)?,
+        copied_at_ms: r.get::<_, i64>(4)? as u64,
+        pinned: r.get(5)?,
+        byte_count: r.get::<_, i64>(6)? as u64,
+        title: r.get(7)?,
+        tags,
+        item_count: r.get(9)?,
+        ocr_indexed: r.get::<_, i64>(10)? == 1,
+    })
 }

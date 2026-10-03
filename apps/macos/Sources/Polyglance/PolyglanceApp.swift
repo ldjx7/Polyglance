@@ -152,6 +152,9 @@ struct PolyglanceApp: App {
 private struct ClipboardPasteQueueMenu: View {
     @ObservedObject var service: ClipboardHistoryService
     var body: some View {
+        Button(service.paused ? "恢复剪贴板记录" : "暂停剪贴板记录") { service.togglePause() }.disabled(!service.preferences.enabled)
+        if service.ignoringNextCopy { Button("取消忽略下一次复制") { service.cancelIgnoreNextCopy() } }
+        else { Button("忽略下一次复制") { service.ignoreNextCopy() }.disabled(!service.preferences.enabled || service.paused) }
         Button("粘贴下一条历史（剩余 \(service.pasteQueueCount) 条）") { Task { await service.pasteNextQueued() } }.disabled(service.pasteQueueCount == 0)
         if service.pasteQueueCount > 0 { Button("取消连续粘贴") { service.cancelPasteQueue() } }
     }

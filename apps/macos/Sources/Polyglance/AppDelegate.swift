@@ -231,6 +231,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             shortcutConfiguration = shortcutStore.load()
             try hotKeyManager.register(shortcutConfiguration)
+            clipboardHistoryService.updateShortcutConflicts(shortcutConfiguration)
         } catch {
             showTranslator(capturingSelection: false, translateImmediately: false)
             viewModel.presentError(error.localizedDescription)
@@ -828,6 +829,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         shortcutConfiguration = shortcuts
+        clipboardHistoryService.updateShortcutConflicts(shortcuts)
         apply(configuration)
         return hotKeyManager.failedActions
     }

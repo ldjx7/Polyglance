@@ -116,7 +116,7 @@ stop_packaged_app
 
 "$script_directory/build-macos-core.sh"
 swift build --package-path "$macos_root" --configuration release \
-    -Xswiftc -Xfrontend -Xswiftc -emit-const-values \
+    -Xswiftc -emit-const-values \
     -Xswiftc -Xfrontend -Xswiftc -const-gather-protocols-file \
     -Xswiftc -Xfrontend -Xswiftc "$repository_root/config/app-intents-protocols.json"
 binary_directory="$(swift build --package-path "$macos_root" --configuration release --show-bin-path)"
