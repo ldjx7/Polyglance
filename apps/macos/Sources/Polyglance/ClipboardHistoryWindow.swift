@@ -2,12 +2,21 @@ import AppKit
 import SwiftUI
 import TranslatorCore
 import UniformTypeIdentifiers
+import PolyglanceKit
+import AppIntents
 
 private extension Notification.Name { static let clipboardFocusSearch = Notification.Name("clipboard-history.focus-search") }
 @MainActor
 final class ClipboardHistoryPanel: NSPanel {
     var onDismissed: (() -> Void)?
     private let service: ClipboardHistoryService
+    private(set) var isCycling = false
+    private var cycleModifiers: NSEvent.ModifierFlags = []
+    private var cycleKeyCode: UInt16?
+    private var cycleGeneration: UInt64 = 0
+    private var cycleTask: Task<Void, Never>?
+    private var pendingCycleSteps = 0
+    private var committedDismissal = false
     init(service: ClipboardHistoryService) {
         self.service = service
         super.init(contentRect: NSRect(x: 0, y: 0, width: 850, height: 600), styleMask: [.titled, .closable, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -19,13 +28,30 @@ final class ClipboardHistoryPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
     override func sendEvent(_ event: NSEvent) {
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
         let composing = (firstResponder as? NSTextView)?.hasMarkedText() ?? false
+        if event.type == .flagsChanged, isCycling, !modifiers.isSuperset(of: cycleModifiers) {
+            finishCycle(); super.sendEvent(event); return
+        }
+        if event.type == .leftMouseDown { cancelCycle() }
+        if event.type == .keyDown, isCycling, event.keyCode != cycleKeyCode { cancelCycle() }
         if event.type == .keyDown, attachedSheet == nil, !composing {
             if event.keyCode == 3, modifiers == .command { NotificationCenter.default.post(name: .clipboardFocusSearch, object: nil); return }
+            if event.keyCode == 49, modifiers == .control { service.previewVisible.toggle(); return }
+            let selectionModifiers: [NSEvent.ModifierFlags] = [.command, .option, [.option, .shift]]
+            if selectionModifiers.contains(modifiers) {
+                let paste = modifiers.contains(.option) || service.preferences.selectionPastesAutomatically
+                let plain = modifiers.contains(.option) && modifiers.contains(.shift)
+                let digits: [UInt16: Int] = [18:1,19:2,20:3,21:4,23:5,22:6,26:7,28:8,25:9]
+                if let number = digits[event.keyCode] { cancelCycle(); Task { await service.copyNumbered(number, paste: paste, plainTextOnly: plain) }; return }
+                if let key = event.charactersIgnoringModifiers?.lowercased(), service.pinShortcuts.contains(where: { $0.key == key }) {
+                    cancelCycle(); Task { await service.copyPinnedKey(key, paste: paste, plainTextOnly: plain) }; return
+                }
+            }
             if modifiers.intersection([.command, .control]).isEmpty {
                 if event.keyCode == 36 || event.keyCode == 76 {
-                    Task { await service.copySelected(paste: modifiers.contains(.option), plainTextOnly: modifiers.contains(.option) && modifiers.contains(.shift)) }
+                    cancelCycle()
+                    Task { await service.copySelected(paste: modifiers.contains(.option) || service.preferences.selectionPastesAutomatically, plainTextOnly: modifiers.contains(.option) && modifiers.contains(.shift)) }
                     return
                 }
                 if !modifiers.contains(.option) {
@@ -40,7 +66,46 @@ final class ClipboardHistoryPanel: NSPanel {
         if let editor = firstResponder as? NSTextView, editor.hasMarkedText() { editor.unmarkText(); return }
         close()
     }
-    override func close() { super.close(); onDismissed?() }
+    func beginCycle(_ shortcut: RecordedShortcut) {
+        guard attachedSheet == nil else { return }
+        cancelCycle()
+        cycleKeyCode = UInt16(exactly: shortcut.keyCode)
+        if shortcut.modifiers.contains(.command) { cycleModifiers.insert(.command) }
+        if shortcut.modifiers.contains(.option) { cycleModifiers.insert(.option) }
+        if shortcut.modifiers.contains(.control) { cycleModifiers.insert(.control) }
+        if shortcut.modifiers.contains(.shift) { cycleModifiers.insert(.shift) }
+        isCycling = !cycleModifiers.isEmpty
+        if isCycling, !NSEvent.modifierFlags.isSuperset(of: cycleModifiers) { finishCycle() }
+    }
+    func advanceCycle() {
+        guard isCycling else { return }
+        let generation = cycleGeneration
+        pendingCycleSteps += 1
+        cycleTask?.cancel()
+        cycleTask = Task {
+            await service.waitForPresentation(); guard !Task.isCancelled, generation == cycleGeneration, isCycling else { return }
+            let steps = pendingCycleSteps; pendingCycleSteps = 0; service.cycleSelection(steps: steps)
+        }
+    }
+    private func finishCycle() {
+        isCycling = false
+        let generation = cycleGeneration
+        cycleTask?.cancel()
+        cycleTask = Task {
+            await service.waitForPresentation()
+            guard !Task.isCancelled, generation == cycleGeneration, isVisible, attachedSheet == nil,
+                  (firstResponder as? NSTextView)?.hasMarkedText() != true else { return }
+            let steps = pendingCycleSteps; pendingCycleSteps = 0; service.cycleSelection(steps: steps)
+            await service.copySelected(paste: service.preferences.selectionPastesAutomatically)
+        }
+    }
+    private func cancelCycle(cancelPending: Bool = true) {
+        cycleGeneration &+= 1; isCycling = false; cycleModifiers = []; cycleKeyCode = nil; pendingCycleSteps = 0
+        if cancelPending { cycleTask?.cancel() }; cycleTask = nil
+    }
+    func closeAfterSelection() { committedDismissal = true; close(); committedDismissal = false }
+    override func resignKey() { cancelCycle(cancelPending: !committedDismissal); super.resignKey() }
+    override func close() { cancelCycle(cancelPending: !committedDismissal); super.close(); onDismissed?() }
 }
 
 @MainActor
@@ -49,6 +114,8 @@ struct ClipboardHistoryView: View {
     @State private var showPreferences = false
     @State private var confirmClear = false
     @State private var editingEntry: ClipboardAnnotationSelection?
+    @State private var editingContent: ClipboardAnnotationSelection?
+    @State private var editingShortcut: ClipboardAnnotationSelection?
     @State private var restoreSelection: ClipboardBackupSelection?
     @FocusState private var searchFocused: Bool
     private var selected: ClipboardEntry? { service.entries.first { $0.id == service.selectedID } }
@@ -62,6 +129,11 @@ struct ClipboardHistoryView: View {
                 Button { service.togglePause() } label: { Image(systemName: service.paused ? "play.fill" : "pause.fill") }
                     .help(service.paused ? "继续记录" : "暂停记录").disabled(!service.preferences.enabled || service.dataBusy)
                 Button { showPreferences = true } label: { Image(systemName: "gearshape") }.disabled(service.dataBusy)
+                Button { service.previewVisible.toggle() } label: { Image(systemName: "sidebar.right") }.help("展开或收起预览（Control+Space）")
+                Menu {
+                    if service.ignoringNextCopy { Button("取消忽略下一次复制") { service.cancelIgnoreNextCopy() } }
+                    else { Button("忽略下一次复制") { service.ignoreNextCopy() } }
+                } label: { Image(systemName: "eye.slash") }.disabled(!service.preferences.enabled || service.paused)
             }.padding(12)
             HStack(spacing: 12) {
                 Picker("类型", selection: $service.kindFilter) {
@@ -71,7 +143,7 @@ struct ClipboardHistoryView: View {
                 }.frame(width: 150)
                 Picker("来源", selection: $service.sourceFilter) {
                     Text("全部应用").tag("")
-                    ForEach(service.sources, id: \.self) { Text($0).tag($0) }
+                    ForEach(service.sources, id: \.self) { Text(service.sourceName($0)).tag($0) }
                 }.frame(maxWidth: 280)
                 Picker("标签", selection: $service.tagFilter) {
                     Text("全部标签").tag("")
@@ -85,18 +157,25 @@ struct ClipboardHistoryView: View {
             } else if !service.preferences.enabled {
                 HStack { Text("历史记录尚未开启。开启后，内容和文件引用会保存在此 Mac。") ; Spacer(); Button("设置…") { showPreferences = true } }.font(.callout).padding(12)
             } else if service.paused { Text("记录已暂停，已有历史仍可使用。 ").font(.callout).foregroundStyle(.secondary).padding(8) }
+            if service.ignoringNextCopy { Text("下一次外部复制将被忽略，之后自动恢复记录。 ").font(.callout).foregroundStyle(.secondary).padding(8) }
             HSplitView {
                 ScrollViewReader { proxy in
                     List(selection: Binding(get: { service.selectedIDs }, set: { service.setSelection($0) })) {
                         ForEach(service.entries, id: \.id) { entry in
                             HStack(alignment: .top, spacing: 8) {
                                 Image(systemName: icon(entry.kind))
+                                if service.preferences.showSourceIcons, let image = service.sourceIcon(entry.sourceApplication) { Image(nsImage: image).resizable().frame(width: 18, height: 18) }
+                                if service.preferences.showColorSwatches, let color = ClipboardHexColor(text: entry.preview) {
+                                    RoundedRectangle(cornerRadius: 3).fill(Color(.sRGB, red: color.red, green: color.green, blue: color.blue, opacity: color.alpha)).frame(width: 20, height: 20).overlay(RoundedRectangle(cornerRadius: 3).stroke(.secondary, lineWidth: 1))
+                                }
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(title(entry)).lineLimit(2)
-                                    Text(entry.sourceApplication.isEmpty ? "来源未知" : entry.sourceApplication).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    Text(service.sourceName(entry.sourceApplication)).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(entry.sourceApplication)
                                     if !entry.tags.isEmpty { Text(entry.tags.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                                 }
                                 Spacer()
+                                if let binding = service.pinShortcuts.first(where: { $0.entryId == entry.id }) { Text("⌘\(binding.key.uppercased())").font(.caption).foregroundStyle(.secondary) }
+                                else if let index = service.entries.firstIndex(where: { $0.id == entry.id }), index < 9 { Text("⌘\(index + 1)").font(.caption).foregroundStyle(.secondary) }
                                 if entry.pinned { Image(systemName: "pin.fill").foregroundStyle(.secondary) }
                                 if entry.ocrIndexed { Image(systemName: "text.viewfinder").foregroundStyle(.secondary).help("已建立 OCR 搜索索引") }
                             }.padding(.vertical, 3).tag(entry.id).id(entry.id)
@@ -109,9 +188,11 @@ struct ClipboardHistoryView: View {
                     if let selected {
                         ScrollView {
                             VStack(alignment: .leading, spacing: 10) {
+                                if service.previewVisible {
                                 if let image = service.previewImage { Image(nsImage: image).resizable().scaledToFit() }
                                 if !service.previewText.isEmpty { Text(service.previewText).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
                                 if service.selectionHasFiles { Text("保存的是文件引用，原文件需仍在原位置。 ").font(.caption).foregroundStyle(.secondary) }
+                                } else { Button("展开内容预览") { service.previewVisible = true } }
                             }
                         }
                         Text(Date(timeIntervalSince1970: Double(selected.copiedAtMs) / 1000), style: .date).font(.caption).foregroundStyle(.secondary)
@@ -124,6 +205,12 @@ struct ClipboardHistoryView: View {
                             Button(selected.pinned ? "取消收藏" : "收藏") { Task { await service.pinSelected() } }
                             Button("名称和标签…") { editingEntry = ClipboardAnnotationSelection(entry: selected) }
                             Button("删除", role: .destructive) { Task { await service.deleteSelected() } }
+                        }
+                        if selected.pinned {
+                            HStack {
+                                Button("固定项快捷键…") { editingShortcut = ClipboardAnnotationSelection(entry: selected) }
+                                if selected.kind == .text, !service.selectionHasImages { Button("编辑内容…") { editingContent = ClipboardAnnotationSelection(entry: selected) } }
+                            }
                         }
                         HStack {
                             if service.selectionHasImages {
@@ -153,7 +240,7 @@ struct ClipboardHistoryView: View {
                     Button("重试图片 OCR 索引") { Task { await service.retryImageIndexing() } }.disabled(!service.preferences.ocrSearchEnabled)
                 }.disabled(service.dataBusy)
                 Button("清理…") { confirmClear = true }.disabled(service.dataBusy || service.needsRecovery)
-            }.padding(10)
+            }.padding(10).opacity(service.preferences.showFooter ? 1 : 0).frame(height: service.preferences.showFooter ? nil : 0).clipped().allowsHitTesting(service.preferences.showFooter).accessibilityHidden(!service.preferences.showFooter)
             if !service.statusMessage.isEmpty { Text(service.statusMessage).font(.caption).foregroundStyle(.secondary).lineLimit(2).padding(.horizontal, 10).padding(.bottom, 8) }
         }
         .onAppear { searchFocused = true }
@@ -169,6 +256,8 @@ struct ClipboardHistoryView: View {
         .sheet(isPresented: $showPreferences) { ClipboardHistoryPreferencesView(service: service) }
         .sheet(isPresented: $confirmClear) { ClipboardClearView(service: service) }
         .sheet(item: $editingEntry) { ClipboardAnnotationView(service: service, entry: $0.entry) }
+        .sheet(item: $editingContent) { ClipboardContentEditorView(service: service, entry: $0.entry) }
+        .sheet(item: $editingShortcut) { ClipboardPinShortcutView(service: service, entry: $0.entry) }
         .sheet(item: $restoreSelection) { ClipboardRestoreView(service: service, selection: $0) }
         .alert("剪贴板历史", isPresented: Binding(get: { service.errorMessage != nil }, set: { if !$0 { service.errorMessage = nil } })) { Button("好") { service.errorMessage = nil } } message: { Text(service.errorMessage ?? "") }
     }
@@ -200,6 +289,55 @@ struct ClipboardHistoryView: View {
 
 private struct ClipboardAnnotationSelection: Identifiable { let entry: ClipboardEntry; var id: UInt64 { entry.id } }
 private struct ClipboardBackupSelection: Identifiable { let id = UUID(); let url: URL; let info: ClipboardBackupInfo }
+
+@MainActor
+private struct ClipboardContentEditorView: View {
+    @ObservedObject var service: ClipboardHistoryService
+    let entry: ClipboardEntry
+    @Environment(\.dismiss) private var dismiss
+    @State private var content = ""
+    @State private var loaded = false
+    @State private var saving = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("编辑固定内容").font(.headline)
+            Text("保存为纯文本，保留名称、标签和快捷键。原有 HTML / RTF 格式会移除。 ").font(.callout).foregroundStyle(.secondary)
+            if loaded { TextEditor(text: $content).font(.system(.body, design: .monospaced)).frame(minHeight: 260) }
+            else { ProgressView() }
+            if let error = service.errorMessage { Text(error).font(.caption).foregroundStyle(.red) }
+            HStack { Spacer(); Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("保存") { saving = true; Task { if await service.editPinnedText(id: entry.id, text: content) { dismiss() }; saving = false } }.disabled(!loaded || saving || content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).keyboardShortcut(.defaultAction)
+            }
+        }.padding(24).frame(width: 580)
+        .task { if let text = await service.editableText(id: entry.id), !Task.isCancelled { content = text; loaded = true } }
+    }
+}
+
+@MainActor
+private struct ClipboardPinShortcutView: View {
+    @ObservedObject var service: ClipboardHistoryService
+    let entry: ClipboardEntry
+    @Environment(\.dismiss) private var dismiss
+    @State private var key = ""
+    @State private var saving = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("固定项快捷键").font(.headline)
+            Picker("快捷键", selection: $key) {
+                Text("未分配").tag("")
+                ForEach(Array("bdegijklrtuy").map(String.init), id: \.self) { key in
+                    Text("Command+\(key.uppercased())").tag(key)
+                }
+            }
+            Text("在历史窗口内生效。Option+对应字母直接粘贴，Option+Shift+对应字母粘贴纯文本。常见编辑快捷键已保留。 ").font(.callout).foregroundStyle(.secondary)
+            if let error = service.errorMessage { Text(error).font(.caption).foregroundStyle(.red) }
+            HStack { Spacer(); Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("保存") { saving = true; Task { if await service.assignPinShortcut(id: entry.id, key: key) { dismiss() }; saving = false } }.disabled(saving).keyboardShortcut(.defaultAction)
+            }
+        }.padding(24).frame(width: 440)
+        .onAppear { key = service.pinShortcuts.first(where: { $0.entryId == entry.id })?.key ?? "" }
+    }
+}
 
 @MainActor
 private struct ClipboardAnnotationView: View {
@@ -274,9 +412,11 @@ private struct ClipboardHistoryPreferencesView: View {
     @State private var draft = ClipboardHistoryPreferences()
     @State private var ignoredApplications = ""
     @State private var ignoredTypes = ""
+    @State private var ignoredPatterns = ""
     @State private var saving = false
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            ScrollView { VStack(alignment: .leading, spacing: 14) {
             Text("剪贴板历史设置").font(.headline)
             Toggle("在本机保存复制内容和文件引用", isOn: $draft.enabled)
             Text("内容不会自动上传。无敏感标记的密码仍可能被记录，请排除相关应用或暂停。关闭记录会保留已有历史。 ").font(.callout).foregroundStyle(.secondary)
@@ -289,16 +429,37 @@ private struct ClipboardHistoryPreferencesView: View {
             TextEditor(text: $ignoredApplications).font(.system(.body, design: .monospaced)).frame(height: 70)
             Text("额外忽略的剪贴板类型，每行一个").font(.callout)
             TextEditor(text: $ignoredTypes).font(.system(.body, design: .monospaced)).frame(height: 45)
+            Text("内容排除表达式，每行一条").font(.callout)
+            TextEditor(text: $ignoredPatterns).font(.system(.body, design: .monospaced)).frame(height: 65)
+            Text("最多 32 条。匹配任意文字项时忽略整次复制；规则只作用于新记录。支持中文原文，\\d / \\w 使用 ASCII 范围；不支持环视和回溯引用。 ").font(.caption).foregroundStyle(.secondary)
+            Toggle("系统剪贴板清空时移除对应历史记录", isOn: $draft.purgeClearedContent)
+            Text("适用于密码管理器定时清空，也适用于手动清空。仅移除最后一次对应记录，包括该记录的收藏；已编辑或重新复制的记录会保留。 ").font(.caption).foregroundStyle(.secondary)
+            Divider()
+            Toggle("打开历史时自动展开预览", isOn: $draft.autoPreview)
+            Toggle("显示 HEX 颜色色块", isOn: $draft.showColorSwatches)
+            Toggle("显示来源应用图标", isOn: $draft.showSourceIcons)
+            Toggle("显示底部容量与数据菜单", isOn: $draft.showFooter)
+            Divider()
+            Toggle("按住呼出快捷键的修饰键循环选择，松开后确认", isOn: $draft.cycleSelectionEnabled)
+            Toggle("Enter、数字选择和循环确认后自动粘贴", isOn: $draft.selectionPastesAutomatically)
+            Text("Command+1…9 选择前九条；Option+1…9 粘贴，Option+Shift+1…9 粘贴纯文本。固定项可单独设置字母快捷键。自动粘贴需辅助功能权限。 ").font(.caption).foregroundStyle(.secondary)
+            Divider()
+            Toggle("记录新复制内容时发送通知", isOn: $draft.notifyCopies)
+            Toggle("从历史复制内容时发送通知", isOn: $draft.notifySelections)
+            Text("通知不显示原文，连续操作会合并提醒。 ").font(.caption).foregroundStyle(.secondary)
+            ShortcutsLink()
+            }}.frame(maxHeight: 570)
             if let error = service.errorMessage { Text(error).font(.callout).foregroundStyle(.red) }
             HStack { Spacer(); Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("保存") {
                     draft.ignoredApplications = ignoredApplications.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
                     draft.ignoredTypes = ignoredTypes.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                    draft.ignoredPatterns = ignoredPatterns.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
                     saving = true
                     Task { await service.savePreferences(draft); saving = false; if service.preferences == draft { dismiss() } }
                 }.disabled(saving).keyboardShortcut(.defaultAction)
             }
         }.padding(24).frame(width: 540)
-        .onAppear { draft = service.preferences; ignoredApplications = draft.ignoredApplications.joined(separator: "\n"); ignoredTypes = draft.ignoredTypes.joined(separator: "\n") }
+        .onAppear { draft = service.preferences; ignoredApplications = draft.ignoredApplications.joined(separator: "\n"); ignoredTypes = draft.ignoredTypes.joined(separator: "\n"); ignoredPatterns = draft.ignoredPatterns.joined(separator: "\n") }
     }
 }

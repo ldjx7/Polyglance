@@ -1,3 +1,4 @@
+import AppIntents
 import AppKit
 import PolyglanceKit
 import SwiftUI
@@ -145,7 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
         createTranslatorPanel()
-        clipboardHistoryService.onDismiss = { [weak self] in self?.clipboardHistoryPanel?.close() }
+        clipboardHistoryService.onDismiss = { [weak self] in self?.clipboardHistoryPanel?.closeAfterSelection() }
         clipboardHistoryService.onPinImage = { [weak self] image in
             self?.pinWindowManager.pin(image, sourceFrame: nil, source: .clipboard)
         }
@@ -159,7 +160,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.showClipboardBarcodes(image)
         }
         clipboardHistoryService.start()
-        hotKeyManager.onClipboardHistory = { [weak self] in self?.showClipboardHistory() }
+        ClipboardIntentAccess.service = clipboardHistoryService
+        ClipboardIntentAccess.showHistory = { [weak self] in self?.showClipboardHistory(forceOpen: true) }
+        ClipboardAppShortcuts.updateAppShortcutParameters()
+        hotKeyManager.onClipboardHistory = { [weak self] in self?.handleClipboardHistoryShortcut() }
         hotKeyManager.onClipboardPasteNext = { [weak self] in
             guard let self else { return }
             Task { await self.clipboardHistoryService.pasteNextQueued() }
@@ -393,13 +397,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pinWindowManager.destroyAllPins()
     }
 
-    func showClipboardHistory() {
+    private func handleClipboardHistoryShortcut() {
+        guard clipboardHistoryService.preferences.cycleSelectionEnabled,
+              let shortcut = shortcutConfiguration.clipboardHistory,
+              !shortcut.modifiers.isEmpty else { showClipboardHistory(); return }
+        if let panel = clipboardHistoryPanel, panel.isVisible, panel.isCycling { panel.advanceCycle(); return }
+        showClipboardHistory(forceOpen: true)
+        clipboardHistoryPanel?.beginCycle(shortcut)
+    }
+    func showClipboardHistory(forceOpen: Bool = false) {
         if clipboardHistoryPanel == nil {
             let panel = ClipboardHistoryPanel(service: clipboardHistoryService)
             panel.onDismissed = { [weak self] in self?.clipboardHistoryService.didDismiss() }
             clipboardHistoryPanel = panel
         }
         if clipboardHistoryPanel?.isVisible == true {
+            if forceOpen { clipboardHistoryPanel?.makeKeyAndOrderFront(nil); return }
             clipboardHistoryPanel?.close()
             return
         }

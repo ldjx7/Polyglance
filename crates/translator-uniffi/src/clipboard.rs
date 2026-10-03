@@ -597,6 +597,9 @@ impl ClipboardHistory {
     pub fn capture_token(&self,id:u64) -> Result<String,ClipboardFailure> {
         self.lock()?.capture_token(id).map_err(Into::into)
     }
+    pub fn entry(&self,id:u64,now_ms:u64) -> Result<Option<ClipboardEntry>,ClipboardFailure> {
+        self.lock()?.entry(id,now_ms).map(|v|v.map(Into::into)).map_err(Into::into)
+    }
     pub fn delete_if_capture_matches(&self,id:u64,token:String) -> Result<bool,ClipboardFailure> {
         self.lock()?.delete_if_capture_matches(id,&token).map_err(Into::into)
     }

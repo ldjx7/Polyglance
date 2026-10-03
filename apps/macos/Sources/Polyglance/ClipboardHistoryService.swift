@@ -14,6 +14,16 @@ struct ClipboardHistoryPreferences: Codable, Equatable {
     var ignoredTypes: [String] = []
     var ignoredPatterns: [String] = []
     var ocrSearchEnabled = false
+    var purgeClearedContent = true
+    var autoPreview = true
+    var showColorSwatches = true
+    var showSourceIcons = false
+    var showFooter = true
+    var cycleSelectionEnabled = false
+    var selectionPastesAutomatically = false
+    var notifyCopies = false
+    var notifySelections = false
+
 
     init() {
         let defaults = clipboardDefaultLimits()
@@ -24,6 +34,7 @@ struct ClipboardHistoryPreferences: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case enabled, maximumItems, maximumMegabytes, retentionDays, ignoredApplications, ignoredTypes, ignoredPatterns, ocrSearchEnabled
+        case purgeClearedContent, autoPreview, showColorSwatches, showSourceIcons, showFooter, cycleSelectionEnabled, selectionPastesAutomatically, notifyCopies, notifySelections
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -36,6 +47,16 @@ struct ClipboardHistoryPreferences: Codable, Equatable {
         ignoredTypes = try values.decodeIfPresent([String].self, forKey: .ignoredTypes) ?? []
         ignoredPatterns = try values.decodeIfPresent([String].self, forKey: .ignoredPatterns) ?? []
         ocrSearchEnabled = try values.decodeIfPresent(Bool.self, forKey: .ocrSearchEnabled) ?? false
+        purgeClearedContent = try values.decodeIfPresent(Bool.self, forKey: .purgeClearedContent) ?? true
+        autoPreview = try values.decodeIfPresent(Bool.self, forKey: .autoPreview) ?? true
+        showColorSwatches = try values.decodeIfPresent(Bool.self, forKey: .showColorSwatches) ?? true
+        showSourceIcons = try values.decodeIfPresent(Bool.self, forKey: .showSourceIcons) ?? false
+        showFooter = try values.decodeIfPresent(Bool.self, forKey: .showFooter) ?? true
+        cycleSelectionEnabled = try values.decodeIfPresent(Bool.self, forKey: .cycleSelectionEnabled) ?? false
+        selectionPastesAutomatically = try values.decodeIfPresent(Bool.self, forKey: .selectionPastesAutomatically) ?? false
+        notifyCopies = try values.decodeIfPresent(Bool.self, forKey: .notifyCopies) ?? false
+        notifySelections = try values.decodeIfPresent(Bool.self, forKey: .notifySelections) ?? false
+
     }
 
     var limits: ClipboardLimits {
@@ -66,6 +87,9 @@ final class ClipboardHistoryService: ObservableObject {
     static let preferencesKey = "clipboard-history.preferences.v1"
     @Published private(set) var preferences: ClipboardHistoryPreferences
     @Published private(set) var paused = false
+    @Published private(set) var ignoringNextCopy = false
+    @Published var previewVisible = true
+    @Published private(set) var pinShortcuts: [ClipboardPinShortcut] = []
     @Published private(set) var entries: [ClipboardEntry] = []
     @Published private(set) var selectedID: UInt64?
     @Published private(set) var selectedIDs: Set<UInt64> = []
@@ -106,6 +130,13 @@ final class ClipboardHistoryService: ObservableObject {
     private let worker: ClipboardHistoryWorker
     private let processor: ClipboardContentProcessor
     private let pasteboard: NSPasteboard
+    private let sourceCatalog = ClipboardSourceCatalog()
+    private let notifications = ClipboardNotifications()
+    private var captureLifecycle = ClipboardCaptureLifecycle()
+    private var capturedCandidate: (sequence: Int, record: ClipboardCapturedRecord)?
+    private var pendingSequences: Set<Int> = []
+    private var clearRequests: Set<Int> = []
+    private var presentationTask: Task<Void, Never>?
     private var starting = false
     private var timer: Timer?
     private var lastChangeCount: Int
@@ -148,21 +179,36 @@ final class ClipboardHistoryService: ObservableObject {
             } catch { if generation == monitoringGeneration { stop(); present(error, history: true) } }
         }
     }
-    func stop() { timer?.invalidate(); timer = nil; starting = false; monitoringGeneration &+= 1 }
+    func stop() { timer?.invalidate(); timer = nil; starting = false; monitoringGeneration &+= 1; captureLifecycle.invalidateInternalSample(); capturedCandidate = nil }
     private func stopIndexing() { indexGeneration &+= 1; indexTask?.cancel(); indexTask = nil; indexingImages = false }
     func shutdown() async {
         stop(); stopIndexing(); searchTask?.cancel(); readingSelectionTask?.cancel(); cancelPasteQueue()
         await worker.flush()
     }
     func togglePause() { paused.toggle(); if paused { stop() } else { start() } }
+    func ignoreNextCopy() {
+        if lastChangeCount != pasteboard.changeCount { captureLifecycle.invalidateInternalSample(); capturedCandidate = nil }
+        lastChangeCount = pasteboard.changeCount
+        captureLifecycle.armIgnore(); ignoringNextCopy = true
+    }
+    func cancelIgnoreNextCopy() { captureLifecycle.cancelIgnore(); ignoringNextCopy = false }
+    func sourceName(_ identifier: String) -> String { sourceCatalog.source(identifier).name }
+    func sourceIcon(_ identifier: String) -> NSImage? { sourceCatalog.source(identifier).icon }
     func savePreferences(_ proposed: ClipboardHistoryPreferences) async {
         guard proposed.maximumMegabytes > 0, proposed.maximumMegabytes <= 2048 else { errorMessage = "容量应为 1–2048 MB。"; return }
+        do { try clipboardValidateIgnoredPatterns(patterns: proposed.ignoredPatterns) } catch { present(error); return }
+        if (proposed.notifyCopies || proposed.notifySelections) && !(preferences.notifyCopies || preferences.notifySelections) {
+            do {
+                if try await notifications.authorize() == false { errorMessage = "系统通知未获允许，请在系统设置中允许 Polyglance 通知。"; return }
+            } catch { errorMessage = "无法申请系统通知权限，请稍后重试。"; return }
+        }
         stop(); stopIndexing()
         do {
             try await worker.configure(proposed.limits)
             if proposed.ocrSearchEnabled && !preferences.ocrSearchEnabled { try await worker.retryOCR() }
             defaults.set(try JSONEncoder().encode(proposed), forKey: Self.preferencesKey)
             preferences = proposed
+            previewVisible = proposed.autoPreview
         } catch { present(error, history: true) }
         start(); scheduleIndexing(); await reload()
     }
@@ -170,42 +216,87 @@ final class ClipboardHistoryService: ObservableObject {
         targetApplication = NSWorkspace.shared.frontmostApplication
         if targetApplication?.bundleIdentifier == Bundle.main.bundleIdentifier { targetApplication = nil }
         isPresented = true
-        Task {
+        previewVisible = preferences.autoPreview
+        presentationTask = Task {
             do { try await worker.configure(preferences.limits); needsRecovery = false; await reload(); scheduleIndexing() }
             catch { present(error, history: true) }
         }
     }
     func didDismiss() {
         isPresented = false; reloadGeneration &+= 1; selectionGeneration &+= 1
-        searchTask?.cancel(); readingSelectionTask?.cancel(); previewImage = nil; previewText = ""
+        searchTask?.cancel(); readingSelectionTask?.cancel(); presentationTask?.cancel(); previewImage = nil; previewText = ""
     }
     func poll() {
         if ClipboardCaptureSuppression.depth > 0 || suppressionGeneration != ClipboardCaptureSuppression.generation {
-            lastChangeCount = pasteboard.changeCount; suppressionGeneration = ClipboardCaptureSuppression.generation; return
+            lastChangeCount = pasteboard.changeCount; suppressionGeneration = ClipboardCaptureSuppression.generation
+            captureLifecycle.invalidateInternalSample(); capturedCandidate = nil; return
         }
-        guard pendingCaptures < 4, timer != nil, pasteboard.changeCount != lastChangeCount else { return }
-        lastChangeCount = pasteboard.changeCount
-        let source = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+        guard timer != nil, pasteboard.changeCount != lastChangeCount else { return }
+        let sequence = pasteboard.changeCount
+        let empty = Self.isEmpty(pasteboard)
+        guard empty || pendingCaptures < 4 else { return }
+        lastChangeCount = sequence
+        switch captureLifecycle.observe(sequence: sequence, empty: empty) {
+        case .clear(let previous):
+            guard preferences.purgeClearedContent, let previous else { capturedCandidate = nil; return }
+            if pendingSequences.contains(previous) { clearRequests.insert(previous) }
+            if let candidate = capturedCandidate, candidate.sequence == previous {
+                capturedCandidate = nil
+                Task { await removeClearedCapture(candidate.record) }
+            }
+            return
+        case .skip: ignoringNextCopy = false; capturedCandidate = nil; return
+        case .idle: return
+        case .capture: capturedCandidate = nil
+        }
+        let source = Self.sourceIdentifier(from: pasteboard) ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
         let types = Array(Set((pasteboard.types ?? []).map(\.rawValue) + (pasteboard.pasteboardItems ?? []).flatMap { $0.types.map(\.rawValue) }))
         let policy = preferences.policy(paused: paused)
         guard clipboardShouldCapture(policy: policy, source: source, types: types) else { return }
         do {
             guard let raw = try Self.readRawItems(from: pasteboard, maximumBytes: preferences.limits.maximumItemBytes) else { return }
+            guard pasteboard.changeCount == sequence else { return }
             let time = ClipboardHistoryWorker.now
             let generation = monitoringGeneration
             let maximumBytes = preferences.limits.maximumItemBytes
             pendingCaptures += 1
+            pendingSequences.insert(sequence)
             Task {
-                defer { pendingCaptures -= 1 }
+                defer { pendingCaptures -= 1; pendingSequences.remove(sequence); clearRequests.remove(sequence) }
                 do {
                     let items = try await processor.normalize(raw, maximumBytes: maximumBytes)
                     guard generation == monitoringGeneration, preferences.enabled, !paused else { return }
-                    _ = try await worker.recordBundle(ClipboardBundleInput(items: items, sourceApplication: source, observedTypes: types, copiedAtMs: time), policy: policy)
+                    let record = try await worker.recordCapturedBundle(ClipboardBundleInput(items: items, sourceApplication: source, observedTypes: types, copiedAtMs: time), policy: policy)
+                    if let record, clearRequests.contains(sequence) { await removeClearedCapture(record); return }
+                    if let record, captureLifecycle.latestSequence == sequence { capturedCandidate = (sequence, record) }
+                    if record != nil, preferences.notifyCopies, generation == monitoringGeneration { notifications.send(copied: true) }
                     scheduleIndexing()
                     if isPresented { await reload() }
                 } catch { if generation == monitoringGeneration { present(error, history: true) } }
             }
         } catch { present(error) }
+    }
+    private func removeClearedCapture(_ record: ClipboardCapturedRecord) async {
+        do {
+            if try await worker.deleteCapture(record) {
+                cancelPasteQueue()
+                statusMessage = "系统剪贴板已清空，对应的历史记录也已移除。"
+                if isPresented { await reload() }
+            }
+        } catch { present(error) }
+    }
+    static func isEmpty(_ board: NSPasteboard) -> Bool {
+        guard let items = board.pasteboardItems, !items.isEmpty else { return true }
+        return items.allSatisfy { item in
+            item.types.isEmpty || (item.types.allSatisfy { $0 == .string || $0.rawValue == "org.nspasteboard.source" }
+                                  && (item.string(forType: .string) ?? "").isEmpty)
+        }
+    }
+    static func sourceIdentifier(from board: NSPasteboard) -> String? {
+        let type = NSPasteboard.PasteboardType("org.nspasteboard.source")
+        guard let value = board.string(forType: type), !value.isEmpty, value.utf8.count <= 512,
+              value.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || [45,46,95].contains($0) }) else { return nil }
+        return value
     }
     /// Read only supported original formats; image normalization runs in its own actor.
     static func readRawItems(from board: NSPasteboard, maximumBytes: UInt64) throws -> [ClipboardRawItem]? {
@@ -258,10 +349,12 @@ final class ClipboardHistoryService: ObservableObject {
         do {
             let page = try await worker.list(filter: filter, offset: offset)
             let stats = try await worker.stats()
+            let pinShortcuts = try await worker.pinShortcuts()
             let sources = try await worker.sources(); let tags = try await worker.tags()
             guard generation == reloadGeneration, !Task.isCancelled else { return }
             if loadMore { let known = Set(entries.map(\.id)); entries.append(contentsOf: page.filter { !known.contains($0.id) }) }
             else { entries = page }
+            self.pinShortcuts = pinShortcuts
             self.stats = stats; self.sources = sources; self.tags = tags; hasMore = page.count == 100; needsRecovery = false
             let retained = selectedIDs.intersection(Set(entries.map(\.id)))
             setSelection(retained.isEmpty ? Set(entries.first.map { [$0.id] } ?? []) : retained)
@@ -303,6 +396,36 @@ final class ClipboardHistoryService: ObservableObject {
         guard let entry = entries.first(where: { $0.id == selectedID }) else { return }
         do { try await worker.pin(id: entry.id, pinned: !entry.pinned); await reload() } catch { present(error) }
     }
+    func assignPinShortcut(id: UInt64, key: String) async -> Bool {
+        do { try await worker.setPinShortcut(id: id, key: key); await reload(); return true } catch { present(error); return false }
+    }
+    func editableText(id: UInt64) async -> String? {
+        do {
+            let bundle = try await worker.bundle(id: id)
+            guard bundle.count == 1, bundle[0].representations.allSatisfy({ ["text/plain", "text/html", "text/rtf"].contains($0.format) }) else { return nil }
+            return clipboardPlainText(items: bundle)
+        } catch { present(error); return nil }
+    }
+    func editPinnedText(id: UInt64, text: String) async -> Bool {
+        do { try await worker.editPinnedText(id: id, text: text); cancelPasteQueue(); await reload(); select(id); return true } catch { present(error); return false }
+    }
+    func copyNumbered(_ number: Int, paste: Bool, plainTextOnly: Bool) async {
+        await searchTask?.value
+        guard (1...9).contains(number), number <= entries.count else { return }
+        select(entries[number - 1].id)
+        await copySelected(paste: paste, plainTextOnly: plainTextOnly)
+    }
+    func copyPinnedKey(_ key: String, paste: Bool, plainTextOnly: Bool) async {
+        guard let binding = pinShortcuts.first(where: { $0.key == key.lowercased() }), !copyBusy, !dataBusy else { return }
+        copyBusy = true; defer { copyBusy = false }
+        do {
+            if try await replay([binding.entryId], paste: paste, plainTextOnly: plainTextOnly, target: targetApplication) == false, paste {
+                errorMessage = "粘贴目标发生变化，请重新打开历史后重试。"
+            }
+        } catch { present(error) }
+    }
+    func waitForPresentation() async { await presentationTask?.value }
+    func cycleSelection(steps: Int = 1) { if !entries.isEmpty, steps > 0 { let index = entries.firstIndex(where: { $0.id == selectedID }) ?? 0; select(entries[(index + steps % entries.count) % entries.count].id) } }
     func rename(id: UInt64, title: String, tags: [String]) async -> Bool {
         do { try await worker.setAnnotation(id: id, title: title, tags: tags); await reload(); return true } catch { present(error); return false }
     }
@@ -356,6 +479,8 @@ final class ClipboardHistoryService: ObservableObject {
         pasteboard.clearContents()
         guard pasteboard.writeObjects(objects) else { throw ClipboardFailure.Storage }
         let writtenCount = pasteboard.changeCount; lastChangeCount = writtenCount
+        captureLifecycle.invalidateInternalSample(); capturedCandidate = nil
+        if preferences.notifySelections { notifications.send(copied: false) }
         onDismiss?()
         guard paste, let target else { return true }
         target.activate()
@@ -504,10 +629,48 @@ final class ClipboardHistoryService: ObservableObject {
         down.flags = .maskCommand; up.flags = .maskCommand; down.post(tap: .cghidEventTap); up.post(tap: .cghidEventTap)
         return true
     }
+    func shortcutSearch(query: String, limit: Int = 20) async throws -> [ClipboardEntry] {
+        try await worker.configure(preferences.limits)
+        return Array(try await worker.list(query: query, pinnedOnly: false, offset: 0).prefix(min(100, max(1, limit))))
+    }
+    func shortcutEntries(ids: [UInt64]) async throws -> [ClipboardEntry] {
+        guard ids.count <= 100 else { throw ClipboardFailure.TooLarge }
+        try await worker.configure(preferences.limits)
+        var result: [ClipboardEntry] = []
+        for id in ids { if let entry = try await worker.entry(id: id) { result.append(entry) } }
+        return result
+    }
+    func shortcutText(id: UInt64) async throws -> String {
+        guard try await worker.entry(id: id) != nil else { throw ClipboardFailure.NotFound }
+        guard let text = clipboardPlainText(items: try await worker.bundle(id: id)) else { throw NativeClipboardError.message("这条历史包含图片或文件，请使用复制历史条目动作。") }
+        return text
+    }
+    func shortcutCopy(id: UInt64) async throws {
+        guard !copyBusy, !dataBusy else { throw NativeClipboardError.message("剪贴板正在处理其他操作，请稍后重试。") }
+        guard try await worker.entry(id: id) != nil else { throw ClipboardFailure.NotFound }
+        copyBusy = true; defer { copyBusy = false }
+        _ = try await replay([id], paste: false, plainTextOnly: false, target: nil)
+    }
+    func shortcutDelete(id: UInt64) async throws {
+        guard !dataBusy else { throw NativeClipboardError.message("历史数据正在导入或导出，请稍后重试。") }
+        try await worker.delete(id: id); cancelPasteQueue(); if isPresented { await reload() }
+    }
+    func shortcutClear(includePinned: Bool) async throws {
+        guard !dataBusy else { throw NativeClipboardError.message("历史数据正在处理，请稍后重试。") }
+        stopIndexing(); cancelPasteQueue(); try await worker.clear(includePinned: includePinned)
+        if isPresented { await reload() }; scheduleIndexing()
+    }
+    func shortcutPause(_ shouldPause: Bool) throws {
+        guard preferences.enabled else { throw NativeClipboardError.message("请先在 Polyglance 中开启剪贴板历史保存。") }
+        if paused != shouldPause { togglePause() }
+    }
     private func present(_ error: Error, history: Bool = false, backup: Bool = false) {
         if let native = error as? NativeClipboardError { errorMessage = native.localizedDescription; return }
         if let ocr = error as? OCRError { errorMessage = ocr.localizedDescription; return }
         switch error {
+        case ClipboardFailure.InvalidPattern: errorMessage = "排除表达式无效。最多 32 条，每条最多 512 字节；不支持回溯引用或环视。"
+        case ClipboardFailure.ShortcutConflict: errorMessage = "这个收藏快捷键已被其他条目使用。"
+        case ClipboardFailure.ContentConflict: errorMessage = "修改后的内容已存在于历史中。请使用已有条目或修改内容；原记录已保留。"
         case ClipboardFailure.TooLarge: errorMessage = "内容超过历史容量或图片大小限制。"
         case ClipboardFailure.Capacity: errorMessage = "收藏已占满历史容量，请删除部分收藏或增加容量。"
         case ClipboardFailure.InvalidInput: errorMessage = "内容格式或历史设置不受支持。"

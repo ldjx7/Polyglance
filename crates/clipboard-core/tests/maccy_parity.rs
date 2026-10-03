@@ -85,7 +85,7 @@ fn clearing_only_removes_the_exact_capture_even_when_pinned() {
     let mut h=history();
     let id=h.record(text("temporary",1),&policy()).unwrap().unwrap();
     let old=h.capture_token(id).unwrap();
-    h.record(text("temporary",2),&policy()).unwrap();
+    h.record(text("temporary",1),&policy()).unwrap();
     assert!(!h.delete_if_capture_matches(id,&old).unwrap());
     let current=h.capture_token(id).unwrap();
     h.set_pinned(id,true,3).unwrap();
@@ -119,7 +119,7 @@ fn v2_history_migrates_without_changing_payloads_or_pins() {
     let directory=tempfile::tempdir().unwrap(); let path=directory.path().join("v2.sqlite3");
     let mut h=History::open(&path,Limits::default(),100).unwrap();
     let id=h.record(text("legacy",1),&policy()).unwrap().unwrap(); h.set_pinned(id,true,2).unwrap(); drop(h);
-    let connection=rusqlite::Connection::open(&path).unwrap(); connection.execute_batch("DROP TABLE pin_shortcuts; PRAGMA user_version=2;").unwrap(); drop(connection);
+    let connection=rusqlite::Connection::open(&path).unwrap(); connection.execute_batch("DROP TABLE pin_shortcuts; ALTER TABLE entries DROP COLUMN capture_nonce; PRAGMA user_version=2;").unwrap(); drop(connection);
     let mut h=History::open(&path,Limits::default(),100).unwrap();
     assert_eq!(h.payload(id).unwrap()[0].bytes,b"legacy"); assert!(h.list("",false,0,100,100).unwrap()[0].pinned);
     h.set_pin_shortcut(id,"b").unwrap();

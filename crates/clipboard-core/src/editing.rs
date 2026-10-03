@@ -38,7 +38,7 @@ impl History {
         let tx = self.connection.transaction()?;
         let conflict: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM entries WHERE fingerprint=?1 AND id!=?2)",params![p.fingerprint,timestamp(id)?],|r|r.get(0))?;
         if conflict { return Err(Error::ContentConflict); }
-        tx.execute("UPDATE entries SET fingerprint=?1,preview=?2,search_text=?3,byte_count=?4 WHERE id=?5",params![p.fingerprint,p.preview,p.search,(p.byte_count+annotation_bytes(&annotation)) as i64,timestamp(id)?])?;
+        tx.execute("UPDATE entries SET fingerprint=?1,preview=?2,search_text=?3,capture_nonce=lower(hex(randomblob(16))),byte_count=?4 WHERE id=?5",params![p.fingerprint,p.preview,p.search,(p.byte_count+annotation_bytes(&annotation)) as i64,timestamp(id)?])?;
         tx.execute("DELETE FROM representations WHERE entry_id=?1",[timestamp(id)?])?;
         tx.execute("INSERT INTO representations VALUES (?1,0,'text/plain',?2)",params![timestamp(id)?,text.as_bytes()])?;
         enforce_limits(&tx,self.limits,now_ms,Some(id))?;
@@ -48,14 +48,14 @@ impl History {
     }
 
     pub fn capture_token(&self, id: u64) -> Result<String, Error> {
-        self.connection.query_row("SELECT fingerprint || ':' || copied_at FROM entries WHERE id=?1", [timestamp(id)?], |r|r.get(0))
+        self.connection.query_row("SELECT capture_nonce FROM entries WHERE id=?1", [timestamp(id)?], |r|r.get(0))
             .map_err(|e| if matches!(e,rusqlite::Error::QueryReturnedNoRows) { Error::NotFound } else { e.into() })
     }
 
     /// The native observer supplies the token from its last capture; a newer copy or edit cannot be removed accidentally.
     pub fn delete_if_capture_matches(&mut self, id: u64, token: &str) -> Result<bool, Error> {
         if token.len()>100 { return Err(Error::InvalidInput); }
-        let deleted=self.connection.execute("DELETE FROM entries WHERE id=?1 AND fingerprint || ':' || copied_at=?2",params![timestamp(id)?,token])?>0;
+        let deleted=self.connection.execute("DELETE FROM entries WHERE id=?1 AND capture_nonce=?2",params![timestamp(id)?,token])?>0;
         if deleted { self.reclaim_pages(); }
         Ok(deleted)
     }

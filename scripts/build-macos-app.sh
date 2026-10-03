@@ -115,7 +115,10 @@ function reset_development_permissions() {
 stop_packaged_app
 
 "$script_directory/build-macos-core.sh"
-swift build --package-path "$macos_root" --configuration release
+swift build --package-path "$macos_root" --configuration release \
+    -Xswiftc -Xfrontend -Xswiftc -emit-const-values \
+    -Xswiftc -Xfrontend -Xswiftc -const-gather-protocols-file \
+    -Xswiftc -Xfrontend -Xswiftc "$repository_root/config/app-intents-protocols.json"
 binary_directory="$(swift build --package-path "$macos_root" --configuration release --show-bin-path)"
 
 if [[ -e "$app_bundle" ]]; then
@@ -146,6 +149,35 @@ if [[ -n "${APP_VERSION:-}" ]]; then
 fi
 if [[ -n "${APP_BUILD_NUMBER:-}" ]]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $APP_BUILD_NUMBER" "$info_plist"
+fi
+
+# SwiftPM does not package App Intents metadata into this manually assembled app.
+# Extract compiler constants before signing so Shortcuts can discover the actions.
+metadata_work_directory="$(mktemp -d)"
+trap 'rm -rf "$metadata_work_directory"' EXIT
+print -l "$macos_root"/Sources/Polyglance/**/*.swift > "$metadata_work_directory/sources"
+constant_files=("$binary_directory"/Polyglance.build/*.swiftconstvalues(N.))
+if (( ${#constant_files} == 0 )); then
+    print -u2 "Swift did not emit App Intents constant metadata."
+    exit 1
+fi
+print -l "${constant_files[@]}" > "$metadata_work_directory/constants"
+swift_compiler="$(xcrun --find swiftc)"
+toolchain_directory="${swift_compiler:h:h}"
+xcode_build_version="$(xcodebuild -version | awk '/Build version/ {print $3}')"
+xcrun appintentsmetadataprocessor \
+    --output "$app_bundle/Contents/Resources" \
+    --toolchain-dir "$toolchain_directory" \
+    --module-name Polyglance \
+    --sdk-root "$(xcrun --sdk macosx --show-sdk-path)" \
+    --xcode-version "$xcode_build_version" \
+    --platform-family macOS --deployment-target 14.0 \
+    --target-triple "$(uname -m)-apple-macosx14.0" \
+    --source-file-list "$metadata_work_directory/sources" \
+    --swift-const-vals-list "$metadata_work_directory/constants"
+if [[ ! -d "$app_bundle/Contents/Resources/Metadata.appintents" ]]; then
+    print -u2 "App Intents metadata was not packaged."
+    exit 1
 fi
 
 # Only the endpoint is injected. The upstream credential and the model live in
