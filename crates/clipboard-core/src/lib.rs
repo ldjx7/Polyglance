@@ -4,7 +4,7 @@ mod editing;
 mod policy;
 pub use backup::{BackupInfo, RestoreMode, RestoreReport, inspect_backup, recover_database};
 pub use policy::{validate_ignored_patterns, validate_pin_shortcut};
-use rusqlite::{Connection, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
@@ -288,6 +288,15 @@ impl History {
             tx.commit()?;
         }
         validate_schema(&connection, 3)?;
+        // Repair derived cache left by older duplicate handling without changing
+        // the user's payload, annotations or pin.
+        connection.execute(
+            "UPDATE entries SET byte_count=byte_count-length(CAST(ocr_text AS BLOB))-length(CAST(ocr_search AS BLOB)),
+                ocr_text='',ocr_search='',ocr_state=0
+             WHERE (ocr_state!=0 OR ocr_text!='' OR ocr_search!='') AND NOT EXISTS(
+                SELECT 1 FROM representations WHERE entry_id=entries.id AND format='image/png')",
+            [],
+        )?;
         let mut result = Self {
             connection,
             limits,
@@ -445,20 +454,70 @@ impl History {
             .map_err(Into::into)
     }
     pub fn store_ocr(&mut self, id: u64, text: &str, now_ms: u64) -> Result<(), Error> {
+        self.write_ocr(id, None, text, now_ms).map(|_| ())
+    }
+    /// An OCR job may finish after recapture, editing, deletion or restore.
+    pub fn store_ocr_if_capture_matches(
+        &mut self,
+        id: u64,
+        token: &str,
+        text: &str,
+        now_ms: u64,
+    ) -> Result<bool, Error> {
+        self.write_ocr(id, Some(token), text, now_ms)
+    }
+    fn write_ocr(
+        &mut self,
+        id: u64,
+        token: Option<&str>,
+        text: &str,
+        now_ms: u64,
+    ) -> Result<bool, Error> {
         if text.len() > MAX_OCR_BYTES {
             return Err(Error::TooLarge);
         }
-        let old = self.annotation(id)?;
-        let delta = (text.len() + text.to_lowercase().len()) as i64
-            - (old.ocr_text.len() + old.ocr_text.to_lowercase().len()) as i64;
         let tx = self.connection.transaction()?;
-        if tx.execute("UPDATE entries SET ocr_text=?1,ocr_search=?2,ocr_state=1,byte_count=byte_count+?3
-            WHERE id=?4 AND EXISTS(SELECT 1 FROM representations WHERE entry_id=entries.id AND format='image/png')",
-            params![text,text.to_lowercase(),delta,timestamp(id)?])? == 0 { return Err(Error::InvalidInput); }
+        let current: Option<(String, String, bool)> = tx
+            .query_row(
+                "SELECT ocr_text,capture_nonce,EXISTS(SELECT 1 FROM representations
+                WHERE entry_id=entries.id AND format='image/png') FROM entries WHERE id=?1",
+                [timestamp(id)?],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        let Some((old, nonce, has_image)) = current else {
+            return if token.is_some() {
+                Ok(false)
+            } else {
+                Err(Error::NotFound)
+            };
+        };
+        if token.is_some_and(|token| token != nonce) {
+            return Ok(false);
+        }
+        if !has_image {
+            return if token.is_some() {
+                Ok(false)
+            } else {
+                Err(Error::InvalidInput)
+            };
+        }
+        let search = text.to_lowercase();
+        let delta =
+            (text.len() + search.len()) as i64 - (old.len() + old.to_lowercase().len()) as i64;
+        tx.execute("UPDATE entries SET ocr_text=?1,ocr_search=?2,ocr_state=1,byte_count=byte_count+?3 WHERE id=?4",
+            params![text,search,delta,timestamp(id)?])?;
         enforce_limits(&tx, self.limits, now_ms, Some(id))?;
         tx.commit()?;
         self.reclaim_pages();
-        Ok(())
+        Ok(true)
+    }
+    pub fn mark_ocr_failed_if_capture_matches(&self, id: u64, token: &str) -> Result<bool, Error> {
+        Ok(self.connection.execute(
+            "UPDATE entries SET ocr_state=2 WHERE id=?1 AND capture_nonce=?2 AND EXISTS(
+                SELECT 1 FROM representations WHERE entry_id=entries.id AND format='image/png')",
+            params![timestamp(id)?, token],
+        )? != 0)
     }
     pub fn mark_ocr_failed(&self, id: u64) -> Result<(), Error> {
         if self.connection.execute(
@@ -697,12 +756,26 @@ fn prepare(input: BundleInput, limits: Limits) -> Result<Option<Prepared>, Error
     }))
 }
 fn insert_prepared(tx: &Transaction<'_>, p: &Prepared) -> Result<u64, Error> {
+    let previous: Option<u64> = tx
+        .query_row(
+            "SELECT id FROM entries WHERE fingerprint=?1",
+            [&p.fingerprint],
+            |r| Ok(r.get::<_, i64>(0)? as u64),
+        )
+        .optional()?;
+    let keep_ocr = previous
+        .map(|id| image_payload_matches(tx, id, &p.input.items))
+        .transpose()?
+        .unwrap_or(false);
     tx.execute("INSERT INTO entries (fingerprint,kind,preview,search_text,source,source_search,copied_at,byte_count,item_count,capture_nonce)
         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,lower(hex(randomblob(16)))) ON CONFLICT(fingerprint) DO UPDATE SET
         preview=excluded.preview,search_text=excluded.search_text,source=excluded.source,source_search=excluded.source_search,
         copied_at=excluded.copied_at,capture_nonce=excluded.capture_nonce,byte_count=excluded.byte_count+length(CAST(title AS BLOB))+length(CAST(metadata_search AS BLOB))+
-            length(CAST(ocr_text AS BLOB))+length(CAST(ocr_search AS BLOB)),item_count=excluded.item_count",
-        params![p.fingerprint,p.kind.number(),p.preview,p.search,p.input.source_application,p.input.source_application.to_lowercase(),timestamp(p.input.copied_at_ms)?,p.byte_count as i64,p.input.items.len() as i64])?;
+            CASE WHEN ?10 THEN length(CAST(ocr_text AS BLOB))+length(CAST(ocr_search AS BLOB)) ELSE 0 END,
+        ocr_text=CASE WHEN ?10 THEN ocr_text ELSE '' END,
+        ocr_search=CASE WHEN ?10 THEN ocr_search ELSE '' END,
+        ocr_state=CASE WHEN ?10 THEN ocr_state ELSE 0 END,item_count=excluded.item_count",
+        params![p.fingerprint,p.kind.number(),p.preview,p.search,p.input.source_application,p.input.source_application.to_lowercase(),timestamp(p.input.copied_at_ms)?,p.byte_count as i64,p.input.items.len() as i64,keep_ocr])?;
     let id: i64 = tx.query_row(
         "SELECT id FROM entries WHERE fingerprint=?1",
         [&p.fingerprint],
@@ -718,6 +791,46 @@ fn insert_prepared(tx: &Transaction<'_>, p: &Prepared) -> Result<u64, Error> {
         }
     }
     Ok(id as u64)
+}
+/// OCR belongs to the ordered image payload, not the text used for deduplication.
+fn image_payload_matches(
+    connection: &Connection,
+    id: u64,
+    items: &[ClipboardItem],
+) -> Result<bool, Error> {
+    let images: Vec<_> = items
+        .iter()
+        .enumerate()
+        .flat_map(|(index, item)| {
+            item.representations
+                .iter()
+                .filter(|r| r.format == "image/png")
+                .map(move |r| (index, r))
+        })
+        .collect();
+    if images.is_empty() {
+        return Ok(false);
+    }
+    let count: i64 = connection.query_row(
+        "SELECT count(*) FROM representations WHERE entry_id=?1 AND format='image/png'",
+        [timestamp(id)?],
+        |r| r.get(0),
+    )?;
+    if count != images.len() as i64 {
+        return Ok(false);
+    }
+    for (index, image) in images {
+        let matches: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM representations WHERE entry_id=?1 AND item_index=?2
+                AND format='image/png' AND data=?3)",
+            params![timestamp(id)?, index as i64, image.bytes],
+            |r| r.get(0),
+        )?;
+        if !matches {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 fn read_bundle(
     connection: &Connection,
@@ -777,11 +890,12 @@ fn validated_annotation(title: &str, tags: &[String], ocr: &str) -> Result<Annot
         if tag.is_empty() {
             continue;
         }
+        // Validate the stored spelling: lowercasing can expand Unicode characters.
+        let tag = tag.to_lowercase();
         if tag.chars().count() > 64 || tag.len() > 256 {
             return Err(Error::InvalidInput);
         }
         // Store canonical tag spelling so Unicode exact filters do not depend on SQLite lower().
-        let tag = tag.to_lowercase();
         if unique.insert(tag.clone()) {
             normalized.push(tag);
         }

@@ -191,9 +191,8 @@ impl History {
                 .items
                 .iter()
                 .any(|i| i.representations.iter().any(|r| r.format == "image/png"));
-            if (!ocr.is_empty() || indexed != 0) && !has_image {
-                return Err(Error::Corrupt);
-            }
+            // Earlier versions could leave derived OCR behind when a duplicate
+            // replaced its image with plain text. The original payload is valid.
             let existing: Option<(u64, u64)> = tx
                 .query_row(
                     "SELECT id,copied_at FROM entries WHERE fingerprint=?1",
@@ -211,6 +210,7 @@ impl History {
                 added += 1;
                 insert_prepared(&tx, &p)?
             };
+            let import_ocr = has_image && image_payload_matches(&tx, id, &p.input.items)?;
             let (current_title, current_tags, current_ocr, state): (String, String, String, i64) =
                 tx.query_row(
                     "SELECT title,tags,ocr_text,ocr_state FROM entries WHERE id=?1",
@@ -237,8 +237,10 @@ impl History {
             }
             let text = if state == 1 {
                 &old.ocr_text
-            } else {
+            } else if import_ocr {
                 &imported.ocr_text
+            } else {
+                ""
             };
             let annotation = validated_annotation(title, &tags, text)?;
             let delta = annotation_bytes(&annotation) as i64 - annotation_bytes(&old) as i64;
@@ -252,7 +254,11 @@ impl History {
                     metadata_search(&annotation),
                     annotation.ocr_text,
                     annotation.ocr_text.to_lowercase(),
-                    if state == 1 || indexed == 1 { 1 } else { 0 },
+                    if state == 1 || (import_ocr && indexed == 1) {
+                        1
+                    } else {
+                        0
+                    },
                     pinned,
                     delta,
                     timestamp(id)?

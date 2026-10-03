@@ -18,7 +18,13 @@ struct ClipboardPreview: @unchecked Sendable {
 }
 
 /// Bounded image encoding, thumbnail decoding and local OCR run away from AppKit.
-actor ClipboardContentProcessor {
+protocol ClipboardContentProcessing: Actor {
+    func normalize(_ raw: [ClipboardRawItem], maximumBytes: UInt64) async throws -> [ClipboardItem]
+    func preview(_ items: [ClipboardItem], ocrText: String) async throws -> ClipboardPreview
+    func recognize(_ items: [ClipboardItem]) async throws -> String
+}
+
+actor ClipboardContentProcessor: ClipboardContentProcessing {
     private var ocrBusy = false
 
     func normalize(_ raw: [ClipboardRawItem], maximumBytes: UInt64) throws -> [ClipboardItem] {

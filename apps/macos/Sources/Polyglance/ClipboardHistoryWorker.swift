@@ -45,6 +45,17 @@ actor ClipboardHistoryWorker {
     func setAnnotation(id: UInt64, title: String, tags: [String]) throws { try engine().setAnnotation(id: id, title: title, tags: tags, nowMs: Self.now) }
     func pendingOCR() throws -> [UInt64] { try engine().pendingOcr(limit: 1) }
     func storeOCR(id: UInt64, text: String) throws { try engine().storeOcr(id: id, text: text, nowMs: Self.now) }
+    func ocrSnapshot(id: UInt64) throws -> ClipboardOCRSnapshot {
+        let engine = try engine()
+        return ClipboardOCRSnapshot(record: ClipboardCapturedRecord(id: id, token: try engine.captureToken(id: id)),
+                                    items: try engine.bundle(id: id), annotation: try engine.annotation(id: id))
+    }
+    func storeOCR(record: ClipboardCapturedRecord, text: String) throws -> Bool {
+        try engine().storeOcrIfCaptureMatches(id: record.id, token: record.token, text: text, nowMs: Self.now)
+    }
+    func failOCR(record: ClipboardCapturedRecord) throws {
+        _ = try engine().markOcrFailedIfCaptureMatches(id: record.id, token: record.token)
+    }
     func failOCR(id: UInt64) throws { try engine().markOcrFailed(id: id) }
     func retryOCR() throws { try engine().retryOcr() }
     func sources() throws -> [String] { try engine().sources() }
@@ -68,3 +79,8 @@ actor ClipboardHistoryWorker {
     func flush() {}
 }
 struct ClipboardCapturedRecord: Sendable { let id: UInt64; let token: String }
+struct ClipboardOCRSnapshot: Sendable {
+    let record: ClipboardCapturedRecord
+    let items: [ClipboardItem]
+    let annotation: ClipboardAnnotation
+}
