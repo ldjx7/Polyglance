@@ -516,6 +516,26 @@ impl ClipboardHistory {
     pub fn mark_ocr_failed(&self, id: u64) -> Result<(), ClipboardFailure> {
         self.lock()?.mark_ocr_failed(id).map_err(Into::into)
     }
+    pub fn store_ocr_if_capture_matches(
+        &self,
+        id: u64,
+        token: String,
+        text: String,
+        now_ms: u64,
+    ) -> Result<bool, ClipboardFailure> {
+        self.lock()?
+            .store_ocr_if_capture_matches(id, &token, &text, now_ms)
+            .map_err(Into::into)
+    }
+    pub fn mark_ocr_failed_if_capture_matches(
+        &self,
+        id: u64,
+        token: String,
+    ) -> Result<bool, ClipboardFailure> {
+        self.lock()?
+            .mark_ocr_failed_if_capture_matches(id, &token)
+            .map_err(Into::into)
+    }
     pub fn retry_ocr(&self) -> Result<(), ClipboardFailure> {
         self.lock()?.retry_ocr().map_err(Into::into)
     }

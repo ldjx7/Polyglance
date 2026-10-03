@@ -130,7 +130,8 @@ final class ClipboardHistoryService: ObservableObject {
     private var queueChangeCount = 0
     private let defaults: UserDefaults
     private let worker: ClipboardHistoryWorker
-    private let processor: ClipboardContentProcessor
+    private let processor: any ClipboardContentProcessing
+    private let searchDelay: Duration
     private let pasteboard: NSPasteboard
     private let sourceCatalog = ClipboardSourceCatalog()
     private let notifications = ClipboardNotifications()
@@ -144,7 +145,14 @@ final class ClipboardHistoryService: ObservableObject {
     private var lastChangeCount: Int
     private var suppressionGeneration = ClipboardCaptureSuppression.generation
     private var pendingCaptures = 0
-    private var copyBusy = false
+    private(set) var copyBusy = false
+    private var copyGeneration: UInt64 = 0
+    private var committingCopy = false
+    private struct CopyOperation {
+        let generation: UInt64
+        let changeCount: Int
+    }
+    private var captureTasks: [Int: Task<Void, Never>] = [:]
     private var monitoringGeneration: UInt64 = 0
     private var searchTask: Task<Void, Never>?
     private var reloadGeneration: UInt64 = 0
@@ -153,16 +161,18 @@ final class ClipboardHistoryService: ObservableObject {
     private var isPresented = false
     private var readingSelectionTask: Task<Void, Never>?
     private var indexTask: Task<Void, Never>?
-    private var selectionAnchor: Int?
+    private var selectionAnchor: UInt64?
 
     init(defaults: UserDefaults = .standard, pasteboard: NSPasteboard = .general,
-         worker: ClipboardHistoryWorker = ClipboardHistoryWorker(), processor: ClipboardContentProcessor = ClipboardContentProcessor()) {
+         worker: ClipboardHistoryWorker = ClipboardHistoryWorker(), processor: any ClipboardContentProcessing = ClipboardContentProcessor(),
+         searchDelay: Duration = .milliseconds(150)) {
         self.defaults = defaults; self.pasteboard = pasteboard; self.worker = worker; self.processor = processor
+        self.searchDelay = searchDelay
         lastChangeCount = pasteboard.changeCount
         preferences = defaults.data(forKey: Self.preferencesKey).flatMap { try? JSONDecoder().decode(ClipboardHistoryPreferences.self, from: $0) } ?? ClipboardHistoryPreferences()
     }
     func start() {
-        guard preferences.enabled, !paused, timer == nil, !starting else { return }
+        guard preferences.enabled, !paused, !dataBusy, timer == nil, !starting else { return }
         starting = true
         lastChangeCount = pasteboard.changeCount
         suppressionGeneration = ClipboardCaptureSuppression.generation
@@ -183,8 +193,17 @@ final class ClipboardHistoryService: ObservableObject {
     }
     func stop() { timer?.invalidate(); timer = nil; starting = false; monitoringGeneration &+= 1; captureLifecycle.invalidateInternalSample(); capturedCandidate = nil }
     private func stopIndexing() { indexGeneration &+= 1; indexTask?.cancel(); indexTask = nil; indexingImages = false }
+    private func drainCaptures() async {
+        // A write already handed to the worker cannot be cancelled. Let it finish
+        // before clearing/replacing the database, with monitoring stopped.
+        let tasks = Array(captureTasks.values)
+        for task in tasks { task.cancel() }
+        for task in tasks { await task.value }
+    }
     func shutdown() async {
         stop(); stopIndexing(); searchTask?.cancel(); readingSelectionTask?.cancel(); cancelPasteQueue()
+        copyGeneration &+= 1
+        await drainCaptures()
         await worker.flush()
     }
     func togglePause() { paused.toggle(); if paused { stop() } else { start() } }
@@ -223,6 +242,7 @@ final class ClipboardHistoryService: ObservableObject {
         start(); scheduleIndexing(); await reload()
     }
     func preparePresentation() {
+        copyGeneration &+= 1
         targetApplication = NSWorkspace.shared.frontmostApplication
         if targetApplication?.bundleIdentifier == Bundle.main.bundleIdentifier { targetApplication = nil }
         isPresented = true
@@ -233,6 +253,7 @@ final class ClipboardHistoryService: ObservableObject {
         }
     }
     func didDismiss() {
+        if !committingCopy { copyGeneration &+= 1 }
         isPresented = false; reloadGeneration &+= 1; selectionGeneration &+= 1
         searchTask?.cancel(); readingSelectionTask?.cancel(); presentationTask?.cancel(); previewImage = nil; previewText = ""
     }
@@ -271,12 +292,17 @@ final class ClipboardHistoryService: ObservableObject {
             let maximumBytes = preferences.limits.maximumItemBytes
             pendingCaptures += 1
             pendingSequences.insert(sequence)
-            Task {
-                defer { pendingCaptures -= 1; pendingSequences.remove(sequence); clearRequests.remove(sequence) }
+            captureTasks[sequence] = Task {
+                defer {
+                    pendingCaptures -= 1; pendingSequences.remove(sequence); clearRequests.remove(sequence)
+                    captureTasks.removeValue(forKey: sequence)
+                }
                 do {
+                    guard !Task.isCancelled, generation == monitoringGeneration else { return }
                     let items = try await processor.normalize(raw, maximumBytes: maximumBytes)
-                    guard generation == monitoringGeneration, preferences.enabled, !paused else { return }
+                    guard !Task.isCancelled, generation == monitoringGeneration, preferences.enabled, !paused else { return }
                     let record = try await worker.recordCapturedBundle(ClipboardBundleInput(items: items, sourceApplication: source, observedTypes: types, copiedAtMs: time), policy: policy)
+                    guard !Task.isCancelled, generation == monitoringGeneration else { return }
                     if let record, clearRequests.contains(sequence) { await removeClearedCapture(record); return }
                     if let record, captureLifecycle.latestSequence == sequence { capturedCandidate = (sequence, record) }
                     if record != nil, preferences.notifyCopies, generation == monitoringGeneration { notifications.send(copied: true) }
@@ -349,7 +375,7 @@ final class ClipboardHistoryService: ObservableObject {
     private func scheduleReload() {
         searchTask?.cancel(); reloadGeneration &+= 1
         searchTask = Task {
-            try? await Task.sleep(for: .milliseconds(150)); guard !Task.isCancelled else { return }
+            try? await Task.sleep(for: searchDelay); guard !Task.isCancelled else { return }
             await reload()
         }
     }
@@ -378,6 +404,7 @@ final class ClipboardHistoryService: ObservableObject {
     }
     func select(_ id: UInt64?) { setSelection(id.map { [$0] } ?? []) }
     func setSelection(_ ids: Set<UInt64>) {
+        selectionAnchor = nil
         selectedIDs = ids.intersection(Set(entries.map(\.id)))
         let primary = selectedID.flatMap { selectedIDs.contains($0) ? $0 : nil } ?? entries.first { selectedIDs.contains($0.id) }?.id
         selectForPreview(primary)
@@ -404,7 +431,8 @@ final class ClipboardHistoryService: ObservableObject {
         let index = entries.firstIndex { $0.id == selectedID } ?? 0
         let next = min(max(0, index + direction), entries.count - 1)
         if extending {
-            let anchor = selectionAnchor ?? index; selectionAnchor = anchor
+            let anchor = selectionAnchor.flatMap { id in entries.firstIndex { $0.id == id } } ?? index
+            selectionAnchor = entries[anchor].id
             selectedIDs = Set(entries[min(anchor, next)...max(anchor, next)].map(\.id)); selectForPreview(entries[next].id)
         } else { selectionAnchor = nil; select(entries[next].id) }
     }
@@ -427,20 +455,18 @@ final class ClipboardHistoryService: ObservableObject {
         do { try await worker.editPinnedText(id: id, text: text); cancelPasteQueue(); await reload(); select(id); return true } catch { present(error); return false }
     }
     func copyNumbered(_ number: Int, paste: Bool, plainTextOnly: Bool) async {
-        let filter = currentFilter
-        await searchTask?.value
-        guard !Task.isCancelled, filter == currentFilter, (1...9).contains(number), number <= entries.count else { return }
-        select(entries[number - 1].id)
-        await copySelected(paste: paste, plainTextOnly: plainTextOnly)
+        await copySelection(number: number, paste: paste, plainTextOnly: plainTextOnly)
     }
     func copyPinnedKey(_ key: String, paste: Bool, plainTextOnly: Bool) async {
-        guard let binding = pinShortcuts.first(where: { $0.key == key.lowercased() }), !copyBusy, !dataBusy else { return }
+        guard isPresented, let binding = pinShortcuts.first(where: { $0.key == key.lowercased() }), !copyBusy, !dataBusy else { return }
         copyBusy = true; defer { copyBusy = false }
+        let operation = beginCopyOperation()
         do {
-            if try await replay([binding.entryId], paste: paste, plainTextOnly: plainTextOnly, target: targetApplication) == false, paste {
+            if try await replay([binding.entryId], paste: paste, plainTextOnly: plainTextOnly, target: targetApplication, operation: operation) == false,
+               paste, operation.generation == copyGeneration {
                 errorMessage = "粘贴目标发生变化，请重新打开历史后重试。"
             }
-        } catch { present(error) }
+        } catch { if operation.generation == copyGeneration, !Task.isCancelled { present(error) } }
     }
     func waitForPresentation() async { await presentationTask?.value }
     func cycleSelection(steps: Int = 1) { if !entries.isEmpty, steps > 0 { let index = entries.firstIndex(where: { $0.id == selectedID }) ?? 0; select(entries[(index + steps % entries.count) % entries.count].id) } }
@@ -455,23 +481,45 @@ final class ClipboardHistoryService: ObservableObject {
         do { return try await worker.clearPreview(includePinned: includePinned) } catch { present(error); return nil }
     }
     func clear(includePinned: Bool) async {
-        stopIndexing(); cancelPasteQueue()
-        do { try await worker.clear(includePinned: includePinned); await reload(); scheduleIndexing() } catch { present(error) }
+        do { try await clearHistory(includePinned: includePinned) } catch { present(error) }
+    }
+    private func clearHistory(includePinned: Bool) async throws {
+        guard !dataBusy else { throw NativeClipboardError.message("历史数据正在处理，请稍后重试。") }
+        dataBusy = true; stop(); stopIndexing(); cancelPasteQueue(); copyGeneration &+= 1
+        defer { dataBusy = false; start(); scheduleIndexing() }
+        await drainCaptures()
+        try await worker.clear(includePinned: includePinned)
+        if isPresented { await reload() }
     }
     private var orderedSelection: [UInt64] { entries.filter { selectedIDs.contains($0.id) }.map(\.id) }
     func copySelected(paste: Bool = false, plainTextOnly: Bool = false) async {
-        guard !copyBusy, !dataBusy else { return }
+        await copySelection(number: nil, paste: paste, plainTextOnly: plainTextOnly)
+    }
+    private func copySelection(number: Int?, paste: Bool, plainTextOnly: Bool) async {
+        guard isPresented, !copyBusy, !dataBusy else { return }
         copyBusy = true; defer { copyBusy = false }
+        let operation = beginCopyOperation()
         let filter = currentFilter
         await searchTask?.value
-        guard !Task.isCancelled, filter == currentFilter, !orderedSelection.isEmpty else { return }
+        guard !Task.isCancelled, operation.generation == copyGeneration, isPresented,
+              filter == currentFilter else { return }
+        if let number {
+            guard (1...9).contains(number), number <= entries.count else { return }
+            select(entries[number - 1].id)
+        }
+        guard !orderedSelection.isEmpty else { return }
         do {
-            if try await replay(orderedSelection, paste: paste, plainTextOnly: plainTextOnly, target: targetApplication) == false, paste {
+            if try await replay(orderedSelection, paste: paste, plainTextOnly: plainTextOnly, target: targetApplication, operation: operation) == false,
+               paste, operation.generation == copyGeneration {
                 errorMessage = "粘贴目标或剪贴板发生变化，未执行自动粘贴。可以回到目标应用后重试。"
             }
-        } catch { present(error) }
+        } catch { if operation.generation == copyGeneration, !Task.isCancelled { present(error) } }
     }
-    private func replay(_ ids: [UInt64], paste: Bool, plainTextOnly: Bool, target: NSRunningApplication?, queueGeneration: UInt64? = nil) async throws -> Bool {
+    private func beginCopyOperation() -> CopyOperation {
+        CopyOperation(generation: copyGeneration, changeCount: pasteboard.changeCount)
+    }
+    private func replay(_ ids: [UInt64], paste: Bool, plainTextOnly: Bool, target: NSRunningApplication?,
+                        operation: CopyOperation, queueGeneration: UInt64? = nil) async throws -> Bool {
         if paste && !AXIsProcessTrusted() { throw NativeClipboardError.message("自动粘贴需要辅助功能权限。也可以先复制，再自行粘贴。") }
         if paste && (target == nil || target?.isTerminated == true) { throw NativeClipboardError.message("原应用已不可用，请回到目标应用后重新打开历史。") }
         var bundle: [ClipboardItem] = []
@@ -488,22 +536,25 @@ final class ClipboardHistoryService: ObservableObject {
         }
         let objects = try Self.replayObjects(bundle, plainTextOnly: plainTextOnly)
         guard !objects.isEmpty, !dataBusy, !Task.isCancelled,
+              operation.generation == copyGeneration, pasteboard.changeCount == operation.changeCount,
               queueGeneration == nil || queueGeneration == pasteQueueGeneration else { return false }
-        if queueGeneration != nil {
+        if paste {
             let front = NSWorkspace.shared.frontmostApplication
-            guard pasteboard.changeCount == queueChangeCount,
-                  front?.processIdentifier == target?.processIdentifier || (isPresented && front?.bundleIdentifier == Bundle.main.bundleIdentifier) else { return false }
+            guard front?.processIdentifier == target?.processIdentifier || (isPresented && front?.bundleIdentifier == Bundle.main.bundleIdentifier) else { return false }
         }
         pasteboard.clearContents()
         guard pasteboard.writeObjects(objects) else { throw ClipboardFailure.Storage }
         let writtenCount = pasteboard.changeCount; lastChangeCount = writtenCount
         captureLifecycle.invalidateInternalSample(); capturedCandidate = nil
         if preferences.notifySelections { notifications.send(copied: false) }
-        onDismiss?()
+        // Closing after a committed selection must allow its own final Cmd+V.
+        // A user dismissal or a newly opened presentation invalidates the operation.
+        committingCopy = true; onDismiss?(); committingCopy = false
         guard paste, let target else { return true }
         target.activate()
         try? await Task.sleep(for: .milliseconds(150))
-        guard !Task.isCancelled, queueGeneration == nil || queueGeneration == pasteQueueGeneration, NSWorkspace.shared.frontmostApplication?.processIdentifier == target.processIdentifier,
+        guard !Task.isCancelled, operation.generation == copyGeneration,
+              queueGeneration == nil || queueGeneration == pasteQueueGeneration, NSWorkspace.shared.frontmostApplication?.processIdentifier == target.processIdentifier,
               pasteboard.changeCount == writtenCount else { return false }
         return Self.postPaste()
     }
@@ -551,8 +602,9 @@ final class ClipboardHistoryService: ObservableObject {
         }
         let generation = pasteQueueGeneration
         copyBusy = true; defer { copyBusy = false }
+        let operation = beginCopyOperation()
         do {
-            if try await replay([id], paste: true, plainTextOnly: false, target: queueTargetApplication, queueGeneration: generation) {
+            if try await replay([id], paste: true, plainTextOnly: false, target: queueTargetApplication, operation: operation, queueGeneration: generation) {
                 guard generation == pasteQueueGeneration, pasteQueue.first == id else { return }
                 queueChangeCount = pasteboard.changeCount
                 pasteQueue.removeFirst(); pasteQueueCount = pasteQueue.count
@@ -584,13 +636,13 @@ final class ClipboardHistoryService: ObservableObject {
         guard !recognizingText, let id = selectedID else { return }
         recognizingText = true; defer { recognizingText = false }
         do {
-            let cached = try await worker.annotation(id: id).ocrText
+            let snapshot = try await worker.ocrSnapshot(id: id)
+            let cached = snapshot.annotation.ocrText
             let text: String
             if !cached.isEmpty { text = cached }
             else {
-                let bundle = try await worker.bundle(id: id)
-                text = try await processor.recognize(bundle)
-                do { try await worker.storeOCR(id: id, text: text) }
+                text = try await processor.recognize(snapshot.items)
+                do { guard try await worker.storeOCR(record: snapshot.record, text: text) else { return } }
                 catch { statusMessage = "文字已识别，但未保存 OCR 搜索索引，请检查历史容量和磁盘空间。" }
             }
             guard !text.isEmpty else { throw OCRError.noText }
@@ -606,14 +658,16 @@ final class ClipboardHistoryService: ObservableObject {
             do {
                 while !Task.isCancelled, preferences.ocrSearchEnabled, generation == indexGeneration {
                     guard let id = try await worker.pendingOCR().first else { break }
+                    let snapshot: ClipboardOCRSnapshot
+                    do { snapshot = try await worker.ocrSnapshot(id: id) }
+                    catch ClipboardFailure.NotFound { continue }
                     do {
-                        let bundle = try await worker.bundle(id: id)
-                        let text = try await processor.recognize(bundle)
+                        let text = try await processor.recognize(snapshot.items)
                         guard !Task.isCancelled, generation == indexGeneration, preferences.ocrSearchEnabled else { return }
-                        try await worker.storeOCR(id: id, text: text)
+                        _ = try await worker.storeOCR(record: snapshot.record, text: text)
                     } catch {
                         guard !Task.isCancelled, generation == indexGeneration else { return }
-                        try? await worker.failOCR(id: id)
+                        try? await worker.failOCR(record: snapshot.record)
                     }
                     if isPresented { await reload() }
                     try await Task.sleep(for: .milliseconds(100))
@@ -635,6 +689,8 @@ final class ClipboardHistoryService: ObservableObject {
     }
     func importBackup(from url: URL, mode: ClipboardRestoreMode) async {
         guard !dataBusy else { return }; dataBusy = true; stop(); stopIndexing(); cancelPasteQueue()
+        copyGeneration &+= 1
+        await drainCaptures()
         do {
             let report = try await worker.importBackup(path: url.path, mode: mode)
             needsRecovery = false; statusMessage = "恢复完成：新增 \(report.added) 条，合并 \(report.merged) 条，按保存规则清理 \(report.evicted) 条。"
@@ -665,18 +721,19 @@ final class ClipboardHistoryService: ObservableObject {
     }
     func shortcutCopy(id: UInt64) async throws {
         guard !copyBusy, !dataBusy else { throw NativeClipboardError.message("剪贴板正在处理其他操作，请稍后重试。") }
-        guard try await worker.entry(id: id) != nil else { throw ClipboardFailure.NotFound }
         copyBusy = true; defer { copyBusy = false }
-        _ = try await replay([id], paste: false, plainTextOnly: false, target: nil)
+        let operation = beginCopyOperation()
+        guard try await worker.entry(id: id) != nil else { throw ClipboardFailure.NotFound }
+        guard try await replay([id], paste: false, plainTextOnly: false, target: nil, operation: operation) else {
+            throw NativeClipboardError.message("复制已取消，或剪贴板内容已变化，请重试。")
+        }
     }
     func shortcutDelete(id: UInt64) async throws {
         guard !dataBusy else { throw NativeClipboardError.message("历史数据正在导入或导出，请稍后重试。") }
         try await worker.delete(id: id); cancelPasteQueue(); if isPresented { await reload() }
     }
     func shortcutClear(includePinned: Bool) async throws {
-        guard !dataBusy else { throw NativeClipboardError.message("历史数据正在处理，请稍后重试。") }
-        stopIndexing(); cancelPasteQueue(); try await worker.clear(includePinned: includePinned)
-        if isPresented { await reload() }; scheduleIndexing()
+        try await clearHistory(includePinned: includePinned)
     }
     func shortcutPause(_ shouldPause: Bool) throws {
         guard preferences.enabled else { throw NativeClipboardError.message("请先在 Polyglance 中开启剪贴板历史保存。") }
