@@ -3,7 +3,6 @@ import SwiftUI
 import TranslatorCore
 import UniformTypeIdentifiers
 import PolyglanceKit
-import AppIntents
 
 private extension Notification.Name { static let clipboardFocusSearch = Notification.Name("clipboard-history.focus-search") }
 @MainActor
@@ -450,7 +449,14 @@ private struct ClipboardHistoryPreferencesView: View {
             Toggle("记录新复制内容时发送通知", isOn: $draft.notifyCopies)
             Toggle("从历史复制内容时发送通知", isOn: $draft.notifySelections)
             Text("通知不显示原文，连续操作会合并提醒。 ").font(.caption).foregroundStyle(.secondary)
-            ShortcutsLink()
+            Button("打开系统快捷指令") {
+                guard let application = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.shortcuts"),
+                      NSWorkspace.shared.open(application) else {
+                    service.errorMessage = "无法打开快捷指令应用，请从应用程序中打开。"
+                    return
+                }
+            }
+            Text("新建快捷指令时，在操作中搜索 Polyglance 可找到剪贴板动作。 ").font(.caption).foregroundStyle(.secondary)
             }}.frame(maxHeight: 570)
             if let error = service.errorMessage { Text(error).font(.callout).foregroundStyle(.red) }
             HStack { Spacer(); Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)

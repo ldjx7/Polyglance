@@ -47,6 +47,15 @@ final class ClipboardInteractionTests: XCTestCase {
         XCTAssertTrue(ClipboardHistoryService.isEmpty(board))
         board.clearContents(); board.setString(" ", forType: .string)
         XCTAssertFalse(ClipboardHistoryService.isEmpty(board))
+        board.clearContents()
+        let cleared = NSPasteboardItem()
+        cleared.setString("", forType: .string)
+        cleared.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+        board.writeObjects([cleared])
+        XCTAssertTrue(ClipboardHistoryService.isEmpty(board))
+        cleared.setData(Data([1]), forType: .png)
+        board.clearContents(); board.writeObjects([cleared])
+        XCTAssertFalse(ClipboardHistoryService.isEmpty(board))
     }
     func testOldPreferencesKeepAutomaticPasteCycleAndNotificationsOff() throws {
         let data = Data(#"{"enabled":true,"maximumItems":500,"maximumMegabytes":256,"retentionDays":30}"#.utf8)
@@ -91,6 +100,60 @@ final class ClipboardInteractionTests: XCTestCase {
         try await service.shortcutClear(includePinned: false)
         let remaining = try await service.shortcutEntries(ids: [id]); XCTAssertEqual(remaining.map(\.id), [id])
         XCTAssertFalse(service.preferences.enabled)
+        await service.shutdown()
+    }
+    func testNativeMonitoringClearsTheObservedPinAndIgnoresOnlyTheNextCopy() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let name = UUID().uuidString; let defaults = UserDefaults(suiteName: name)!
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally(); defaults.removePersistentDomain(forName: name); try? FileManager.default.removeItem(at: directory) }
+        let worker = ClipboardHistoryWorker(directory: directory)
+        let service = ClipboardHistoryService(defaults: defaults, pasteboard: board, worker: worker)
+        var preferences = ClipboardHistoryPreferences(); preferences.enabled = true
+        await service.savePreferences(preferences)
+        board.clearContents(); board.setString("observed pin", forType: .string)
+        var captured: [ClipboardEntry] = []
+        for _ in 0..<200 {
+            service.poll()
+            captured = try await worker.list(query: "", pinnedOnly: false, offset: 0)
+            if !captured.isEmpty { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let id = try XCTUnwrap(captured.first?.id)
+        try await worker.pin(id: id, pinned: true)
+        board.clearContents()
+        let cleared = NSPasteboardItem()
+        cleared.setString("", forType: .string)
+        cleared.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+        board.writeObjects([cleared])
+        var remaining: [ClipboardEntry] = captured
+        for _ in 0..<200 {
+            service.poll()
+            remaining = try await worker.list(query: "", pinnedOnly: false, offset: 0)
+            if remaining.isEmpty { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(remaining.isEmpty, "The observed record must be purged even when pinned.")
+        service.ignoreNextCopy()
+        board.clearContents(); board.setString("ignored once", forType: .string)
+        for _ in 0..<200 {
+            service.poll()
+            if !service.ignoringNextCopy { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(service.ignoringNextCopy)
+        let ignored = try await worker.list(query: "", pinnedOnly: false, offset: 0)
+        XCTAssertTrue(ignored.isEmpty)
+        board.clearContents(); board.setString("record normally", forType: .string)
+        var resumed: [ClipboardEntry] = []
+        for _ in 0..<200 {
+            service.poll()
+            resumed = try await worker.list(query: "", pinnedOnly: false, offset: 0)
+            if !resumed.isEmpty { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(resumed.map(\.preview), ["record normally"])
+        XCTAssertNil(service.errorMessage)
         await service.shutdown()
     }
 }
