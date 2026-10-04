@@ -76,7 +76,7 @@ impl History {
         {
             return Err(Error::InvalidInput);
         }
-        if plain_text(&old).as_deref() == Some(text) {
+        if old[0].representations.len() == 1 && plain_text(&old).as_deref() == Some(text) {
             return Ok(());
         }
         let p = prepare(

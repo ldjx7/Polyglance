@@ -161,6 +161,8 @@ final class ClipboardHistoryService: ObservableObject {
     private var isPresented = false
     private var readingSelectionTask: Task<Void, Never>?
     private var indexTask: Task<Void, Never>?
+    private var recognitionTask: Task<Void, Never>?
+    private var recognitionGeneration: UInt64 = 0
     private var selectionAnchor: UInt64?
 
     init(defaults: UserDefaults = .standard, pasteboard: NSPasteboard = .general,
@@ -202,6 +204,7 @@ final class ClipboardHistoryService: ObservableObject {
     }
     func shutdown() async {
         stop(); stopIndexing(); searchTask?.cancel(); readingSelectionTask?.cancel(); cancelPasteQueue()
+        stopRecognizingText()
         copyGeneration &+= 1
         await drainCaptures()
         await worker.flush()
@@ -242,6 +245,7 @@ final class ClipboardHistoryService: ObservableObject {
         start(); scheduleIndexing(); await reload()
     }
     func preparePresentation() {
+        stopRecognizingText()
         copyGeneration &+= 1
         targetApplication = NSWorkspace.shared.frontmostApplication
         if targetApplication?.bundleIdentifier == Bundle.main.bundleIdentifier { targetApplication = nil }
@@ -253,6 +257,7 @@ final class ClipboardHistoryService: ObservableObject {
         }
     }
     func didDismiss() {
+        stopRecognizingText()
         if !committingCopy { copyGeneration &+= 1 }
         isPresented = false; reloadGeneration &+= 1; selectionGeneration &+= 1
         searchTask?.cancel(); readingSelectionTask?.cancel(); presentationTask?.cancel(); previewImage = nil; previewText = ""
@@ -410,6 +415,7 @@ final class ClipboardHistoryService: ObservableObject {
         selectForPreview(primary)
     }
     private func selectForPreview(_ id: UInt64?) {
+        if selectedID != id { stopRecognizingText() }
         selectedID = id; previewImage = nil; previewText = ""
         selectionHasImages = false; selectionHasFiles = false; selectionHasPlainText = false
         annotation = ClipboardAnnotation(title: "", tags: [], ocrText: "")
@@ -486,6 +492,7 @@ final class ClipboardHistoryService: ObservableObject {
     private func clearHistory(includePinned: Bool) async throws {
         guard !dataBusy else { throw NativeClipboardError.message("历史数据正在处理，请稍后重试。") }
         dataBusy = true; stop(); stopIndexing(); cancelPasteQueue(); copyGeneration &+= 1
+        stopRecognizingText()
         defer { dataBusy = false; start(); scheduleIndexing() }
         await drainCaptures()
         try await worker.clear(includePinned: includePinned)
@@ -632,23 +639,46 @@ final class ClipboardHistoryService: ObservableObject {
                let image = NSImage(data: data) { action(image) }
         } catch { present(error) }
     }
+    private func stopRecognizingText() {
+        recognitionGeneration &+= 1
+        recognitionTask?.cancel(); recognitionTask = nil; recognizingText = false
+    }
+    private func recognitionIsCurrent(_ generation: UInt64, id: UInt64) -> Bool {
+        !Task.isCancelled && generation == recognitionGeneration && isPresented && !dataBusy && selectedID == id
+    }
     func recognizeTextSelected() async {
-        guard !recognizingText, let id = selectedID else { return }
-        recognizingText = true; defer { recognizingText = false }
-        do {
-            let snapshot = try await worker.ocrSnapshot(id: id)
-            let cached = snapshot.annotation.ocrText
-            let text: String
-            if !cached.isEmpty { text = cached }
-            else {
-                text = try await processor.recognize(snapshot.items)
-                do { guard try await worker.storeOCR(record: snapshot.record, text: text) else { return } }
-                catch { statusMessage = "文字已识别，但未保存 OCR 搜索索引，请检查历史容量和磁盘空间。" }
+        guard isPresented, !dataBusy, !recognizingText, !Task.isCancelled, let id = selectedID else { return }
+        recognitionGeneration &+= 1; let generation = recognitionGeneration
+        recognizingText = true
+        let task = Task {
+            // An old completion must not clear a newer presentation's busy state.
+            defer { if generation == recognitionGeneration { recognitionTask = nil; recognizingText = false } }
+            do {
+                let snapshot = try await worker.ocrSnapshot(id: id)
+                guard recognitionIsCurrent(generation, id: id) else { return }
+                let cached = snapshot.annotation.ocrText
+                let text: String
+                if !cached.isEmpty { text = cached }
+                else {
+                    text = try await processor.recognize(snapshot.items)
+                    guard recognitionIsCurrent(generation, id: id) else { return }
+                    do { guard try await worker.storeOCR(record: snapshot.record, text: text) else { return } }
+                    catch {
+                        guard recognitionIsCurrent(generation, id: id) else { return }
+                        statusMessage = "文字已识别，但未保存 OCR 搜索索引，请检查历史容量和磁盘空间。"
+                    }
+                }
+                guard recognitionIsCurrent(generation, id: id) else { return }
+                guard !text.isEmpty else { throw OCRError.noText }
+                onDismiss?(); onRecognizeText?(text)
+            } catch {
+                if recognitionIsCurrent(generation, id: id), !(error is CancellationError) { present(error) }
             }
-            guard !text.isEmpty else { throw OCRError.noText }
-            guard selectedID == id else { return }
-            onDismiss?(); onRecognizeText?(text)
-        } catch { present(error) }
+        }
+        recognitionTask = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: { task.cancel() }
     }
     private func scheduleIndexing() {
         guard preferences.ocrSearchEnabled, indexTask == nil, !dataBusy, !needsRecovery else { return }
@@ -689,6 +719,7 @@ final class ClipboardHistoryService: ObservableObject {
     }
     func importBackup(from url: URL, mode: ClipboardRestoreMode) async {
         guard !dataBusy else { return }; dataBusy = true; stop(); stopIndexing(); cancelPasteQueue()
+        stopRecognizingText()
         copyGeneration &+= 1
         await drainCaptures()
         do {

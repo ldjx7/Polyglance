@@ -192,7 +192,10 @@ fn rejects_nonfile_urls_and_sensitive_multi_item_capture_atomically() {
 #[test]
 fn labels_unicode_tags_filters_and_ocr_survive_recapture() {
     let mut h = History::open(":memory:", Limits::default(), 100).unwrap();
-    let input = bundle(vec![item("image/png", b"\x89PNG\r\n\x1a\nfixture")], 10);
+    let input = bundle(
+        vec![item("image/png", include_bytes!("fixtures/one-pixel.png"))],
+        10,
+    );
     let id = h.record_bundle(input.clone(), &policy()).unwrap().unwrap();
     h.set_annotation(
         id,
@@ -294,7 +297,10 @@ fn backup_merge_replace_and_ocr_metadata_roundtrip() {
         .unwrap();
     let image = original
         .record_bundle(
-            bundle(vec![item("image/png", b"\x89PNG\r\n\x1a\nfixture")], 2),
+            bundle(
+                vec![item("image/png", include_bytes!("fixtures/one-pixel.png"))],
+                2,
+            ),
             &policy(),
         )
         .unwrap()
@@ -413,7 +419,10 @@ fn failed_ocr_can_be_retried_and_expired_items_disappear_from_indexes() {
     .unwrap();
     let id = h
         .record_bundle(
-            bundle(vec![item("image/png", b"\x89PNG\r\n\x1a\nfixture")], 1),
+            bundle(
+                vec![item("image/png", include_bytes!("fixtures/one-pixel.png"))],
+                1,
+            ),
             &policy(),
         )
         .unwrap()

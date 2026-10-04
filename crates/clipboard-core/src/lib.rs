@@ -640,8 +640,8 @@ fn prepare(input: BundleInput, limits: Limits) -> Result<Option<Prepared>, Error
             {
                 return Err(Error::InvalidInput);
             }
-            if r.format == "image/png" && !r.bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-                return Err(Error::InvalidInput);
+            if r.format == "image/png" {
+                validate_png_dimensions(&r.bytes)?;
             }
             payload_bytes = payload_bytes
                 .checked_add(r.bytes.len() as u64)
@@ -699,7 +699,7 @@ fn prepare(input: BundleInput, limits: Limits) -> Result<Option<Prepared>, Error
                 value.to_lowercase(),
             )
         } else if let Some(image) = image {
-            if item.representations.len() != 1 || !image.bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+            if item.representations.len() != 1 {
                 return Err(Error::InvalidInput);
             }
             (Kind::Image, &image.bytes, String::new(), String::new())
@@ -1031,6 +1031,21 @@ fn validate_schema(connection: &Connection, version: i64) -> Result<(), Error> {
     }
     Ok(())
 }
+/// Check the mandatory PNG header without decoding or allocating a raster.
+/// Shared preparation applies this budget to capture, merge and replace imports.
+fn validate_png_dimensions(bytes: &[u8]) -> Result<(), Error> {
+    let header = bytes.get(..33).ok_or(Error::InvalidInput)?;
+    if &header[..16] != b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR" {
+        return Err(Error::InvalidInput);
+    }
+    let width = u32::from_be_bytes(header[16..20].try_into().unwrap());
+    let height = u32::from_be_bytes(header[20..24].try_into().unwrap());
+    if !image_dimensions_allowed(width.into(), height.into()) {
+        return Err(Error::TooLarge);
+    }
+    Ok(())
+}
+
 pub fn image_dimensions_allowed(width: u64, height: u64) -> bool {
     width > 0
         && height > 0
