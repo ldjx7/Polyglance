@@ -125,4 +125,17 @@ Windows UI 仍按原规划留给 Rust + Slint 重构分支，本轮只验证公�
 
 新增 6 项 macOS 生命周期回归，使用可控暂停且故意延迟响应取消的 OCR 处理器，覆盖关闭后重开、迟到错误、新旧请求交错、切换选择后返回、清空和导入、调用方取消及缓存结果正常展示。
 
-原生构建及 Swift 测试结果待本次分支 CI 完成后补充。当前 Linux 环境没有 Swift/AppKit；本地 Rust 1.95 工具链未安装 Clippy，本轮不将 Clippy 记为已通过。
+### 本轮原生 CI 结果
+
+修复代码提交：`3acda5282ee069fe97cc1327cedc6b95c8fea8c6`。
+
+[Clipboard History CI 37219766704](https://github.com/ldjx7/Polyglance/actions/runs/37219766704)：macOS 和 Windows 两个任务全部成功。
+
+- macOS Rust workspace：249 项通过，0 失败；Rust 格式检查通过。
+- Windows 公共核心：40 项通过，0 失败。
+- macOS 剪贴板专项：40 项全部通过，无跳过；新增 6 项 OCR 生命周期回归在专项和全量测试中均通过。
+- Swift 全量 Release：执行 600 项，0 失败，3 项既有 ScreenRecordingPassthroughTests 因 CI 无法生成录屏样本而跳过。
+- `./scripts/build-macos-app.sh` 重新生成 UniFFI 绑定并构建独立开发应用，使用 ad-hoc 签名，未使用 `--preserve-permissions`；代码签名和 8 个快捷指令动作元数据验证均通过。
+- [macOS 开发包](https://github.com/ldjx7/Polyglance/actions/runs/37219766704/artifacts/11310057958)：大小 7,692,343 字节，保留至 2026-10-11 17:24 UTC。
+
+当前 Linux 环境没有 Swift/AppKit，上述原生结果来自 macOS CI。窗口实际焦点、系统权限和跨应用交互仍按实机清单验收。Windows UI 仍留给 Rust + Slint 重构分支，本轮验证公共核心。本地 Rust 1.95 工具链未安装 Clippy，本轮不将 Clippy 记为已通过。
