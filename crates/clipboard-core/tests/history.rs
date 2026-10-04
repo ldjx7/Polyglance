@@ -198,10 +198,11 @@ fn byte_budget_and_image_payloads_are_bounded_and_lazy() {
     assert!(history.stats().unwrap().bytes <= 60);
     assert_eq!(history.stats().unwrap().items, 1);
     assert_eq!(list(&mut history)[0].id, second);
+    history.configure(Limits::default(), 100).unwrap();
     let input = Input {
         representations: vec![Representation {
             format: "image/png".into(),
-            bytes: b"\x89PNG\r\n\x1a\nfixture".to_vec(),
+            bytes: include_bytes!("fixtures/one-pixel.png").to_vec(),
         }],
         source_application: "test.app".into(),
         observed_types: vec![],

@@ -3,6 +3,9 @@ import XCTest
 import TranslatorCore
 @testable import Polyglance
 
+// Complete 1 × 1 grayscale PNG, shared by clipboard persistence and lifecycle tests.
+let clipboardTestPNG = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQAAAAA3bvkkAAAACklEQVR42mNgAAAAAgAB5Sfe/AAAAABJRU5ErkJggg==")!
+
 @MainActor
 final class ClipboardHistoryTests: XCTestCase {
     func testNewInstallDoesNotEnableRecording() {
@@ -161,7 +164,7 @@ final class ClipboardHistoryTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let worker = ClipboardHistoryWorker(directory: directory)
         try await worker.configure(clipboardDefaultLimits())
-        let input = ClipboardBundleInput(items: [ClipboardItem(representations: [ClipboardRepresentation(format: "image/png", bytes: Data([137,80,78,71,13,10,26,10,1]))])], sourceApplication: "test.app", observedTypes: [], copiedAtMs: ClipboardHistoryWorker.now)
+        let input = ClipboardBundleInput(items: [ClipboardItem(representations: [ClipboardRepresentation(format: "image/png", bytes: clipboardTestPNG)])], sourceApplication: "test.app", observedTypes: [], copiedAtMs: ClipboardHistoryWorker.now)
         let saved = try await worker.recordBundle(input, policy: ClipboardPolicy(enabled: true, ignoredApplications: [], ignoredTypes: [], ignoredPatterns: []))
         let id = try XCTUnwrap(saved)
         try await worker.setAnnotation(id: id, title: "截图", tags: ["项目"])

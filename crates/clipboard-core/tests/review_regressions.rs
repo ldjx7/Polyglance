@@ -1,5 +1,8 @@
 use clipboard_core::*;
 
+const AT_PIXEL_LIMIT: &[u8] = include_bytes!("fixtures/at-pixel-limit.png");
+const OVER_PIXEL_LIMIT: &[u8] = include_bytes!("fixtures/over-pixel-limit.png");
+
 const PNG: &[u8] = &[
     137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0,
     0, 0, 31, 21, 196, 137, 0, 0, 0, 11, 73, 68, 65, 84, 120, 156, 99, 248, 15, 4, 0, 9, 251, 3,
@@ -39,6 +42,175 @@ fn mixed(time: u64, png: &[u8]) -> Input {
         bytes: png.to_vec(),
     });
     input
+}
+
+#[test]
+fn all_image_representations_enforce_the_pixel_budget_before_capture() {
+    let mut history = History::open(":memory:", Limits::default(), 100).unwrap();
+    let id = history.record(text(1), &policy()).unwrap().unwrap();
+    let before = history.stats().unwrap();
+    let image = ClipboardItem {
+        representations: vec![Representation {
+            format: "image/png".into(),
+            bytes: OVER_PIXEL_LIMIT.to_vec(),
+        }],
+    };
+    for items in [
+        vec![image.clone()],
+        vec![ClipboardItem {
+            representations: mixed(2, OVER_PIXEL_LIMIT).representations,
+        }],
+        vec![
+            ClipboardItem {
+                representations: text(2).representations,
+            },
+            image,
+        ],
+    ] {
+        let result = history.record_bundle(
+            BundleInput {
+                items,
+                source_application: "review.fixture".into(),
+                observed_types: vec![],
+                copied_at_ms: 2,
+            },
+            &policy(),
+        );
+        assert!(matches!(result, Err(Error::TooLarge)));
+        assert_eq!(history.stats().unwrap(), before);
+        assert_eq!(history.payload(id).unwrap(), text(1).representations);
+    }
+    // The boundary is inclusive, regardless of the small compressed file size.
+    history
+        .record(mixed(3, AT_PIXEL_LIMIT), &policy())
+        .unwrap()
+        .unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let backup = directory.path().join("boundary.polyclipboard");
+    history.export_backup(&backup).unwrap();
+    let mut restored = History::open(":memory:", Limits::default(), 100).unwrap();
+    restored
+        .import_backup(backup, RestoreMode::Replace, 100)
+        .unwrap();
+    let restored_id = restored.list("", false, 0, 100, 100).unwrap()[0].id;
+    assert_eq!(
+        restored.bundle(restored_id).unwrap(),
+        history.bundle(id).unwrap()
+    );
+}
+
+#[test]
+fn oversized_images_in_legacy_backups_roll_back_merge_and_replace() {
+    let directory = tempfile::tempdir().unwrap();
+    let backup = directory.path().join("legacy.polyclipboard");
+    let mut source = History::open(":memory:", Limits::default(), 100).unwrap();
+    let source_id = source.record(text(1), &policy()).unwrap().unwrap();
+    source
+        .set_annotation(source_id, "imported title", &[], 100)
+        .unwrap();
+    let mut later = mixed(3, PNG);
+    later.representations[0].bytes = b"later image".to_vec();
+    source.record(later, &policy()).unwrap();
+    source.export_backup(&backup).unwrap();
+    // Earlier versions could export this valid, highly compressed oversized PNG.
+    rusqlite::Connection::open(&backup)
+        .unwrap()
+        .execute(
+            "UPDATE representations SET data=?1 WHERE format='image/png'",
+            [OVER_PIXEL_LIMIT],
+        )
+        .unwrap();
+    for mode in [RestoreMode::Merge, RestoreMode::Replace] {
+        let mut target = History::open(":memory:", Limits::default(), 100).unwrap();
+        let id = target.record(text(0), &policy()).unwrap().unwrap();
+        target.set_pinned(id, true, 100).unwrap();
+        target.set_pin_shortcut(id, "b").unwrap();
+        let before = target.stats().unwrap();
+        let token = target.capture_token(id).unwrap();
+        assert!(matches!(
+            target.import_backup(&backup, mode, 100),
+            Err(Error::TooLarge)
+        ));
+        assert_eq!(target.stats().unwrap(), before);
+        assert_eq!(target.capture_token(id).unwrap(), token);
+        assert!(target.entry(id, 100).unwrap().unwrap().pinned);
+        assert!(target.annotation(id).unwrap().title.is_empty());
+        assert_eq!(target.pin_shortcuts().unwrap()[0].key, "b");
+        assert_eq!(target.payload(id).unwrap(), text(0).representations);
+    }
+}
+
+#[test]
+fn incomplete_or_malformed_png_dimension_headers_are_rejected() {
+    let mut wrong_chunk = PNG.to_vec();
+    wrong_chunk[12..16].copy_from_slice(b"IDAT");
+    let mut wrong_length = PNG.to_vec();
+    wrong_length[11] = 12;
+    let mut zero_width = PNG.to_vec();
+    zero_width[16..20].fill(0);
+    let mut maximum_dimensions = PNG.to_vec();
+    maximum_dimensions[16..24].fill(255);
+    for bytes in [
+        PNG[..8].to_vec(),
+        PNG[..32].to_vec(),
+        wrong_chunk,
+        wrong_length,
+        zero_width,
+        maximum_dimensions,
+    ] {
+        let mut history = History::open(":memory:", Limits::default(), 100).unwrap();
+        assert!(history.record(mixed(1, &bytes), &policy()).is_err());
+        assert_eq!(history.stats().unwrap().items, 0);
+    }
+}
+
+#[test]
+fn saving_unchanged_pinned_rich_text_removes_formatting_and_invalidates_old_tokens() {
+    let mut history = History::open(":memory:", Limits::default(), 100).unwrap();
+    let mut input = text(1);
+    for (format, bytes) in [
+        ("text/html", "<b>same text</b>"),
+        ("text/rtf", "{\\rtf1 same text}"),
+    ] {
+        input.representations.push(Representation {
+            format: format.into(),
+            bytes: bytes.as_bytes().to_vec(),
+        });
+    }
+    let id = history.record(input, &policy()).unwrap().unwrap();
+    history.set_pinned(id, true, 100).unwrap();
+    history
+        .set_annotation(id, "snippet", &["work".into()], 100)
+        .unwrap();
+    history.set_pin_shortcut(id, "e").unwrap();
+    let annotation = history.annotation(id).unwrap();
+    let token = history.capture_token(id).unwrap();
+    let before_bytes = history.stats().unwrap().bytes;
+    history.edit_pinned_text(id, "same text", 100).unwrap();
+    assert_eq!(history.payload(id).unwrap(), text(1).representations);
+    assert_eq!(history.annotation(id).unwrap(), annotation);
+    assert_eq!(history.pin_shortcuts().unwrap()[0].key, "e");
+    let row = history
+        .list("same text", false, 0, 100, 100)
+        .unwrap()
+        .remove(0);
+    assert_eq!(row.id, id);
+    assert!(row.pinned);
+    assert_eq!(row.copied_at_ms, 1);
+    assert_eq!(
+        before_bytes - history.stats().unwrap().bytes,
+        (b"<b>same text</b>".len() + b"{\\rtf1 same text}".len()) as u64
+    );
+    assert!(!history.delete_if_capture_matches(id, &token).unwrap());
+    let plain_token = history.capture_token(id).unwrap();
+    let plain_bytes = history.stats().unwrap().bytes;
+    history.edit_pinned_text(id, "same text", 100).unwrap();
+    assert_eq!(
+        history.capture_token(id).unwrap(),
+        plain_token,
+        "An already plain unchanged snippet is a no-op."
+    );
+    assert_eq!(history.stats().unwrap().bytes, plain_bytes);
 }
 
 #[test]

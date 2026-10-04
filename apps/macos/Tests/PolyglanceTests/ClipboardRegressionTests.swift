@@ -145,7 +145,7 @@ final class ClipboardRegressionTests: XCTestCase {
         try await withFixture { fixture in
             let representations = [
                 ClipboardRepresentation(format: "text/plain", bytes: Data("same text".utf8)),
-                ClipboardRepresentation(format: "image/png", bytes: Data([137, 80, 78, 71, 13, 10, 26, 10, 1]))
+                ClipboardRepresentation(format: "image/png", bytes: clipboardTestPNG)
             ]
             let storedID = try await fixture.worker.record(
                 ClipboardInput(representations: representations, sourceApplication: "test.app", observedTypes: [], copiedAtMs: ClipboardHistoryWorker.now),
@@ -158,6 +158,150 @@ final class ClipboardRegressionTests: XCTestCase {
             XCTAssertFalse(stored)
             let annotation = try await fixture.worker.annotation(id: id)
             XCTAssertTrue(annotation.ocrText.isEmpty)
+        }
+    }
+
+    func testDismissalCancelsManualOCRAndIgnoresLateResultsAndErrors() async throws {
+        for reopen in [false, true] {
+            for fail in [false, true] {
+                let processor = SuspendedClipboardOCRProcessor()
+                try await withFixture(processor: processor) { fixture in
+                    let id = try await fixture.recordImage()
+                    let service = fixture.service
+                    service.preparePresentation(); await service.waitForPresentation()
+                    var results: [String] = []
+                    service.onRecognizeText = { results.append($0) }
+                    let recognizing = Task { await service.recognizeTextSelected() }
+                    try await self.eventually { await processor.requests == 1 }
+                    let panel = ClipboardHistoryPanel(service: service)
+                    panel.onDismissed = { service.didDismiss() }
+                    panel.cancelOperation(nil)
+                    XCTAssertFalse(service.recognizingText)
+                    if reopen { service.preparePresentation(); await service.waitForPresentation() }
+                    await processor.release(1, text: "late result", fail: fail)
+                    await recognizing.value
+                    let cancelled = await processor.cancelledRequests
+                    XCTAssertEqual(cancelled, [1], "Dismissal must cancel the actual processing task.")
+                    XCTAssertTrue(results.isEmpty)
+                    XCTAssertNil(service.errorMessage)
+                    XCTAssertTrue(service.statusMessage.isEmpty)
+                    let annotation = try await fixture.worker.annotation(id: id)
+                    XCTAssertTrue(annotation.ocrText.isEmpty, "A dismissed recognition must not write a late index.")
+                }
+            }
+        }
+    }
+
+    func testOldOCRCompletionCannotClearANewerRecognitionAfterReopening() async throws {
+        let processor = SuspendedClipboardOCRProcessor()
+        try await withFixture(processor: processor) { fixture in
+            let id = try await fixture.recordImage()
+            let service = fixture.service
+            service.preparePresentation(); await service.waitForPresentation()
+            var results: [String] = []
+            var dismissals = 0
+            service.onRecognizeText = { results.append($0) }
+            service.onDismiss = { dismissals += 1; service.didDismiss() }
+            let old = Task { await service.recognizeTextSelected() }
+            try await self.eventually { await processor.requests == 1 }
+            service.didDismiss(); service.preparePresentation(); await service.waitForPresentation()
+            let current = Task { await service.recognizeTextSelected() }
+            try await self.eventually { await processor.requests == 2 }
+            await service.reload() // Refreshing the same selection keeps its active recognition.
+            await processor.release(1, text: "old result"); await old.value
+            XCTAssertTrue(service.recognizingText)
+            XCTAssertTrue(results.isEmpty)
+            XCTAssertEqual(dismissals, 0)
+            await processor.release(2, text: "current result"); await current.value
+            XCTAssertFalse(service.recognizingText)
+            XCTAssertEqual(results, ["current result"])
+            XCTAssertEqual(dismissals, 1)
+            let annotation = try await fixture.worker.annotation(id: id)
+            XCTAssertEqual(annotation.ocrText, "current result")
+        }
+    }
+
+    func testChangingSelectionCancelsOCREvenWhenReturningToTheSameEntry() async throws {
+        let processor = SuspendedClipboardOCRProcessor()
+        try await withFixture(processor: processor) { fixture in
+            let imageID = try await fixture.recordImage()
+            let otherID = try await fixture.record("other entry")
+            let service = fixture.service
+            service.preparePresentation(); await service.waitForPresentation(); service.select(imageID)
+            var presented = false
+            service.onRecognizeText = { _ in presented = true }
+            let recognizing = Task { await service.recognizeTextSelected() }
+            try await self.eventually { await processor.requests == 1 }
+            service.select(otherID); service.select(imageID)
+            await processor.release(1); await recognizing.value
+            XCTAssertFalse(presented)
+            XCTAssertFalse(service.recognizingText)
+            XCTAssertNil(service.errorMessage)
+        }
+    }
+
+    func testClearAndImportCancelManualOCRBeforeChangingHistory() async throws {
+        for restore in [false, true] {
+            let processor = SuspendedClipboardOCRProcessor()
+            try await withFixture(processor: processor) { fixture in
+                _ = try await fixture.recordImage()
+                let backup = fixture.directory.appendingPathComponent("backup.polyclipboard")
+                try await fixture.worker.exportBackup(path: backup.path)
+                let service = fixture.service
+                service.preparePresentation(); await service.waitForPresentation()
+                var presented = false
+                service.onRecognizeText = { _ in presented = true }
+                let recognizing = Task { await service.recognizeTextSelected() }
+                try await self.eventually { await processor.requests == 1 }
+                if restore { await service.importBackup(from: backup, mode: .replace) }
+                else { await service.clear(includePinned: true) }
+                XCTAssertFalse(service.recognizingText)
+                await processor.release(1, text: "outdated"); await recognizing.value
+                XCTAssertFalse(presented)
+                XCTAssertNil(service.errorMessage)
+                let rows = try await fixture.worker.list(query: "outdated", pinnedOnly: false, offset: 0)
+                XCTAssertTrue(rows.isEmpty)
+            }
+        }
+    }
+
+    func testCallerCancellationReachesTheManualOCRTask() async throws {
+        let processor = SuspendedClipboardOCRProcessor()
+        try await withFixture(processor: processor) { fixture in
+            _ = try await fixture.recordImage()
+            let service = fixture.service
+            service.preparePresentation(); await service.waitForPresentation()
+            var presented = false
+            service.onRecognizeText = { _ in presented = true }
+            let recognizing = Task { await service.recognizeTextSelected() }
+            try await self.eventually { await processor.requests == 1 }
+            recognizing.cancel()
+            await processor.release(1); await recognizing.value
+            let cancelled = await processor.cancelledRequests
+            XCTAssertEqual(cancelled, [1])
+            XCTAssertFalse(presented)
+            XCTAssertFalse(service.recognizingText)
+            XCTAssertNil(service.errorMessage)
+        }
+    }
+
+    func testCachedOCRCanDismissItsOwnPresentation() async throws {
+        let processor = SuspendedClipboardOCRProcessor()
+        try await withFixture(processor: processor) { fixture in
+            let id = try await fixture.recordImage()
+            try await fixture.worker.storeOCR(id: id, text: "cached text")
+            let service = fixture.service
+            service.preparePresentation(); await service.waitForPresentation()
+            var results: [String] = []
+            service.onRecognizeText = { results.append($0) }
+            service.onDismiss = { service.didDismiss() }
+            await service.recognizeTextSelected()
+            let requests = await processor.requests
+            XCTAssertEqual(requests, 0)
+            XCTAssertEqual(results, ["cached text"])
+            XCTAssertFalse(service.recognizingText)
+            await service.recognizeTextSelected()
+            XCTAssertEqual(results.count, 1, "A dismissed window cannot start another manual recognition.")
         }
     }
 
@@ -212,9 +356,17 @@ private final class ClipboardRegressionFixture {
             sourceApplication: "test.app", observedTypes: [], copiedAtMs: ClipboardHistoryWorker.now), policy: policy)
         return try XCTUnwrap(result)
     }
+    func recordImage() async throws -> UInt64 {
+        let result = try await worker.record(ClipboardInput(
+            representations: [ClipboardRepresentation(format: "image/png", bytes: clipboardTestPNG)],
+            sourceApplication: "test.app", observedTypes: [], copiedAtMs: ClipboardHistoryWorker.now), policy: policy)
+        return try XCTUnwrap(result)
+    }
     func close() async {
         if let suspended = processor as? SuspendedClipboardProcessor { await suspended.release() }
+        if let suspended = processor as? SuspendedClipboardOCRProcessor { await suspended.releaseAll() }
         service.onDismiss = nil
+        service.onRecognizeText = nil
         await service.shutdown()
         board.releaseGlobally()
         defaults.removePersistentDomain(forName: suite)
@@ -243,4 +395,29 @@ private actor SuspendedClipboardProcessor: ClipboardContentProcessing {
         try await real.preview(items, ocrText: ocrText)
     }
     func recognize(_ items: [ClipboardItem]) async throws -> String { try await real.recognize(items) }
+}
+
+/// Simulates native OCR that finishes after cancellation, with deterministic completion order.
+private actor SuspendedClipboardOCRProcessor: ClipboardContentProcessing {
+    private let real = ClipboardContentProcessor()
+    private var continuations: [Int: CheckedContinuation<String, Error>] = [:]
+    private(set) var requests = 0
+    private(set) var cancelledRequests: Set<Int> = []
+    func normalize(_ raw: [ClipboardRawItem], maximumBytes: UInt64) async throws -> [ClipboardItem] {
+        try await real.normalize(raw, maximumBytes: maximumBytes)
+    }
+    func preview(_ items: [ClipboardItem], ocrText: String) async throws -> ClipboardPreview {
+        try await real.preview(items, ocrText: ocrText)
+    }
+    func recognize(_ items: [ClipboardItem]) async throws -> String {
+        requests += 1; let request = requests
+        defer { if Task.isCancelled { cancelledRequests.insert(request) } }
+        return try await withCheckedThrowingContinuation { continuations[request] = $0 }
+    }
+    func release(_ request: Int, text: String = "recognized text", fail: Bool = false) {
+        guard let continuation = continuations.removeValue(forKey: request) else { return }
+        if fail { continuation.resume(throwing: OCRError.noText) }
+        else { continuation.resume(returning: text) }
+    }
+    func releaseAll() { for request in Array(continuations.keys) { release(request) } }
 }
