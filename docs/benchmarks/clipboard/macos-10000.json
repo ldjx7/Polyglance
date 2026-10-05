@@ -1,0 +1,108 @@
+{
+  "accounted_content_bytes": 19076533,
+  "arch": "aarch64",
+  "available_parallelism": 3,
+  "commit": "711046df25e33a5057712922e54ab7915c53ef60",
+  "database_file_bytes": 25636864,
+  "debug_assertions": false,
+  "generated_at_ms": 1791219095705,
+  "items": 10000,
+  "measurements_ms": {
+    "combined_filter": {
+      "max": 15.820084000000001,
+      "mean": 7.306937625000001,
+      "median": 6.809625,
+      "min": 4.114750000000001,
+      "p95": 11.486875000000001,
+      "p99": 15.820084000000001,
+      "samples": 40
+    },
+    "first_page": {
+      "max": 10.806209,
+      "mean": 5.420735475,
+      "median": 4.864083,
+      "min": 3.872166,
+      "p95": 8.460167,
+      "p99": 10.806209,
+      "samples": 40
+    },
+    "last_page": {
+      "max": 20.251875,
+      "mean": 13.534387550000002,
+      "median": 13.239374999999999,
+      "min": 9.289125,
+      "p95": 18.959833999999997,
+      "p99": 20.251875,
+      "samples": 40
+    },
+    "read_selected_payload": {
+      "max": 0.277416,
+      "mean": 0.066019675,
+      "median": 0.038333,
+      "min": 0.02375,
+      "p95": 0.159792,
+      "p99": 0.277416,
+      "samples": 40
+    },
+    "record_duplicate": {
+      "max": 8.782791999999999,
+      "mean": 6.187080225000001,
+      "median": 5.770458,
+      "min": 4.8684590000000005,
+      "p95": 8.147875,
+      "p99": 8.782791999999999,
+      "samples": 40
+    },
+    "record_new_with_eviction": {
+      "max": 21.41,
+      "mean": 12.561272849999998,
+      "median": 12.136958,
+      "min": 8.91325,
+      "p95": 16.986417,
+      "p99": 21.41,
+      "samples": 40
+    },
+    "refresh_database_calls": {
+      "max": 45.93125,
+      "mean": 28.106119824999997,
+      "median": 25.9705,
+      "min": 18.870375000000003,
+      "p95": 37.440542,
+      "p99": 45.93125,
+      "samples": 40
+    },
+    "search_chinese": {
+      "max": 11.417041,
+      "mean": 5.389759300000001,
+      "median": 4.556416,
+      "min": 3.858958,
+      "p95": 8.474959,
+      "p99": 11.417041,
+      "samples": 40
+    },
+    "search_missing": {
+      "max": 40.589917,
+      "mean": 25.046044850000005,
+      "median": 24.405167,
+      "min": 17.803375,
+      "p95": 33.086125,
+      "p99": 40.589917,
+      "samples": 40
+    },
+    "search_one": {
+      "max": 33.539459,
+      "mean": 22.9398105,
+      "median": 22.923209,
+      "min": 15.934791,
+      "p95": 31.991041999999997,
+      "p99": 33.539459,
+      "samples": 40
+    }
+  },
+  "os": "macos",
+  "page_size": 100,
+  "population_ms": 39608.586167,
+  "schema_version": 1,
+  "warmup_iterations": 5,
+  "workload": "clipboard-text-rich-metadata-v1"
+}

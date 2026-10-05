@@ -1,0 +1,108 @@
+{
+  "accounted_content_bytes": 955858,
+  "arch": "x86_64",
+  "available_parallelism": 4,
+  "commit": "711046df25e33a5057712922e54ab7915c53ef60",
+  "database_file_bytes": 1331200,
+  "debug_assertions": false,
+  "generated_at_ms": 1791218863785,
+  "items": 500,
+  "measurements_ms": {
+    "combined_filter": {
+      "max": 0.6769999999999999,
+      "mean": 0.5323174999999998,
+      "median": 0.5255000000000001,
+      "min": 0.49879999999999997,
+      "p95": 0.5662,
+      "p99": 0.6769999999999999,
+      "samples": 40
+    },
+    "first_page": {
+      "max": 0.5318,
+      "mean": 0.4715225000000001,
+      "median": 0.4595,
+      "min": 0.4415,
+      "p95": 0.5238,
+      "p99": 0.5318,
+      "samples": 40
+    },
+    "last_page": {
+      "max": 0.6158,
+      "mean": 0.5527925000000002,
+      "median": 0.5392,
+      "min": 0.5247999999999999,
+      "p95": 0.5952999999999999,
+      "p99": 0.6158,
+      "samples": 40
+    },
+    "read_selected_payload": {
+      "max": 0.2298,
+      "mean": 0.15358499999999997,
+      "median": 0.146,
+      "min": 0.1404,
+      "p95": 0.2082,
+      "p99": 0.2298,
+      "samples": 40
+    },
+    "record_duplicate": {
+      "max": 29.693,
+      "mean": 23.778182499999993,
+      "median": 23.3855,
+      "min": 20.0489,
+      "p95": 28.9881,
+      "p99": 29.693,
+      "samples": 40
+    },
+    "record_new_with_eviction": {
+      "max": 53.0852,
+      "mean": 39.7081625,
+      "median": 44.6377,
+      "min": 25.2859,
+      "p95": 49.826,
+      "p99": 53.0852,
+      "samples": 40
+    },
+    "refresh_database_calls": {
+      "max": 1.2733,
+      "mean": 1.021195,
+      "median": 1.0147000000000002,
+      "min": 0.962,
+      "p95": 1.071,
+      "p99": 1.2733,
+      "samples": 40
+    },
+    "search_chinese": {
+      "max": 0.5441,
+      "mean": 0.4743925,
+      "median": 0.4586,
+      "min": 0.4449,
+      "p95": 0.5398999999999999,
+      "p99": 0.5441,
+      "samples": 40
+    },
+    "search_missing": {
+      "max": 2.1204,
+      "mean": 1.1086300000000004,
+      "median": 1.0729,
+      "min": 1.0273,
+      "p95": 1.2428000000000001,
+      "p99": 2.1204,
+      "samples": 40
+    },
+    "search_one": {
+      "max": 1.3045,
+      "mean": 1.1163925000000003,
+      "median": 1.1117,
+      "min": 1.0746,
+      "p95": 1.1972,
+      "p99": 1.3045,
+      "samples": 40
+    }
+  },
+  "os": "windows",
+  "page_size": 100,
+  "population_ms": 12122.8083,
+  "schema_version": 1,
+  "warmup_iterations": 5,
+  "workload": "clipboard-text-rich-metadata-v1"
+}

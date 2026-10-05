@@ -11,6 +11,17 @@
 - 每轮记录开发包对应的提交 SHA、系统版本、芯片、屏幕配置和输入法。主流程先在窗口模式执行，再补全屏和多屏。
 - 测试期间只复制合成样本；密码管理器项目使用新建的测试条目，内容为 `POLYGLANCE_TEST_NOT_A_PASSWORD`。
 
+本次已验证的下载入口，代码提交 `711046d`，[CI 37343308803](https://github.com/ldjx7/Polyglance/actions/runs/37343308803) 两端成功：
+
+| 下载 | 内容 | 保留期限 |
+|---|---|---|
+| [macOS 开发包](https://github.com/ldjx7/Polyglance/actions/runs/37343308803/artifacts/11360201083) | Polyglance Dev.app，构建与签名检查通过 | 2026-10-12 16:56 UTC |
+| [验收材料包](https://github.com/ldjx7/Polyglance/actions/runs/37343308803/artifacts/11358799754) | 操作表、样本、500 / 10000 条合成备份，共 14 个文件；已检查 ZIP 完整性和必需路径 | 2026-11-04 16:52 UTC |
+| [Mac 性能报告](https://github.com/ldjx7/Polyglance/actions/runs/37343308803/artifacts/11358309991) | 500 / 10000 条公共核心原始 JSON | 2026-11-04 16:52 UTC |
+| [Windows 性能报告](https://github.com/ldjx7/Polyglance/actions/runs/37343308803/artifacts/11360181019) | 500 / 10000 条公共核心原始 JSON | 2026-11-04 16:54 UTC |
+
+材料包保留 docs、crates、dist 的目录关系，解压后按文档相对路径使用。附件中的文档为该代码提交时的快照，后续测量结论以仓库文档为准。
+
 | 环境字段 | 本轮实际值 |
 |---|---|
 | 执行日期 / 执行人 | 待填写 |
