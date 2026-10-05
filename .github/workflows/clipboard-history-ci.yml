@@ -54,6 +54,32 @@ jobs:
         run: codesign --verify --deep --strict 'dist/Polyglance Dev.app'
       - name: Verify Shortcuts action metadata
         run: python3 scripts/verify-clipboard-intents.py 'dist/Polyglance Dev.app/Contents/Resources/Metadata.appintents'
+      - name: Measure shared clipboard performance
+        run: |
+          cargo run --release -p clipboard-core --example history_benchmark --locked -- --items 500 --samples 40 --export-fixture dist/clipboard-fixture-500 > dist/clipboard-core-macos-500.json
+          cargo run --release -p clipboard-core --example history_benchmark --locked -- --items 10000 --samples 40 --export-fixture dist/clipboard-fixture-10000 > dist/clipboard-core-macos-10000.json
+          python3 - <<'PY'
+          import glob, json
+          for path in sorted(glob.glob("dist/clipboard-core-macos-*.json")):
+              with open(path) as source:
+                  print("CLIPBOARD_PERFORMANCE_REPORT=" + json.dumps(json.load(source)))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clipboard-Performance-macOS
+          path: dist/clipboard-core-macos-*.json
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clipboard-Acceptance-Materials
+          path: |
+            docs/剪贴板macOS实机验收.md
+            docs/剪贴板性能基线.md
+            docs/benchmarks/clipboard/
+            docs/fixtures/clipboard/
+            crates/clipboard-core/tests/fixtures/
+            dist/clipboard-fixture-*/
+          retention-days: 30
       - name: Test macOS application
         run: |
           swift test --package-path apps/macos --configuration release --filter Clipboard
@@ -77,3 +103,18 @@ jobs:
         with:
           cache-on-failure: true
       - run: cargo test -p clipboard-core --locked
+      - name: Measure shared clipboard performance
+        run: |
+          cargo run --release -p clipboard-core --example history_benchmark --locked -- --items 500 --samples 40 > clipboard-core-windows-500.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo run --release -p clipboard-core --example history_benchmark --locked -- --items 10000 --samples 40 > clipboard-core-windows-10000.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem clipboard-core-windows-*.json | Sort-Object Name | ForEach-Object {
+            $report = Get-Content -Raw $_.FullName | ConvertFrom-Json
+            Write-Output ("CLIPBOARD_PERFORMANCE_REPORT=" + ($report | ConvertTo-Json -Depth 8 -Compress))
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Clipboard-Performance-Windows
+          path: clipboard-core-windows-*.json
+          retention-days: 30

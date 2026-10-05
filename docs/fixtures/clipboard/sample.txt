@@ -1,0 +1,23 @@
+POLYGLANCE-CLIPBOARD-ACCEPTANCE
+
+第一行：中文搜索，剪贴板测试。
+第二行：English text, punctuation: [] {} () < > &.
+第三行：开头空格和换行应在完整复制后保留。
+  本行开头有两个空格。
+
+连续粘贴样本，分别复制下面三行：
+QUEUE-A-甲
+QUEUE-B-乙
+QUEUE-C-丙
+
+以下色值分别作为单独的一次复制：
+#1A8
+#336699
+#336699CC
+invalid #336699 suffix
+
+正则排除样本，配置规则 ^POLYGLANCE-EXCLUDE- 后分别复制：
+POLYGLANCE-EXCLUDE-001
+POLYGLANCE-KEEP-001
+
+测试用占位内容：POLYGLANCE_TEST_NOT_A_PASSWORD
