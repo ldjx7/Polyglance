@@ -1,0 +1,108 @@
+{
+  "accounted_content_bytes": 19076533,
+  "arch": "x86_64",
+  "available_parallelism": 8,
+  "commit": null,
+  "database_file_bytes": 25636864,
+  "debug_assertions": false,
+  "generated_at_ms": 1791218136414,
+  "items": 10000,
+  "measurements_ms": {
+    "combined_filter": {
+      "max": 9.020577,
+      "mean": 5.564748700000001,
+      "median": 5.325935,
+      "min": 3.671658,
+      "p95": 7.447246,
+      "p99": 9.020577,
+      "samples": 40
+    },
+    "first_page": {
+      "max": 7.184035,
+      "mean": 4.047255725,
+      "median": 3.669146,
+      "min": 3.056292,
+      "p95": 6.033959,
+      "p99": 7.184035,
+      "samples": 40
+    },
+    "last_page": {
+      "max": 31.502405999999997,
+      "mean": 17.095948749999998,
+      "median": 14.929721,
+      "min": 8.570134999999999,
+      "p95": 26.827112,
+      "p99": 31.502405999999997,
+      "samples": 40
+    },
+    "read_selected_payload": {
+      "max": 0.7515999999999999,
+      "mean": 0.03861392500000001,
+      "median": 0.020054000000000002,
+      "min": 0.019864000000000003,
+      "p95": 0.020925,
+      "p99": 0.7515999999999999,
+      "samples": 40
+    },
+    "record_duplicate": {
+      "max": 13.702878,
+      "mean": 4.563741825,
+      "median": 3.930533,
+      "min": 3.021655,
+      "p95": 6.730247,
+      "p99": 13.702878,
+      "samples": 40
+    },
+    "record_new_with_eviction": {
+      "max": 30.236895,
+      "mean": 13.679829775000002,
+      "median": 10.684557000000002,
+      "min": 7.180189,
+      "p95": 23.411656999999998,
+      "p99": 30.236895,
+      "samples": 40
+    },
+    "refresh_database_calls": {
+      "max": 35.689918,
+      "mean": 23.013127550000004,
+      "median": 22.041153,
+      "min": 17.5913,
+      "p95": 29.992901999999997,
+      "p99": 35.689918,
+      "samples": 40
+    },
+    "search_chinese": {
+      "max": 8.592771,
+      "mean": 4.867115675000002,
+      "median": 4.775531,
+      "min": 3.0845730000000002,
+      "p95": 6.279275,
+      "p99": 8.592771,
+      "samples": 40
+    },
+    "search_missing": {
+      "max": 34.317245,
+      "mean": 26.413415349999998,
+      "median": 26.190893,
+      "min": 21.147906000000003,
+      "p95": 32.590659,
+      "p99": 34.317245,
+      "samples": 40
+    },
+    "search_one": {
+      "max": 31.356340000000003,
+      "mean": 27.235475825,
+      "median": 27.611279,
+      "min": 22.626862000000003,
+      "p95": 30.715619,
+      "p99": 31.356340000000003,
+      "samples": 40
+    }
+  },
+  "os": "linux",
+  "page_size": 100,
+  "population_ms": 23917.254489000003,
+  "schema_version": 1,
+  "warmup_iterations": 5,
+  "workload": "clipboard-text-rich-metadata-v1"
+}
