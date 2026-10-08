@@ -3,7 +3,7 @@
 核对日期：2026-10-08。
 
 - Maccy：官方仓库最新正式版 **2.7.1**，提交 `eb03ebac3bbf24044c797c06f4304b74e3187835`。依据官方使用说明和该版本源码，不依据第三方同名网站。
-- Polyglance：`feat/clipboard-history` 分支，包含本次将启用开关移入通用设置的修改。
+- Polyglance：`feat/clipboard-history` 分支，包含本次将启用开关移入通用设置的修改；已发布的 `v0.1.5-beta.1` 尚不包含该入口迁移。
 - 方法：核对窗口、事件处理、设置默认值和实际调用路径。本文描述代码行为；没有在同一台 Mac 上完成两个应用的 GUI、耗电或响应时间对测。
 
 ## 1. 结论
@@ -20,7 +20,7 @@
 |---|---|---|---|
 | 是否记录 | `ignoreEvents` 默认关闭，即正常监听复制 | 历史默认关闭；本次将启用开关移至设置 > 通用，立即保存 | Polyglance 需要先明确开启，适合截图工具中的可选功能 [M1] [P1] |
 | 呼出入口 | 默认 Command+Shift+C；直接点击专用菜单栏图标 | 呼出快捷键初始未分配；从 Polyglance 菜单选择剪贴板历史 | Polyglance 的菜单操作多一步；Command+Shift+V 是此前文档建议，不能写成 Maccy 的默认值 [M2] [P2] |
-| 窗口形态 | 无标准标题栏按钮的浮窗，宽度默认 450，高度按内容调整、默认上限 800 | 初始 850 × 600，最小 760 × 520；标题栏、列表、详情和操作按钮 | Polyglance 占用更多屏幕，适合管理；快速取一条内容时操作区域偏多 [M1] [M3] [P3] |
+| 窗口形态 | 无标准标题栏按钮的浮窗，列表宽度默认 450，预览展开时另加宽度；高度按内容调整、默认上限 800 | 初始 850 × 600，最小 760 × 520；标题栏、列表、详情和操作按钮 | Polyglance 初始窗口更宽，适合管理；快速取一条内容时操作区域偏多 [M1] [M3] [P3] |
 | 出现位置 | 快捷键默认在鼠标附近；可选菜单栏、当前窗口中心、屏幕中心、上次位置 | 每次呼出调用 `center()`，没有位置策略设置 | 多屏及鼠标附近取内容的体验不同 [M4] [P2] |
 | 点击窗口外部 | 通常在失去键盘焦点后关闭，显示确认提示时例外 | 失去焦点只取消循环选择，窗口继续保留 | Polyglance 更像持久工具窗；要退出通常需 Esc、关闭按钮或再次呼出 [M3] [P3] |
 | 再次呼出的焦点 | 每次进入活动状态会聚焦搜索，并优先选择普通历史首条 | 搜索焦点在视图首次出现和 Command+F 时设置；重新打开未显式重置焦点 | 不能保证每次呼出后直接输入就进入搜索，需要实机验证并补齐规则 [M5] [P3] |
@@ -74,7 +74,7 @@ Polyglance 默认关闭循环功能。开启后，首次呼出就开始循环模
 
 ### 固定与编辑
 
-Maccy 固定条目时自动分配可用字母，并能在固定项设置中调整字母、名称和文字内容。文字编辑随输入更新，富文本编辑会移除非纯文本格式。[M8] [M13]
+Maccy 固定条目时自动分配可用字母，并能在固定项设置中调整字母、名称和文字内容。文字编辑随输入更新，富文本编辑会移除非纯文本格式。[M13] [M17]
 
 Polyglance 先收藏，再由用户分配允许使用的字母，并检查与全局快捷键的冲突；编辑使用独立窗口和保存按钮，保留 ID、名称、标签、收藏及绑定。这个过程步骤更多，但有明确的提交时机。[P3] [P4]
 
@@ -133,6 +133,7 @@ Maccy 源码链接固定到 2.7.1 的提交；官方入口为 [maccy.app](https:
 [M14]: https://github.com/p0deje/Maccy/blob/eb03ebac3bbf24044c797c06f4304b74e3187835/Maccy/PasteStack.swift
 [M15]: https://github.com/p0deje/Maccy/blob/eb03ebac3bbf24044c797c06f4304b74e3187835/Maccy/Views/HoverSelectionModifier.swift
 [M16]: https://github.com/p0deje/Maccy/blob/eb03ebac3bbf24044c797c06f4304b74e3187835/Maccy/KeyChord.swift
+[M17]: https://github.com/p0deje/Maccy/blob/eb03ebac3bbf24044c797c06f4304b74e3187835/Maccy/Observables/HistoryItemDecorator.swift
 [P1]: ../apps/macos/Sources/Polyglance/SettingsView.swift
 [P2]: ../apps/macos/Sources/Polyglance/AppDelegate.swift
 [P3]: ../apps/macos/Sources/Polyglance/ClipboardHistoryWindow.swift
