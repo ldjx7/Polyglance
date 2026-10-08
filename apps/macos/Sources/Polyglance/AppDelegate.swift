@@ -147,6 +147,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         createTranslatorPanel()
         clipboardHistoryService.onDismiss = { [weak self] in self?.clipboardHistoryPanel?.closeAfterSelection() }
+        clipboardHistoryService.onOpenGeneralSettings = { [weak self] in
+            guard let self else { return }
+            clipboardHistoryPanel?.close()
+            showSettings(tab: .general)
+        }
         clipboardHistoryService.onPinImage = { [weak self] image in
             self?.pinWindowManager.pin(image, sourceFrame: nil, source: .clipboard)
         }
@@ -740,6 +745,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             store: configurationStore,
             shortcutStore: shortcutStore,
             recordingSettingsStore: recordingSettingsStore,
+            clipboardHistoryService: clipboardHistoryService,
             launchAtLoginManager: launchAtLoginManager,
             initialHotKeyFailures: hotKeyManager.failedActions
         ) { [weak self] configuration, shortcuts, recordingSettings, launchAtLoginEnabled in

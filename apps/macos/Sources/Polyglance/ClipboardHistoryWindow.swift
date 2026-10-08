@@ -156,7 +156,7 @@ struct ClipboardHistoryView: View {
             if service.needsRecovery {
                 HStack { Text("历史数据暂不可读，请选择有效备份恢复。") ; Spacer(); Button("恢复备份…") { chooseBackup() } }.padding(12)
             } else if !service.preferences.enabled {
-                HStack { Text("历史记录尚未开启。开启后，内容和文件引用会保存在此 Mac。") ; Spacer(); Button("设置…") { showPreferences = true } }.font(.callout).padding(12)
+                HStack { Text("历史记录尚未开启，可在通用设置中启用。") ; Spacer(); Button("前往通用设置") { service.onOpenGeneralSettings?() } }.font(.callout).padding(12)
             } else if service.paused { Text("记录已暂停，已有历史仍可使用。 ").font(.callout).foregroundStyle(.secondary).padding(8) }
             if service.ignoringNextCopy { Text("下一次外部复制将被忽略，之后自动恢复记录。 ").font(.callout).foregroundStyle(.secondary).padding(8) }
             HSplitView {
@@ -420,7 +420,8 @@ private struct ClipboardHistoryPreferencesView: View {
         VStack(alignment: .leading, spacing: 14) {
             ScrollView { VStack(alignment: .leading, spacing: 14) {
             Text("剪贴板历史设置").font(.headline)
-            Toggle("在本机保存复制内容和文件引用", isOn: $draft.enabled)
+            Text(service.preferences.enabled ? "历史记录已开启，启用开关位于设置 > 通用。" : "历史记录尚未开启，请前往设置 > 通用启用。")
+                .font(.callout).foregroundStyle(.secondary)
             Text("内容不会自动上传。无敏感标记的密码仍可能被记录，请排除相关应用或暂停。关闭记录会保留已有历史。 ").font(.callout).foregroundStyle(.secondary)
             Toggle("为历史图片建立 OCR 搜索索引（本机识别）", isOn: $draft.ocrSearchEnabled)
             Text("开启后会逐张处理已有和新复制的图片。关闭后停止后台处理，已有索引保留。 ").font(.caption).foregroundStyle(.secondary)
@@ -465,8 +466,8 @@ private struct ClipboardHistoryPreferencesView: View {
                     draft.ignoredTypes = ignoredTypes.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
                     draft.ignoredPatterns = ignoredPatterns.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
                     saving = true
-                    Task { await service.savePreferences(draft); saving = false; if service.preferences == draft { dismiss() } }
-                }.disabled(saving).keyboardShortcut(.defaultAction)
+                    Task { let saved = await service.saveHistoryOptions(draft); saving = false; if saved { dismiss() } }
+                }.disabled(saving || service.savingPreferences || service.dataBusy).keyboardShortcut(.defaultAction)
             }
         }.padding(24).frame(width: 540)
         .onAppear { draft = service.preferences; ignoredApplications = draft.ignoredApplications.joined(separator: "\n"); ignoredTypes = draft.ignoredTypes.joined(separator: "\n"); ignoredPatterns = draft.ignoredPatterns.joined(separator: "\n") }
