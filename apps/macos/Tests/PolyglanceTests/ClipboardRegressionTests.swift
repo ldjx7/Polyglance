@@ -5,6 +5,76 @@ import TranslatorCore
 
 @MainActor
 final class ClipboardRegressionTests: XCTestCase {
+    func testGeneralSettingsSwitchPreservesHistoryAndOnlyCapturesNewCopies() async throws {
+        try await withFixture { fixture in
+            let service = fixture.service
+            _ = try await fixture.record("retained history")
+            var options = service.preferences
+            options.maximumItems = 700
+            options.ignoredApplications = ["test.ignored.app"]
+            let optionsSaved = await service.saveHistoryOptions(options)
+            XCTAssertTrue(optionsSaved)
+            fixture.board.declareTypes([.string], owner: nil)
+            fixture.board.setString("copied before enabling", forType: .string)
+
+            let enabled = await service.setHistoryEnabled(true)
+            XCTAssertTrue(enabled)
+            XCTAssertEqual(service.preferences.maximumItems, 700)
+            XCTAssertEqual(service.preferences.ignoredApplications, ["test.ignored.app"])
+            let persisted = try JSONDecoder().decode(ClipboardHistoryPreferences.self,
+                from: XCTUnwrap(fixture.defaults.data(forKey: ClipboardHistoryService.preferencesKey)))
+            XCTAssertTrue(persisted.enabled)
+            service.poll()
+            let beforeNewCopy = try await fixture.worker.stats()
+            XCTAssertEqual(beforeNewCopy.items, 1, "Enabling must not import the previous clipboard contents.")
+
+            fixture.board.declareTypes([.string], owner: nil)
+            fixture.board.setString("copied while enabled", forType: .string)
+            try await self.eventually {
+                service.poll()
+                return try await fixture.worker.stats().items == 2
+            }
+            let disabled = await service.setHistoryEnabled(false)
+            XCTAssertTrue(disabled)
+            fixture.board.declareTypes([.string], owner: nil)
+            fixture.board.setString("copied while disabled", forType: .string)
+            service.poll()
+            let afterDisabling = try await fixture.worker.stats()
+            XCTAssertEqual(afterDisabling.items, 2, "Disabling must retain history and stop collection.")
+            let reenabled = await service.setHistoryEnabled(true)
+            XCTAssertTrue(reenabled)
+            service.poll()
+            let afterReenabling = try await fixture.worker.stats()
+            XCTAssertEqual(afterReenabling.items, 2, "Copies made while disabled must not be imported.")
+        }
+    }
+
+    func testStaleHistoryOptionsCannotOverwriteTheGeneralSettingsSwitch() async throws {
+        try await withFixture { fixture in
+            let service = fixture.service
+            var oldDisabledDraft = service.preferences
+            let enabled = await service.setHistoryEnabled(true)
+            XCTAssertTrue(enabled)
+            oldDisabledDraft.maximumItems = 900
+            let firstSave = await service.saveHistoryOptions(oldDisabledDraft)
+            XCTAssertTrue(firstSave)
+            XCTAssertTrue(service.preferences.enabled)
+            XCTAssertEqual(service.preferences.maximumItems, 900)
+
+            var oldEnabledDraft = service.preferences
+            let disabled = await service.setHistoryEnabled(false)
+            XCTAssertTrue(disabled)
+            oldEnabledDraft.showSourceIcons = true
+            let secondSave = await service.saveHistoryOptions(oldEnabledDraft)
+            XCTAssertTrue(secondSave)
+            XCTAssertFalse(service.preferences.enabled)
+            XCTAssertTrue(service.preferences.showSourceIcons)
+            let persisted = try JSONDecoder().decode(ClipboardHistoryPreferences.self,
+                from: XCTUnwrap(fixture.defaults.data(forKey: ClipboardHistoryService.preferencesKey)))
+            XCTAssertFalse(persisted.enabled)
+        }
+    }
+
     func testRangeSelectionAfterFilteringAndClearingUsesTheCurrentList() async throws {
         try await withFixture { fixture in
             for index in 0..<12 { _ = try await fixture.record(index < 2 ? "keep \(index)" : "other \(index)") }

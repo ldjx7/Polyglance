@@ -108,6 +108,7 @@ final class ClipboardHistoryService: ObservableObject {
     @Published private(set) var recognizingText = false
     @Published private(set) var indexingImages = false
     @Published private(set) var dataBusy = false
+    @Published private(set) var savingPreferences = false
     @Published private(set) var needsRecovery = false
     @Published private(set) var pasteQueueCount = 0
     @Published var statusMessage = ""
@@ -123,6 +124,7 @@ final class ClipboardHistoryService: ObservableObject {
     var onRecognizeCodes: ((NSImage) -> Void)?
     var onDismiss: (() -> Void)?
     var onQueueError: (() -> Void)?
+    var onOpenGeneralSettings: (() -> Void)?
     private var targetApplication: NSRunningApplication?
     private var queueTargetApplication: NSRunningApplication?
     private var pasteQueue: [UInt64] = []
@@ -226,23 +228,42 @@ final class ClipboardHistoryService: ObservableObject {
             return letters[shortcut.keyCode]
         })
     }
-    func savePreferences(_ proposed: ClipboardHistoryPreferences) async {
-        guard proposed.maximumMegabytes > 0, proposed.maximumMegabytes <= 2048 else { errorMessage = "容量应为 1–2048 MB。"; return }
-        do { try clipboardValidateIgnoredPatterns(patterns: proposed.ignoredPatterns) } catch { present(error); return }
+    func setHistoryEnabled(_ enabled: Bool) async -> Bool {
+        var proposed = preferences
+        proposed.enabled = enabled
+        return await savePreferences(proposed)
+    }
+    func saveHistoryOptions(_ proposed: ClipboardHistoryPreferences) async -> Bool {
+        var options = proposed
+        // The general settings own this switch; an older options sheet must not overwrite it.
+        options.enabled = preferences.enabled
+        return await savePreferences(options)
+    }
+    @discardableResult
+    func savePreferences(_ proposed: ClipboardHistoryPreferences) async -> Bool {
+        guard !savingPreferences, !dataBusy else { errorMessage = "剪贴板设置或历史数据正在保存，请稍后重试。"; return false }
+        savingPreferences = true
+        defer { savingPreferences = false }
+        errorMessage = nil
+        guard proposed.maximumMegabytes > 0, proposed.maximumMegabytes <= 2048 else { errorMessage = "容量应为 1–2048 MB。"; return false }
+        do { try clipboardValidateIgnoredPatterns(patterns: proposed.ignoredPatterns) } catch { present(error); return false }
         if (proposed.notifyCopies || proposed.notifySelections) && !(preferences.notifyCopies || preferences.notifySelections) {
             do {
-                if try await notifications.authorize() == false { errorMessage = "系统通知未获允许，请在系统设置中允许 Polyglance 通知。"; return }
-            } catch { errorMessage = "无法申请系统通知权限，请稍后重试。"; return }
+                if try await notifications.authorize() == false { errorMessage = "系统通知未获允许，请在系统设置中允许 Polyglance 通知。"; return false }
+            } catch { errorMessage = "无法申请系统通知权限，请稍后重试。"; return false }
         }
         stop(); stopIndexing()
+        var saved = false
         do {
             try await worker.configure(proposed.limits)
             if proposed.ocrSearchEnabled && !preferences.ocrSearchEnabled { try await worker.retryOCR() }
             defaults.set(try JSONEncoder().encode(proposed), forKey: Self.preferencesKey)
             preferences = proposed
             previewVisible = proposed.autoPreview
+            saved = true
         } catch { present(error, history: true) }
         start(); scheduleIndexing(); await reload()
+        return saved
     }
     func preparePresentation() {
         stopRecognizingText()
