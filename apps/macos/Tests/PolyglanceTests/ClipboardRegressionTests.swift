@@ -5,6 +5,108 @@ import TranslatorCore
 
 @MainActor
 final class ClipboardRegressionTests: XCTestCase {
+    func testQuickPresentationResetsFiltersAndNumbersOnlyOrdinaryHistory() async throws {
+        try await withFixture { fixture in
+            let ordinary = try await fixture.record("ordinary history")
+            let pinned = try await fixture.record("pinned history")
+            try await fixture.worker.pin(id: pinned, pinned: true)
+            let service = fixture.service
+            service.preparePresentation(); await service.waitForPresentation()
+            service.query = "pinned"; service.pinnedOnly = true
+            service.kindFilter = .text; service.sourceFilter = "test.app"
+            await service.reload()
+            service.didDismiss()
+            let focus = service.searchFocusRequest
+            service.preparePresentation(mode: .quick); await service.waitForPresentation()
+            XCTAssertGreaterThan(service.searchFocusRequest, focus)
+            XCTAssertEqual(service.query, "")
+            XCTAssertFalse(service.pinnedOnly)
+            XCTAssertNil(service.kindFilter)
+            XCTAssertEqual(service.sourceFilter, "")
+            XCTAssertEqual(service.selectedID, ordinary)
+            XCTAssertEqual(service.numberedEntries.map(\.id), [ordinary])
+            XCTAssertNil(service.shortcutLabel(for: try XCTUnwrap(service.entries.first(where: { $0.id == pinned }))))
+            await service.activateSelection(modifiers: .command, number: 1)
+            XCTAssertEqual(fixture.board.string(forType: .string), "ordinary history")
+            service.didDismiss()
+            service.preparePresentation(mode: .management); await service.waitForPresentation()
+            XCTAssertEqual(service.query, "pinned")
+            XCTAssertTrue(service.pinnedOnly)
+            XCTAssertEqual(service.kindFilter, .text)
+            XCTAssertEqual(service.selectedID, pinned)
+        }
+    }
+
+    func testModeSwitchPreservesOriginalTargetAndSelectedEntry() async throws {
+        try await withFixture { fixture in
+            let target = try XCTUnwrap(NSWorkspace.shared.runningApplications.first {
+                $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && !$0.isTerminated
+            })
+            let id = try await fixture.record("keep this selection")
+            let service = fixture.service
+            service.preparePresentation(mode: .quick, target: target); await service.waitForPresentation()
+            service.query = "keep"; await service.reload()
+            let focus = service.searchFocusRequest
+            var opened = false
+            service.onOpenManagement = { opened = true }
+            service.openManagement()
+            XCTAssertTrue(opened)
+            XCTAssertEqual(service.presentationMode, .management)
+            XCTAssertEqual(service.targetApplication?.processIdentifier, target.processIdentifier)
+            XCTAssertEqual(service.query, "keep")
+            XCTAssertEqual(service.selectedID, id)
+            XCTAssertGreaterThan(service.searchFocusRequest, focus)
+        }
+    }
+
+    func testQuickClickCopiesTheClickedIdentityAndCloses() async throws {
+        try await withFixture { fixture in
+            let first = try await fixture.record("clicked entry")
+            _ = try await fixture.record("another entry")
+            let service = fixture.service
+            service.preparePresentation(mode: .quick); await service.waitForPresentation()
+            service.query = "another"
+            var dismissed = false
+            service.onDismiss = { dismissed = true; service.didDismiss() }
+            await service.activateEntry(first, modifiers: [])
+            XCTAssertEqual(fixture.board.string(forType: .string), "clicked entry")
+            XCTAssertTrue(dismissed)
+        }
+    }
+
+    func testOptionClickRemainsCopyOnlyWhenAutomaticPasteIsEnabled() async throws {
+        try await withFixture { fixture in
+            let id = try await fixture.record("copy without permission")
+            let service = fixture.service
+            var options = service.preferences; options.selectionPastesAutomatically = true
+            let saved = await service.saveHistoryOptions(options)
+            XCTAssertTrue(saved)
+            service.preparePresentation(mode: .quick, target: nil); await service.waitForPresentation()
+            await service.activateEntry(id, modifiers: .option)
+            XCTAssertEqual(fixture.board.string(forType: .string), "copy without permission")
+            XCTAssertNil(service.errorMessage, "Copy-only must not require a target or Accessibility permission.")
+        }
+    }
+
+    func testQuickPanelDismissesOnFocusLossAndManagementKeepsItsWindow() async throws {
+        try await withFixture { fixture in
+            let service = fixture.service
+            service.preparePresentation(mode: .quick); await service.waitForPresentation()
+            let panel = ClipboardHistoryPanel(service: service)
+            panel.configure(mode: .quick)
+            panel.onDismissed = { service.didDismiss() }
+            panel.orderFront(nil)
+            panel.resignKey()
+            XCTAssertFalse(panel.isVisible)
+            service.preparePresentation(mode: .management); await service.waitForPresentation()
+            panel.configure(mode: .management)
+            panel.orderFront(nil)
+            panel.resignKey()
+            XCTAssertTrue(panel.isVisible)
+            panel.close()
+        }
+    }
+
     func testGeneralSettingsSwitchPreservesHistoryAndOnlyCapturesNewCopies() async throws {
         try await withFixture { fixture in
             let service = fixture.service

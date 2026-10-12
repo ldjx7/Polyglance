@@ -58,6 +58,11 @@ struct PolyglanceApp: App {
             } label: {
                 Label("剪贴板历史…", systemImage: "doc.on.clipboard")
             }
+            Button {
+                appDelegate.showClipboardHistory(forceOpen: true, mode: .management)
+            } label: {
+                Label("管理剪贴板历史…", systemImage: "list.bullet.rectangle")
+            }
             ClipboardPasteQueueMenu(service: appDelegate.clipboardHistoryController)
 
             Menu {
