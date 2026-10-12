@@ -15,6 +15,7 @@ final class ClipboardHistoryPanel: NSPanel {
     private var pendingCycleSteps = 0
     private var committedDismissal = false
     private var changingMode = false
+    private var closing = false
 
     init(service: ClipboardHistoryService) {
         self.service = service
@@ -138,9 +139,15 @@ final class ClipboardHistoryPanel: NSPanel {
     override func resignKey() {
         cancelCycle(cancelPending: !committedDismissal)
         super.resignKey()
-        if service.presentationMode == .quick, attachedSheet == nil, !changingMode, !committedDismissal, isVisible { close() }
+        if service.presentationMode == .quick, attachedSheet == nil, !changingMode, !committedDismissal, !closing, isVisible { close() }
     }
-    override func close() { cancelCycle(cancelPending: !committedDismissal); super.close(); onDismissed?() }
+    override func close() {
+        guard !closing else { return }
+        closing = true; defer { closing = false }
+        cancelCycle(cancelPending: !committedDismissal)
+        super.close()
+        onDismissed?()
+    }
 }
 
 @MainActor
@@ -541,7 +548,7 @@ private struct ClipboardHistoryPreferencesView: View {
             Toggle("系统剪贴板清空时移除对应历史记录", isOn: $draft.purgeClearedContent)
             Text("适用于密码管理器定时清空，也适用于手动清空。仅移除最后一次对应记录，包括该记录的收藏；已编辑或重新复制的记录会保留。 ").font(.caption).foregroundStyle(.secondary)
             Divider()
-            Toggle("打开历史时自动展开预览", isOn: $draft.autoPreview)
+            Toggle("打开管理窗口时自动展开预览", isOn: $draft.autoPreview)
             Toggle("显示 HEX 颜色色块", isOn: $draft.showColorSwatches)
             Toggle("显示来源应用图标", isOn: $draft.showSourceIcons)
             Toggle("显示底部容量与数据菜单", isOn: $draft.showFooter)

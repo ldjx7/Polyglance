@@ -422,10 +422,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             clipboardHistoryPanel = panel
         }
         if clipboardHistoryPanel?.isVisible == true {
-            if mode == .management { clipboardHistoryService.openManagement(); return }
-            if forceOpen { clipboardHistoryPanel?.makeKeyAndOrderFront(nil); clipboardHistoryService.requestSearchFocus(); return }
-            clipboardHistoryPanel?.close()
-            return
+            if mode == .management {
+                if clipboardHistoryService.presentationMode == .quick { clipboardHistoryService.openManagement() }
+                else { clipboardHistoryPanel?.makeKeyAndOrderFront(nil) }
+                return
+            }
+            if clipboardHistoryService.presentationMode == .management {
+                // An open editor owns the current invocation until saved or cancelled.
+                if clipboardHistoryPanel?.attachedSheet != nil { clipboardHistoryPanel?.makeKeyAndOrderFront(nil); return }
+                clipboardHistoryService.didDismiss()
+            } else {
+                if forceOpen { clipboardHistoryPanel?.makeKeyAndOrderFront(nil); clipboardHistoryService.requestSearchFocus(); return }
+                clipboardHistoryPanel?.close()
+                return
+            }
         }
         clipboardHistoryService.preparePresentation(mode: mode)
         clipboardHistoryPanel?.configure(mode: mode)

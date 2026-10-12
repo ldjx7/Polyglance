@@ -304,7 +304,7 @@ final class ClipboardHistoryService: ObservableObject {
     }
     func requestSearchFocus() { searchFocusRequest &+= 1 }
     func openManagement() {
-        guard isPresented else { return }
+        guard isPresented, presentationMode != .management else { return }
         // This is the same invocation: do not recapture the foreground application.
         presentationMode = .management
         previewVisible = preferences.autoPreview

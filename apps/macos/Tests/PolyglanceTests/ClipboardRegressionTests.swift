@@ -47,10 +47,11 @@ final class ClipboardRegressionTests: XCTestCase {
             service.preparePresentation(mode: .quick, target: target); await service.waitForPresentation()
             service.query = "keep"; await service.reload()
             let focus = service.searchFocusRequest
-            var opened = false
-            service.onOpenManagement = { opened = true }
+            var opened = 0
+            service.onOpenManagement = { opened += 1 }
             service.openManagement()
-            XCTAssertTrue(opened)
+            service.openManagement()
+            XCTAssertEqual(opened, 1, "Opening an existing manager must not recreate its view or lose a draft.")
             XCTAssertEqual(service.presentationMode, .management)
             XCTAssertEqual(service.targetApplication?.processIdentifier, target.processIdentifier)
             XCTAssertEqual(service.query, "keep")
@@ -94,16 +95,20 @@ final class ClipboardRegressionTests: XCTestCase {
             service.preparePresentation(mode: .quick); await service.waitForPresentation()
             let panel = ClipboardHistoryPanel(service: service)
             panel.configure(mode: .quick)
-            panel.onDismissed = { service.didDismiss() }
+            var dismissals = 0
+            panel.onDismissed = { dismissals += 1; service.didDismiss() }
             panel.orderFront(nil)
             panel.resignKey()
             XCTAssertFalse(panel.isVisible)
+            XCTAssertEqual(dismissals, 1)
             service.preparePresentation(mode: .management); await service.waitForPresentation()
             panel.configure(mode: .management)
             panel.orderFront(nil)
             panel.resignKey()
             XCTAssertTrue(panel.isVisible)
+            XCTAssertEqual(dismissals, 1)
             panel.close()
+            XCTAssertEqual(dismissals, 2)
         }
     }
 
