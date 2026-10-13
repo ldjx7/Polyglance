@@ -147,6 +147,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         createTranslatorPanel()
         clipboardHistoryService.onDismiss = { [weak self] in self?.clipboardHistoryPanel?.closeAfterSelection() }
+        clipboardHistoryService.onOpenManagement = { [weak self] in
+            self?.clipboardHistoryPanel?.configure(mode: .management)
+            self?.clipboardHistoryPanel?.makeKeyAndOrderFront(nil)
+        }
+        clipboardHistoryService.onOpenGeneralSettings = { [weak self] in
+            guard let self else { return }
+            clipboardHistoryPanel?.close()
+            showSettings(tab: .general)
+        }
         clipboardHistoryService.onPinImage = { [weak self] image in
             self?.pinWindowManager.pin(image, sourceFrame: nil, source: .clipboard)
         }
@@ -406,18 +415,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showClipboardHistory(forceOpen: true)
         clipboardHistoryPanel?.beginCycle(shortcut)
     }
-    func showClipboardHistory(forceOpen: Bool = false) {
+    func showClipboardHistory(forceOpen: Bool = false, mode: ClipboardPresentationMode = .quick) {
         if clipboardHistoryPanel == nil {
             let panel = ClipboardHistoryPanel(service: clipboardHistoryService)
             panel.onDismissed = { [weak self] in self?.clipboardHistoryService.didDismiss() }
             clipboardHistoryPanel = panel
         }
         if clipboardHistoryPanel?.isVisible == true {
-            if forceOpen { clipboardHistoryPanel?.makeKeyAndOrderFront(nil); return }
-            clipboardHistoryPanel?.close()
-            return
+            if mode == .management {
+                if clipboardHistoryService.presentationMode == .quick { clipboardHistoryService.openManagement() }
+                else { clipboardHistoryPanel?.makeKeyAndOrderFront(nil) }
+                return
+            }
+            if clipboardHistoryService.presentationMode == .management {
+                // An open editor owns the current invocation until saved or cancelled.
+                if clipboardHistoryPanel?.attachedSheet != nil { clipboardHistoryPanel?.makeKeyAndOrderFront(nil); return }
+                clipboardHistoryService.didDismiss()
+            } else {
+                if forceOpen { clipboardHistoryPanel?.makeKeyAndOrderFront(nil); clipboardHistoryService.requestSearchFocus(); return }
+                clipboardHistoryPanel?.close()
+                return
+            }
         }
-        clipboardHistoryService.preparePresentation()
+        clipboardHistoryService.preparePresentation(mode: mode)
+        clipboardHistoryPanel?.configure(mode: mode)
         clipboardHistoryPanel?.center()
         clipboardHistoryPanel?.makeKeyAndOrderFront(nil)
     }
@@ -740,6 +761,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             store: configurationStore,
             shortcutStore: shortcutStore,
             recordingSettingsStore: recordingSettingsStore,
+            clipboardHistoryService: clipboardHistoryService,
             launchAtLoginManager: launchAtLoginManager,
             initialHotKeyFailures: hotKeyManager.failedActions
         ) { [weak self] configuration, shortcuts, recordingSettings, launchAtLoginEnabled in

@@ -108,7 +108,10 @@ final class ClipboardHistoryService: ObservableObject {
     @Published private(set) var recognizingText = false
     @Published private(set) var indexingImages = false
     @Published private(set) var dataBusy = false
+    @Published private(set) var savingPreferences = false
     @Published private(set) var needsRecovery = false
+    @Published private(set) var presentationMode: ClipboardPresentationMode = .management
+    @Published private(set) var searchFocusRequest: UInt64 = 0
     @Published private(set) var pasteQueueCount = 0
     @Published var statusMessage = ""
     @Published var errorMessage: String?
@@ -123,7 +126,18 @@ final class ClipboardHistoryService: ObservableObject {
     var onRecognizeCodes: ((NSImage) -> Void)?
     var onDismiss: (() -> Void)?
     var onQueueError: (() -> Void)?
-    private var targetApplication: NSRunningApplication?
+    var onOpenGeneralSettings: (() -> Void)?
+    var onOpenManagement: (() -> Void)?
+    private(set) var targetApplication: NSRunningApplication?
+    private struct ManagementState {
+        let query: String
+        let pinnedOnly: Bool
+        let kind: ClipboardKind?
+        let source: String
+        let tag: String
+        let selection: Set<UInt64>
+    }
+    private var managementState: ManagementState?
     private var queueTargetApplication: NSRunningApplication?
     private var pasteQueue: [UInt64] = []
     private var pasteQueueGeneration: UInt64 = 0
@@ -220,43 +234,88 @@ final class ClipboardHistoryService: ObservableObject {
     func sourceIcon(_ identifier: String) -> NSImage? { sourceCatalog.source(identifier).icon }
     func updateShortcutConflicts(_ configuration: GlobalShortcutConfiguration) {
         let letters: [UInt32: String] = [11:"b",2:"d",14:"e",5:"g",34:"i",38:"j",40:"k",37:"l",15:"r",17:"t",32:"u",16:"y"]
-        let variants: [ShortcutModifiers] = [.command, .option, [.option, .shift]]
+        let variants: [ShortcutModifiers] = [.command, .option, [.option, .shift], [.command, .shift]]
         conflictingPinKeys = Set(GlobalShortcutAction.allCases.compactMap { action in
             guard let shortcut = configuration[action], variants.contains(shortcut.modifiers) else { return nil }
             return letters[shortcut.keyCode]
         })
     }
-    func savePreferences(_ proposed: ClipboardHistoryPreferences) async {
-        guard proposed.maximumMegabytes > 0, proposed.maximumMegabytes <= 2048 else { errorMessage = "容量应为 1–2048 MB。"; return }
-        do { try clipboardValidateIgnoredPatterns(patterns: proposed.ignoredPatterns) } catch { present(error); return }
+    func setHistoryEnabled(_ enabled: Bool) async -> Bool {
+        var proposed = preferences
+        proposed.enabled = enabled
+        return await savePreferences(proposed)
+    }
+    func saveHistoryOptions(_ proposed: ClipboardHistoryPreferences) async -> Bool {
+        var options = proposed
+        // The general settings own this switch; an older options sheet must not overwrite it.
+        options.enabled = preferences.enabled
+        return await savePreferences(options)
+    }
+    @discardableResult
+    func savePreferences(_ proposed: ClipboardHistoryPreferences) async -> Bool {
+        guard !savingPreferences, !dataBusy else { errorMessage = "剪贴板设置或历史数据正在保存，请稍后重试。"; return false }
+        savingPreferences = true
+        defer { savingPreferences = false }
+        errorMessage = nil
+        guard proposed.maximumMegabytes > 0, proposed.maximumMegabytes <= 2048 else { errorMessage = "容量应为 1–2048 MB。"; return false }
+        do { try clipboardValidateIgnoredPatterns(patterns: proposed.ignoredPatterns) } catch { present(error); return false }
         if (proposed.notifyCopies || proposed.notifySelections) && !(preferences.notifyCopies || preferences.notifySelections) {
             do {
-                if try await notifications.authorize() == false { errorMessage = "系统通知未获允许，请在系统设置中允许 Polyglance 通知。"; return }
-            } catch { errorMessage = "无法申请系统通知权限，请稍后重试。"; return }
+                if try await notifications.authorize() == false { errorMessage = "系统通知未获允许，请在系统设置中允许 Polyglance 通知。"; return false }
+            } catch { errorMessage = "无法申请系统通知权限，请稍后重试。"; return false }
         }
         stop(); stopIndexing()
+        var saved = false
         do {
             try await worker.configure(proposed.limits)
             if proposed.ocrSearchEnabled && !preferences.ocrSearchEnabled { try await worker.retryOCR() }
             defaults.set(try JSONEncoder().encode(proposed), forKey: Self.preferencesKey)
             preferences = proposed
             previewVisible = proposed.autoPreview
+            saved = true
         } catch { present(error, history: true) }
         start(); scheduleIndexing(); await reload()
+        return saved
     }
-    func preparePresentation() {
+    func preparePresentation(mode: ClipboardPresentationMode = .management,
+                             target: NSRunningApplication? = NSWorkspace.shared.frontmostApplication) {
         stopRecognizingText()
         copyGeneration &+= 1
-        targetApplication = NSWorkspace.shared.frontmostApplication
-        if targetApplication?.bundleIdentifier == Bundle.main.bundleIdentifier { targetApplication = nil }
+        targetApplication = target
+        if targetApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier { targetApplication = nil }
+        presentationMode = mode
+        if mode == .quick {
+            query = ""; pinnedOnly = false; kindFilter = nil; sourceFilter = ""; tagFilter = ""
+            select(nil)
+        } else if let state = managementState {
+            query = state.query; pinnedOnly = state.pinnedOnly; kindFilter = state.kind
+            sourceFilter = state.source; tagFilter = state.tag
+            selectedIDs = state.selection
+        }
+        searchTask?.cancel()
+        searchTask = nil
         isPresented = true
-        previewVisible = preferences.autoPreview
+        previewVisible = mode == .management && preferences.autoPreview
+        requestSearchFocus()
         presentationTask = Task {
             do { try await worker.configure(preferences.limits); needsRecovery = false; await reload(); scheduleIndexing() }
             catch { present(error, history: true) }
         }
     }
+    func requestSearchFocus() { searchFocusRequest &+= 1 }
+    func openManagement() {
+        guard isPresented, presentationMode != .management else { return }
+        // This is the same invocation: do not recapture the foreground application.
+        presentationMode = .management
+        previewVisible = preferences.autoPreview
+        requestSearchFocus()
+        onOpenManagement?()
+    }
     func didDismiss() {
+        if presentationMode == .management {
+            managementState = ManagementState(query: query, pinnedOnly: pinnedOnly, kind: kindFilter,
+                                              source: sourceFilter, tag: tagFilter, selection: selectedIDs)
+        }
         stopRecognizingText()
         if !committingCopy { copyGeneration &+= 1 }
         isPresented = false; reloadGeneration &+= 1; selectionGeneration &+= 1
@@ -404,7 +463,8 @@ final class ClipboardHistoryService: ObservableObject {
             self.pinShortcuts = pinShortcuts
             self.stats = stats; self.sources = sources; self.tags = tags; hasMore = page.count == 100; needsRecovery = false
             let retained = selectedIDs.intersection(Set(entries.map(\.id)))
-            setSelection(retained.isEmpty ? Set(entries.first.map { [$0.id] } ?? []) : retained)
+            let initial = presentationMode == .quick ? (entries.first(where: { !$0.pinned }) ?? entries.first) : entries.first
+            setSelection(retained.isEmpty ? Set(initial.map { [$0.id] } ?? []) : retained)
         } catch { if generation == reloadGeneration { present(error, history: true) } }
     }
     func select(_ id: UInt64?) { setSelection(id.map { [$0] } ?? []) }
@@ -463,6 +523,33 @@ final class ClipboardHistoryService: ObservableObject {
     func copyNumbered(_ number: Int, paste: Bool, plainTextOnly: Bool) async {
         await copySelection(number: number, paste: paste, plainTextOnly: plainTextOnly)
     }
+    var numberedEntries: [ClipboardEntry] {
+        presentationMode == .quick ? entries.filter { !$0.pinned } : entries
+    }
+    func shortcutLabel(for entry: ClipboardEntry) -> String? {
+        if let binding = pinShortcuts.first(where: { $0.entryId == entry.id }) { return "⌘\(binding.key.uppercased())" }
+        guard let index = numberedEntries.firstIndex(where: { $0.id == entry.id }), index < 9 else { return nil }
+        return "⌘\(index + 1)"
+    }
+    func activateSelection(modifiers: NSEvent.ModifierFlags, number: Int? = nil, pinnedKey: String? = nil) async {
+        guard let action = ClipboardSelectionAction.resolve(modifiers: modifiers, automaticPaste: preferences.selectionPastesAutomatically) else { return }
+        if let key = pinnedKey { await copyPinnedKey(key, paste: action.pastes, plainTextOnly: action.plainTextOnly) }
+        else { await copySelection(number: number, paste: action.pastes, plainTextOnly: action.plainTextOnly) }
+    }
+    func activateEntry(_ id: UInt64, modifiers: NSEvent.ModifierFlags) async {
+        guard isPresented, !copyBusy, !dataBusy,
+              let action = ClipboardSelectionAction.resolve(modifiers: modifiers, automaticPaste: preferences.selectionPastesAutomatically) else { return }
+        copyBusy = true; defer { copyBusy = false }
+        let operation = beginCopyOperation()
+        // Keep the clicked identity stable if a pending search replaces the rows.
+        do {
+            if try await replay([id], paste: action.pastes, plainTextOnly: action.plainTextOnly, target: targetApplication, operation: operation) == false,
+               action.pastes, operation.generation == copyGeneration {
+                errorMessage = "粘贴目标或剪贴板发生变化，未执行自动粘贴。请回到目标应用后重试。"
+            }
+        }
+        catch { if operation.generation == copyGeneration, !Task.isCancelled { present(error) } }
+    }
     func copyPinnedKey(_ key: String, paste: Bool, plainTextOnly: Bool) async {
         guard isPresented, let binding = pinShortcuts.first(where: { $0.key == key.lowercased() }), !copyBusy, !dataBusy else { return }
         copyBusy = true; defer { copyBusy = false }
@@ -511,8 +598,8 @@ final class ClipboardHistoryService: ObservableObject {
         guard !Task.isCancelled, operation.generation == copyGeneration, isPresented,
               filter == currentFilter else { return }
         if let number {
-            guard (1...9).contains(number), number <= entries.count else { return }
-            select(entries[number - 1].id)
+            guard (1...9).contains(number), number <= numberedEntries.count else { return }
+            select(numberedEntries[number - 1].id)
         }
         guard !orderedSelection.isEmpty else { return }
         do {

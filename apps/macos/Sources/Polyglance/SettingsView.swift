@@ -9,6 +9,7 @@ struct SettingsView: View {
     let store: AppConfigurationStore
     let shortcutStore: GlobalShortcutConfigurationStore
     let recordingSettingsStore: RecordingSettingsStore
+    @ObservedObject var clipboardHistoryService: ClipboardHistoryService
     let launchAtLoginManager: LaunchAtLoginManager
     var initialHotKeyFailures: [GlobalShortcutAction: String] = [:]
     let onSave: (
@@ -59,6 +60,8 @@ struct SettingsView: View {
     @State private var saveCompletedScreenshotsToHistory = false
     @State private var draggingItemID: String? = nil
     @State private var statusMessage: String?
+    @State private var updatingClipboardHistory = false
+    @State private var clipboardHistorySettingsError: String?
     @State private var isStatusError = false
     @State private var permissionsRefreshTrigger = 0
     @State private var ocrAutoCopyNextTime = false
@@ -251,6 +254,8 @@ struct SettingsView: View {
                 Text("常规与启动")
             }
 
+            clipboardHistorySettings
+
             Section {
                 HStack {
                     Label("辅助功能权限", systemImage: "hand.raised.fill")
@@ -305,6 +310,41 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private var clipboardHistorySettings: some View {
+        Section {
+            Toggle("启用剪贴板历史", isOn: Binding(
+                get: { clipboardHistoryService.preferences.enabled },
+                set: { enabled in
+                    clipboardHistorySettingsError = nil
+                    updatingClipboardHistory = true
+                    Task {
+                        let saved = await clipboardHistoryService.setHistoryEnabled(enabled)
+                        if !saved {
+                            clipboardHistorySettingsError = clipboardHistoryService.errorMessage ?? "无法保存剪贴板设置，请重试。"
+                        }
+                        updatingClipboardHistory = false
+                    }
+                }
+            ))
+            .disabled(updatingClipboardHistory || clipboardHistoryService.savingPreferences || clipboardHistoryService.dataBusy)
+            if updatingClipboardHistory {
+                ProgressView("正在保存…").controlSize(.small)
+            }
+            if clipboardHistoryService.preferences.enabled && clipboardHistoryService.paused {
+                Text("记录目前已暂停，可在剪贴板历史窗口中恢复。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if let clipboardHistorySettingsError {
+                Text(clipboardHistorySettingsError).font(.caption).foregroundStyle(.red)
+            }
+        } header: {
+            Text("剪贴板历史")
+        } footer: {
+            Text("默认关闭。开启后在本机保存新的复制内容和文件引用；关闭会保留已有历史。此开关立即生效。容量、排除规则等选项在历史窗口的齿轮中调整。")
+                .font(.caption).foregroundStyle(.secondary)
+        }
     }
 
     // MARK: - Translation Tabs
