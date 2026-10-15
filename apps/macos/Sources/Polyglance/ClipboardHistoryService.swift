@@ -97,6 +97,8 @@ final class ClipboardHistoryService: ObservableObject {
     @Published private(set) var selectedIDs: Set<UInt64> = []
     @Published private(set) var previewImage: NSImage?
     @Published private(set) var previewText = ""
+    @Published private(set) var previewLoading = false
+    @Published private(set) var selectionScrollRequest: UInt64 = 0
     @Published private(set) var annotation = ClipboardAnnotation(title: "", tags: [], ocrText: "")
     @Published private(set) var selectionHasImages = false
     @Published private(set) var selectionHasFiles = false
@@ -146,6 +148,12 @@ final class ClipboardHistoryService: ObservableObject {
     private let worker: ClipboardHistoryWorker
     private let processor: any ClipboardContentProcessing
     private let searchDelay: Duration
+    private let hoverPreviewDelay: Duration
+    private let frontmostApplication: () -> NSRunningApplication?
+    private let restoreFocus: (NSRunningApplication) -> Void
+    private var hoverPreviewTask: Task<Void, Never>?
+    private var hoveredEntryID: UInt64?
+    private var lastHoverLocation: NSPoint?
     private let pasteboard: NSPasteboard
     private let sourceCatalog = ClipboardSourceCatalog()
     private let notifications = ClipboardNotifications()
@@ -181,9 +189,13 @@ final class ClipboardHistoryService: ObservableObject {
 
     init(defaults: UserDefaults = .standard, pasteboard: NSPasteboard = .general,
          worker: ClipboardHistoryWorker = ClipboardHistoryWorker(), processor: any ClipboardContentProcessing = ClipboardContentProcessor(),
-         searchDelay: Duration = .milliseconds(150)) {
+         searchDelay: Duration = .milliseconds(150), hoverPreviewDelay: Duration = .milliseconds(400),
+         frontmostApplication: @escaping () -> NSRunningApplication? = { NSWorkspace.shared.frontmostApplication },
+         restoreFocus: @escaping (NSRunningApplication) -> Void = ClipboardFocusRestoration.restore) {
         self.defaults = defaults; self.pasteboard = pasteboard; self.worker = worker; self.processor = processor
         self.searchDelay = searchDelay
+        self.hoverPreviewDelay = hoverPreviewDelay
+        self.frontmostApplication = frontmostApplication; self.restoreFocus = restoreFocus
         lastChangeCount = pasteboard.changeCount
         preferences = defaults.data(forKey: Self.preferencesKey).flatMap { try? JSONDecoder().decode(ClipboardHistoryPreferences.self, from: $0) } ?? ClipboardHistoryPreferences()
     }
@@ -217,6 +229,7 @@ final class ClipboardHistoryService: ObservableObject {
         for task in tasks { await task.value }
     }
     func shutdown() async {
+        suspendHoverSelection()
         stop(); stopIndexing(); searchTask?.cancel(); readingSelectionTask?.cancel(); cancelPasteQueue()
         stopRecognizingText()
         copyGeneration &+= 1
@@ -279,6 +292,7 @@ final class ClipboardHistoryService: ObservableObject {
     }
     func preparePresentation(mode: ClipboardPresentationMode = .management,
                              target: NSRunningApplication? = NSWorkspace.shared.frontmostApplication) {
+        suspendHoverSelection()
         stopRecognizingText()
         copyGeneration &+= 1
         targetApplication = target
@@ -305,6 +319,7 @@ final class ClipboardHistoryService: ObservableObject {
     func requestSearchFocus() { searchFocusRequest &+= 1 }
     func openManagement() {
         guard isPresented, presentationMode != .management else { return }
+        suspendHoverSelection()
         // This is the same invocation: do not recapture the foreground application.
         presentationMode = .management
         previewVisible = preferences.autoPreview
@@ -312,6 +327,7 @@ final class ClipboardHistoryService: ObservableObject {
         onOpenManagement?()
     }
     func didDismiss() {
+        suspendHoverSelection()
         if presentationMode == .management {
             managementState = ManagementState(query: query, pinnedOnly: pinnedOnly, kind: kindFilter,
                                               source: sourceFilter, tag: tagFilter, selection: selectedIDs)
@@ -319,7 +335,7 @@ final class ClipboardHistoryService: ObservableObject {
         stopRecognizingText()
         if !committingCopy { copyGeneration &+= 1 }
         isPresented = false; reloadGeneration &+= 1; selectionGeneration &+= 1
-        searchTask?.cancel(); readingSelectionTask?.cancel(); presentationTask?.cancel(); previewImage = nil; previewText = ""
+        searchTask?.cancel(); readingSelectionTask?.cancel(); presentationTask?.cancel(); previewImage = nil; previewText = ""; previewLoading = false
     }
     func poll() {
         if ClipboardCaptureSuppression.depth > 0 || suppressionGeneration != ClipboardCaptureSuppression.generation {
@@ -437,6 +453,7 @@ final class ClipboardHistoryService: ObservableObject {
         return result
     }
     private func scheduleReload() {
+        suspendHoverSelection()
         searchTask?.cancel(); reloadGeneration &+= 1
         searchTask = Task {
             try? await Task.sleep(for: searchDelay); guard !Task.isCancelled else { return }
@@ -465,9 +482,40 @@ final class ClipboardHistoryService: ObservableObject {
             let retained = selectedIDs.intersection(Set(entries.map(\.id)))
             let initial = presentationMode == .quick ? (entries.first(where: { !$0.pinned }) ?? entries.first) : entries.first
             setSelection(retained.isEmpty ? Set(initial.map { [$0.id] } ?? []) : retained)
+            if !loadMore { selectionScrollRequest &+= 1 }
         } catch { if generation == reloadGeneration { present(error, history: true) } }
     }
     func select(_ id: UInt64?) { setSelection(id.map { [$0] } ?? []) }
+    /// Only actual pointer movement may take selection back from keyboard navigation.
+    func hoverEntry(_ id: UInt64, at location: NSPoint) {
+        guard isPresented, presentationMode == .quick, !dataBusy, !copyBusy,
+              entries.contains(where: { $0.id == id }), location != lastHoverLocation else { return }
+        lastHoverLocation = location
+        guard hoveredEntryID != id else { return }
+        cancelHoverPreview()
+        hoveredEntryID = id
+        if selectedID != id { select(id) }
+        guard !previewVisible else { return }
+        hoverPreviewTask = Task { [weak self] in
+            guard let self else { return }
+            do { try await Task.sleep(for: hoverPreviewDelay) } catch { return }
+            guard !Task.isCancelled, isPresented, presentationMode == .quick,
+                  hoveredEntryID == id, selectedID == id else { return }
+            previewVisible = true
+            hoverPreviewTask = nil
+        }
+    }
+    func endHover(_ id: UInt64) {
+        if hoveredEntryID == id { cancelHoverPreview() }
+    }
+    func suspendHoverSelection(at location: NSPoint = NSEvent.mouseLocation) {
+        cancelHoverPreview()
+        lastHoverLocation = location
+    }
+    private func cancelHoverPreview() {
+        hoverPreviewTask?.cancel(); hoverPreviewTask = nil; hoveredEntryID = nil
+    }
+    func togglePreview() { suspendHoverSelection(); previewVisible.toggle() }
     func setSelection(_ ids: Set<UInt64>) {
         selectionAnchor = nil
         selectedIDs = ids.intersection(Set(entries.map(\.id)))
@@ -480,19 +528,24 @@ final class ClipboardHistoryService: ObservableObject {
         selectionHasImages = false; selectionHasFiles = false; selectionHasPlainText = false
         annotation = ClipboardAnnotation(title: "", tags: [], ocrText: "")
         selectionGeneration &+= 1; let generation = selectionGeneration
-        readingSelectionTask?.cancel(); guard let id else { return }
+        readingSelectionTask?.cancel(); previewLoading = id != nil; guard let id else { return }
         readingSelectionTask = Task {
             do {
-                let bundle = try await worker.bundle(id: id); let annotation = try await worker.annotation(id: id)
+                let bundle = try await worker.bundle(id: id)
+                try Task.checkCancellation()
+                let annotation = try await worker.annotation(id: id)
+                try Task.checkCancellation()
                 let preview = try await processor.preview(bundle, ocrText: annotation.ocrText)
                 guard !Task.isCancelled, generation == selectionGeneration else { return }
                 self.annotation = annotation; previewText = preview.text
+                previewLoading = false
                 if let image = preview.image { previewImage = NSImage(cgImage: image, size: .zero) }
                 selectionHasImages = preview.hasImages; selectionHasFiles = preview.hasFiles; selectionHasPlainText = preview.plainTextAvailable
-            } catch { if generation == selectionGeneration { present(error) } }
+            } catch { if generation == selectionGeneration { previewLoading = false; present(error) } }
         }
     }
     func moveSelection(_ direction: Int, extending: Bool = false) {
+        suspendHoverSelection()
         guard !entries.isEmpty else { return }
         let index = entries.firstIndex { $0.id == selectedID } ?? 0
         let next = min(max(0, index + direction), entries.count - 1)
@@ -501,6 +554,7 @@ final class ClipboardHistoryService: ObservableObject {
             selectionAnchor = entries[anchor].id
             selectedIDs = Set(entries[min(anchor, next)...max(anchor, next)].map(\.id)); selectForPreview(entries[next].id)
         } else { selectionAnchor = nil; select(entries[next].id) }
+        selectionScrollRequest &+= 1
     }
     func pinSelected() async {
         guard let entry = entries.first(where: { $0.id == selectedID }) else { return }
@@ -562,7 +616,14 @@ final class ClipboardHistoryService: ObservableObject {
         } catch { if operation.generation == copyGeneration, !Task.isCancelled { present(error) } }
     }
     func waitForPresentation() async { await presentationTask?.value }
-    func cycleSelection(steps: Int = 1) { if !entries.isEmpty, steps > 0 { let index = entries.firstIndex(where: { $0.id == selectedID }) ?? 0; select(entries[(index + steps % entries.count) % entries.count].id) } }
+    func cycleSelection(steps: Int = 1) {
+        suspendHoverSelection()
+        if !entries.isEmpty, steps > 0 {
+            let index = entries.firstIndex(where: { $0.id == selectedID }) ?? 0
+            select(entries[(index + steps % entries.count) % entries.count].id)
+            selectionScrollRequest &+= 1
+        }
+    }
     func rename(id: UInt64, title: String, tags: [String]) async -> Bool {
         do { try await worker.setAnnotation(id: id, title: title, tags: tags); await reload(); return true } catch { present(error); return false }
     }
@@ -633,7 +694,7 @@ final class ClipboardHistoryService: ObservableObject {
               operation.generation == copyGeneration, pasteboard.changeCount == operation.changeCount,
               queueGeneration == nil || queueGeneration == pasteQueueGeneration else { return false }
         if paste {
-            let front = NSWorkspace.shared.frontmostApplication
+            let front = frontmostApplication()
             guard front?.processIdentifier == target?.processIdentifier || (isPresented && front?.bundleIdentifier == Bundle.main.bundleIdentifier) else { return false }
         }
         pasteboard.clearContents()
@@ -644,11 +705,16 @@ final class ClipboardHistoryService: ObservableObject {
         // Closing after a committed selection must allow its own final Cmd+V.
         // A user dismissal or a newly opened presentation invalidates the operation.
         committingCopy = true; onDismiss?(); committingCopy = false
+        // Copy-only selections must also return keyboard focus. Do not reactivate an
+        // old target if the user switched apps or opened another history invocation.
+        if operation.generation == copyGeneration, let target,
+           ClipboardFocusRestoration.canRestore(target: target, frontmost: frontmostApplication()) {
+            restoreFocus(target)
+        }
         guard paste, let target else { return true }
-        target.activate()
         try? await Task.sleep(for: .milliseconds(150))
         guard !Task.isCancelled, operation.generation == copyGeneration,
-              queueGeneration == nil || queueGeneration == pasteQueueGeneration, NSWorkspace.shared.frontmostApplication?.processIdentifier == target.processIdentifier,
+              queueGeneration == nil || queueGeneration == pasteQueueGeneration, frontmostApplication()?.processIdentifier == target.processIdentifier,
               pasteboard.changeCount == writtenCount else { return false }
         return Self.postPaste()
     }

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import TranslatorCore
 import UniformTypeIdentifiers
@@ -16,6 +17,9 @@ final class ClipboardHistoryPanel: NSPanel {
     private var committedDismissal = false
     private var changingMode = false
     private var closing = false
+    private var configuredMode: ClipboardPresentationMode = .management
+    private let quickLayout = ClipboardQuickLayout()
+    private var previewObservation: AnyCancellable?
 
     init(service: ClipboardHistoryService) {
         self.service = service
@@ -24,6 +28,9 @@ final class ClipboardHistoryPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         isReleasedWhenClosed = false; hidesOnDeactivate = false
         configure(mode: .management)
+        previewObservation = service.$previewVisible.dropFirst().sink { [weak self] visible in
+            self?.resizeQuickPreview(visible: visible)
+        }
     }
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -32,14 +39,19 @@ final class ClipboardHistoryPanel: NSPanel {
         changingMode = true
         defer { changingMode = false }
         cancelCycle()
+        configuredMode = mode
         if mode == .quick {
-            styleMask = [.titled, .fullSizeContentView, .nonactivatingPanel]
+            styleMask = [.borderless, .nonactivatingPanel]
             titleVisibility = .hidden; titlebarAppearsTransparent = true
+            isOpaque = false; backgroundColor = .clear; hasShadow = true
+            quickLayout.reset()
             minSize = NSSize(width: 450, height: 300)
             setContentSize(NSSize(width: 450, height: 520))
-            contentView = NSHostingView(rootView: ClipboardQuickView(service: service))
+            contentView = NSHostingView(rootView: ClipboardQuickView(service: service, layout: quickLayout))
+            resizeQuickPreview(visible: service.previewVisible)
         } else {
             styleMask = [.titled, .closable, .resizable, .nonactivatingPanel]
+            isOpaque = true; backgroundColor = .windowBackgroundColor
             titleVisibility = .visible; titlebarAppearsTransparent = false
             minSize = NSSize(width: 760, height: 520)
             setContentSize(NSSize(width: 850, height: 600))
@@ -54,7 +66,14 @@ final class ClipboardHistoryPanel: NSPanel {
         }
     }
 
+    private func resizeQuickPreview(visible: Bool) {
+        guard configuredMode == .quick, service.presentationMode == .quick,
+              let screen = screen ?? NSScreen.main else { return }
+        setFrame(quickLayout.frame(showingPreview: visible, current: frame, screen: screen.visibleFrame), display: true)
+    }
+
     override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown || event.type == .scrollWheel { service.suspendHoverSelection() }
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
         let composing = (firstResponder as? NSTextView)?.hasMarkedText() ?? false
         if event.type == .flagsChanged, cycle.isActive {
@@ -66,7 +85,7 @@ final class ClipboardHistoryPanel: NSPanel {
         if event.type == .keyDown, cycle.isActive, event.keyCode != cycle.keyCode { cancelCycle() }
         if event.type == .keyDown, attachedSheet == nil, !composing {
             if event.keyCode == 3, modifiers == .command { service.requestSearchFocus(); return }
-            if event.keyCode == 49, modifiers == .control { service.previewVisible.toggle(); return }
+            if event.keyCode == 49, modifiers == .control { service.togglePreview(); return }
             if event.keyCode == 46, modifiers == .command, service.presentationMode == .quick { service.openManagement(); return }
             if event.keyCode == 35, modifiers == .option { Task { await service.pinSelected() }; return }
             if event.keyCode == 51, modifiers == .option { Task { await service.deleteSelected() }; return }
@@ -145,86 +164,12 @@ final class ClipboardHistoryPanel: NSPanel {
         guard !closing else { return }
         closing = true; defer { closing = false }
         cancelCycle(cancelPending: !committedDismissal)
+        // A nonactivating panel borrows key focus from the source app. Release the
+        // search field editor and order it out before reactivating that app.
+        makeFirstResponder(nil)
+        orderOut(nil)
         super.close()
         onDismissed?()
-    }
-}
-
-@MainActor
-private struct ClipboardQuickView: View {
-    @ObservedObject var service: ClipboardHistoryService
-    @FocusState private var searchFocused: Bool
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("搜索剪贴板历史", text: $service.query).textFieldStyle(.plain).focused($searchFocused)
-                Button { service.openManagement() } label: { Image(systemName: "slider.horizontal.3") }
-                    .buttonStyle(.borderless).help("管理历史（Command+M）").accessibilityLabel("管理历史")
-            }.padding(14)
-            Divider()
-            if !service.preferences.enabled {
-                HStack { Text("历史记录尚未开启"); Spacer(); Button("前往通用设置") { service.onOpenGeneralSettings?() } }
-                    .font(.callout).padding(10)
-            } else if service.paused { Text("记录已暂停，已有历史仍可使用。 ").font(.caption).foregroundStyle(.secondary).padding(8) }
-            if service.needsRecovery {
-                Button("历史暂不可读，前往管理窗口恢复") { service.openManagement() }.padding()
-            }
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 2) {
-                        ForEach(service.entries, id: \.id) { entry in
-                            Button {
-                                let modifiers = NSEvent.modifierFlags
-                                Task { await service.activateEntry(entry.id, modifiers: modifiers) }
-                            } label: {
-                                HStack(spacing: 10) {
-                                    Image(systemName: entry.pinned ? "pin.fill" : icon(entry.kind)).frame(width: 18)
-                                    if service.preferences.showSourceIcons, let image = service.sourceIcon(entry.sourceApplication) {
-                                        Image(nsImage: image).resizable().frame(width: 18, height: 18)
-                                    }
-                                    Text(title(entry)).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-                                    if let shortcut = service.shortcutLabel(for: entry) { Text(shortcut).font(.caption).foregroundStyle(.secondary) }
-                                }.padding(.horizontal, 10).padding(.vertical, 9).frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(service.selectedID == entry.id ? Color.accentColor.opacity(0.16) : Color.clear)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6)).contentShape(Rectangle())
-                            }.buttonStyle(.plain).id(entry.id).disabled(service.dataBusy)
-                        }
-                        if service.hasMore { Button("加载更多") { Task { await service.reload(loadMore: true) } }.padding(8) }
-                        if service.entries.isEmpty {
-                            ContentUnavailableView("暂无匹配记录", systemImage: "doc.on.clipboard", description: Text("复制新内容，或尝试其他搜索词。"))
-                        }
-                    }.padding(6)
-                }
-                .onChange(of: service.selectedID) { _, id in if let id { proxy.scrollTo(id) } }
-            }
-            if service.previewVisible, service.selectedID != nil {
-                Divider()
-                ScrollView {
-                    if let image = service.previewImage { Image(nsImage: image).resizable().scaledToFit().frame(maxHeight: 130) }
-                    else { Text(service.previewText).font(.callout).frame(maxWidth: .infinity, alignment: .leading) }
-                }.padding(10).frame(maxHeight: 150)
-            }
-            if let error = service.errorMessage {
-                HStack { Text(error).font(.caption).foregroundStyle(.red); Spacer(); Button("关闭提示") { service.errorMessage = nil } }.padding(10)
-            }
-            Divider()
-            HStack {
-                Text(ClipboardSelectionAction.hint(automaticPaste: service.preferences.selectionPastesAutomatically)).font(.caption2).foregroundStyle(.secondary)
-                Spacer(minLength: 4)
-                Button("管理历史") { service.openManagement() }.buttonStyle(.borderless)
-            }.padding(10)
-        }
-        .onAppear { searchFocused = true }
-        .onChange(of: service.searchFocusRequest) { _, _ in searchFocused = true }
-    }
-    private func title(_ entry: ClipboardEntry) -> String {
-        if !entry.title.isEmpty { return entry.title }
-        switch entry.kind { case .image: return "图片"; case .multiple: return "\(entry.itemCount) 项：\(entry.preview)"; default: return entry.preview }
-    }
-    private func icon(_ kind: ClipboardKind) -> String {
-        switch kind { case .text: return "text.alignleft"; case .image: return "photo"; case .file: return "doc"; case .multiple: return "square.stack" }
     }
 }
 

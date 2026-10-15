@@ -5,6 +5,172 @@ import TranslatorCore
 
 @MainActor
 final class ClipboardRegressionTests: XCTestCase {
+    func testCopyOnlyRestoresOriginalAppAfterDismissalForBothPresentationModes() async throws {
+        let target = try externalApplication()
+        for mode in [ClipboardPresentationMode.quick, .management] {
+            var events: [String] = []
+            try await withFixture(frontmostApplication: { target }, restoreFocus: { app in
+                XCTAssertEqual(app.processIdentifier, target.processIdentifier)
+                events.append("restore")
+            }) { fixture in
+                let service = fixture.service
+                let id = try await fixture.record("ready for manual paste")
+                service.preparePresentation(mode: mode, target: target); await service.waitForPresentation()
+                service.onDismiss = {
+                    XCTAssertEqual(fixture.board.string(forType: .string), "ready for manual paste")
+                    events.append("dismiss"); service.didDismiss()
+                }
+                if mode == .quick { await service.activateEntry(id, modifiers: []) }
+                else { await service.copySelected() }
+                XCTAssertEqual(events, ["dismiss", "restore"], "Copy-only must restore focus after closing, without posting Cmd+V.")
+            }
+        }
+    }
+
+    func testOptionCopyRestoresFocusWhenAutomaticPasteIsEnabled() async throws {
+        let target = try externalApplication()
+        var restored = false
+        try await withFixture(frontmostApplication: { target }, restoreFocus: { _ in restored = true }) { fixture in
+            let service = fixture.service
+            let id = try await fixture.record("option copy")
+            var options = service.preferences; options.selectionPastesAutomatically = true
+            let saved = await service.saveHistoryOptions(options); XCTAssertTrue(saved)
+            service.preparePresentation(mode: .quick, target: target); await service.waitForPresentation()
+            service.onDismiss = { service.didDismiss() }
+            await service.activateEntry(id, modifiers: .option)
+            XCTAssertTrue(restored)
+            XCTAssertEqual(fixture.board.string(forType: .string), "option copy")
+            XCTAssertNil(service.errorMessage)
+        }
+    }
+
+    func testCopyDoesNotStealFocusFromAnotherApplication() async throws {
+        let target = try externalApplication()
+        let other = try XCTUnwrap(NSWorkspace.shared.runningApplications.first {
+            $0.processIdentifier != target.processIdentifier && $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && !$0.isTerminated
+        })
+        var restored = false
+        try await withFixture(frontmostApplication: { other }, restoreFocus: { _ in restored = true }) { fixture in
+            let id = try await fixture.record("copy only")
+            let service = fixture.service
+            service.preparePresentation(mode: .quick, target: target); await service.waitForPresentation()
+            service.onDismiss = { service.didDismiss() }
+            await service.activateEntry(id, modifiers: [])
+            XCTAssertFalse(restored)
+            XCTAssertEqual(fixture.board.string(forType: .string), "copy only")
+        }
+    }
+
+    func testOldCopyDoesNotRestoreFocusAfterANewPresentationOpens() async throws {
+        let target = try externalApplication()
+        var restored = false
+        try await withFixture(frontmostApplication: { target }, restoreFocus: { _ in restored = true }) { fixture in
+            let id = try await fixture.record("old invocation")
+            let service = fixture.service
+            service.preparePresentation(mode: .quick, target: target); await service.waitForPresentation()
+            service.onDismiss = { service.didDismiss(); service.preparePresentation(mode: .quick, target: nil) }
+            await service.activateEntry(id, modifiers: [])
+            XCTAssertFalse(restored)
+            await service.waitForPresentation()
+            XCTAssertNil(service.targetApplication)
+        }
+    }
+
+    func testQuickPanelReleasesSearchFieldEditorBeforeDismissCallback() async throws {
+        try await withFixture { fixture in
+            let service = fixture.service
+            service.preparePresentation(mode: .quick, target: nil); await service.waitForPresentation()
+            let panel = ClipboardHistoryPanel(service: service)
+            panel.configure(mode: .quick)
+            let field = NSTextField(frame: NSRect(x: 10, y: 10, width: 200, height: 30))
+            panel.contentView = field
+            panel.makeKeyAndOrderFront(nil)
+            XCTAssertTrue(panel.makeFirstResponder(field))
+            XCTAssertTrue(panel.firstResponder is NSTextView)
+            var dismissed = false
+            panel.onDismissed = {
+                dismissed = true
+                XCTAssertFalse(panel.isVisible)
+                XCTAssertFalse(panel.isKeyWindow)
+                XCTAssertFalse(panel.firstResponder is NSTextView)
+                service.didDismiss()
+            }
+            panel.closeAfterSelection()
+            XCTAssertTrue(dismissed)
+        }
+    }
+
+    func testHoverShowsDetailsWithoutCopyingOrScrolling() async throws {
+        try await withFixture { fixture in
+            let first = try await fixture.record("hovered content")
+            _ = try await fixture.record("initial selection")
+            let service = fixture.service
+            service.preparePresentation(mode: .quick, target: nil); await service.waitForPresentation()
+            let scroll = service.selectionScrollRequest
+            let changeCount = fixture.board.changeCount
+            service.hoverEntry(first, at: NSPoint(x: -20, y: -30))
+            XCTAssertEqual(service.selectedID, first)
+            XCTAssertFalse(service.previewVisible)
+            try await self.eventually { service.previewVisible && service.previewText == "hovered content" }
+            XCTAssertEqual(service.selectionScrollRequest, scroll)
+            XCTAssertEqual(fixture.board.changeCount, changeCount)
+        }
+    }
+
+    func testLeavingHoveredRowCancelsDelayedDetails() async throws {
+        try await withFixture { fixture in
+            let id = try await fixture.record("short hover")
+            let service = fixture.service
+            service.preparePresentation(mode: .quick, target: nil); await service.waitForPresentation()
+            service.hoverEntry(id, at: NSPoint(x: -20, y: -30)); service.endHover(id)
+            try await Task.sleep(for: .milliseconds(70))
+            XCTAssertFalse(service.previewVisible)
+        }
+    }
+
+    func testKeyboardSelectionIgnoresStationaryPointerUntilItMoves() async throws {
+        try await withFixture { fixture in
+            let first = try await fixture.record("first")
+            let second = try await fixture.record("second")
+            let service = fixture.service
+            service.preparePresentation(mode: .quick, target: nil); await service.waitForPresentation()
+            service.hoverEntry(second, at: NSPoint(x: -20, y: -30))
+            service.moveSelection(1)
+            XCTAssertEqual(service.selectedID, first)
+            let stationary = NSPoint(x: -40, y: -50)
+            service.suspendHoverSelection(at: stationary)
+            service.hoverEntry(second, at: stationary)
+            XCTAssertEqual(service.selectedID, first)
+            try await Task.sleep(for: .milliseconds(70))
+            XCTAssertFalse(service.previewVisible)
+            service.hoverEntry(second, at: NSPoint(x: -41, y: -50))
+            XCTAssertEqual(service.selectedID, second)
+            try await self.eventually { service.previewVisible }
+        }
+    }
+
+    func testDismissAndSearchCancelPendingHoverDetails() async throws {
+        for action in 0..<3 {
+            try await withFixture { fixture in
+                let id = try await fixture.record("delayed preview")
+                let service = fixture.service
+                service.preparePresentation(mode: .quick, target: nil); await service.waitForPresentation()
+                service.hoverEntry(id, at: NSPoint(x: -20, y: -30))
+                if action == 0 { service.didDismiss() }
+                else if action == 1 { service.query = "changed" }
+                else { service.didDismiss(); service.preparePresentation(mode: .quick, target: nil); await service.waitForPresentation() }
+                try await Task.sleep(for: .milliseconds(70))
+                XCTAssertFalse(service.previewVisible)
+            }
+        }
+    }
+
+    private func externalApplication() throws -> NSRunningApplication {
+        try XCTUnwrap(NSWorkspace.shared.runningApplications.first {
+            $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && !$0.isTerminated
+        })
+    }
+
     func testQuickPresentationResetsFiltersAndNumbersOnlyOrdinaryHistory() async throws {
         try await withFixture { fixture in
             let ordinary = try await fixture.record("ordinary history")
@@ -495,8 +661,11 @@ final class ClipboardRegressionTests: XCTestCase {
 
     private func withFixture(processor: any ClipboardContentProcessing = ClipboardContentProcessor(),
                              searchDelay: Duration = .seconds(30),
+                             frontmostApplication: @escaping () -> NSRunningApplication? = { NSWorkspace.shared.frontmostApplication },
+                             restoreFocus: @escaping (NSRunningApplication) -> Void = { _ in },
                              body: (ClipboardRegressionFixture) async throws -> Void) async throws {
-        let fixture = ClipboardRegressionFixture(processor: processor, searchDelay: searchDelay)
+        let fixture = ClipboardRegressionFixture(processor: processor, searchDelay: searchDelay,
+            frontmostApplication: frontmostApplication, restoreFocus: restoreFocus)
         do { try await body(fixture) }
         catch { await fixture.close(); throw error }
         await fixture.close()
@@ -515,7 +684,8 @@ private final class ClipboardRegressionFixture {
     let service: ClipboardHistoryService
     let processor: any ClipboardContentProcessing
     let policy = ClipboardPolicy(enabled: true, ignoredApplications: [], ignoredTypes: [], ignoredPatterns: [])
-    init(processor: any ClipboardContentProcessing, searchDelay: Duration) {
+    init(processor: any ClipboardContentProcessing, searchDelay: Duration,
+         frontmostApplication: @escaping () -> NSRunningApplication?, restoreFocus: @escaping (NSRunningApplication) -> Void) {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let suite = UUID().uuidString
@@ -525,7 +695,8 @@ private final class ClipboardRegressionFixture {
         worker = ClipboardHistoryWorker(directory: directory)
         self.processor = processor
         service = ClipboardHistoryService(defaults: defaults, pasteboard: board, worker: worker,
-                                          processor: processor, searchDelay: searchDelay)
+                                          processor: processor, searchDelay: searchDelay, hoverPreviewDelay: .milliseconds(25),
+                                          frontmostApplication: frontmostApplication, restoreFocus: restoreFocus)
     }
     func record(_ text: String) async throws -> UInt64 {
         let result = try await worker.record(ClipboardInput(
