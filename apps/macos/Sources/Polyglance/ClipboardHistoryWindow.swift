@@ -27,6 +27,7 @@ final class ClipboardHistoryPanel: NSPanel {
         title = "剪贴板历史"; level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         isReleasedWhenClosed = false; hidesOnDeactivate = false
+        acceptsMouseMovedEvents = true
         configure(mode: .management)
         previewObservation = service.$previewVisible.dropFirst().sink { [weak self] visible in
             self?.resizeQuickPreview(visible: visible)
@@ -81,7 +82,7 @@ final class ClipboardHistoryPanel: NSPanel {
             else if !cycle.isActive { cancelCycle() }
             super.sendEvent(event); return
         }
-        if [.leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel].contains(event.type) { cancelCycle() }
+        if [.mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel].contains(event.type) { cancelCycle() }
         if event.type == .keyDown, cycle.isActive, event.keyCode != cycle.keyCode { cancelCycle() }
         if event.type == .keyDown, attachedSheet == nil, !composing {
             if event.keyCode == 3, modifiers == .command { service.requestSearchFocus(); return }
