@@ -191,11 +191,12 @@ final class ClipboardHistoryService: ObservableObject {
          worker: ClipboardHistoryWorker = ClipboardHistoryWorker(), processor: any ClipboardContentProcessing = ClipboardContentProcessor(),
          searchDelay: Duration = .milliseconds(150), hoverPreviewDelay: Duration = .milliseconds(400),
          frontmostApplication: @escaping () -> NSRunningApplication? = { NSWorkspace.shared.frontmostApplication },
-         restoreFocus: @escaping (NSRunningApplication) -> Void = ClipboardFocusRestoration.restore) {
+         restoreFocus: ((NSRunningApplication) -> Void)? = nil) {
         self.defaults = defaults; self.pasteboard = pasteboard; self.worker = worker; self.processor = processor
         self.searchDelay = searchDelay
         self.hoverPreviewDelay = hoverPreviewDelay
-        self.frontmostApplication = frontmostApplication; self.restoreFocus = restoreFocus
+        self.frontmostApplication = frontmostApplication
+        self.restoreFocus = restoreFocus ?? { ClipboardFocusRestoration.restore($0) }
         lastChangeCount = pasteboard.changeCount
         preferences = defaults.data(forKey: Self.preferencesKey).flatMap { try? JSONDecoder().decode(ClipboardHistoryPreferences.self, from: $0) } ?? ClipboardHistoryPreferences()
     }
@@ -541,7 +542,7 @@ final class ClipboardHistoryService: ObservableObject {
                 previewLoading = false
                 if let image = preview.image { previewImage = NSImage(cgImage: image, size: .zero) }
                 selectionHasImages = preview.hasImages; selectionHasFiles = preview.hasFiles; selectionHasPlainText = preview.plainTextAvailable
-            } catch { if generation == selectionGeneration { previewLoading = false; present(error) } }
+            } catch { if !Task.isCancelled, generation == selectionGeneration { previewLoading = false; present(error) } }
         }
     }
     func moveSelection(_ direction: Int, extending: Bool = false) {
