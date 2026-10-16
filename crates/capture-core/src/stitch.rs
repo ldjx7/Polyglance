@@ -252,6 +252,18 @@ impl Stitcher {
         let direction = self.direction;
         let learned = self.static_bands;
         let insets = self.effective_crop_insets(&frame);
+        if insets != CropInsets::default()
+            && (insets.top..frame.height - insets.bottom).all(|row| {
+                let start = (row * frame.width + insets.left) * 4;
+                let end = ((row + 1) * frame.width - insets.right) * 4;
+                previous.bytes[start..end] == frame.bytes[start..end]
+            })
+        {
+            // Changes outside a pixel-identical selection cannot extend it,
+            // even when the selection is too small for motion estimation.
+            self.previous_frame = Some(frame);
+            return Ok(self.result(Disposition::Unchanged, false, false));
+        }
         let selection = if direction == Direction::Vertical {
             StaticBands {
                 leading: insets.top,
@@ -2442,6 +2454,21 @@ mod resilience_tests {
             .unwrap();
         assert_eq!(result.disposition, Disposition::Unchanged);
         assert_eq!(stitcher.render().unwrap(), page(100));
+    }
+
+    #[test]
+    fn a_stationary_small_selection_ignores_context_after_scrolling() {
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        stitcher.set_crop_insets(90, 90, 0, 0);
+        append(&mut stitcher, page(0)).unwrap();
+        append(&mut stitcher, page(10)).unwrap();
+        let before = stitcher.render().unwrap();
+        let mut next = page(20);
+        next[90 * WIDTH * 4..110 * WIDTH * 4]
+            .copy_from_slice(&page(10)[90 * WIDTH * 4..110 * WIDTH * 4]);
+        let result = append(&mut stitcher, next).unwrap();
+        assert_eq!(result.disposition, Disposition::Unchanged);
+        assert_eq!(stitcher.render().unwrap(), before);
     }
 
     #[test]
