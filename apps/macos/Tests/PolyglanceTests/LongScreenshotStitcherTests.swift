@@ -3,6 +3,16 @@ import XCTest
 @testable import Polyglance
 
 final class LongScreenshotStitcherTests: XCTestCase {
+    func testSelectionScrollsWithinStationaryTrackingPadding() throws {
+        var stitcher = LongScreenshotStitcher(configuration: makeConfiguration())
+        XCTAssertTrue(stitcher.setCropInsets(top: 8, bottom: 8, left: 0, right: 0))
+        let padding: [UInt8] = [210, 180, 230, 160, 220, 190, 240, 170]
+        _ = try stitcher.append(makeRowImage(padding + [10, 30, 50, 70, 90, 110] + padding))
+        let result = try stitcher.append(makeRowImage(padding + [50, 70, 90, 110, 130, 150] + padding))
+        XCTAssertEqual(result.disposition, .appended(direction: .vertical, offset: 2))
+        XCTAssertEqual(try redRows(in: stitcher.render()), [10, 30, 50, 70, 90, 110, 130, 150])
+    }
+
     func testAdjacentFramesAreDeduplicatedUsingTheirVerticalOverlap() throws {
         var stitcher = LongScreenshotStitcher(configuration: makeConfiguration())
 
