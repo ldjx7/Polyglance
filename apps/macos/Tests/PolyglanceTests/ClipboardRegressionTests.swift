@@ -743,6 +743,7 @@ private actor SuspendedClipboardProcessor: ClipboardContentProcessing {
         try await real.preview(items, ocrText: ocrText)
     }
     func recognize(_ items: [ClipboardItem]) async throws -> String { try await real.recognize(items) }
+    func thumbnail(_ items: [ClipboardItem]) async throws -> ClipboardThumbnail? { try await real.thumbnail(items) }
 }
 
 /// Simulates native OCR that finishes after cancellation, with deterministic completion order.
@@ -751,6 +752,7 @@ private actor SuspendedClipboardOCRProcessor: ClipboardContentProcessing {
     private var continuations: [Int: CheckedContinuation<String, Error>] = [:]
     private(set) var requests = 0
     private(set) var cancelledRequests: Set<Int> = []
+    func thumbnail(_ items: [ClipboardItem]) async throws -> ClipboardThumbnail? { try await real.thumbnail(items) }
     func normalize(_ raw: [ClipboardRawItem], maximumBytes: UInt64) async throws -> [ClipboardItem] {
         try await real.normalize(raw, maximumBytes: maximumBytes)
     }

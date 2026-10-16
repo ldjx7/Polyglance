@@ -7,6 +7,45 @@ import TranslatorCore
 
 @MainActor
 final class ClipboardThumbnailTests: XCTestCase {
+    func testScreenshotCopiesReachHistoryThumbnailsThroughTheRealPasteboardBridge() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let name = UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let worker = ClipboardHistoryWorker(directory: directory)
+        try await worker.configure(clipboardDefaultLimits())
+        let processor = ClipboardContentProcessor()
+        let service = ClipboardHistoryService(defaults: defaults, pasteboard: board, worker: worker, processor: processor)
+        let source = try XCTUnwrap(NSImage(data: imageData(.png)))
+        for nativeTIFF in [false, true] {
+            if nativeTIFF {
+                board.clearContents()
+                board.setData(try XCTUnwrap(source.tiffRepresentation), forType: .tiff)
+            } else {
+                // This is the same writer used by screenshot and long-screenshot copy.
+                try ImagePasteboard.write(source, to: board)
+            }
+            let raw = try XCTUnwrap(ClipboardHistoryService.readRawItems(from: board, maximumBytes: 4_000_000))
+            let items = try await processor.normalize(raw, maximumBytes: 4_000_000)
+            _ = try await worker.recordBundle(
+                ClipboardBundleInput(items: items, sourceApplication: "test.screenshot", observedTypes: [], copiedAtMs: ClipboardHistoryWorker.now),
+                policy: ClipboardPolicy(enabled: true, ignoredApplications: [], ignoredTypes: [], ignoredPatterns: []))
+            let entries = try await worker.list(query: "", pinnedOnly: false, offset: 0)
+            let entry = try XCTUnwrap(entries.first)
+            XCTAssertEqual(entry.kind, .image)
+            let thumbnail = await service.thumbnail(for: entry)
+            XCTAssertEqual(thumbnail?.size, NSSize(width: 96, height: 48))
+            let restored = try await worker.bundle(id: entry.id)
+            let replayed = try ClipboardHistoryService.replayObjects(restored)
+            let original = try XCTUnwrap(NSBitmapImageRep(data: XCTUnwrap(replayed[0].data(forType: .png))))
+            XCTAssertEqual(original.pixelsWide, 600)
+            XCTAssertEqual(original.pixelsHigh, 300)
+        }
+    }
+
     func testBitmapThumbnailIsBoundedAndPreservesAspectRatio() async throws {
         let items = [ClipboardItem(representations: [.init(format: "image/png", bytes: try imageData(.png))])]
         let processor = ClipboardContentProcessor()
