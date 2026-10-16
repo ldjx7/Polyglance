@@ -30,12 +30,6 @@ protocol ClipboardContentProcessing: Actor {
     func recognize(_ items: [ClipboardItem]) async throws -> String
 }
 
-extension ClipboardContentProcessing {
-    func thumbnail(_ items: [ClipboardItem]) async throws -> ClipboardThumbnail? {
-        try await preview(items, ocrText: "").image.map { ClipboardThumbnail(image: $0) }
-    }
-}
-
 actor ClipboardContentProcessor: ClipboardContentProcessing {
     private var ocrBusy = false
 
@@ -82,7 +76,7 @@ actor ClipboardContentProcessor: ClipboardContentProcessing {
                                 plainTextAvailable: clipboardPlainText(items: items) != nil)
     }
 
-    func thumbnail(_ items: [ClipboardItem]) throws -> ClipboardThumbnail? {
+    func thumbnail(_ items: [ClipboardItem]) async throws -> ClipboardThumbnail? {
         try Task.checkCancellation()
         let image = try Self.previewImage(items.flatMap(\.representations), maximumPixelSize: 96)
         try Task.checkCancellation()
