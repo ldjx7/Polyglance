@@ -246,6 +246,21 @@ final class ClipboardHistoryService: ObservableObject {
     func cancelIgnoreNextCopy() { captureLifecycle.cancelIgnore(); ignoringNextCopy = false }
     func sourceName(_ identifier: String) -> String { sourceCatalog.source(identifier).name }
     func sourceIcon(_ identifier: String) -> NSImage? { sourceCatalog.source(identifier).icon }
+    func thumbnail(for entry: ClipboardEntry) async -> NSImage? {
+        guard entry.kind == .image || entry.kind == .file || entry.kind == .multiple else { return nil }
+        do {
+            try Task.checkCancellation()
+            let items = try await worker.bundle(id: entry.id)
+            try Task.checkCancellation()
+            guard let thumbnail = try await processor.thumbnail(items) else { return nil }
+            try Task.checkCancellation()
+            let image = thumbnail.image
+            return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+        } catch {
+            // Missing files, removed entries and cancelled rows keep their fallback icon.
+            return nil
+        }
+    }
     func updateShortcutConflicts(_ configuration: GlobalShortcutConfiguration) {
         let letters: [UInt32: String] = [11:"b",2:"d",14:"e",5:"g",34:"i",38:"j",40:"k",37:"l",15:"r",17:"t",32:"u",16:"y"]
         let variants: [ShortcutModifiers] = [.command, .option, [.option, .shift], [.command, .shift]]

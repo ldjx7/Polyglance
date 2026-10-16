@@ -136,14 +136,9 @@ struct ClipboardQuickView: View {
             Task { await service.activateEntry(entry.id, modifiers: modifiers) }
         } label: {
             HStack(spacing: 11) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 9).fill(.primary.opacity(0.045))
-                    if service.preferences.showSourceIcons, let icon = service.sourceIcon(entry.sourceApplication) {
-                        Image(nsImage: icon).resizable().frame(width: 24, height: 24)
-                    } else {
-                        Image(systemName: entry.kind.clipboardSymbol).font(.system(size: 18)).foregroundStyle(.secondary)
-                    }
-                }.frame(width: 36, height: 36)
+                ClipboardEntryThumbnail(service: service, entry: entry,
+                                        fallbackSymbol: entry.kind.clipboardSymbol,
+                                        sourceIcon: service.preferences.showSourceIcons ? service.sourceIcon(entry.sourceApplication) : nil)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(entry.clipboardDisplayTitle).font(.system(size: 13, weight: selected ? .medium : .regular))
                         .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
@@ -178,6 +173,39 @@ struct ClipboardQuickView: View {
 
     private var details: some View {
         ClipboardQuickDetailsView(service: service).frame(width: layout.previewWidth)
+    }
+}
+
+@MainActor
+struct ClipboardEntryThumbnail: View {
+    let service: ClipboardHistoryService
+    let entry: ClipboardEntry
+    let fallbackSymbol: String
+    let sourceIcon: NSImage?
+    @State private var image: NSImage?
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8).fill(.background.opacity(0.7))
+            if let image {
+                Image(nsImage: image).resizable().scaledToFit().padding(2)
+            } else if let sourceIcon {
+                Image(nsImage: sourceIcon).resizable().scaledToFit().padding(6)
+            } else {
+                Image(systemName: fallbackSymbol).font(.system(size: 18)).foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 36, height: 36)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.primary.opacity(0.06)))
+        .accessibilityHidden(true)
+        .task(id: "\(entry.id):\(entry.copiedAtMs)") {
+            image = nil
+            let loaded = await service.thumbnail(for: entry)
+            guard !Task.isCancelled else { return }
+            image = loaded
+        }
+        .onDisappear { image = nil }
     }
 }
 
