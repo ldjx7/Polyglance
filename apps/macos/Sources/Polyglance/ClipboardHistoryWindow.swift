@@ -229,8 +229,8 @@ struct ClipboardHistoryView: View {
                     List(selection: Binding(get: { service.selectedIDs }, set: { service.setSelection($0) })) {
                         ForEach(service.entries, id: \.id) { entry in
                             HStack(alignment: .top, spacing: 8) {
-                                Image(systemName: icon(entry.kind))
-                                if service.preferences.showSourceIcons, let image = service.sourceIcon(entry.sourceApplication) { Image(nsImage: image).resizable().frame(width: 18, height: 18) }
+                                ClipboardEntryThumbnail(service: service, entry: entry, fallbackSymbol: icon(entry.kind),
+                                                        sourceIcon: service.preferences.showSourceIcons ? service.sourceIcon(entry.sourceApplication) : nil)
                                 if service.preferences.showColorSwatches, let color = ClipboardHexColor(text: entry.preview) {
                                     RoundedRectangle(cornerRadius: 3).fill(Color(.sRGB, red: color.red, green: color.green, blue: color.blue, opacity: color.alpha)).frame(width: 20, height: 20).overlay(RoundedRectangle(cornerRadius: 3).stroke(.secondary, lineWidth: 1))
                                 }
