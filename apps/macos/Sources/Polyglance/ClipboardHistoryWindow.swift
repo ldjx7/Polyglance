@@ -7,7 +7,7 @@ import PolyglanceKit
 
 @MainActor
 final class ClipboardHistoryPanel: NSPanel {
-    var onDismissed: (() -> Void)?
+    var onDismissed: ((_ restoresFocus: Bool) -> Void)?
     private let service: ClipboardHistoryService
     private var cycle = ClipboardCycleState()
     var isCycling: Bool { cycle.isActive }
@@ -17,24 +17,36 @@ final class ClipboardHistoryPanel: NSPanel {
     private var committedDismissal = false
     private var changingMode = false
     private var closing = false
+    private var restoresFocusOnDismissal = true
     private var configuredMode: ClipboardPresentationMode = .management
     private let quickLayout = ClipboardQuickLayout()
     private var previewObservation: AnyCancellable?
 
     init(service: ClipboardHistoryService) {
         self.service = service
-        super.init(contentRect: NSRect(x: 0, y: 0, width: 850, height: 600), styleMask: [.titled, .closable, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
+        super.init(contentRect: NSRect(x: 0, y: 0, width: 850, height: 600), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         title = "剪贴板历史"; level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         isReleasedWhenClosed = false; hidesOnDeactivate = false
         acceptsMouseMovedEvents = true
+        animationBehavior = .none
         configure(mode: .management)
-        previewObservation = service.$previewVisible.dropFirst().sink { [weak self] visible in
-            self?.resizeQuickPreview(visible: visible)
+        // @Published emits before its stored value changes. Resize only after
+        // SwiftUI can see the new content, including on the very first hover.
+        previewObservation = service.$previewVisible.dropFirst().receive(on: RunLoop.main).sink { [weak self] visible in
+            guard let self, visible == self.service.previewVisible else { return }
+            self.resizeQuickPreview(visible: visible)
         }
     }
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    func present() {
+        // Own normal application focus while editing, so AppKit can transfer it
+        // back on close instead of leaving borrowed nonactivating-panel focus.
+        NSApp.activate(ignoringOtherApps: true)
+        makeKeyAndOrderFront(nil)
+    }
 
     func configure(mode: ClipboardPresentationMode) {
         changingMode = true
@@ -42,16 +54,20 @@ final class ClipboardHistoryPanel: NSPanel {
         cancelCycle()
         configuredMode = mode
         if mode == .quick {
-            styleMask = [.borderless, .nonactivatingPanel]
+            styleMask = [.borderless]
             titleVisibility = .hidden; titlebarAppearsTransparent = true
             isOpaque = false; backgroundColor = .clear; hasShadow = true
             quickLayout.reset()
             minSize = NSSize(width: 450, height: 300)
             setContentSize(NSSize(width: 450, height: 520))
-            contentView = NSHostingView(rootView: ClipboardQuickView(service: service, layout: quickLayout))
+            let hostingView = NSHostingView(rootView: ClipboardQuickView(service: service, layout: quickLayout))
+            // The panel owns its dimensions; the collapsed view must not impose
+            // a 450pt maximum width when details are first inserted.
+            hostingView.sizingOptions = []
+            contentView = hostingView
             resizeQuickPreview(visible: service.previewVisible)
         } else {
-            styleMask = [.titled, .closable, .resizable, .nonactivatingPanel]
+            styleMask = [.titled, .closable, .resizable]
             isOpaque = true; backgroundColor = .windowBackgroundColor
             titleVisibility = .visible; titlebarAppearsTransparent = false
             minSize = NSSize(width: 760, height: 520)
@@ -156,21 +172,26 @@ final class ClipboardHistoryPanel: NSPanel {
         if cancelPending { cycleTask?.cancel() }; cycleTask = nil
     }
     func closeAfterSelection() { committedDismissal = true; close(); committedDismissal = false }
+    func closeWithoutRestoringFocus() {
+        restoresFocusOnDismissal = false
+        defer { restoresFocusOnDismissal = true }
+        close()
+    }
     override func resignKey() {
         cancelCycle(cancelPending: !committedDismissal)
         super.resignKey()
-        if service.presentationMode == .quick, attachedSheet == nil, !changingMode, !committedDismissal, !closing, isVisible { close() }
+        if service.presentationMode == .quick, attachedSheet == nil, !changingMode, !committedDismissal, !closing, isVisible { closeWithoutRestoringFocus() }
     }
     override func close() {
         guard !closing else { return }
         closing = true; defer { closing = false }
         cancelCycle(cancelPending: !committedDismissal)
-        // A nonactivating panel borrows key focus from the source app. Release the
-        // search field editor and order it out before reactivating that app.
+        // Release key-window ownership before the dismissal callback reactivates
+        // the original application. Keep closing synchronous and unanimated.
         makeFirstResponder(nil)
-        orderOut(nil)
+        if isKeyWindow { resignKey() }
         super.close()
-        onDismissed?()
+        onDismissed?(restoresFocusOnDismissal)
     }
 }
 

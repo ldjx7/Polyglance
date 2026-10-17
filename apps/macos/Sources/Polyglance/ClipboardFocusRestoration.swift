@@ -9,9 +9,9 @@ enum ClipboardFocusRestoration {
     }
 
     static func restore(_ target: NSRunningApplication) {
-        // The panel must release its field editor and nonactivating key focus first.
-        // Yield activation explicitly when Polyglance itself was active (menu entry).
+        // The history window has released its editor and key-window ownership.
+        // Opening history activated Polyglance, so this is a real app handoff.
         NSApp.yieldActivation(to: target)
-        target.activate()
+        target.activate(options: [.activateIgnoringOtherApps])
     }
 }

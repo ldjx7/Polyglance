@@ -57,6 +57,20 @@ struct LongScreenshotCaptureRegion: Equatable, Sendable {
     static let overlayChromeGuard: CGFloat = 4
     static let trackingContextPadding: CGFloat = 400
 
+    func cropInsets(forWidth width: Int, height: Int) -> (top: Int, bottom: Int, left: Int, right: Int) {
+        // ScreenCaptureKit's best-resolution image can differ from the requested
+        // dimensions on scaled displays. Map both selection edges into that image.
+        func edges(leading: Int, trailing: Int, requested: Int, actual: Int) -> (Int, Int) {
+            guard requested > 0, actual > 0 else { return (0, 0) }
+            let start = min(actual - 1, max(0, Int((Double(leading) * Double(actual) / Double(requested)).rounded())))
+            let end = min(actual, max(start + 1, Int((Double(requested - trailing) * Double(actual) / Double(requested)).rounded())))
+            return (start, actual - end)
+        }
+        let (top, bottom) = edges(leading: cropTop, trailing: cropBottom, requested: pixelHeight, actual: height)
+        let (left, right) = edges(leading: cropLeft, trailing: cropRight, requested: pixelWidth, actual: width)
+        return (top, bottom, left, right)
+    }
+
     let displayID: CGDirectDisplayID
     let sourceRect: CGRect
     let globalRect: CGRect

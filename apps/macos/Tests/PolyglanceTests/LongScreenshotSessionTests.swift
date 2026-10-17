@@ -4,6 +4,30 @@ import XCTest
 
 @MainActor
 final class LongScreenshotSessionTests: XCTestCase {
+    func testActualCaptureResolutionControlsSelectionInsetsAndPreviewSize() async throws {
+        // Requested image: 8x24, actual image: 4x12. The asymmetric tracking
+        // padding must be scaled too; otherwise it consumes the whole frame.
+        let region = LongScreenshotCaptureRegion(
+            displayID: 7, sourceRect: CGRect(x: 0, y: 0, width: 4, height: 12),
+            globalRect: CGRect(x: 0, y: 0, width: 4, height: 6),
+            pixelWidth: 8, pixelHeight: 24, cropTop: 4, cropBottom: 8)
+        let capturer = QueueLongScreenshotCapturer(images: [
+            makeSessionRowImage([210, 190, 10, 30, 50, 70, 90, 110, 180, 200, 220, 240], width: 4),
+            makeSessionRowImage([210, 190, 50, 70, 90, 110, 130, 150, 180, 200, 220, 240], width: 4),
+        ])
+        let scheduler = ManualLongScreenshotScheduler()
+        let session = LongScreenshotSession(region: region, captureSource: capturer, scheduler: scheduler, configuration: makeSessionConfiguration())
+        var preview: LongScreenshotPreview?
+        session.onPreviewChanged = { preview = $0 }
+        await session.start()
+        await scheduler.fire()
+        let result = try session.finish()
+        XCTAssertEqual(result.representations.first?.pixelsHigh, 8)
+        XCTAssertEqual(result.representations.first?.pixelsWide, 4)
+        XCTAssertEqual(preview?.viewportPixelHeight, 6)
+        XCTAssertEqual(preview?.viewportPixelWidth, 4)
+    }
+
     func testStartCapturesImmediatelyAndScheduledTicksUseTheSameRegion() async throws {
         let region = makeRegion()
         let capturer = QueueLongScreenshotCapturer(images: [
