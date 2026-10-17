@@ -416,7 +416,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardHistoryPanel?.beginCycle(shortcut)
     }
     func showClipboardHistory(forceOpen: Bool = false, mode: ClipboardPresentationMode = .quick) {
-        let target = clipboardHistoryService.isPresented
+        let target = clipboardHistoryPanel?.isVisible == true
             ? clipboardHistoryService.targetApplication : NSWorkspace.shared.frontmostApplication
         if clipboardHistoryPanel == nil {
             let panel = ClipboardHistoryPanel(service: clipboardHistoryService)
