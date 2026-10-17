@@ -5,6 +5,19 @@ import TranslatorCore
 
 @MainActor
 final class ClipboardRegressionTests: XCTestCase {
+    func testPresentationTargetFollowsForegroundAppWithHistoryInBackground() throws {
+        let target = try externalApplication()
+        let own = NSRunningApplication.current
+        XCTAssertEqual(ClipboardFocusRestoration.presentationTarget(
+            frontmost: target, historyVisible: true, previousTarget: nil)?.processIdentifier, target.processIdentifier)
+        XCTAssertEqual(ClipboardFocusRestoration.presentationTarget(
+            frontmost: own, historyVisible: true, previousTarget: target)?.processIdentifier, target.processIdentifier)
+        XCTAssertNil(ClipboardFocusRestoration.presentationTarget(
+            frontmost: own, historyVisible: false, previousTarget: target))
+        XCTAssertNil(ClipboardFocusRestoration.presentationTarget(
+            frontmost: nil, historyVisible: true, previousTarget: target))
+    }
+
     func testFirstHoverAtOpeningPointerLocationShowsDetails() async throws {
         try await withFixture { fixture in
             let id = try await fixture.record("first hover")
