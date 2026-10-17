@@ -5,6 +5,72 @@ import TranslatorCore
 
 @MainActor
 final class ClipboardRegressionTests: XCTestCase {
+    func testFirstHoverAtOpeningPointerLocationShowsDetails() async throws {
+        try await withFixture { fixture in
+            let id = try await fixture.record("first hover")
+            let service = fixture.service
+            service.preparePresentation(mode: .quick, target: nil); await service.waitForPresentation()
+            service.hoverEntry(id, at: NSEvent.mouseLocation)
+            try await self.eventually { service.previewVisible && service.previewText == "first hover" }
+        }
+    }
+
+    func testReenteringRebuiltRowAtSameLocationRestartsHover() async throws {
+        try await withFixture { fixture in
+            let id = try await fixture.record("rebuilt row")
+            let service = fixture.service
+            service.preparePresentation(mode: .quick, target: nil); await service.waitForPresentation()
+            let location = NSPoint(x: -20, y: -30)
+            service.hoverEntry(id, at: location)
+            service.endHover(id)
+            service.hoverEntry(id, at: location)
+            let unchangedQuery = service.query
+            service.query = unchangedQuery
+            try await self.eventually { service.previewVisible }
+        }
+    }
+
+    func testFirstHoverExpandsActualHostingWindowAndReleasesKeyFocus() async throws {
+        try await withFixture { fixture in
+            let id = try await fixture.record("visible details")
+            let service = fixture.service
+            service.preparePresentation(mode: .quick, target: nil); await service.waitForPresentation()
+            let panel = ClipboardHistoryPanel(service: service)
+            panel.configure(mode: .quick)
+            panel.center()
+            panel.present()
+            defer { panel.close() }
+            let width = panel.frame.width
+            XCTAssertFalse(panel.styleMask.contains(.nonactivatingPanel))
+            service.hoverEntry(id, at: NSEvent.mouseLocation)
+            try await self.eventually { service.previewVisible && panel.frame.width > width }
+            panel.contentView?.layoutSubtreeIfNeeded()
+            XCTAssertEqual(panel.frame.width, min(770, panel.screen?.visibleFrame.width ?? 770), accuracy: 1)
+            panel.onDismissed = { _ in
+                XCTAssertFalse(panel.isKeyWindow)
+                XCTAssertFalse(panel.isVisible)
+                service.didDismiss()
+            }
+            panel.closeAfterSelection()
+        }
+    }
+
+    func testCancelRestoresFocusButModeTransitionDoesNot() async throws {
+        let target = try externalApplication()
+        var restored = 0
+        try await withFixture(frontmostApplication: { target }, restoreFocus: { _ in restored += 1 }) { fixture in
+            let service = fixture.service
+            service.preparePresentation(mode: .quick, target: target); await service.waitForPresentation()
+            service.didDismiss(restoringFocus: false)
+            XCTAssertEqual(restored, 0)
+            service.preparePresentation(mode: .management, target: target); await service.waitForPresentation()
+            service.didDismiss()
+            XCTAssertEqual(restored, 1)
+            service.didDismiss()
+            XCTAssertEqual(restored, 1, "Closing an already dismissed presentation must not reactivate its old target.")
+        }
+    }
+
     func testCopyOnlyRestoresOriginalAppAfterDismissalForBothPresentationModes() async throws {
         let target = try externalApplication()
         for mode in [ClipboardPresentationMode.quick, .management] {
@@ -88,7 +154,7 @@ final class ClipboardRegressionTests: XCTestCase {
             XCTAssertTrue(panel.makeFirstResponder(field))
             XCTAssertTrue(panel.firstResponder is NSTextView)
             var dismissed = false
-            panel.onDismissed = {
+            panel.onDismissed = { _ in
                 dismissed = true
                 XCTAssertFalse(panel.isVisible)
                 XCTAssertFalse(panel.isKeyWindow)
@@ -262,11 +328,17 @@ final class ClipboardRegressionTests: XCTestCase {
             let panel = ClipboardHistoryPanel(service: service)
             panel.configure(mode: .quick)
             var dismissals = 0
-            panel.onDismissed = { dismissals += 1; service.didDismiss() }
+            var restorationRequests: [Bool] = []
+            panel.onDismissed = { restoresFocus in
+                dismissals += 1
+                restorationRequests.append(restoresFocus)
+                service.didDismiss(restoringFocus: restoresFocus)
+            }
             panel.orderFront(nil)
             panel.resignKey()
             XCTAssertFalse(panel.isVisible)
             XCTAssertEqual(dismissals, 1)
+            XCTAssertEqual(restorationRequests, [false], "Clicking another app must not steal its focus back.")
             service.preparePresentation(mode: .management); await service.waitForPresentation()
             panel.configure(mode: .management)
             panel.orderFront(nil)
@@ -275,6 +347,7 @@ final class ClipboardRegressionTests: XCTestCase {
             XCTAssertEqual(dismissals, 1)
             panel.close()
             XCTAssertEqual(dismissals, 2)
+            XCTAssertEqual(restorationRequests, [false, true])
         }
     }
 
@@ -440,7 +513,7 @@ final class ClipboardRegressionTests: XCTestCase {
                 let copying = Task { await service.copySelected(paste: paste) }
                 try await self.eventually { service.copyBusy }
                 let panel = ClipboardHistoryPanel(service: service)
-                panel.onDismissed = { service.didDismiss() }
+                panel.onDismissed = { _ in service.didDismiss() }
                 panel.cancelOperation(nil)
                 service.preparePresentation()
                 await copying.value
@@ -517,7 +590,7 @@ final class ClipboardRegressionTests: XCTestCase {
                     let recognizing = Task { await service.recognizeTextSelected() }
                     try await self.eventually { await processor.requests == 1 }
                     let panel = ClipboardHistoryPanel(service: service)
-                    panel.onDismissed = { service.didDismiss() }
+                    panel.onDismissed = { _ in service.didDismiss() }
                     panel.cancelOperation(nil)
                     XCTAssertFalse(service.recognizingText)
                     if reopen { service.preparePresentation(); await service.waitForPresentation() }

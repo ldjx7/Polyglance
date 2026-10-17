@@ -117,7 +117,7 @@ final class ClipboardHistoryService: ObservableObject {
     @Published private(set) var pasteQueueCount = 0
     @Published var statusMessage = ""
     @Published var errorMessage: String?
-    @Published var query = "" { didSet { scheduleReload() } }
+    @Published var query = "" { didSet { if query != oldValue { scheduleReload() } } }
     @Published var pinnedOnly = false { didSet { scheduleReload() } }
     @Published var kindFilter: ClipboardKind? { didSet { scheduleReload() } }
     @Published var sourceFilter = "" { didSet { scheduleReload() } }
@@ -326,6 +326,7 @@ final class ClipboardHistoryService: ObservableObject {
         searchTask = nil
         isPresented = true
         previewVisible = mode == .management && preferences.autoPreview
+        lastHoverLocation = nil
         requestSearchFocus()
         presentationTask = Task {
             do { try await worker.configure(preferences.limits); needsRecovery = false; await reload(); scheduleIndexing() }
@@ -342,7 +343,8 @@ final class ClipboardHistoryService: ObservableObject {
         requestSearchFocus()
         onOpenManagement?()
     }
-    func didDismiss() {
+    func didDismiss(restoringFocus: Bool = true) {
+        let wasPresented = isPresented
         suspendHoverSelection()
         if presentationMode == .management {
             managementState = ManagementState(query: query, pinnedOnly: pinnedOnly, kind: kindFilter,
@@ -352,6 +354,10 @@ final class ClipboardHistoryService: ObservableObject {
         if !committingCopy { copyGeneration &+= 1 }
         isPresented = false; reloadGeneration &+= 1; selectionGeneration &+= 1
         searchTask?.cancel(); readingSelectionTask?.cancel(); presentationTask?.cancel(); previewImage = nil; previewText = ""; previewLoading = false
+        if wasPresented, restoringFocus, !committingCopy, let target = targetApplication,
+           ClipboardFocusRestoration.canRestore(target: target, frontmost: frontmostApplication()) {
+            restoreFocus(target)
+        }
     }
     func poll() {
         if ClipboardCaptureSuppression.depth > 0 || suppressionGeneration != ClipboardCaptureSuppression.generation {
@@ -506,7 +512,6 @@ final class ClipboardHistoryService: ObservableObject {
     func hoverEntry(_ id: UInt64, at location: NSPoint) {
         guard isPresented, presentationMode == .quick, !dataBusy, !copyBusy,
               entries.contains(where: { $0.id == id }), location != lastHoverLocation else { return }
-        lastHoverLocation = location
         guard hoveredEntryID != id else { return }
         cancelHoverPreview()
         hoveredEntryID = id

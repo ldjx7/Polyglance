@@ -131,10 +131,10 @@ final class ClipboardHistoryTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: name) }
         let panel = ClipboardHistoryPanel(service: ClipboardHistoryService(defaults: defaults))
         var dismissed = false
-        panel.onDismissed = { dismissed = true }
+        panel.onDismissed = { _ in dismissed = true }
         XCTAssertTrue(panel.canBecomeKey)
         XCTAssertFalse(panel.canBecomeMain)
-        XCTAssertTrue(panel.styleMask.contains(.nonactivatingPanel))
+        XCTAssertFalse(panel.styleMask.contains(.nonactivatingPanel))
         panel.cancelOperation(nil)
         XCTAssertTrue(dismissed)
     }
