@@ -416,8 +416,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardHistoryPanel?.beginCycle(shortcut)
     }
     func showClipboardHistory(forceOpen: Bool = false, mode: ClipboardPresentationMode = .quick) {
-        let target = clipboardHistoryPanel?.isVisible == true
-            ? clipboardHistoryService.targetApplication : NSWorkspace.shared.frontmostApplication
+        let target = ClipboardFocusRestoration.presentationTarget(
+            frontmost: NSWorkspace.shared.frontmostApplication,
+            historyVisible: clipboardHistoryPanel?.isVisible == true,
+            previousTarget: clipboardHistoryService.targetApplication)
         if clipboardHistoryPanel == nil {
             let panel = ClipboardHistoryPanel(service: clipboardHistoryService)
             panel.onDismissed = { [weak self] restoresFocus in self?.clipboardHistoryService.didDismiss(restoringFocus: restoresFocus) }
