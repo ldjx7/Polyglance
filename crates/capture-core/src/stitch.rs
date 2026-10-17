@@ -251,7 +251,35 @@ impl Stitcher {
         let configuration = self.configuration;
         let direction = self.direction;
         let learned = self.static_bands;
-        let estimate = |bands: StaticBands| {
+        let insets = self.effective_crop_insets(&frame);
+        if insets != CropInsets::default()
+            && (insets.top..frame.height - insets.bottom).all(|row| {
+                let start = (row * frame.width + insets.left) * 4;
+                let end = ((row + 1) * frame.width - insets.right) * 4;
+                previous.bytes[start..end] == frame.bytes[start..end]
+            })
+        {
+            // Changes outside a pixel-identical selection cannot extend it,
+            // even when the selection is too small for motion estimation.
+            self.previous_frame = Some(frame);
+            return Ok(self.result(Disposition::Unchanged, false, false));
+        }
+        let selection = if direction == Direction::Vertical {
+            StaticBands {
+                leading: insets.top,
+                trailing: insets.bottom,
+                cross_leading: insets.left,
+                cross_trailing: insets.right,
+            }
+        } else {
+            StaticBands {
+                leading: insets.left,
+                trailing: insets.right,
+                cross_leading: insets.top,
+                cross_trailing: insets.bottom,
+            }
+        };
+        let estimate_in = |bands: StaticBands| {
             estimated_offset(
                 &configuration,
                 direction,
@@ -260,6 +288,52 @@ impl Stitcher {
                 self.predicted_offset,
                 bands,
             )
+        };
+        let estimate = |bands: StaticBands| {
+            if selection == StaticBands::default() {
+                return estimate_in(bands);
+            }
+            let selected_bands = bands.merged(selection);
+            if pixels_equal_within(previous, &frame, direction, selected_bands) {
+                return Ok(0);
+            }
+            let inner_bands = selected_bands.merged(detect_selected_static_bands(
+                previous,
+                &frame,
+                direction,
+                None,
+                selection,
+                configuration.minimum_overlap_rows,
+            ));
+            // Tracking padding can contain a stationary page around an inner
+            // scroller. The selected content, including a zero shift, owns the
+            // motion decision; unrelated pixels outside it must not overrule it.
+            if inner_bands != selected_bands {
+                if let Ok(offset) = estimate_in(inner_bands) {
+                    return Ok(offset);
+                }
+            }
+            if let Ok(offset) = estimate_in(selected_bands) {
+                return Ok(offset);
+            }
+
+            // Context still helps when a fast page scroll leaves less than the
+            // normal minimum overlap inside a small selection. Accept that
+            // estimate only if the selection's remaining overlap agrees too.
+            let offset = estimate_in(bands)?;
+            let score = mismatch_score(
+                direction,
+                previous,
+                &frame,
+                offset,
+                FULL_SAMPLES,
+                selected_bands,
+            );
+            if score <= configuration.match_threshold {
+                Ok(offset)
+            } else {
+                Err(StitchError::NoReliableVerticalOverlap)
+            }
         };
         let offset = match estimate(learned) {
             Ok(offset) => offset,
@@ -300,12 +374,22 @@ impl Stitcher {
         // The page moved, so whatever is still identical at the same position
         // and did not travel with the page is fixed chrome: remember it for
         // the frames that follow.
-        let bands = learned.merged(detect_static_bands(
+        let mut bands = learned.merged(detect_static_bands(
             previous,
             &frame,
             direction,
             Some(offset),
         ));
+        if selection != StaticBands::default() {
+            bands = bands.merged(detect_selected_static_bands(
+                previous,
+                &frame,
+                direction,
+                Some(offset),
+                selection,
+                configuration.minimum_overlap_rows,
+            ));
+        }
         self.static_bands = bands;
         self.predicted_offset = offset;
         let outcome = self.extend_output(&frame, offset, bands);
@@ -399,6 +483,13 @@ impl Stitcher {
         self.previous_frame_axis_origin = current_origin;
 
         if requested_before == 0 && requested_after == 0 {
+            // Small scroll steps can reveal content beneath a fixed footer
+            // before the document grows beyond the initial output bounds.
+            // Preserve each revealed strip now, or later frames lose it.
+            if (signed_offset > 0 && bands.trailing > 0) || (signed_offset < 0 && bands.leading > 0)
+            {
+                self.overwrite_overlap(frame, signed_offset, current_origin, bands);
+            }
             self.current_frame_offset =
                 current_origin + leading_crop as i64 - self.output_axis_origin;
             return Ok(self.result(Disposition::Unchanged, false, false));
@@ -1125,7 +1216,8 @@ impl Sampling {
             content_length / 20
         } else {
             0
-        };
+        }
+        .min((overlap_length - 1) / 2);
         let cross_inset = if content_cross >= 20 {
             content_cross / 20
         } else {
@@ -1192,6 +1284,131 @@ fn detect_static_bands(
             pixels.any(|pixel| Some(&pixel[..3]) != first)
         });
         if textured { count } else { 0 }
+    };
+    StaticBands {
+        leading: scan(vertical, false),
+        trailing: scan(vertical, true),
+        cross_leading: scan(!vertical, false),
+        cross_trailing: scan(!vertical, true),
+    }
+}
+
+fn pixels_equal_within(
+    previous: &PixelFrame,
+    current: &PixelFrame,
+    direction: Direction,
+    bands: StaticBands,
+) -> bool {
+    let (top, bottom, left, right) = if direction == Direction::Vertical {
+        (
+            bands.leading,
+            bands.trailing,
+            bands.cross_leading,
+            bands.cross_trailing,
+        )
+    } else {
+        (
+            bands.cross_leading,
+            bands.cross_trailing,
+            bands.leading,
+            bands.trailing,
+        )
+    };
+    if top + bottom >= previous.height || left + right >= previous.width {
+        return false;
+    }
+    (top..previous.height - bottom).all(|row| {
+        let start = (row * previous.width + left) * 4;
+        let end = ((row + 1) * previous.width - right) * 4;
+        previous.bytes[start..end] == current.bytes[start..end]
+    })
+}
+
+/// Find stationary title/composer/sidebar pixels from the selection's edges.
+/// Tracking padding must not consume the scan's budget before it reaches the
+/// actual viewport. Only textured bands are learned, and page rows that merely
+/// repeat at the chosen offset remain part of the scrolling content.
+fn detect_selected_static_bands(
+    previous: &PixelFrame,
+    current: &PixelFrame,
+    direction: Direction,
+    shift: Option<i64>,
+    selection: StaticBands,
+    minimum_overlap: usize,
+) -> StaticBands {
+    let vertical = direction == Direction::Vertical;
+    let scan = |rows: bool, from_end: bool| {
+        let across_axis = rows == vertical;
+        let (leading, trailing, cross_leading, cross_trailing) = if across_axis {
+            (
+                selection.leading,
+                selection.trailing,
+                selection.cross_leading,
+                selection.cross_trailing,
+            )
+        } else {
+            (
+                selection.cross_leading,
+                selection.cross_trailing,
+                selection.leading,
+                selection.trailing,
+            )
+        };
+        let axis = if rows {
+            previous.height
+        } else {
+            previous.width
+        };
+        let cross = if rows {
+            previous.width
+        } else {
+            previous.height
+        };
+        let length = axis.saturating_sub(leading + trailing);
+        let cross_length = cross.saturating_sub(cross_leading + cross_trailing);
+        let cap = length.saturating_sub(if across_axis {
+            minimum_overlap.max(1)
+        } else {
+            1
+        });
+        let index_at = |count: usize| {
+            if from_end {
+                axis - trailing - 1 - count
+            } else {
+                leading + count
+            }
+        };
+        let mut count = 0;
+        while count < cap {
+            let index = index_at(count);
+            let identical = line_pixels(previous, rows, index)
+                .skip(cross_leading)
+                .take(cross_length)
+                .eq(line_pixels(current, rows, index)
+                    .skip(cross_leading)
+                    .take(cross_length));
+            if !identical
+                || shift.is_some_and(|offset| {
+                    line_moved_with_page(previous, current, rows, across_axis, index, offset)
+                        .unwrap_or(true)
+                })
+            {
+                break;
+            }
+            count += 1;
+        }
+        let textured = (0..count).any(|line| {
+            let mut pixels = line_pixels(current, rows, index_at(line))
+                .skip(cross_leading)
+                .take(cross_length);
+            let first = pixels.next().map(|pixel| &pixel[..3]);
+            pixels.any(|pixel| Some(&pixel[..3]) != first)
+        });
+        if textured {
+            count + if from_end { trailing } else { leading }
+        } else {
+            0
+        }
     };
     StaticBands {
         leading: scan(vertical, false),
@@ -2345,5 +2562,233 @@ mod resilience_tests {
         assert_eq!(output_row(&bytes, 79), page_row(139));
         assert_eq!(output_row(&bytes, 80), page_row(140));
         assert_eq!(output_row(&bytes, 149), page_row(209));
+    }
+
+    fn embedded_scroller(first_row: usize, outside_shift: usize) -> Vec<u8> {
+        let mut bytes = vec![255; WIDTH * 1_000 * 4];
+        for row in 0..1_000 {
+            let pixels = page_row(10_000 + row + outside_shift);
+            bytes[row * WIDTH * 4..(row + 1) * WIDTH * 4].copy_from_slice(&pixels);
+        }
+        bytes[400 * WIDTH * 4..600 * WIDTH * 4].copy_from_slice(&page(first_row));
+        bytes
+    }
+
+    #[test]
+    fn selection_scrolling_inside_stationary_context_is_stitched() {
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        stitcher.set_crop_insets(400, 400, 0, 0);
+        stitcher
+            .append(embedded_scroller(100, 0), WIDTH as u32, 1_000)
+            .unwrap();
+        for first_row in [130, 160, 190] {
+            let result = stitcher
+                .append(embedded_scroller(first_row, 0), WIDTH as u32, 1_000)
+                .unwrap();
+            assert_eq!(result.disposition, appended(30));
+        }
+        assert_eq!(stitcher.output_height(), 290);
+        let rendered = stitcher.render().unwrap();
+        for row in 0..290 {
+            assert_eq!(output_row(&rendered, row), page_row(100 + row));
+        }
+        let reverse = stitcher
+            .append(embedded_scroller(70, 0), WIDTH as u32, 1_000)
+            .unwrap();
+        assert_eq!(reverse.disposition, appended(-120));
+        assert_eq!(stitcher.output_height(), 320);
+        assert_eq!(output_row(&stitcher.render().unwrap(), 0), page_row(70));
+    }
+
+    #[test]
+    fn outside_motion_does_not_scroll_a_stationary_selection() {
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        stitcher.set_crop_insets(400, 400, 0, 0);
+        stitcher
+            .append(embedded_scroller(100, 0), WIDTH as u32, 1_000)
+            .unwrap();
+        let result = stitcher
+            .append(embedded_scroller(100, 30), WIDTH as u32, 1_000)
+            .unwrap();
+        assert_eq!(result.disposition, Disposition::Unchanged);
+        assert_eq!(stitcher.render().unwrap(), page(100));
+    }
+
+    #[test]
+    fn a_stationary_small_selection_ignores_context_after_scrolling() {
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        stitcher.set_crop_insets(90, 90, 0, 0);
+        append(&mut stitcher, page(0)).unwrap();
+        append(&mut stitcher, page(10)).unwrap();
+        let before = stitcher.render().unwrap();
+        let mut next = page(20);
+        next[90 * WIDTH * 4..110 * WIDTH * 4]
+            .copy_from_slice(&page(10)[90 * WIDTH * 4..110 * WIDTH * 4]);
+        let result = append(&mut stitcher, next).unwrap();
+        assert_eq!(result.disposition, Disposition::Unchanged);
+        assert_eq!(stitcher.render().unwrap(), before);
+    }
+
+    #[test]
+    fn horizontal_selection_scrolls_inside_stationary_context() {
+        fn transpose(bytes: &[u8], width: usize, height: usize) -> Vec<u8> {
+            let mut result = vec![0; bytes.len()];
+            for row in 0..height {
+                for column in 0..width {
+                    let source = (row * width + column) * 4;
+                    let target = (column * height + row) * 4;
+                    result[target..target + 4].copy_from_slice(&bytes[source..source + 4]);
+                }
+            }
+            result
+        }
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Horizontal);
+        stitcher.set_crop_insets(0, 0, 400, 400);
+        for first_row in [100, 130, 160] {
+            stitcher
+                .append(
+                    transpose(&embedded_scroller(first_row, 0), WIDTH, 1_000),
+                    1_000,
+                    WIDTH as u32,
+                )
+                .unwrap();
+        }
+        assert_eq!(stitcher.output_width(), 260);
+        let expected: Vec<u8> = (100..360).flat_map(page_row).collect();
+        assert_eq!(stitcher.render().unwrap(), transpose(&expected, WIDTH, 260));
+    }
+
+    fn chat_frame(first_row: usize) -> Vec<u8> {
+        let mut bytes = embedded_scroller(0, 0);
+        // The selected 200 rows include a fixed title and composer. Messages
+        // occupy only the middle 100 rows and most pixels are blank bubble fill.
+        for row in 0..HEIGHT {
+            let pixels = if row < 40 || row >= 140 {
+                page_row(20_000 + row)
+            } else {
+                let document_row = first_row + row - 40;
+                let mut pixels = vec![245; WIDTH * 4];
+                for column in 0..WIDTH {
+                    let index = column * 4;
+                    pixels[index + 3] = 255;
+                    let text_row = document_row % 24;
+                    if (6..13).contains(&text_row) && (6..32).contains(&column) {
+                        let value = if (document_row / 24 + column / 3) % 5 == 0 {
+                            245
+                        } else {
+                            65
+                        };
+                        pixels[index..index + 3].fill(value);
+                    }
+                    if (2..5).contains(&column) && text_row < 16 {
+                        pixels[index..index + 3]
+                            .copy_from_slice(&page_row(document_row / 24)[index..index + 3]);
+                    }
+                }
+                pixels
+            };
+            let start = (400 + row) * WIDTH * 4;
+            bytes[start..start + WIDTH * 4].copy_from_slice(&pixels);
+        }
+        bytes
+    }
+
+    #[test]
+    fn chat_bubbles_scroll_between_fixed_title_and_composer_inside_selection() {
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        stitcher.set_crop_insets(400, 400, 0, 0);
+        let mut expected = chat_frame(12)[400 * WIDTH * 4..540 * WIDTH * 4].to_vec();
+        stitcher
+            .append(chat_frame(12), WIDTH as u32, 1_000)
+            .unwrap();
+        for first_row in [20, 28, 36, 44, 52, 60, 68, 76, 84, 92] {
+            expected.extend_from_slice(&chat_frame(first_row)[532 * WIDTH * 4..540 * WIDTH * 4]);
+            let result = stitcher
+                .append(chat_frame(first_row), WIDTH as u32, 1_000)
+                .unwrap();
+            if first_row == 92 {
+                assert_eq!(result.disposition, appended(8));
+            }
+        }
+        assert_eq!(stitcher.output_height(), 220);
+        assert_eq!(stitcher.render().unwrap(), expected);
+    }
+
+    #[test]
+    fn chat_bubbles_scroll_up_without_losing_rows_under_the_fixed_title() {
+        let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+        stitcher.set_crop_insets(400, 400, 0, 0);
+        stitcher
+            .append(chat_frame(92), WIDTH as u32, 1_000)
+            .unwrap();
+        for first_row in [84, 76, 68, 60, 52, 44, 36, 28, 20, 12] {
+            let result = stitcher
+                .append(chat_frame(first_row), WIDTH as u32, 1_000)
+                .unwrap();
+            if first_row == 12 {
+                assert_eq!(result.disposition, appended(-8));
+            }
+        }
+        let mut expected = chat_frame(12)[440 * WIDTH * 4..540 * WIDTH * 4].to_vec();
+        expected.extend_from_slice(&chat_frame(92)[460 * WIDTH * 4..600 * WIDTH * 4]);
+        assert_eq!(stitcher.output_height(), 240);
+        assert_eq!(stitcher.render().unwrap(), expected);
+    }
+
+    #[test]
+    fn a_blinking_composer_does_not_move_a_stationary_chat() {
+        for after_scroll in [false, true] {
+            let mut stitcher = Stitcher::new(Configuration::default(), Direction::Vertical);
+            stitcher.set_crop_insets(400, 400, 0, 0);
+            stitcher
+                .append(chat_frame(12), WIDTH as u32, 1_000)
+                .unwrap();
+            let mut next = if after_scroll {
+                stitcher
+                    .append(chat_frame(20), WIDTH as u32, 1_000)
+                    .unwrap();
+                chat_frame(20)
+            } else {
+                chat_frame(12)
+            };
+            let before = stitcher.render().unwrap();
+            for row in 570..582 {
+                next[(row * WIDTH + 10) * 4..(row * WIDTH + 10) * 4 + 3].fill(0);
+            }
+            let result = stitcher.append(next, WIDTH as u32, 1_000).unwrap();
+            assert_eq!(result.disposition, Disposition::Unchanged);
+            assert_eq!(stitcher.render().unwrap(), before);
+        }
+    }
+
+    #[test]
+    fn context_motion_cannot_supply_a_false_selection_overlap() {
+        let first: Vec<u8> = (0..1_000).flat_map(page_row).collect();
+        let mut second: Vec<u8> = (70..1_070).flat_map(page_row).collect();
+        let unrelated: Vec<u8> = (2_000..2_080).flat_map(page_row).collect();
+        second[460 * WIDTH * 4..540 * WIDTH * 4].copy_from_slice(&unrelated);
+        let mut context = Stitcher::new(Configuration::default(), Direction::Vertical);
+        context.append(first.clone(), WIDTH as u32, 1_000).unwrap();
+        assert_eq!(
+            context
+                .append(second.clone(), WIDTH as u32, 1_000)
+                .unwrap()
+                .disposition,
+            appended(70)
+        );
+
+        let mut selection = Stitcher::new(Configuration::default(), Direction::Vertical);
+        selection.set_crop_insets(460, 460, 0, 0);
+        selection
+            .append(first.clone(), WIDTH as u32, 1_000)
+            .unwrap();
+        assert!(matches!(
+            selection.append(second, WIDTH as u32, 1_000),
+            Err(StitchError::NoReliableVerticalOverlap)
+        ));
+        assert_eq!(
+            selection.render().unwrap(),
+            &first[460 * WIDTH * 4..540 * WIDTH * 4]
+        );
     }
 }

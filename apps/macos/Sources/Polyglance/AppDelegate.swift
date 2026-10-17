@@ -149,11 +149,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardHistoryService.onDismiss = { [weak self] in self?.clipboardHistoryPanel?.closeAfterSelection() }
         clipboardHistoryService.onOpenManagement = { [weak self] in
             self?.clipboardHistoryPanel?.configure(mode: .management)
-            self?.clipboardHistoryPanel?.makeKeyAndOrderFront(nil)
+            self?.clipboardHistoryPanel?.present()
         }
         clipboardHistoryService.onOpenGeneralSettings = { [weak self] in
             guard let self else { return }
-            clipboardHistoryPanel?.close()
+            clipboardHistoryPanel?.closeWithoutRestoringFocus()
             showSettings(tab: .general)
         }
         clipboardHistoryService.onPinImage = { [weak self] image in
@@ -416,31 +416,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardHistoryPanel?.beginCycle(shortcut)
     }
     func showClipboardHistory(forceOpen: Bool = false, mode: ClipboardPresentationMode = .quick) {
+        let target = ClipboardFocusRestoration.presentationTarget(
+            frontmost: NSWorkspace.shared.frontmostApplication,
+            historyVisible: clipboardHistoryPanel?.isVisible == true,
+            previousTarget: clipboardHistoryService.targetApplication)
         if clipboardHistoryPanel == nil {
             let panel = ClipboardHistoryPanel(service: clipboardHistoryService)
-            panel.onDismissed = { [weak self] in self?.clipboardHistoryService.didDismiss() }
+            panel.onDismissed = { [weak self] restoresFocus in self?.clipboardHistoryService.didDismiss(restoringFocus: restoresFocus) }
             clipboardHistoryPanel = panel
         }
         if clipboardHistoryPanel?.isVisible == true {
             if mode == .management {
                 if clipboardHistoryService.presentationMode == .quick { clipboardHistoryService.openManagement() }
-                else { clipboardHistoryPanel?.makeKeyAndOrderFront(nil) }
+                else { clipboardHistoryPanel?.present() }
                 return
             }
             if clipboardHistoryService.presentationMode == .management {
                 // An open editor owns the current invocation until saved or cancelled.
-                if clipboardHistoryPanel?.attachedSheet != nil { clipboardHistoryPanel?.makeKeyAndOrderFront(nil); return }
-                clipboardHistoryService.didDismiss()
+                if clipboardHistoryPanel?.attachedSheet != nil { clipboardHistoryPanel?.present(); return }
+                clipboardHistoryService.didDismiss(restoringFocus: false)
             } else {
-                if forceOpen { clipboardHistoryPanel?.makeKeyAndOrderFront(nil); clipboardHistoryService.requestSearchFocus(); return }
+                if forceOpen { clipboardHistoryPanel?.present(); clipboardHistoryService.requestSearchFocus(); return }
                 clipboardHistoryPanel?.close()
                 return
             }
         }
-        clipboardHistoryService.preparePresentation(mode: mode)
+        clipboardHistoryService.preparePresentation(mode: mode, target: target)
         clipboardHistoryPanel?.configure(mode: mode)
         clipboardHistoryPanel?.center()
-        clipboardHistoryPanel?.makeKeyAndOrderFront(nil)
+        clipboardHistoryPanel?.present()
     }
 
     private func showClipboardBarcodes(_ image: NSImage) {

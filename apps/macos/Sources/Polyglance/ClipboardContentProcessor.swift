@@ -17,10 +17,16 @@ struct ClipboardPreview: @unchecked Sendable {
     let plainTextAvailable: Bool
 }
 
+struct ClipboardThumbnail: @unchecked Sendable {
+    // CGImage is immutable; only the main actor constructs its NSImage wrapper.
+    let image: CGImage
+}
+
 /// Bounded image encoding, thumbnail decoding and local OCR run away from AppKit.
 protocol ClipboardContentProcessing: Actor {
     func normalize(_ raw: [ClipboardRawItem], maximumBytes: UInt64) async throws -> [ClipboardItem]
     func preview(_ items: [ClipboardItem], ocrText: String) async throws -> ClipboardPreview
+    func thumbnail(_ items: [ClipboardItem]) async throws -> ClipboardThumbnail?
     func recognize(_ items: [ClipboardItem]) async throws -> String
 }
 
@@ -56,17 +62,7 @@ actor ClipboardContentProcessor: ClipboardContentProcessing {
     func preview(_ items: [ClipboardItem], ocrText: String) throws -> ClipboardPreview {
         let payload = items.flatMap(\.representations)
         let imageData = payload.first { $0.format == "image/png" }?.bytes
-        var thumbnail: CGImage?
-        if let imageData {
-            let source = try Self.imageSource(imageData)
-            thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceThumbnailMaxPixelSize: 512,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceShouldCacheImmediately: true,
-            ] as CFDictionary)
-            guard thumbnail != nil else { throw ClipboardFailure.InvalidInput }
-        }
+        let thumbnail = try Self.previewImage(payload, maximumPixelSize: 512)
         let text = items.compactMap { item -> String? in
             if let data = item.representations.first(where: { $0.format == "text/plain" })?.bytes {
                 return String(data: data, encoding: .utf8)
@@ -78,6 +74,42 @@ actor ClipboardContentProcessor: ClipboardContentProcessing {
         return ClipboardPreview(image: thumbnail, text: String((text.isEmpty ? ocrText : text).prefix(20_000)),
                                 hasImages: imageData != nil, hasFiles: payload.contains { $0.format == "text/uri-list" },
                                 plainTextAvailable: clipboardPlainText(items: items) != nil)
+    }
+
+    func thumbnail(_ items: [ClipboardItem]) async throws -> ClipboardThumbnail? {
+        try Task.checkCancellation()
+        let image = try Self.previewImage(items.flatMap(\.representations), maximumPixelSize: 96)
+        try Task.checkCancellation()
+        return image.map { ClipboardThumbnail(image: $0) }
+    }
+
+    private static func previewImage(_ payload: [ClipboardRepresentation], maximumPixelSize: Int) throws -> CGImage? {
+        func decode(_ source: CGImageSource) -> CGImage? {
+            CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: true,
+            ] as CFDictionary)
+        }
+        if let data = payload.first(where: { $0.format == "image/png" })?.bytes {
+            guard let image = decode(try imageSource(data)) else { throw ClipboardFailure.InvalidInput }
+            return image
+        }
+        // Finder copies contain file references, not bitmap data. Read only local
+        // regular files and keep the stored reference and copy behavior intact.
+        for representation in payload where representation.format == "text/uri-list" {
+            try Task.checkCancellation()
+            guard let value = String(data: representation.bytes, encoding: .utf8),
+                  let url = URL(string: value), url.isFileURL,
+                  url.host == nil || url.host == "" || url.host == "localhost",
+                  let values = try? url.resourceValues(forKeys: [.isRegularFileKey]), values.isRegularFile == true,
+                  let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+                  (try? validateImageSource(source)) != nil,
+                  let image = decode(source) else { continue }
+            return image
+        }
+        return nil
     }
 
     func recognize(_ items: [ClipboardItem]) async throws -> String {
@@ -100,11 +132,15 @@ actor ClipboardContentProcessor: ClipboardContentProcessing {
     }
 
     private static func imageSource(_ data: Data) throws -> CGImageSource {
-        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else { throw ClipboardFailure.InvalidInput }
+        try validateImageSource(source)
+        return source
+    }
+
+    private static func validateImageSource(_ source: CGImageSource) throws {
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
               let height = properties[kCGImagePropertyPixelHeight] as? NSNumber,
               clipboardImageDimensionsAllowed(width: width.uint64Value, height: height.uint64Value) else { throw ClipboardFailure.TooLarge }
-        return source
     }
 }

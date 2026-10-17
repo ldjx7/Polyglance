@@ -76,6 +76,7 @@ final class LongScreenshotSession {
     private var isCaptureInFlight = false
     private var completedImage: NSImage?
     private var didNotifyCancellation = false
+    private var viewportPixelSize: (width: Int, height: Int)?
 
     private(set) var state: LongScreenshotSessionState = .ready {
         didSet {
@@ -108,12 +109,6 @@ final class LongScreenshotSession {
         self.configuration = configuration
         self.direction = direction
         stitcher = LongScreenshotStitcher(configuration: configuration, direction: direction)
-        stitcher.setCropInsets(
-            top: region.cropTop,
-            bottom: region.cropBottom,
-            left: region.cropLeft,
-            right: region.cropRight
-        )
     }
 
     func start() async {
@@ -134,12 +129,6 @@ final class LongScreenshotSession {
     func updateRegion(_ region: LongScreenshotCaptureRegion) -> Bool {
         guard state == .ready else { return false }
         self.region = region
-        stitcher.setCropInsets(
-            top: region.cropTop,
-            bottom: region.cropBottom,
-            left: region.cropLeft,
-            right: region.cropRight
-        )
         return true
     }
 
@@ -206,6 +195,11 @@ final class LongScreenshotSession {
             guard state == .capturing || state == .paused else {
                 return
             }
+            if stitcher.frameCount == 0 {
+                let insets = region.cropInsets(forWidth: frame.width, height: frame.height)
+                stitcher.setCropInsets(top: insets.top, bottom: insets.bottom, left: insets.left, right: insets.right)
+                viewportPixelSize = (frame.width - insets.left - insets.right, frame.height - insets.top - insets.bottom)
+            }
             let result = try stitcher.append(frame)
             publishPreview()
             if result.limitReached != nil {
@@ -237,8 +231,8 @@ final class LongScreenshotSession {
             frameCount: stitcher.frameCount,
             totalPixelWidth: stitcher.outputWidth,
             totalPixelHeight: stitcher.outputHeight,
-            viewportPixelWidth: region.selectionPixelWidth,
-            viewportPixelHeight: region.selectionPixelHeight,
+            viewportPixelWidth: viewportPixelSize?.width ?? region.selectionPixelWidth,
+            viewportPixelHeight: viewportPixelSize?.height ?? region.selectionPixelHeight,
             viewportPixelOffset: stitcher.currentFrameOffset
         ))
     }
