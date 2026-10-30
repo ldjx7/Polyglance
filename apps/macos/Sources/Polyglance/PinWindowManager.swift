@@ -1315,7 +1315,7 @@ final class PinContentView: NSView {
         ocrTask = Task { [weak self, image] in
             let service = OCRService()
             do {
-                let doc = try await service.recognizeDocument(in: image)
+                let doc = try await service.recognizeDocument(in: image, source: "pin.backgroundOCR")
                 guard !Task.isCancelled else { return }
                 await MainActor.run { [weak self] in
                     guard let self else { return }

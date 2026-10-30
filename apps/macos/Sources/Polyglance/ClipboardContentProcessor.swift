@@ -123,7 +123,7 @@ actor ClipboardContentProcessor: ClipboardContentProcessing {
                 try Task.checkCancellation()
                 let source = try Self.imageSource(representation.bytes)
                 guard let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { throw OCRError.invalidImage }
-                do { fragments.append(try await OCRService().recognizeText(in: image)) }
+                do { fragments.append(try await OCRService().recognizeText(in: image, source: "clipboard")) }
                 catch OCRError.noText { continue }
             }
         }

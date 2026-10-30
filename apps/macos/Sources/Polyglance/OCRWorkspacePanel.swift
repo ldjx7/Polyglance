@@ -147,6 +147,7 @@ final class OCRWorkspacePanel: NSPanel {
     }
 
     func cancelPendingAppend(error: Error) {
+        PerfLogger.log("[OCR UI] event=append.error panel=\(ObjectIdentifier(self)) visible=\(isVisible)")
         statsLabel.stringValue = "追加识别失败"
     }
 
@@ -265,6 +266,7 @@ final class OCRWorkspacePanel: NSPanel {
 
         textView.isEditable = true
         textView.isSelectable = true
+        textView.autoresizingMask = [.width]
         textView.font = NSFont.systemFont(ofSize: 14)
         textView.textColor = .textColor
         textView.backgroundColor = .textBackgroundColor
@@ -392,6 +394,7 @@ final class OCRWorkspacePanel: NSPanel {
     }
 
     func setDocument(_ document: OCRDocument) {
+        PerfLogger.log("[OCR UI] event=document panel=\(ObjectIdentifier(self)) visible=\(isVisible) lines=\(document.lines.count) characters=\(document.plainText.count)")
         self.document = document
         self.rawText = document.plainText
         showLoading(false)
@@ -402,6 +405,7 @@ final class OCRWorkspacePanel: NSPanel {
     }
 
     func setError(_ message: String) {
+        PerfLogger.log("[OCR UI] event=error panel=\(ObjectIdentifier(self)) visible=\(isVisible) contentWidth=\(textScrollView.bounds.width) contentHeight=\(textScrollView.bounds.height)")
         showLoading(false)
         copyAllButton.isEnabled = false
         statsLabel.stringValue = "识别失败"

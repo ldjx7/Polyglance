@@ -13,20 +13,70 @@ struct VisionOCRBackend: OCRRecognitionBackend {
     ]
 
     func recognizeText(in image: CGImage) async throws -> [OCRTextObservation] {
+        let diagnostics = OCRDiagnostics(source: "vision-direct")
+        diagnostics.begin()
+        defer { diagnostics.end() }
+        diagnostics.recordImage(image)
+        return try await recognizeText(in: image, diagnostics: diagnostics)
+    }
+
+    func recognizeText(in image: CGImage, diagnostics: OCRDiagnostics) async throws -> [OCRTextObservation] {
         do {
             return try await Task.detached(priority: .userInitiated) {
-                let request = try Self.configuredRequest()
+                let request: VNRecognizeTextRequest
+                do {
+                    diagnostics.record("vision.configure.begin")
+                    request = try Self.configuredRequest()
+                } catch {
+                    diagnostics.recordError(error, stage: "vision.configure")
+                    throw error
+                }
+                diagnostics.record("vision.configured", [
+                    "revision": request.revision,
+                    "defaultRevision": VNRecognizeTextRequest.defaultRevision,
+                    "supportedRevisions": Array(VNRecognizeTextRequest.supportedRevisions),
+                    "recognitionLevel": request.recognitionLevel.rawValue,
+                    "languages": request.recognitionLanguages,
+                    "automaticallyDetectsLanguage": request.automaticallyDetectsLanguage,
+                    "usesLanguageCorrection": request.usesLanguageCorrection,
+                    "minimumTextHeight": request.minimumTextHeight,
+                    "orientation": "up",
+                ])
+                do {
+                    var devices: [String: [String]] = [:]
+                    var assignments: [String: String] = [:]
+                    for (stage, supported) in try request.supportedComputeStageDevices {
+                        let name = String(describing: stage)
+                        devices[name] = supported.map { String(describing: $0) }
+                        assignments[name] = request.computeDevice(for: stage).map { String(describing: $0) } ?? "automatic"
+                    }
+                    diagnostics.record("vision.computeDevices", ["supported": devices, "assigned": assignments])
+                } catch {
+                    diagnostics.recordError(error, stage: "vision.computeDevices")
+                }
                 let handler = VNImageRequestHandler(
                     cgImage: image,
                     orientation: .up,
                     options: [:]
                 )
-                try handler.perform([request])
+                diagnostics.record("vision.perform.begin")
+                do {
+                    try handler.perform([request])
+                } catch {
+                    diagnostics.recordError(error, stage: "vision.perform")
+                    throw error
+                }
 
                 let imgW = image.width
                 let imgH = image.height
-                return request.results?.compactMap { observation in
+                let rawResults = request.results ?? []
+                diagnostics.record("vision.perform.end", ["observations": rawResults.count])
+                var missingCandidates = 0
+                var noiseFiltered = 0
+                var emptyCleaned = 0
+                let observations: [OCRTextObservation] = rawResults.compactMap { observation in
                     guard let candidate = observation.topCandidates(1).first else {
+                        missingCandidates += 1
                         return nil
                     }
                     if Self.isIconOrNoise(
@@ -36,9 +86,13 @@ struct VisionOCRBackend: OCRRecognitionBackend {
                         imageWidth: imgW,
                         imageHeight: imgH
                     ) {
+                        noiseFiltered += 1
                         return nil
                     }
                     let cleaned = Self.cleanIconArtifacts(candidate.string)
+                    if cleaned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        emptyCleaned += 1
+                    }
                     return OCRTextObservation(
                         text: cleaned,
                         boundingBox: observation.boundingBox,
@@ -48,7 +102,14 @@ struct VisionOCRBackend: OCRRecognitionBackend {
                             cleanedText: cleaned
                         )
                     )
-                } ?? []
+                }
+                diagnostics.record("vision.filtered", [
+                    "observations": observations.count,
+                    "missingCandidates": missingCandidates,
+                    "noiseFiltered": noiseFiltered,
+                    "emptyCleaned": emptyCleaned,
+                ])
+                return observations
             }.value
         } catch let error as OCRError {
             throw error

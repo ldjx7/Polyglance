@@ -161,7 +161,7 @@ final class ScreenTranslationCoordinator {
                 throw OCRError.invalidImage
             }
             if reRunOCR {
-                let document = try await ocrService.recognizeDocument(in: cgImage)
+                let document = try await ocrService.recognizeDocument(in: cgImage, source: "screenTranslation")
                 guard self.generation == generation else { return }
                 paragraphs = ScreenTranslationLayout.paragraphs(from: document)
                 let fullText = paragraphs.map(\.text).joined(separator: "\n")

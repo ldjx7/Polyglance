@@ -177,7 +177,7 @@ final class ScreenshotCoordinator {
                 activeContinuous.makeKey()
                 Task {
                     do {
-                        let document = try await ocrService.recognizeDocument(in: result.image)
+                        let document = try await ocrService.recognizeDocument(in: result.image, source: "screenshot.ocrWorkspace.append")
                         await MainActor.run {
                             activeContinuous.finishPendingAppend(image: result.image, document: document)
                         }
@@ -212,7 +212,7 @@ final class ScreenshotCoordinator {
 
             Task {
                 do {
-                    let document = try await ocrService.recognizeDocument(in: result.image)
+                    let document = try await ocrService.recognizeDocument(in: result.image, source: "screenshot.ocrWorkspace")
                     await MainActor.run {
                         panel.setDocument(document)
                         let config = try? configurationStore.load()
@@ -233,7 +233,7 @@ final class ScreenshotCoordinator {
                 }
             }
         case let .ocrCopyAll(result):
-            let text = try await ocrService.recognizeText(in: result.image)
+            let text = try await ocrService.recognizeText(in: result.image, source: "screenshot.ocrCopyAll")
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
             guard pasteboard.setString(text, forType: .string) else {
@@ -241,10 +241,10 @@ final class ScreenshotCoordinator {
             }
         case let .ocrTranslate(result):
             onBeginOCRTranslate(result)
-            let text = try await ocrService.recognizeText(in: result.image)
+            let text = try await ocrService.recognizeText(in: result.image, source: "screenshot.ocrTranslate")
             try await onOCRTranslate(result, text)
         case let .ocrTranslationCard(result):
-            let text = try await ocrService.recognizeText(in: result.image)
+            let text = try await ocrService.recognizeText(in: result.image, source: "screenshot.ocrTranslationCard")
             try await onOCRTranslationCard(result, text)
         case let .detectBarcode(result):
             let observations: [BarcodeObservation]

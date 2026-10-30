@@ -126,6 +126,13 @@ struct OCRDocument: Equatable, @unchecked Sendable {
 
 protocol OCRRecognitionBackend: Sendable {
     func recognizeText(in image: CGImage) async throws -> [OCRTextObservation]
+    func recognizeText(in image: CGImage, diagnostics: OCRDiagnostics) async throws -> [OCRTextObservation]
+}
+
+extension OCRRecognitionBackend {
+    func recognizeText(in image: CGImage, diagnostics: OCRDiagnostics) async throws -> [OCRTextObservation] {
+        try await recognizeText(in: image)
+    }
 }
 
 enum OCRError: LocalizedError, Equatable, Sendable {
@@ -152,11 +159,22 @@ struct OCRService: Sendable {
         self.backend = backend
     }
 
-    func recognizeText(in image: NSImage) async throws -> String {
-        try await recognizeDocument(in: image).plainText
+    func recognizeText(in image: NSImage, source: String = "unspecified") async throws -> String {
+        try await recognizeDocument(in: image, source: source).plainText
     }
 
-    func recognizeDocument(in image: NSImage) async throws -> OCRDocument {
+    func recognizeDocument(in image: NSImage, source: String = "unspecified") async throws -> OCRDocument {
+        try await diagnose(source: source) { diagnostics in
+            try await resolveDocument(in: image, diagnostics: diagnostics)
+        }
+    }
+
+    private func resolveDocument(in image: NSImage, diagnostics: OCRDiagnostics) async throws -> OCRDocument {
+        diagnostics.record("input.nsimage", [
+            "width": image.size.width.isFinite ? image.size.width : -1,
+            "height": image.size.height.isFinite ? image.size.height : -1,
+            "representations": image.representations.map { String(reflecting: type(of: $0)) },
+        ])
         guard image.size.width.isFinite,
               image.size.height.isFinite,
               image.size.width > 0,
@@ -168,15 +186,18 @@ struct OCRService: Sendable {
         let resolvedCGImage: CGImage? = {
             if let direct = image.cgImage(forProposedRect: &proposedRect, context: nil, hints: nil),
                direct.width > 0, direct.height > 0 {
+                diagnostics.record("image.resolved", ["method": "cgImage"])
                 return direct
             }
             if let rep = image.representations.compactMap({ $0 as? NSBitmapImageRep }).first,
                let repCG = rep.cgImage, repCG.width > 0, repCG.height > 0 {
+                diagnostics.record("image.resolved", ["method": "bitmapRepresentation"])
                 return repCG
             }
             if let tiff = image.tiffRepresentation,
                let rep = NSBitmapImageRep(data: tiff),
                let repCG = rep.cgImage, repCG.width > 0, repCG.height > 0 {
+                diagnostics.record("image.resolved", ["method": "tiffRepresentation"])
                 return repCG
             }
             return nil
@@ -184,24 +205,56 @@ struct OCRService: Sendable {
         guard let cgImage = resolvedCGImage else {
             throw OCRError.invalidImage
         }
-        return try await recognizeDocument(in: cgImage)
+        return try await recognizeDocument(in: cgImage, diagnostics: diagnostics)
     }
 
-    func recognizeText(in image: CGImage) async throws -> String {
-        try await recognizeDocument(in: image).plainText
+    func recognizeText(in image: CGImage, source: String = "unspecified") async throws -> String {
+        try await recognizeDocument(in: image, source: source).plainText
     }
 
-    func recognizeDocument(in image: CGImage) async throws -> OCRDocument {
+    func recognizeDocument(in image: CGImage, source: String = "unspecified") async throws -> OCRDocument {
+        try await diagnose(source: source) { diagnostics in
+            try await recognizeDocument(in: image, diagnostics: diagnostics)
+        }
+    }
+
+    private func diagnose(
+        source: String,
+        operation: (OCRDiagnostics) async throws -> OCRDocument
+    ) async throws -> OCRDocument {
+        let diagnostics = OCRDiagnostics(source: source)
+        diagnostics.begin()
+        defer { diagnostics.end() }
+        do {
+            return try await operation(diagnostics)
+        } catch {
+            diagnostics.recordError(error, stage: "service")
+            throw error
+        }
+    }
+
+    private func recognizeDocument(in image: CGImage, diagnostics: OCRDiagnostics) async throws -> OCRDocument {
+        diagnostics.recordImage(image)
+        diagnostics.record("backend.begin", ["backend": String(reflecting: type(of: backend))])
         let observations: [OCRTextObservation]
         do {
-            observations = try await backend.recognizeText(in: image)
+            observations = try await backend.recognizeText(in: image, diagnostics: diagnostics)
         } catch let error as OCRError {
             throw error
         } catch {
+            diagnostics.recordError(error, stage: "backend")
             throw OCRError.visionFailed(error.localizedDescription)
         }
 
         let document = Self.document(from: observations)
+        diagnostics.record("document", [
+            "observations": observations.count,
+            "blankObservations": observations.filter { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count,
+            "invalidBoxes": observations.filter { !Self.isUsableNormalizedBox($0.boundingBox) }.count,
+            "lines": document.lines.count,
+            "items": document.items.count,
+            "characters": document.plainText.count,
+        ])
         guard !document.plainText.isEmpty else {
             throw OCRError.noText
         }
