@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Polyglance.Platform.Packaging;
@@ -8,6 +10,9 @@ namespace Polyglance.Platform.Update;
 public sealed class GitHubUpdateProvider : IAppUpdateProvider
 {
     private readonly Func<string> _appcastUrlAccessor;
+    private readonly SemaphoreSlim _preparation = new(1, 1);
+    private string? _preparedVersion;
+    private bool _preparedVerified;
 
     public DistributionChannel Channel => DistributionChannel.GitHub;
     public bool SupportsBetaChannel => true;
@@ -33,16 +38,77 @@ public sealed class GitHubUpdateProvider : IAppUpdateProvider
     }
 
     public PreparedUpdate? PreparedUpdate { get; private set; }
+    public UpdateInfo? PreparedInfo { get; private set; }
+
+    public async Task RestorePreparedUpdateAsync()
+    {
+        var pending = await PendingUpdateStore.RestoreAsync();
+        if (pending == null) return;
+        PreparedUpdate = pending.Value.Prepared;
+        PreparedInfo = pending.Value.Info;
+        _preparedVerified = true;
+        _preparedVersion = Key(PreparedInfo);
+    }
+
+    private static string Key(UpdateInfo info) => info.Version + "|" + info.BuildVersion + "|" + info.DownloadUrl;
+
+    public bool HasPreparedUpdate => PreparedUpdate != null && PreparedInfo != null
+        && File.Exists(PreparedUpdate.BatchScriptPath) && File.Exists(PreparedUpdate.PackagePath);
+
+    public void MarkInstallationStarted() => PendingUpdateStore.Clear();
 
     public async Task<PreparedUpdate?> PrepareUpdateAsync(
         UpdateInfo update,
         IProgress<UpdateDownloadProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool requireVerifiedPackage = false)
     {
         ArgumentNullException.ThrowIfNull(update);
-        PreparedUpdate? prepared = await AppUpdater.DownloadAndPrepareUpdateAsync(update.DownloadUrl, progress);
-        PreparedUpdate = prepared;
-        return prepared;
+        await _preparation.WaitAsync(cancellationToken);
+        try
+        {
+            string key = Key(update);
+            if (HasPreparedUpdate && (_preparedVersion == key || (PreparedInfo != null
+                && Version.TryParse(PreparedInfo.BuildVersion, out var preparedBuild)
+                && !PendingUpdateStore.IsNewer(update, PreparedInfo.Version, preparedBuild)))
+                && (!requireVerifiedPackage || _preparedVerified)) return PreparedUpdate;
+            PreparedUpdate? prepared = await AppUpdater.DownloadAndPrepareUpdateAsync(
+                update.DownloadUrl, progress, true, cancellationToken);
+            if (prepared != null)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try { PendingUpdateStore.Save(update, prepared); }
+                catch (Exception error)
+                {
+                    Debug.WriteLine($"Unable to save pending update: {error.Message}");
+                    try
+                    {
+                        File.Delete(prepared.PackagePath!);
+                        File.Delete(prepared.BatchScriptPath);
+                        if (prepared.ExtractedDirectory != null) Directory.Delete(prepared.ExtractedDirectory, true);
+                    }
+                    catch { }
+                    return null;
+                }
+                var previous = PreparedUpdate;
+                PreparedUpdate = prepared;
+                PreparedInfo = update;
+                _preparedVersion = key;
+                _preparedVerified = true;
+                if (previous?.PackagePath != null && previous.PackagePath != prepared.PackagePath)
+                {
+                    try
+                    {
+                        File.Delete(previous.PackagePath);
+                        File.Delete(previous.BatchScriptPath);
+                        if (previous.ExtractedDirectory != null) Directory.Delete(previous.ExtractedDirectory, true);
+                    }
+                    catch { }
+                }
+            }
+            return prepared;
+        }
+        finally { _preparation.Release(); }
     }
 
     public void ApplyPreparedUpdate()

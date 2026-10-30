@@ -84,7 +84,7 @@ final class ScreenshotCoordinator {
     private var selectionSession: ScreenSelectionSession?
     private let barcodeResultWindows = BarcodeResultWindowStore()
     private var activeOCRWorkspacePanel: OCRWorkspacePanel?
-    private var isCapturing = false
+    private(set) var isCapturing = false
 
     init(
         pinWindowManager: PinWindowManager,

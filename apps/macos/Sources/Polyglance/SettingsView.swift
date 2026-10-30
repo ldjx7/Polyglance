@@ -1755,7 +1755,10 @@ struct SettingsView: View {
             }
 
             Section {
-                Toggle("启动时自动检查更新", isOn: $autoCheckUpdates)
+                Toggle("自动更新", isOn: $autoCheckUpdates)
+                Text("后台下载并提示，可立即重启更新或下次启动安装。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Toggle("接收测试版更新 (Beta Channel)", isOn: $includeBetaUpdates)
                 Text("开启后优先接收包含实验性新特性的测试版本；关闭后仅接收经过充分测试的正式版本。")
                     .font(.caption)
@@ -1973,12 +1976,12 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("稍后重启") {
+                Button("下次启动安装") {
                     updater.postponeInstall()
                 }
                 .controlSize(.small)
 
-                Button("立即重启应用") {
+                Button("立即重启更新") {
                     updater.relaunchAndInstall()
                 }
                 .buttonStyle(.borderedProminent)

@@ -190,6 +190,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let configuration = try? configurationStore.load() {
             apply(configuration)
         }
+        appUpdater.startAutomaticUpdates(enabled: (try? configurationStore.load())?.autoCheckUpdates ?? true) { [weak self] in
+            guard let self else { return false }
+            return !self.screenRecordingCoordinator.isRecording
+                && !self.screenshotCoordinator.isCapturing
+                && !self.viewModel.isTranslating
+                && !NSApp.windows.contains { $0.isVisible && $0.alphaValue > 0 && $0.level != .statusBar && !($0 is PinPanel) }
+        }
+        UpdateCompletionNotice.presentIfNeeded()
         appNapActivity = ProcessInfo.processInfo.beginActivity(
             options: [.userInitiated, .latencyCritical],
             reason: "Low-latency global screenshot hotkey responsiveness"

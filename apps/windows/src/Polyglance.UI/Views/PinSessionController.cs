@@ -222,6 +222,12 @@ internal sealed class PinSessionController
         await _store.DrainAsync();
     }
 
+    internal void ResumeAfterTerminationCancelled()
+    {
+        _terminating = false;
+        _timer.Start();
+    }
+
     private async void SaveAnnotatedImage(Binding binding)
     {
         try

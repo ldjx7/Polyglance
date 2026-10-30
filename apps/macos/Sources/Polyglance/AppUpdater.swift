@@ -43,6 +43,16 @@ enum AppUpdateState: Equatable {
 final class AppUpdaterDelegateHelper: NSObject, SPUUpdaterDelegate {
     var customFeedURL: String?
     var defaultFeedURL: String?
+    var didFinishCycle: ((Error?) -> Void)?
+    var localPackageURL: URL?
+
+    func updater(_ updater: SPUUpdater, willDownloadUpdate item: SUAppcastItem, with request: NSMutableURLRequest) {
+        if let localPackageURL { request.url = localPackageURL }
+    }
+
+    func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {
+        didFinishCycle?(error)
+    }
 
     func allowedChannels(for updater: SPUUpdater) -> Set<String> {
         let store = AppConfigurationStore()
@@ -84,14 +94,14 @@ final class InlineAppUpdateDriver: NSObject, SPUUserDriver {
     }
 
     func showUpdateFound(with appcastItem: SUAppcastItem, state: SPUUserUpdateState, reply: @escaping (SPUUserUpdateChoice) -> Void) {
-        self.updateFoundReply = reply
         updater?.clearCheckTimeout()
-        updater?.state = .updateAvailable(
-            version: appcastItem.versionString,
-            displayVersion: appcastItem.displayVersionString,
-            releaseNotes: appcastItem.itemDescription,
-            isCritical: appcastItem.isCriticalUpdate
-        )
+        if updater?.installingCachedUpdate == true {
+            reply(.install)
+            return
+        }
+        let automatic = updater?.isAutomaticSession == true
+        updater?.foundUpdate(appcastItem, automatically: automatic)
+        reply(.dismiss)
     }
 
     func showUpdateReleaseNotes(with downloadData: SPUDownloadData) {
@@ -120,7 +130,7 @@ final class InlineAppUpdateDriver: NSObject, SPUUserDriver {
 
     func showUpdateNotFoundWithError(_ error: Error, acknowledgement: @escaping () -> Void) {
         updater?.clearCheckTimeout()
-        updater?.state = .upToDate(checkedAt: Date())
+        updater?.state = updater?.hasPreparedUpdate == true ? .readyToRelaunch : .upToDate(checkedAt: Date())
         acknowledgement()
     }
 
@@ -134,6 +144,7 @@ final class InlineAppUpdateDriver: NSObject, SPUUserDriver {
         self.downloadCancellation = cancellation
         self.bytesDownloaded = 0
         self.expectedContentLength = 0
+        if updater?.installingCachedUpdate == true { return }
         updater?.state = .downloading(progress: 0, receivedBytes: 0, totalBytes: 0)
     }
 
@@ -143,6 +154,7 @@ final class InlineAppUpdateDriver: NSObject, SPUUserDriver {
 
     func showDownloadDidReceiveData(ofLength length: UInt64) {
         self.bytesDownloaded += Int64(length)
+        if updater?.installingCachedUpdate == true { return }
         let progress = expectedContentLength > 0 ? min(1.0, Double(bytesDownloaded) / Double(expectedContentLength)) : 0.0
         updater?.state = .downloading(
             progress: progress,
@@ -160,8 +172,12 @@ final class InlineAppUpdateDriver: NSObject, SPUUserDriver {
     }
 
     func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {
-        self.readyToInstallReply = reply
-        updater?.state = .readyToRelaunch
+        if updater?.installingCachedUpdate == true {
+            reply(.install)
+        } else {
+            self.readyToInstallReply = reply
+            updater?.state = .readyToRelaunch
+        }
     }
 
     func showInstallingUpdate(withApplicationTerminated applicationTerminated: Bool, retryTerminatingApplication: @escaping () -> Void) {}
@@ -177,15 +193,11 @@ final class InlineAppUpdateDriver: NSObject, SPUUserDriver {
         updateFoundReply = nil
         readyToInstallReply = nil
         updater?.clearCheckTimeout()
-        switch updater?.state {
-        case .upToDate, .failed:
-            break
-        default:
-            updater?.state = .idle
-        }
+        if case .checking = updater?.state { updater?.state = .idle }
     }
 
     func showUpdateInFocus() {
+        guard updater?.isAutomaticSession != true, updater?.installingCachedUpdate != true else { return }
         SettingsNavigation.shared.selectedTab = .about
         guard let appDelegate = (AppDelegate.shared ?? (NSApp.delegate as? AppDelegate)) else { return }
         if appDelegate.isSettingsWindowVisible {
@@ -206,6 +218,23 @@ final class AppUpdater: NSObject, ObservableObject {
     private var driver: InlineAppUpdateDriver?
     private var updater: SPUUpdater?
     private var checkTimeoutTask: Task<Void, Never>?
+    private var automaticTask: Task<Void, Never>?
+    private var automaticChecksEnabled = false
+    private var nextAutomaticCheck = Date.distantPast
+    private var canPresentUpdatePrompt: () -> Bool = { false }
+    private var cachedUpdate: CachedAppUpdate?
+    private var downloadTask: Task<Void, Never>?
+    private var foundItem: SUAppcastItem?
+    private var updateWindow: NSPanel?
+    private var notifiedVersions = Set<String>()
+    private var cacheServer: CachedUpdateServer?
+    private(set) var installingCachedUpdate = false
+    private(set) var isAutomaticSession = false
+    private var checkGeneration = 0
+    var hasPreparedUpdate: Bool {
+        guard let cachedUpdate else { return false }
+        return accepts(cachedUpdate.item) && FileManager.default.fileExists(atPath: cachedUpdate.package.path)
+    }
 
     init(configuration: AppUpdateConfiguration = AppUpdateConfiguration()) {
         self.configuration = configuration
@@ -213,6 +242,30 @@ final class AppUpdater: NSObject, ObservableObject {
         delegate.defaultFeedURL = configuration.feedURL?.absoluteString
         self.updaterDelegate = delegate
         super.init()
+        delegate.didFinishCycle = { [weak self] error in
+            guard let self else { return }
+            if self.installingCachedUpdate {
+                self.installingCachedUpdate = false
+                self.cacheServer?.stop()
+                self.cacheServer = nil
+                self.updaterDelegate.localPackageURL = nil
+                self.updaterDelegate.customFeedURL = nil
+                if let error { self.state = .failed(message: error.localizedDescription) }
+                return
+            }
+            guard self.isAutomaticSession else { return }
+            self.clearCheckTimeout()
+            self.isAutomaticSession = false
+            if let error {
+                if (error as NSError).code == Int(SUError.noUpdateError.rawValue) {
+                    self.state = self.hasPreparedUpdate ? .readyToRelaunch : .upToDate(checkedAt: Date())
+                } else {
+                    self.state = .failed(message: error.localizedDescription)
+                }
+            } else if case .checking = self.state {
+                self.state = .idle
+            }
+        }
 
         let driver = InlineAppUpdateDriver(updater: self)
         self.driver = driver
@@ -225,7 +278,8 @@ final class AppUpdater: NSObject, ObservableObject {
         self.updater = updater
 
         if configuration.isConfigured {
-            updater.automaticallyChecksForUpdates = true
+            updater.automaticallyChecksForUpdates = false
+            updater.automaticallyDownloadsUpdates = false
             updater.updateCheckInterval = 21600
             do {
                 try updater.start()
@@ -257,27 +311,20 @@ final class AppUpdater: NSObject, ObservableObject {
             return
         }
 
-        if let updater, !updater.canCheckForUpdates {
-            if case .checking = state { return }
-            state = .checking
-            armCheckTimeout()
-            Task {
-                for _ in 0..<15 {
-                    try? await Task.sleep(nanoseconds: 200_000_000)
-                    guard !Task.isCancelled else { return }
-                    if self.updater?.canCheckForUpdates == true {
-                        break
-                    }
-                }
-                self.performCheck()
-            }
+        if let cachedUpdate, downloadTask == nil, accepts(cachedUpdate.item),
+           FileManager.default.fileExists(atPath: cachedUpdate.package.path) {
+            showPreparedUpdatePrompt(userInitiated: true)
             return
         }
-
-        performCheck()
+        if case .checking = state { return }
+        guard downloadTask == nil, !installingCachedUpdate, updater?.canCheckForUpdates == true else { return }
+        isAutomaticSession = false
+        Task { await performCheck(automatically: false) }
     }
 
-    private func performCheck() {
+    private func performCheck(automatically: Bool) async {
+        checkGeneration += 1
+        let generation = checkGeneration
         state = .checking
         armCheckTimeout()
 
@@ -285,62 +332,243 @@ final class AppUpdater: NSObject, ObservableObject {
         let includeBeta = (try? store.load())?.includeBetaUpdates ?? false
 
         if includeBeta, let baseFeedURL = configuration.feedURL?.absoluteString {
-            Task {
-                if let betaFeedURL = await resolveGitHubReleaseAsset(baseFeedURL: baseFeedURL, assetName: "appcast.xml") {
-                    self.updaterDelegate.customFeedURL = betaFeedURL
-                }
-                self.updater?.checkForUpdates()
-            }
+            updaterDelegate.customFeedURL = await resolveGitHubReleaseAsset(baseFeedURL: baseFeedURL, assetName: "appcast.xml")
+        } else {
+            updaterDelegate.customFeedURL = nil
+        }
+        guard generation == checkGeneration else { return }
+        guard !automatically || automaticChecksEnabled else {
+            clearCheckTimeout()
+            state = .idle
             return
         }
-
-        self.updaterDelegate.customFeedURL = nil
-        updater?.checkForUpdates()
+        guard updater?.canCheckForUpdates == true else { return }
+        isAutomaticSession = automatically
+        if automatically {
+            updater?.checkForUpdatesInBackground()
+        } else {
+            updater?.checkForUpdates()
+        }
     }
 
     func cancelCheck() {
+        checkGeneration += 1
         clearCheckTimeout()
         driver?.checkCancellation?()
         driver?.checkCancellation = nil
         state = .idle
     }
 
+    func foundUpdate(_ item: SUAppcastItem, automatically: Bool) {
+        guard accepts(item) else { state = cachedUpdate == nil ? .idle : .readyToRelaunch; return }
+        foundItem = item
+        if let cachedUpdate,
+           SUStandardVersionComparator.default.compareVersion(item.versionString, toVersion: cachedUpdate.item.versionString) != .orderedDescending {
+            state = .readyToRelaunch
+            if !automatically { showPreparedUpdatePrompt(userInitiated: true) }
+            return
+        }
+        state = .updateAvailable(version: item.versionString, displayVersion: item.displayVersionString,
+                                 releaseNotes: item.itemDescription, isCritical: item.isCriticalUpdate)
+        if automatically, !item.isInformationOnlyUpdate { installUpdate() }
+    }
+
     func installUpdate() {
-        driver?.updateFoundReply?(.install)
-        driver?.updateFoundReply = nil
+        guard downloadTask == nil, !installingCachedUpdate else { return }
+        if let cachedUpdate, foundItem?.versionString == cachedUpdate.item.versionString {
+            showPreparedUpdatePrompt(userInitiated: true)
+            return
+        }
+        guard let item = foundItem, let url = item.fileURL, url.scheme == "https",
+              let publicKey = configuration.publicKey else { return }
+        let userInitiated = !isAutomaticSession
+        var feedURL = URL(string: updaterDelegate.customFeedURL ?? "") ?? configuration.feedURL
+        if url.host == "github.com", url.pathComponents.contains("download") {
+            feedURL = url.deletingLastPathComponent().appendingPathComponent("appcast.xml")
+        }
+        guard let feedURL else { return }
+        state = .downloading(progress: 0, receivedBytes: 0, totalBytes: 0)
+        downloadTask = Task { [weak self] in
+            guard let self else { return }
+            let owner = self
+            let delegate = UpdateDownloadProgress { received, total in
+                Task { @MainActor in
+                    owner.state = .downloading(progress: total > 0 ? min(1, Double(received) / Double(total)) : 0,
+                                               receivedBytes: received, totalBytes: total)
+                }
+            }
+            let settings = URLSessionConfiguration.default
+            settings.timeoutIntervalForResource = 900
+            let session = URLSession(configuration: settings, delegate: delegate, delegateQueue: nil)
+            defer { session.invalidateAndCancel(); self.downloadTask = nil }
+            var package: URL?
+            do {
+                let (feed, feedResponse) = try await session.data(from: feedURL)
+                guard (feedResponse as? HTTPURLResponse)?.statusCode == 200, feed.count < 4_194_304 else { throw URLError(.badServerResponse) }
+                let (temporary, response) = try await session.download(from: url)
+                guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+                try Task.checkCancellation()
+                try FileManager.default.createDirectory(at: CachedAppUpdate.directory, withIntermediateDirectories: true)
+                let destination = CachedAppUpdate.directory.appendingPathComponent(UUID().uuidString + "." + url.pathExtension)
+                package = destination
+                try FileManager.default.moveItem(at: temporary, to: destination)
+                let prepared = CachedAppUpdate(item: item, package: destination, feed: feed)
+                try await Task.detached { try prepared.validate(publicKey: publicKey) }.value
+                try Task.checkCancellation()
+                try prepared.save()
+                let previous = self.cachedUpdate
+                self.cachedUpdate = prepared
+                if previous?.item.versionString != item.versionString { self.updateWindow?.close() }
+                package = nil
+                if let previous, previous.package != destination { try? FileManager.default.removeItem(at: previous.package) }
+                self.state = .readyToRelaunch
+                if userInitiated || self.canPresentUpdatePrompt() { self.showPreparedUpdatePrompt(userInitiated: userInitiated) }
+            } catch {
+                if let package { try? FileManager.default.removeItem(at: package) }
+                if Task.isCancelled { self.state = self.cachedUpdate == nil ? .idle : .readyToRelaunch }
+                else { self.state = .failed(message: error.localizedDescription) }
+            }
+        }
     }
 
     func skipUpdate() {
-        driver?.updateFoundReply?(.skip)
-        driver?.updateFoundReply = nil
+        isAutomaticSession = false
+        if let foundItem { UserDefaults.standard.set(foundItem.versionString, forKey: "update.skippedBuild") }
         state = .idle
     }
 
-    func dismissUpdate() {
-        driver?.updateFoundReply?(.dismiss)
-        driver?.updateFoundReply = nil
-        state = .idle
-    }
+    func dismissUpdate() { isAutomaticSession = false; state = .idle }
 
     func cancelDownload() {
-        driver?.downloadCancellation?()
-        driver?.downloadCancellation = nil
-        state = .idle
+        downloadTask?.cancel()
     }
 
     func relaunchAndInstall() {
-        driver?.readyToInstallReply?(.install)
-        driver?.readyToInstallReply = nil
+        guard !installingCachedUpdate, downloadTask == nil, let cachedUpdate else { return }
+        updateWindow?.close()
+        updateWindow = nil
+        installingCachedUpdate = true
+        state = .extracting(progress: 0)
+        Task { [weak self] in
+            guard let self, let publicKey = self.configuration.publicKey else { return }
+            do {
+                try await Task.detached { try cachedUpdate.validate(publicKey: publicKey) }.value
+                let server = CachedUpdateServer(update: cachedUpdate)
+                self.cacheServer = server
+                self.updaterDelegate.customFeedURL = try await server.start().absoluteString
+                self.updaterDelegate.localPackageURL = server.packageURL
+                self.isAutomaticSession = false
+                self.updater?.checkForUpdates()
+            } catch {
+                self.installingCachedUpdate = false
+                self.cacheServer?.stop()
+                self.cacheServer = nil
+                self.updaterDelegate.localPackageURL = nil
+                self.updaterDelegate.customFeedURL = nil
+                if (try? cachedUpdate.validate(publicKey: publicKey)) == nil {
+                    CachedAppUpdate.clear()
+                    self.cachedUpdate = nil
+                }
+                self.state = .failed(message: error.localizedDescription)
+            }
+        }
     }
 
     func postponeInstall() {
-        driver?.readyToInstallReply?(.dismiss)
-        driver?.readyToInstallReply = nil
-        state = .idle
+        updateWindow?.close()
+        updateWindow = nil
+        state = .readyToRelaunch
+    }
+
+    func showPreparedUpdatePrompt(userInitiated: Bool = false) {
+        guard let cachedUpdate, !installingCachedUpdate else { return }
+        if let updateWindow {
+            if userInitiated { updateWindow.makeKeyAndOrderFront(nil) }
+            return
+        }
+        notifiedVersions.insert(cachedUpdate.item.versionString)
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 470, height: 145),
+                            styleMask: [.titled, .closable, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.title = "Polyglance 更新已就绪"
+        panel.isReleasedWhenClosed = false
+        let title = NSTextField(labelWithString: "版本 \(cachedUpdate.item.displayVersionString) 已下载并校验完成。")
+        title.frame = NSRect(x: 20, y: 88, width: 430, height: 24)
+        title.font = .systemFont(ofSize: 15)
+        let details = NSButton(title: "更新详情", target: self, action: #selector(openUpdateDetails))
+        details.frame = NSRect(x: 16, y: 25, width: 100, height: 32)
+        let later = NSButton(title: "下次启动安装", target: self, action: #selector(closeUpdatePrompt))
+        later.frame = NSRect(x: 178, y: 25, width: 130, height: 32)
+        later.keyEquivalent = "\r"
+        let restart = NSButton(title: "立即重启更新", target: self, action: #selector(restartFromPrompt))
+        restart.frame = NSRect(x: 318, y: 25, width: 132, height: 32)
+        for button in [details, later, restart] { button.bezelStyle = .rounded; panel.contentView?.addSubview(button) }
+        panel.contentView?.addSubview(title)
+        panel.center()
+        updateWindow = panel
+        NotificationCenter.default.addObserver(self, selector: #selector(updatePromptClosed), name: NSWindow.willCloseNotification, object: panel)
+        if userInitiated { panel.makeKeyAndOrderFront(nil) }
+        else { panel.orderFrontRegardless() }
+    }
+
+    @objc private func openUpdateDetails() {
+        guard let version = cachedUpdate?.item.displayVersionString,
+              let url = URL(string: "https://github.com/ldjx7/Polyglance/releases/tag/")?.appendingPathComponent("v" + version) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc private func closeUpdatePrompt() { postponeInstall() }
+    @objc private func restartFromPrompt() { relaunchAndInstall() }
+    @objc private func updatePromptClosed(_ notification: Notification) {
+        NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: notification.object)
+        if let window = notification.object as? NSPanel, window === updateWindow { updateWindow = nil }
     }
 
     func setAutomaticChecks(enabled: Bool) {
-        updater?.automaticallyChecksForUpdates = enabled
+        if enabled && !automaticChecksEnabled { nextAutomaticCheck = .distantPast }
+        automaticChecksEnabled = enabled
+    }
+
+    private func accepts(_ item: SUAppcastItem) -> Bool {
+        let config = try? AppConfigurationStore().load()
+        return (config?.includeBetaUpdates == true || !item.displayVersionString.localizedCaseInsensitiveContains("beta"))
+            && UserDefaults.standard.string(forKey: "update.skippedBuild") != item.versionString
+    }
+
+    func startAutomaticUpdates(enabled: Bool, canPresent: @escaping () -> Bool) {
+        setAutomaticChecks(enabled: enabled)
+        canPresentUpdatePrompt = canPresent
+        guard configuration.isConfigured, automaticTask == nil,
+              Bundle.main.bundleIdentifier != "io.polyglance.macos.dev" else { return }
+        automaticTask = Task { [weak self] in
+            guard let self, let publicKey = self.configuration.publicKey else { return }
+            if let saved = try? await Task.detached(operation: { try CachedAppUpdate.load(publicKey: publicKey) }).value {
+                let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
+                if SUStandardVersionComparator.default.compareVersion(saved.item.versionString, toVersion: build) == .orderedDescending,
+                   self.accepts(saved.item) {
+                    self.cachedUpdate = saved
+                    self.relaunchAndInstall()
+                } else {
+                    CachedAppUpdate.clear()
+                    try? FileManager.default.removeItem(at: saved.package)
+                }
+            }
+            try? await Task.sleep(for: .seconds(10))
+            while !Task.isCancelled {
+                if self.automaticChecksEnabled, !self.installingCachedUpdate, self.downloadTask == nil {
+                    if let cached = self.cachedUpdate, self.accepts(cached.item),
+                       !self.notifiedVersions.contains(cached.item.versionString), self.canPresentUpdatePrompt() {
+                        self.showPreparedUpdatePrompt()
+                    }
+                    if Date() >= self.nextAutomaticCheck, self.updater?.canCheckForUpdates == true {
+                        if case .checking = self.state {} else {
+                            self.nextAutomaticCheck = Date().addingTimeInterval(21600)
+                            await self.performCheck(automatically: true)
+                        }
+                    }
+                }
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
     }
 
     private func resolveGitHubReleaseAsset(baseFeedURL: String, assetName: String) async -> String? {

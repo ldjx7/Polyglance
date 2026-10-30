@@ -361,6 +361,7 @@ public partial class SettingsWindow : FluentWindow
         RefreshConflictBadges();
 
         SwIncludeBetaUpdates.IsChecked = _config.IncludeBetaUpdates;
+        SwAutomaticUpdates.IsChecked = _config.AutoCheckUpdates;
         SelectComboBoxItemByTag(CmbDefaultRecordFormat, _config.DefaultRecordingFormat, "MP4");
         SelectComboBoxItemByTag(CmbDefaultRecordFps, _config.DefaultRecordingFps.ToString(), "30");
         SelectComboBoxItemByTag(
@@ -743,6 +744,7 @@ public partial class SettingsWindow : FluentWindow
 
     private async void OnCheckUpdateClick(object sender, RoutedEventArgs e)
     {
+        if (App.CurrentApp?.ShowPreparedUpdatePrompt(userInitiated: true) == true) return;
         BtnCheckUpdate.IsEnabled = false;
         BtnCheckUpdate.Content = "检查中...";
         TxtUpdateStatus.Visibility = Visibility.Visible;
@@ -853,12 +855,14 @@ public partial class SettingsWindow : FluentWindow
 
     private void OnDismissUpdateClick(object sender, RoutedEventArgs e)
     {
+        App.CurrentApp?.DeferAutomaticUpdate();
         BorderAvailableUpdate.Visibility = Visibility.Collapsed;
         TxtUpdateStatus.Visibility = Visibility.Collapsed;
     }
 
     private async void OnApplyUpdateClick(object sender, RoutedEventArgs e)
     {
+        if (App.CurrentApp?.ShowPreparedUpdatePrompt(userInitiated: true) == true) return;
         if (_latestFoundUpdate == null) return;
 
         BtnApplyUpdate.IsEnabled = false;
@@ -910,6 +914,7 @@ public partial class SettingsWindow : FluentWindow
                 BorderAvailableUpdate.Visibility = Visibility.Collapsed;
                 BorderReadyUpdate.Visibility = Visibility.Visible;
                 BtnCheckUpdate.IsEnabled = true;
+                App.CurrentApp?.ShowPreparedUpdatePrompt(userInitiated: true);
             }
         }
         else
@@ -951,16 +956,28 @@ public partial class SettingsWindow : FluentWindow
 
     private void OnPostponeRestartClick(object sender, RoutedEventArgs e)
     {
+        App.CurrentApp?.DeferAutomaticUpdate();
         BorderReadyUpdate.Visibility = Visibility.Collapsed;
         TxtUpdateStatus.Visibility = Visibility.Visible;
-        TxtUpdateStatus.Text = "更新已就绪，将在下次启动时自动应用。";
+        TxtUpdateStatus.Text = "更新已就绪，下次启动时自动安装。";
         TxtUpdateStatus.SetResourceReference(
             System.Windows.Controls.TextBlock.ForegroundProperty,
             "TextFillColorSecondaryBrush");
     }
 
-    private void OnRestartNowClick(object sender, RoutedEventArgs e)
+    private async void OnRestartNowClick(object sender, RoutedEventArgs e)
     {
+        var prepared = (_updateProvider as GitHubUpdateProvider)?.PreparedUpdate ?? _preparedUpdate;
+        if (prepared != null && App.CurrentApp is { } app)
+        {
+            try { await app.InstallPreparedUpdateAsync(prepared); }
+            catch (Exception error)
+            {
+                TxtUpdateStatus.Visibility = Visibility.Visible;
+                TxtUpdateStatus.Text = $"更新安装失败：{error.Message}";
+            }
+            return;
+        }
         if (_updateProvider is GitHubUpdateProvider gitHubProvider && gitHubProvider.PreparedUpdate != null)
         {
             gitHubProvider.ApplyPreparedUpdate();
@@ -1125,6 +1142,7 @@ public partial class SettingsWindow : FluentWindow
         _config.HotkeyMainTranslator = RecHotkeyMainTranslator.Hotkey;
 
         _config.IncludeBetaUpdates = SwIncludeBetaUpdates.IsChecked == true;
+        _config.AutoCheckUpdates = SwAutomaticUpdates.IsChecked == true;
         _config.DefaultRecordingFormat = SelectedTag(CmbDefaultRecordFormat, "MP4");
         _config.DefaultRecordingFps = int.TryParse(
             SelectedTag(CmbDefaultRecordFps, "30"),

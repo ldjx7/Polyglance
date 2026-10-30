@@ -49,6 +49,10 @@ public partial class App : Application
     private IntPtr _lastActiveWindowBeforeTray = IntPtr.Zero;
     private bool _isOneShotCliMode;
     private CancellationTokenSource? _ipcServerCts;
+    private IAppUpdateProvider? _updateProvider;
+    private UpdateReadyWindow? _updateReadyWindow;
+    private readonly HashSet<string> _notifiedUpdateVersions = new();
+    private DateTime _nextUpdateCheck = DateTime.MinValue;
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool AttachConsole(int dwProcessId);
@@ -99,7 +103,7 @@ public partial class App : Application
         public uint dwControlKeyState;
     }
 
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
@@ -185,6 +189,30 @@ public partial class App : Application
             return;
         }
 
+        _updateProvider = UpdateProviderFactory.Create(() => LoadConfigurationOrDefault().AppcastUrl);
+        if (_updateProvider is GitHubUpdateProvider startupUpdater)
+        {
+            await startupUpdater.RestorePreparedUpdateAsync();
+            var startupConfig = LoadConfigurationOrDefault();
+            if (startupUpdater.HasPreparedUpdate && IsUpdateAllowed(startupUpdater.PreparedInfo!, startupConfig))
+            {
+                try
+                {
+                    startupUpdater.PreparedUpdate!.StartInstaller();
+                    startupUpdater.MarkInstallationStarted();
+                    _shuttingDown = true;
+                    _translationService?.Dispose();
+                    if (TranslationService.OfflineHandler is IDisposable disposable) disposable.Dispose();
+                    TranslationService.OfflineHandler = null;
+                    _mutex?.Dispose();
+                    _mutex = null;
+                    Shutdown();
+                    return;
+                }
+                catch (Exception error) { Debug.WriteLine($"Pending update installation failed: {error.Message}"); }
+            }
+        }
+
         _mainWindow = new MainWindow(_translationService, _configStore);
 
         CreateHiddenMessageWindow();
@@ -194,11 +222,9 @@ public partial class App : Application
 
         var config = LoadConfigurationOrDefault();
         _ = PinSessionController.For().Restore(true, _translationService, config);
-        if (config.AutoCheckUpdates)
-        {
-            _updateCts = new CancellationTokenSource();
-            _ = StartBackgroundUpdateLoopAsync(_updateCts.Token);
-        }
+        _updateCts = new CancellationTokenSource();
+        _ = StartBackgroundUpdateLoopAsync(_updateCts.Token);
+        Dispatcher.BeginInvoke(new Action(UpdateCompletionNotice.ShowIfNeeded));
     }
 
     private static void WriteToConsole(string text, bool isError = false)
@@ -508,7 +534,7 @@ public partial class App : Application
         var versionItem = new ToolStripMenuItem(versionStr) { Enabled = false };
         contextMenu.Items.Add(versionItem);
 
-        contextMenu.Items.Add("退出 Polyglance", null, async (s, e) => await ShutdownAppAsync());
+        contextMenu.Items.Add("退出 Polyglance", null, async (s, e) => { await ShutdownAppAsync(); });
 
         _notifyIcon.ContextMenuStrip = contextMenu;
         _notifyIcon.DoubleClick += (s, e) => ShowMainWindow();
@@ -952,7 +978,7 @@ public partial class App : Application
                 return;
             }
 
-            var settings = new SettingsWindow(_configStore, initialTab: initialTab, autoCheckUpdate: autoCheckUpdate);
+            var settings = new SettingsWindow(_configStore, initialTab: initialTab, autoCheckUpdate: autoCheckUpdate, updateProvider: _updateProvider);
             _settingsWindow = settings;
             settings.Closed += (_, _) =>
             {
@@ -963,6 +989,8 @@ public partial class App : Application
                     DataDirectoryManager.ApplyRootDirectory(savedConfig.DataStorageDirectory);
                     RegisterDynamicHotKeys();
                     _mainWindow?.ReloadConfiguration();
+                    _nextUpdateCheck = DateTime.MinValue;
+
                 }
             };
             settings.Show();
@@ -986,9 +1014,10 @@ public partial class App : Application
             try
             {
                 var config = LoadConfigurationOrDefault();
-                if (config.AutoCheckUpdates)
+                if (config.AutoCheckUpdates && DateTime.UtcNow >= _nextUpdateCheck)
                 {
-                    IAppUpdateProvider provider = UpdateProviderFactory.Create(() => LoadConfigurationOrDefault().AppcastUrl);
+                    _nextUpdateCheck = DateTime.UtcNow.AddHours(6);
+                    IAppUpdateProvider provider = _updateProvider!;
                     UpdateCheckResult check = await provider.CheckForUpdatesAsync(
                         config.IncludeBetaUpdates,
                         config.SkippedUpdateVersion,
@@ -996,13 +1025,21 @@ public partial class App : Application
 
                     if (check.Status == UpdateCheckStatus.UpdateAvailable && check.Update != null)
                     {
-                        UpdateInfo update = check.Update;
-                        Dispatcher.Invoke(() =>
+                        if (provider is GitHubUpdateProvider gitHub)
                         {
-                            ApplyUpdateNotification(update);
-                        });
+                            await gitHub.PrepareUpdateAsync(check.Update, cancellationToken: cancellationToken, requireVerifiedPackage: true);
+                            if (_updateReadyWindow != null && _updateReadyWindow.Version != gitHub.PreparedInfo?.Version)
+                                _updateReadyWindow.Close();
+                        }
+                        else if (_notifiedUpdateVersions.Add(check.Update.Version))
+                            ApplyUpdateNotification(check.Update);
                     }
                 }
+                if (_updateProvider is GitHubUpdateProvider ready && ready.HasPreparedUpdate
+                    && IsUpdateAllowed(ready.PreparedInfo!, LoadConfigurationOrDefault())
+                    && !_notifiedUpdateVersions.Contains(ready.PreparedInfo!.Version)
+                    && CanPresentUpdatePrompt())
+                    ShowPreparedUpdatePrompt();
             }
             catch (Exception ex)
             {
@@ -1011,7 +1048,7 @@ public partial class App : Application
 
             try
             {
-                await Task.Delay(TimeSpan.FromHours(6), cancellationToken);
+                await Task.Delay(TimeSpan.FromSeconds(15), cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -1019,6 +1056,54 @@ public partial class App : Application
             }
         }
     }
+
+    public void DeferAutomaticUpdate()
+    {
+        if (_updateProvider is GitHubUpdateProvider { PreparedInfo: { } info })
+            _notifiedUpdateVersions.Add(info.Version);
+    }
+
+    private static bool IsUpdateAllowed(UpdateInfo info, AppConfiguration config) =>
+        (!info.IsBeta || config.IncludeBetaUpdates)
+        && !string.Equals(config.SkippedUpdateVersion, info.Version, StringComparison.OrdinalIgnoreCase);
+
+    private bool CanPresentUpdatePrompt() => !_shuttingDown && !Windows.Cast<Window>().Any(window =>
+        window.IsVisible && (window.IsActive || (window is not PinWindow && window is not TextPinWindow)));
+
+    public bool ShowPreparedUpdatePrompt(bool userInitiated = false)
+    {
+        if (_updateProvider is not GitHubUpdateProvider provider || !provider.HasPreparedUpdate
+            || !IsUpdateAllowed(provider.PreparedInfo!, LoadConfigurationOrDefault())) return false;
+        if (!userInitiated && !CanPresentUpdatePrompt()) return false;
+        if (_updateReadyWindow != null)
+        {
+            if (_updateReadyWindow.Version == provider.PreparedInfo!.Version)
+            {
+                if (userInitiated) _updateReadyWindow.Activate();
+                return true;
+            }
+            _updateReadyWindow.Close();
+        }
+        var info = provider.PreparedInfo!;
+        var prepared = provider.PreparedUpdate!;
+        _notifiedUpdateVersions.Add(info.Version);
+        var window = new UpdateReadyWindow(info.Version, async () =>
+        {
+            await InstallPreparedUpdateAsync(prepared);
+        });
+        _updateReadyWindow = window;
+        window.Closed += (_, _) => { if (_updateReadyWindow == window) _updateReadyWindow = null; };
+        window.Show();
+        if (userInitiated) window.Activate();
+        return true;
+    }
+
+    public Task<bool> InstallPreparedUpdateAsync(PreparedUpdate update) =>
+        ShutdownAppAsync(() =>
+        {
+            update.StartInstaller();
+            (_updateProvider as GitHubUpdateProvider)?.MarkInstallationStarted();
+        });
 
     private void ApplyUpdateNotification(UpdateInfo update)
     {
@@ -1064,16 +1149,24 @@ public partial class App : Application
 
     private bool _shuttingDown;
 
-    private async Task ShutdownAppAsync()
+    private async Task<bool> ShutdownAppAsync(Action? installUpdate = null)
     {
-        if (_shuttingDown) return;
+        if (_shuttingDown) return false;
         _shuttingDown = true;
         _hotKeyManager?.Dispose();
         try
         {
             await PinSessionController.For().PrepareForTermination();
+            installUpdate?.Invoke();
         }
-        catch { }
+        catch
+        {
+            if (installUpdate != null)
+            {
+                ResumeAfterCancelledUpdate();
+                throw;
+            }
+        }
         _updateCts?.Cancel();
         _updateCts?.Dispose();
         _updateCts = null;
@@ -1091,6 +1184,14 @@ public partial class App : Application
         _mutex?.Dispose();
         _pinHistoryWindow?.ExplicitClose();
         Shutdown();
+        return true;
+    }
+
+    private void ResumeAfterCancelledUpdate()
+    {
+        _shuttingDown = false;
+        PinSessionController.For().ResumeAfterTerminationCancelled();
+        RegisterDynamicHotKeys();
     }
 
     protected override void OnExit(ExitEventArgs e)

@@ -1639,7 +1639,7 @@
                                                 <TextBlock Text="新版本已下载并校验完成，重启应用后即可生效。" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                                <ui:Button x:Name="BtnPostponeRestart" Appearance="Secondary" Content="稍后重启" Margin="0,0,6,0" Padding="8,3" FontSize="11" Click="OnPostponeRestartClick"/>
+                                                <ui:Button x:Name="BtnPostponeRestart" Appearance="Secondary" Content="下次启动安装" Margin="0,0,6,0" Padding="8,3" FontSize="11" Click="OnPostponeRestartClick"/>
                                                 <ui:Button x:Name="BtnRestartNow" Appearance="Primary" Content="立即重启应用" Padding="10,3" FontSize="11" Click="OnRestartNowClick"/>
                                             </StackPanel>
                                         </Grid>
@@ -1649,6 +1649,18 @@
                                     <ProgressBar x:Name="PbUpdateProgress" Height="4" Margin="0,0,0,10" Minimum="0" Maximum="100" Value="0" Visibility="Collapsed"/>
 
                                     <Separator Margin="0,6,0,10" Background="{DynamicResource CardStrokeColorDefaultBrush}" Height="1"/>
+
+                                    <Grid Margin="0,2,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Margin="0,0,16,0">
+                                            <TextBlock Text="自动更新" FontSize="12.5" FontWeight="Medium" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                                            <TextBlock Text="后台下载并提示，可立即重启更新或下次启动安装。" FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                        <ui:ToggleSwitch x:Name="SwAutomaticUpdates" Grid.Column="1" VerticalAlignment="Center"/>
+                                    </Grid>
 
                                     <!-- 更新通道切换开关 -->
                                     <Grid Margin="0,2,0,2">

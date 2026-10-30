@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
@@ -46,29 +47,42 @@ public sealed class PreparedUpdate
 {
     public string BatchScriptPath { get; }
     public string UpdatedExecutableName { get; }
+    internal string? PackagePath { get; }
+    internal string? PackageHash { get; }
+    internal string? ExtractedDirectory { get; }
 
     internal PreparedUpdate(string batchScriptPath, string updatedExecutableName)
+        : this(batchScriptPath, updatedExecutableName, null, null, null) { }
+
+    internal PreparedUpdate(string batchScriptPath, string updatedExecutableName, string? packagePath = null, string? packageHash = null, string? extractedDirectory = null)
     {
         BatchScriptPath = batchScriptPath;
         UpdatedExecutableName = updatedExecutableName;
+        PackagePath = packagePath;
+        PackageHash = packageHash;
+        ExtractedDirectory = extractedDirectory;
     }
 
     public void ApplyAndRestart()
+    {
+        StartInstaller();
+        Application.Current?.Dispatcher?.Invoke(() => Application.Current.Shutdown());
+    }
+
+    public void StartInstaller()
     {
         if (PackageEnvironment.IsPackaged)
         {
             throw new InvalidOperationException("Microsoft Store MSIX 版本禁止执行外部批处理文件替换更新。");
         }
 
-        Process.Start(new ProcessStartInfo
+        using var installer = Process.Start(new ProcessStartInfo
         {
             FileName = "cmd.exe",
             Arguments = $"/c \"{BatchScriptPath}\"",
             CreateNoWindow = true,
             UseShellExecute = false
-        });
-
-        Application.Current?.Dispatcher?.Invoke(() => Application.Current.Shutdown());
+        }) ?? throw new IOException("无法启动更新安装程序。");
     }
 }
 
@@ -374,33 +388,44 @@ public static class AppUpdater
 
     public static async Task<PreparedUpdate?> DownloadAndPrepareUpdateAsync(
         string downloadUrl,
-        IProgress<UpdateDownloadProgress>? progress = null)
+        IProgress<UpdateDownloadProgress>? progress = null,
+        bool requireVerifiedPackage = false,
+        System.Threading.CancellationToken cancellationToken = default)
     {
         if (PackageEnvironment.IsPackaged)
         {
             throw new InvalidOperationException("Microsoft Store MSIX 版本禁止执行基于文件替换的 GitHub 更新机制。");
         }
 
+        string? tempZip = null;
         try
         {
-            string tempZip = Path.Combine(Path.GetTempPath(), $"Polyglance_Update_{Guid.NewGuid():N}.zip");
-            string tempExtractDir = Path.Combine(Path.GetTempPath(), $"Polyglance_Extracted_{Guid.NewGuid():N}");
+            if (!Uri.TryCreate(downloadUrl, UriKind.Absolute, out var downloadUri)
+                || downloadUri.Scheme != Uri.UriSchemeHttps)
+                throw new InvalidDataException("更新下载地址必须使用 HTTPS。");
+            string? expectedHash = requireVerifiedPackage
+                ? await GetGitHubPackageHashAsync(downloadUri, cancellationToken)
+                : null;
+            if (requireVerifiedPackage && expectedHash == null)
+                throw new InvalidDataException("更新包缺少可信校验信息。");
+            Directory.CreateDirectory(PendingUpdateStore.CacheDirectory);
+            tempZip = Path.Combine(PendingUpdateStore.CacheDirectory, $"{Guid.NewGuid():N}.zip");
 
-            using (var response = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead))
+            using (var response = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
             {
                 response.EnsureSuccessStatusCode();
                 long totalBytes = response.Content.Headers.ContentLength ?? -1;
 
-                using var stream = await response.Content.ReadAsStreamAsync();
+                using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
                 using var fileStream = File.Create(tempZip);
 
                 byte[] buffer = new byte[81920];
                 long totalRead = 0;
                 int bytesRead;
 
-                while ((bytesRead = await stream.ReadAsync(buffer)) > 0)
+                while ((bytesRead = await stream.ReadAsync(buffer, cancellationToken)) > 0)
                 {
-                    await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead));
+                    await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
                     totalRead += bytesRead;
 
                     int percent = totalBytes > 0 ? (int)((totalRead * 100) / totalBytes) : 0;
@@ -408,30 +433,68 @@ public static class AppUpdater
                 }
             }
 
-            // Extract update
-            System.IO.Compression.ZipFile.ExtractToDirectory(tempZip, tempExtractDir);
-            UpdatePackageLayout packageLayout = ResolveUpdatePackageLayout(tempExtractDir);
-
-            string currentAppDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\', '/');
-            string currentExe = Process.GetCurrentProcess().MainModule?.FileName ?? Path.Combine(currentAppDir, "Polyglance.exe");
-
-            // Write batch update script
-            string batchScript = Path.Combine(Path.GetTempPath(), $"polyglance_updater_{Guid.NewGuid():N}.cmd");
-            string scriptContent = CreateUpdateScript(
-                tempZip,
-                packageLayout.SourceDirectory,
-                currentAppDir,
-                currentExe,
-                packageLayout.ExecutableName);
-            File.WriteAllText(batchScript, scriptContent, System.Text.Encoding.Default);
-
-            return new PreparedUpdate(batchScript, packageLayout.ExecutableName);
+            if (expectedHash != null)
+            {
+                await using var package = File.OpenRead(tempZip);
+                string hash = Convert.ToHexString(await SHA256.HashDataAsync(package, cancellationToken));
+                if (!hash.Equals(expectedHash, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("更新包校验失败。");
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            await using var cachedPackage = File.OpenRead(tempZip);
+            string packageHash = Convert.ToHexString(await SHA256.HashDataAsync(cachedPackage, cancellationToken));
+            return PrepareCachedPackage(tempZip, packageHash);
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Failed to prepare update: {ex.Message}");
+            try { if (tempZip != null) File.Delete(tempZip); } catch { }
+            if (ex is OperationCanceledException) throw;
             return null;
         }
+    }
+
+    internal static PreparedUpdate PrepareCachedPackage(string packagePath, string packageHash)
+    {
+        string extractDirectory = Path.Combine(PendingUpdateStore.CacheDirectory, Guid.NewGuid().ToString("N"));
+        try
+        {
+            System.IO.Compression.ZipFile.ExtractToDirectory(packagePath, extractDirectory);
+            var layout = ResolveUpdatePackageLayout(extractDirectory);
+            string appDirectory = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\', '/');
+            string currentExe = Environment.ProcessPath ?? Path.Combine(appDirectory, "Polyglance.exe");
+            string script = Path.Combine(PendingUpdateStore.CacheDirectory, $"install-{Guid.NewGuid():N}.cmd");
+            File.WriteAllText(script, CreateUpdateScript(packagePath, layout.SourceDirectory, appDirectory,
+                currentExe, layout.ExecutableName), System.Text.Encoding.Default);
+            return new PreparedUpdate(script, layout.ExecutableName, packagePath, packageHash, extractDirectory);
+        }
+        catch
+        {
+            if (Directory.Exists(extractDirectory)) Directory.Delete(extractDirectory, true);
+            throw;
+        }
+    }
+
+    private static async Task<string?> GetGitHubPackageHashAsync(Uri downloadUri, System.Threading.CancellationToken cancellationToken)
+    {
+        var parts = downloadUri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (downloadUri.Host != "github.com" || parts.Length != 6
+            || parts[2] != "releases" || parts[3] != "download") return null;
+        string api = $"https://api.github.com/repos/{parts[0]}/{parts[1]}/releases/tags/{parts[4]}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, api);
+        request.Headers.UserAgent.ParseAdd("Polyglance-Updater");
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        foreach (var asset in json.RootElement.GetProperty("assets").EnumerateArray())
+        {
+            if (asset.GetProperty("browser_download_url").GetString() != downloadUri.AbsoluteUri
+                || !asset.TryGetProperty("digest", out var value)) continue;
+            string digest = value.GetString() ?? "";
+            if (digest.StartsWith("sha256:", StringComparison.Ordinal) && digest.Length == 71
+                && digest[7..].All(Uri.IsHexDigit)) return digest[7..];
+        }
+        return null;
     }
 
     public static async Task<bool> DownloadAndApplyUpdateAsync(string downloadUrl, IProgress<int>? progress = null)
