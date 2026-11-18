@@ -2,6 +2,16 @@ import AppKit
 import SwiftUI
 
 @main
+private enum PolyglanceEntryPoint {
+    @MainActor
+    static func main() {
+        if CommandLine.arguments.dropFirst().first == VisionOCRWorker.argument {
+            exit(VisionOCRWorker.run())
+        }
+        PolyglanceApp.main()
+    }
+}
+
 struct PolyglanceApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 

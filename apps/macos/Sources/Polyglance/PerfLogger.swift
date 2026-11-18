@@ -1,22 +1,14 @@
 import Foundation
 
 enum PerfLogger {
-    private static let logURL = URL(fileURLWithPath: "/tmp/polyglance_perf.log")
-    private static let lock = NSLock()
+    private static let logPath = "/tmp/polyglance_perf.log"
 
     static func log(_ message: String) {
         NSLog("%@", message)
         print(message)
-        lock.lock()
-        defer { lock.unlock() }
-        let line = "\(Date()) \(message)\n"
-        guard let data = line.data(using: .utf8) else { return }
-        if let handle = try? FileHandle(forWritingTo: logURL) {
-            handle.seekToEndOfFile()
-            handle.write(data)
-            try? handle.close()
-        } else {
-            try? data.write(to: logURL)
-        }
+        let descriptor = open(logPath, O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0 else { return }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        try? handle.write(contentsOf: Data("\(Date()) \(message)\n".utf8))
     }
 }

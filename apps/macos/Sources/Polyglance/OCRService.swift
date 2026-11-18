@@ -7,7 +7,7 @@ import PolyglanceKit
 /// Bounding boxes use Vision's normalized, lower-left coordinate space. Keeping
 /// that representation here avoids losing precision when the same OCR result is
 /// rendered in a screenshot window and later in a Retina pin window.
-struct OCRTextFragment: Equatable, @unchecked Sendable {
+struct OCRTextFragment: Codable, Equatable, @unchecked Sendable {
     let text: String
     let boundingBox: CGRect
     let separatorBefore: String
@@ -23,7 +23,7 @@ struct OCRTextFragment: Equatable, @unchecked Sendable {
     }
 }
 
-struct OCRTextObservation: Equatable, @unchecked Sendable {
+struct OCRTextObservation: Codable, Equatable, @unchecked Sendable {
     let text: String
     let boundingBox: CGRect
     let fragments: [OCRTextFragment]
