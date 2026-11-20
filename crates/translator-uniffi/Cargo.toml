@@ -16,3 +16,6 @@ tokio.workspace = true
 translator-core.workspace = true
 translator-providers.workspace = true
 uniffi.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "load-dynamic", "api-20"] }

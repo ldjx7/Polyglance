@@ -163,8 +163,12 @@ struct OCRService: Sendable {
         try await recognizeDocument(in: image, source: source).plainText
     }
 
-    func recognizeDocument(in image: NSImage, source: String = "unspecified") async throws -> OCRDocument {
-        try await diagnose(source: source) { diagnostics in
+    func recognizeDocument(
+        in image: NSImage,
+        source: String = "unspecified",
+        isBackground: Bool = false
+    ) async throws -> OCRDocument {
+        try await diagnose(source: source, isBackground: isBackground) { diagnostics in
             try await resolveDocument(in: image, diagnostics: diagnostics)
         }
     }
@@ -220,13 +224,18 @@ struct OCRService: Sendable {
 
     private func diagnose(
         source: String,
+        isBackground: Bool = false,
         operation: (OCRDiagnostics) async throws -> OCRDocument
     ) async throws -> OCRDocument {
-        let diagnostics = OCRDiagnostics(source: source)
+        let diagnostics = OCRDiagnostics(source: source, isBackground: isBackground)
         diagnostics.begin()
         defer { diagnostics.end() }
         do {
+            try Task.checkCancellation()
             return try await operation(diagnostics)
+        } catch is CancellationError {
+            diagnostics.record("cancelled")
+            throw CancellationError()
         } catch {
             diagnostics.recordError(error, stage: "service")
             throw error
@@ -239,6 +248,8 @@ struct OCRService: Sendable {
         let observations: [OCRTextObservation]
         do {
             observations = try await backend.recognizeText(in: image, diagnostics: diagnostics)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch let error as OCRError {
             throw error
         } catch {

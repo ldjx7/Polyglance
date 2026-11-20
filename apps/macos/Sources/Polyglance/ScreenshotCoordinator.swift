@@ -75,7 +75,7 @@ final class ScreenshotCoordinator {
     private let ocrService: OCRService
     private let barcodeService: BarcodeService
     private let onBeginOCRTranslate: @MainActor (SelectedScreenshot) -> Void
-    private let onOCRTranslate: @MainActor (SelectedScreenshot, String) async throws -> Void
+    private let onOCRTranslate: @MainActor (SelectedScreenshot, Result<String, Error>) -> Void
     private let onOCRTranslationCard: @MainActor (SelectedScreenshot, String) async throws -> Void
     private let onLongScreenshot: @MainActor (CGRect) async throws -> Void
     private let onScreenRecording: @MainActor (CGRect) async throws -> Void
@@ -84,6 +84,7 @@ final class ScreenshotCoordinator {
     private var selectionSession: ScreenSelectionSession?
     private let barcodeResultWindows = BarcodeResultWindowStore()
     private var activeOCRWorkspacePanel: OCRWorkspacePanel?
+    private var ocrTranslationTask: Task<Void, Never>?
     private(set) var isCapturing = false
 
     init(
@@ -92,7 +93,7 @@ final class ScreenshotCoordinator {
         ocrService: OCRService = OCRService(),
         barcodeService: BarcodeService = BarcodeService(),
         onBeginOCRTranslate: @escaping @MainActor (SelectedScreenshot) -> Void = { _ in },
-        onOCRTranslate: @escaping @MainActor (SelectedScreenshot, String) async throws -> Void = { _, _ in },
+        onOCRTranslate: @escaping @MainActor (SelectedScreenshot, Result<String, Error>) -> Void = { _, _ in },
         onOCRTranslationCard: @escaping @MainActor (SelectedScreenshot, String) async throws -> Void = { _, _ in },
         onLongScreenshot: @escaping @MainActor (CGRect) async throws -> Void = { _ in },
         onScreenRecording: @escaping @MainActor (CGRect) async throws -> Void = { _ in },
@@ -134,8 +135,11 @@ final class ScreenshotCoordinator {
             return
         }
         isCapturing = true
+        var ownsSelection = true
         var keepsOverlayUntilHandoff = false
-        defer {
+        func releaseSelection() {
+            guard ownsSelection else { return }
+            ownsSelection = false
             let session = selectionSession
             if keepsOverlayUntilHandoff {
                 DispatchQueue.main.async { session?.dismiss() }
@@ -145,6 +149,7 @@ final class ScreenshotCoordinator {
             selectionSession = nil
             isCapturing = false
         }
+        defer { releaseSelection() }
         guard let action = try await captureSelectionAction(
             preferredAction: preferredAction,
             startTime: startTime
@@ -196,13 +201,8 @@ final class ScreenshotCoordinator {
                 configurationStore: configurationStore,
                 translateHandler: { [weak self] text in
                     guard let self else { return }
-                    Task { @MainActor in
-                        do {
-                            try await self.onOCRTranslate(result, text)
-                        } catch {
-                            OperationErrorPresenter().present(.screenshot(error))
-                        }
-                    }
+                    self.cancelOCRTranslation()
+                    self.onOCRTranslate(result, .success(text))
                 }
             )
             activeOCRWorkspacePanel = panel
@@ -210,40 +210,41 @@ final class ScreenshotCoordinator {
             panel.orderFrontRegardless()
             panel.makeKey()
 
-            Task {
+            panel.recognitionTask = Task { [weak panel, ocrService, configurationStore] in
                 do {
                     let document = try await ocrService.recognizeDocument(in: result.image, source: "screenshot.ocrWorkspace")
-                    await MainActor.run {
-                        panel.setDocument(document)
-                        let config = try? configurationStore.load()
-                        if config?.ocrAutoCopyNextTime == true {
-                            let mode = TextFormattingMode(rawValue: config?.ocrDefaultFormatting ?? 0) ?? .smartMerge
-                            let lines = document.lines.map { (text: $0.text, boundingBox: $0.boundingBox) }
-                            let cleaned = TextFormattingService.format(lines: lines, mode: mode)
-                            let pasteboard = NSPasteboard.general
-                            pasteboard.clearContents()
-                            pasteboard.setString(cleaned, forType: .string)
-                            NSSound(named: "Tink")?.play()
-                        }
+                    guard !Task.isCancelled, let panel else { return }
+                    panel.setDocument(document)
+                    let config = try? configurationStore.load()
+                    if config?.ocrAutoCopyNextTime == true {
+                        let mode = TextFormattingMode(rawValue: config?.ocrDefaultFormatting ?? 0) ?? .smartMerge
+                        let lines = document.lines.map { (text: $0.text, boundingBox: $0.boundingBox) }
+                        let cleaned = TextFormattingService.format(lines: lines, mode: mode)
+                        let pasteboard = NSPasteboard.general
+                        pasteboard.clearContents()
+                        pasteboard.setString(cleaned, forType: .string)
+                        NSSound(named: "Tink")?.play()
                     }
                 } catch {
-                    await MainActor.run {
-                        panel.setError(error.localizedDescription)
-                    }
+                    guard !Task.isCancelled else { return }
+                    panel?.setError(error.localizedDescription)
                 }
             }
         case let .ocrCopyAll(result):
-            let text = try await ocrService.recognizeText(in: result.image, source: "screenshot.ocrCopyAll")
+            releaseSelection()
             let pasteboard = NSPasteboard.general
+            let changeCount = pasteboard.changeCount
+            let text = try await ocrService.recognizeText(in: result.image, source: "screenshot.ocrCopyAll")
+            guard pasteboard.changeCount == changeCount else { return }
             pasteboard.clearContents()
             guard pasteboard.setString(text, forType: .string) else {
                 throw ScreenshotError.ocrCopyFailed
             }
         case let .ocrTranslate(result):
-            onBeginOCRTranslate(result)
-            let text = try await ocrService.recognizeText(in: result.image, source: "screenshot.ocrTranslate")
-            try await onOCRTranslate(result, text)
+            releaseSelection()
+            startOCRTranslation(result)
         case let .ocrTranslationCard(result):
+            releaseSelection()
             let text = try await ocrService.recognizeText(in: result.image, source: "screenshot.ocrTranslationCard")
             try await onOCRTranslationCard(result, text)
         case let .detectBarcode(result):
@@ -274,6 +275,28 @@ final class ScreenshotCoordinator {
             try await onScreenRecording(result.screenFrame)
         case let .screenTranslation(result):
             try await onScreenTranslate(result)
+        }
+    }
+
+    func cancelOCRTranslation() {
+        ocrTranslationTask?.cancel()
+        ocrTranslationTask = nil
+    }
+
+    private func startOCRTranslation(_ screenshot: SelectedScreenshot) {
+        cancelOCRTranslation()
+        onBeginOCRTranslate(screenshot)
+        ocrTranslationTask = Task { [weak self, ocrService] in
+            let outcome: Result<String, Error>
+            do {
+                let text = try await ocrService.recognizeText(in: screenshot.image, source: "screenshot.ocrTranslate")
+                outcome = .success(text)
+            } catch {
+                outcome = .failure(error)
+            }
+            guard !Task.isCancelled, let self else { return }
+            self.ocrTranslationTask = nil
+            self.onOCRTranslate(screenshot, outcome)
         }
     }
 

@@ -17,11 +17,13 @@ struct OCRDiagnostics: Sendable {
     private static let state = State()
     let id: String
     let source: String
+    let isBackground: Bool
     private let startedAt = ProcessInfo.processInfo.systemUptime
 
-    init(source: String, id: String = UUID().uuidString) {
+    init(source: String, id: String = UUID().uuidString, isBackground: Bool = false) {
         self.source = source
         self.id = id
+        self.isBackground = isBackground
     }
 
     func begin() {

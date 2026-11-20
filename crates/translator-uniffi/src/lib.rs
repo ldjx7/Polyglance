@@ -12,6 +12,8 @@ pub mod clipboard;
 pub mod formatting;
 pub mod geometry;
 pub mod layout;
+#[cfg(target_os = "macos")]
+pub mod ocr;
 pub mod pin;
 pub mod recording;
 pub mod stitch;

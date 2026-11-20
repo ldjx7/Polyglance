@@ -1312,10 +1312,10 @@ final class PinContentView: NSView {
 
     private func startBackgroundOCR() {
         guard ocrDocument == nil else { return }
-        ocrTask = Task { [weak self, image] in
+        ocrTask = Task(priority: .utility) { [weak self, image] in
             let service = OCRService()
             do {
-                let doc = try await service.recognizeDocument(in: image, source: "pin.backgroundOCR")
+                let doc = try await service.recognizeDocument(in: image, source: "pin.backgroundOCR", isBackground: true)
                 guard !Task.isCancelled else { return }
                 await MainActor.run { [weak self] in
                     guard let self else { return }

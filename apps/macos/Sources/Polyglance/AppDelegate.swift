@@ -85,9 +85,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             self.showTranslator(with: "", near: screenshot.screenFrame, isOcrPending: true)
         },
-        onOCRTranslate: { [weak self] _, text in
+        onOCRTranslate: { [weak self] _, outcome in
             guard let self else { return }
-            self.completeOCRTranslate(with: text)
+            switch outcome {
+            case let .success(text):
+                self.completeOCRTranslate(with: text)
+            case let .failure(error):
+                self.viewModel.finishOcrLoading()
+                self.operationErrorPresenter.present(.screenshot(error))
+            }
         },
         onOCRTranslationCard: { [weak self] screenshot, text in
             guard let self else { return }
@@ -133,6 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard await screenRecordingCoordinator.prepareForApplicationTermination() else { return false }
             await clipboardHistoryService.shutdown()
             await pinWindowManager.prepareForTermination()
+            await ResilientOCR.prepareForTermination()
             return true
         }
     )
@@ -203,6 +210,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             reason: "Low-latency global screenshot hotkey responsiveness"
         )
         ScreenshotCoordinator.prewarmPresentation()
+        ResilientOCR.prewarm()
         hotKeyManager.onTranslateSelection = { [weak self] in
             self?.showTranslator(capturingSelection: true, translateImmediately: true)
         }
@@ -635,6 +643,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if isOcrPending {
             viewModel.startOcrLoading()
         } else {
+            screenshotCoordinator.cancelOCRTranslation()
             viewModel.finishOcrLoading()
             viewModel.applyCapturedText(text)
         }
@@ -742,6 +751,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.setFrameAutosaveName("PolyglanceTranslatorPanel")
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentViewController = NSHostingController(rootView: TranslationView(viewModel: viewModel))
+        panel.onDismiss = { [weak self] in
+            self?.screenshotCoordinator.cancelOCRTranslation()
+            self?.viewModel.finishOcrLoading()
+        }
         panel.center()
         translatorPanel = panel
         setupPanelEscapeMonitors()
@@ -920,10 +933,17 @@ private struct UnavailableTranslationClient: TranslationClient {
 }
 
 private final class FloatingTranslatorPanel: NSPanel {
+    var onDismiss: (() -> Void)?
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
     override func cancelOperation(_ sender: Any?) {
         orderOut(nil)
+    }
+
+    override func orderOut(_ sender: Any?) {
+        super.orderOut(sender)
+        onDismiss?()
     }
 
     override func becomeKey() {

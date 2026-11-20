@@ -21,17 +21,15 @@ struct VisionOCRBackend: OCRRecognitionBackend {
     }
 
     func recognizeText(in image: CGImage, diagnostics: OCRDiagnostics) async throws -> [OCRTextObservation] {
-        try await withCheckedThrowingContinuation { continuation in
-            VisionOCRWorker.queue.async {
-                do {
-                    continuation.resume(returning: try VisionOCRWorker.recognize(in: image, diagnostics: diagnostics))
-                } catch let error as OCRError {
-                    continuation.resume(throwing: error)
-                } catch {
-                    diagnostics.recordError(error, stage: "vision.worker")
-                    continuation.resume(throwing: OCRError.visionFailed(error.localizedDescription))
-                }
-            }
+        do {
+            return try await ResilientOCR.recognize(in: image, diagnostics: diagnostics)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as OCRError {
+            throw error
+        } catch {
+            diagnostics.recordError(error, stage: "vision.worker")
+            throw OCRError.visionFailed(error.localizedDescription)
         }
     }
 
@@ -133,12 +131,12 @@ struct VisionOCRBackend: OCRRecognitionBackend {
         return request
     }
 
-    private static func selectableFragments(
-        for candidate: VNRecognizedText,
+    static func selectableFragments(
+        for candidate: VNRecognizedText? = nil,
         observationBox: CGRect,
         cleanedText: String
     ) -> [OCRTextFragment] {
-        let string = candidate.string
+        let string = candidate?.string ?? ""
         guard !cleanedText.isEmpty else { return [] }
 
         func charWeight(_ c: Character) -> CGFloat {
@@ -226,14 +224,15 @@ struct VisionOCRBackend: OCRRecognitionBackend {
             let tWeight = tokenWeights[tIdx]
             var tokenBox: CGRect? = nil
             let tokenRange: Range<String.Index>?
-            if let range = string.range(of: token.text, range: searchStartIndex..<string.endIndex) {
+            if let candidate,
+               let range = string.range(of: token.text, range: searchStartIndex..<string.endIndex) {
                 tokenRange = range
                 searchStartIndex = range.upperBound
                 if let rect = try? candidate.boundingBox(for: range),
                    OCRService.isUsableNormalizedBox(rect.boundingBox) {
                     tokenBox = rect.boundingBox
                 }
-            } else if let range = string.range(of: token.text) {
+            } else if let candidate, let range = string.range(of: token.text) {
                 tokenRange = range
                 if let rect = try? candidate.boundingBox(for: range),
                    OCRService.isUsableNormalizedBox(rect.boundingBox) {
@@ -262,7 +261,7 @@ struct VisionOCRBackend: OCRRecognitionBackend {
 
             var charBoxes: [CGRect] = []
             var allCharsFound = false
-            if let tokenRange {
+            if let candidate, let tokenRange {
                 var currentIdx = tokenRange.lowerBound
                 var tempBoxes: [CGRect] = []
                 var failed = false

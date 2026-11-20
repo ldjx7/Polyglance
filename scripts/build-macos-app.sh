@@ -139,6 +139,7 @@ if [[ ! -d "$sparkle_framework" ]]; then
 fi
 mkdir -p "$app_bundle/Contents/Frameworks"
 ditto "$sparkle_framework" "$app_bundle/Contents/Frameworks/Sparkle.framework"
+/bin/zsh "$script_directory/build-macos-ocr-assets.sh" "$app_bundle"
 
 info_plist="$app_bundle/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $app_name" "$info_plist"

@@ -6,6 +6,7 @@ import PolyglanceKit
 @MainActor
 final class OCRWorkspacePanel: NSPanel {
     static weak var activeContinuousInstance: OCRWorkspacePanel?
+    var recognitionTask: Task<Void, Never>?
 
     private var sourceImage: NSImage
     private var document: OCRDocument?
@@ -34,7 +35,7 @@ final class OCRWorkspacePanel: NSPanel {
     // Loading Overlay
     private let loadingOverlay = NSView()
     private let loadingSpinner = NSProgressIndicator()
-    private let loadingLabel = NSTextField(labelWithString: "正在识别中...")
+    private let loadingLabel = NSTextField(labelWithString: "正在识别，按 Esc 可取消")
 
     // Multi-image paging overlay
     private let pagingOverlay = NSStackView()
@@ -618,6 +619,8 @@ final class OCRWorkspacePanel: NSPanel {
     }
 
     override func close() {
+        recognitionTask?.cancel()
+        recognitionTask = nil
         if Self.activeContinuousInstance === self {
             Self.activeContinuousInstance = nil
         }

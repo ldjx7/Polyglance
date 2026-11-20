@@ -5,8 +5,50 @@ import UniformTypeIdentifiers
 
 enum VisionOCRWorker {
     static let argument = "--vision-ocr-worker"
-    static let queue = DispatchQueue(label: "io.polyglance.vision-ocr", qos: .userInitiated)
+    private static let foregroundQueue = DispatchQueue(label: "io.polyglance.vision-ocr", qos: .userInitiated)
+    private static let backgroundQueue = DispatchQueue(label: "io.polyglance.vision-ocr.background", qos: .utility)
     private static let timeout: DispatchTimeInterval = .seconds(120)
+
+    final class RequestControl: @unchecked Sendable {
+        private let lock = NSLock()
+        private var failure: (any Error)?
+        private var process: Process?
+        private var discarded = false
+
+        func check() throws {
+            try lock.withLock {
+                if let failure { throw failure }
+                if discarded { throw CancellationError() }
+            }
+        }
+
+        func run(_ process: Process) throws {
+            try lock.withLock {
+                if let failure { throw failure }
+                if discarded { throw CancellationError() }
+                try process.run()
+                self.process = process
+            }
+        }
+
+        func clearProcess() {
+            lock.withLock { process = nil }
+        }
+
+        func discardAfterFallback() {
+            lock.withLock { discarded = true }
+        }
+
+        func stop(with failure: any Error) {
+            lock.withLock {
+                guard self.failure == nil else { return }
+                self.failure = failure
+                if let process, process.isRunning {
+                    process.terminate()
+                }
+            }
+        }
+    }
 
     private enum Response: Codable {
         case recognized([OCRTextObservation])
@@ -14,7 +56,44 @@ enum VisionOCRWorker {
         case failed(message: String, retryable: Bool)
     }
 
-    static func recognize(in image: CGImage, diagnostics: OCRDiagnostics) throws -> [OCRTextObservation] {
+    static func recognize(
+        in image: CGImage,
+        diagnostics: OCRDiagnostics,
+        control: RequestControl = RequestControl()
+    ) async throws -> [OCRTextObservation] {
+        let timeout = DispatchWorkItem {
+            control.stop(with: OCRError.visionFailed("文字识别超时"))
+        }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.timeout, execute: timeout)
+        defer { timeout.cancel() }
+
+        let queue = diagnostics.isBackground ? backgroundQueue : foregroundQueue
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                queue.async {
+                    let outcome = Result {
+                        try recognize(in: image, diagnostics: diagnostics, control: control)
+                    }
+                    do {
+                        try control.check()
+                        continuation.resume(with: outcome)
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
+        } onCancel: {
+            control.stop(with: CancellationError())
+        }
+    }
+
+    private static func recognize(
+        in image: CGImage,
+        diagnostics: OCRDiagnostics,
+        control: RequestControl
+    ) throws -> [OCRTextObservation] {
+        try control.check()
+        diagnostics.record("vision.worker.dequeued", ["background": diagnostics.isBackground])
         let imageData = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(imageData, UTType.png.identifier as CFString, 1, nil) else {
             throw OCRError.invalidImage
@@ -23,10 +102,10 @@ enum VisionOCRWorker {
         guard CGImageDestinationFinalize(destination) else { throw OCRError.invalidImage }
 
         let data = imageData as Data
-        var response = try request(data, diagnostics: diagnostics)
+        var response = try request(data, diagnostics: diagnostics, control: control)
         if case .failed(_, true) = response {
             diagnostics.record("vision.worker.retry")
-            response = try request(data, diagnostics: diagnostics)
+            response = try request(data, diagnostics: diagnostics, control: control)
         }
 
         switch response {
@@ -36,7 +115,11 @@ enum VisionOCRWorker {
         }
     }
 
-    private static func request(_ data: Data, diagnostics: OCRDiagnostics) throws -> Response {
+    private static func request(
+        _ data: Data,
+        diagnostics: OCRDiagnostics,
+        control: RequestControl
+    ) throws -> Response {
         let bundle = Bundle(for: AppDelegate.self)
         let executable = bundle.bundleURL.pathExtension == "xctest"
             ? bundle.bundleURL.deletingLastPathComponent().appendingPathComponent("Polyglance")
@@ -55,16 +138,11 @@ enum VisionOCRWorker {
         process.arguments = [argument, diagnostics.source, diagnostics.id]
         process.standardInput = input
         process.standardOutput = output
-        process.qualityOfService = .userInitiated
-        try process.run()
-
-        let timeout = DispatchWorkItem { [weak process] in
-            guard let process, process.isRunning else { return }
-            process.terminate()
-        }
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.timeout, execute: timeout)
+        process.qualityOfService = diagnostics.isBackground || diagnostics.source == "vision.prewarm"
+            ? .utility : .userInitiated
+        try control.run(process)
         defer {
-            timeout.cancel()
+            control.clearProcess()
             if process.isRunning { process.terminate() }
             process.waitUntilExit()
         }
@@ -76,10 +154,7 @@ enum VisionOCRWorker {
         process.waitUntilExit()
         diagnostics.record("vision.worker.exited", ["workerPID": process.processIdentifier, "status": process.terminationStatus])
         guard process.terminationStatus == 0, let responseData else {
-            let message = process.terminationReason == .uncaughtSignal && process.terminationStatus == SIGTERM
-                ? "文字识别超时"
-                : "文字识别进程异常退出"
-            throw OCRError.visionFailed(message)
+            throw OCRError.visionFailed("文字识别进程异常退出")
         }
         return try PropertyListDecoder().decode(Response.self, from: responseData)
     }
